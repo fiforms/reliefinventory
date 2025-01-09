@@ -11,6 +11,8 @@ Route::get('/', function () {
         'canRegister' => Route::has('register'),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
+	'hostedBy' => env('HOSTED_BY','unknown'),
+	'hostedLink' => env('HOSTED_LINK','https://example.com')
     ]);
 });
 
