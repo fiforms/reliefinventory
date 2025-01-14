@@ -40,11 +40,17 @@ Install prerequisite packages:
 ** Install node packages **
   `npm install`
 
-** Create datastructures **
+** Create datastructures (If you have a database backup, this would be the point to restore it instead) **
   `php artisan migrate`
-
-** Create a new user **
+  
+** Create a new user (YOU MUST do this before loading test data) **
   `php artisan user:create -u myusername -e myemail@example.com`
+  
+** Load initial data **
+  `# Creating essentail data`
+  `php artisan db:seed`  
+  `# Loading additional test data`
+  `php artisan db:seed --class=TestDataSeeder`
 
 ** Spin up the instance **
   `composer run dev`
