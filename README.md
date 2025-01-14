@@ -1,41 +1,46 @@
-== About Relief Inventory ==
+# About Relief Inventory
 
 Relief Inventory is a collaborative open source software project to facilitate tracking of donated goods in disaster response scenarios. 
 It was originally developed in cooperation with Adventist Community Services to facilitate warehouse management.
 
-== Setup ==
+# Setup 
 
 This software utilizes the Laravel Open Source PHP Framework and related software. The following brief list of steps
 should help you to get an instance up and running in your environment:
 
 Install prerequisite packages:
 
-# Use your package manager to install relevant packages, i.e.
-  sudo apt install php php-cli apache2 composer mariadb php-mysql php-redis redis git
+** Use your package manager to install relevant packages, i.e. **
 
-# Clone the Repository
-  git clone https://path/to/reliefinventory
+  `sudo apt install php php-cli apache2 composer mariadb php-mysql php-redis redis git`
 
-# Create a database to hold data (change YourPasswordHere accordingly)
-  mysql
-  create user reliefinventory@localhost identified by 'YourPasswordHere';
-  create database reliefinventory;
-  grant all on reliefinventory.* to reliefinventory@localhost;
-  exit
+** Clone the Repository **
 
-# Create your local configuration, and edit .env, adding the database info and password you created above
-  cd reliefinventory
-  cp .env.example .env
-  nano .env
+  `git clone https://path/to/reliefinventory`
 
-# Install Laravel packages using composer
-  composer install
+** Create a database to hold data (change YourPasswordHere accordingly) **
+  `mysql`
+  `create user reliefinventory@localhost identified by 'YourPasswordHere';`
+  `create database reliefinventory;`
+  `grant all on reliefinventory.* to reliefinventory@localhost;`
+  `exit`
 
-# Create datastructures
-  php artisan migrate
+** Create your local configuration, and edit .env, adding the database info and password you created above **
+  `cd reliefinventory`
+  `cp .env.example .env`
+  `nano .env`
 
-# Create a new user
-  php artisan user:create -u myusername -e myemail@example.com
+** Install Laravel packages using composer **
+  `composer install`
+  
+** Install node packages **
+  `npm install`
 
-# Spin up the instance
-  composer run dev
+** Create datastructures **
+  `php artisan migrate`
+
+** Create a new user **
+  `php artisan user:create -u myusername -e myemail@example.com`
+
+** Spin up the instance **
+  `composer run dev`
