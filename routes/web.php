@@ -6,6 +6,7 @@ use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
 use App\Http\Controllers\StatusController;
+use App\Http\Controllers\MenuController;
 
 
 Route::get('/', function () {
@@ -33,6 +34,7 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
 {
     // API route for listing all statuses
     Route::get('/statuses', [StatusController::class, 'index']);
+    Route::get('/menu-data', [MenuController::class, 'index']);
 
 });
 

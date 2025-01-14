@@ -1,6 +1,10 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import MenuComponent from '@/Components/MenuComponent.vue';
+import OrderEntry from '@/Components/OrderEntry.vue';
+import DonationEntry from '@/Components/DonationEntry.vue';
+
 </script>
 
 <template>
@@ -10,16 +14,47 @@ import { Head } from '@inertiajs/vue3';
         <template #header>
         </template>
 
-        <div class="py-12">
-            <div class="mx-auto max-w-7xl sm:px-6 lg:px-8">
-                <div
-                    class="overflow-hidden bg-white shadow-sm sm:rounded-lg"
-                >
-                    <div class="p-6 text-gray-900">
-                        You're logged in!
-                    </div>
-                </div>
-            </div>
-        </div>
+	<MenuComponent @navigate="handleNavigation" />
+
+        <main>
+          <component :is="currentComponent" />
+        </main>
     </AuthenticatedLayout>
 </template>
+
+<script>
+
+export default {
+  name: 'Dashboard',
+  components: {
+    MenuComponent,
+    OrderEntry,
+    DonationEntry,
+  },
+  data() {
+    return {
+      currentComponent: null,
+    };
+  },
+  methods: {
+    handleNavigation(linkUrl) {
+      // Map URLs to component names
+      const routeMap = {
+        '/order-entry': 'OrderEntry',
+        '/donation-entry': 'DonationEntry',
+        '/setup/statuses': 'EditStatuses',
+        '/setup/items': 'EditItems',
+        '/setup/users': 'EditUsers',
+      };
+
+      const componentName = routeMap[linkUrl];
+      if (componentName && this.$options.components[componentName]) {
+        this.currentComponent = componentName;
+      } else {
+        console.error(`No component found for URL: ${linkUrl}`);
+      }
+    },
+  },
+};
+
+</script>
