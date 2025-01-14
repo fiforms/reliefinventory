@@ -12,9 +12,13 @@ Install prerequisite packages:
 
 ** Use your package manager to install relevant packages, i.e. **
 
-  `sudo apt install php php-cli apache2 composer mariadb php-mysql php-redis redis git`
+  `sudo apt install php php-cli composer mariadb php-mysql php-redis git`
+  
+** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
 
-** Clone the Repository **
+  `sudo apt install apache2 redis`
+
+** Clone the Repository (or see below for using the Eclipse editor instead) **
 
   `git clone https://path/to/reliefinventory`
 
@@ -44,3 +48,11 @@ Install prerequisite packages:
 
 ** Spin up the instance **
   `composer run dev`
+  
+# Eclipse IDE
+
+The Eclipse IDE is a helpful editor that can streamline your workflow. You can download [Eclipse IDE for PHP Developers](https://www.eclipse.org/downloads/packages/)
+
+# MySQL Workbench
+
+A helpful graphical tool for working directly with the MySQL Database is MySQL Workbench from Oracle. (If you're using MariaDB as suggested above, you'll get a warning about compatibility but it does work well with MariaDB). You can [download MySQL Workbench here](https://www.mysql.com/products/workbench/)
