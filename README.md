@@ -12,7 +12,7 @@ Install prerequisite packages:
 
 ** Use your package manager to install relevant packages, i.e. **
 
-  `sudo apt install php php-cli composer mariadb php-mysql php-redis git`
+  `sudo apt install php php-cli composer mariadb-server php-mysql php-redis git`
   
 ** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
 
@@ -54,6 +54,14 @@ Install prerequisite packages:
 
 ** Spin up the instance **
   `composer run dev`
+  
+** Running in Production **
+(These steps are still incomplete)
+
+  `php artisan key:generate`
+  `composer dump-autoload --optimize`
+  `npm run build`
+  
   
 # Eclipse IDE
 
