@@ -16,8 +16,8 @@ class OrderController extends Controller
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'order')
-            ->with(['itemLedgers.item.category'])
-            ->get();
+        ->with(['itemLedgers.item.category','person'])
+        ->get();
             
             return response()->json($orders);
     }

@@ -29,6 +29,12 @@ class Transaction extends Model
         return $this->belongsTo(Status::class);
     }
     
+    // Define the relationship to the Person model
+    public function person()
+    {
+        return $this->belongsTo(Person::class);
+    }
+    
     // Define the relationship to ItemLedger model
     public function itemLedgers()
     {
