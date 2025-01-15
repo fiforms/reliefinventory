@@ -47,7 +47,7 @@ Install prerequisite packages:
   `php artisan user:create -u myusername -e myemail@example.com`
   
 ** Load initial data **
-  `# Creating essentail data`
+  `# Creating essential data`
   `php artisan db:seed`  
   `# Loading additional test data`
   `php artisan db:seed --class=TestDataSeeder`
