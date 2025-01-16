@@ -1,3 +1,98 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+
+/* Container Styling */
+.ri_form_container {
+  margin: 20px auto;
+  padding: 20px;
+  max-width: 1200px;
+  background-color: #f9f9f9;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.ri_datatable_container,
+.ri_dataform_container {
+  padding: 15px;
+  background-color: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Headings */
+.ri_datatable_head,
+.ri_dataform_head {
+  font-size: 1.5rem;
+  margin-bottom: 15px;
+  color: #333;
+}
+
+/* Table Styling */
+table.ri_datatable, table.ri_formtable {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 15px 0;
+}
+
+table.ri_datatable th, table.ri_formtable th,
+table.ri_datatable td, table.ri_formtable td {
+  padding: 10px 15px;
+  text-align: left;
+}
+
+table.ri_datatable th, table.ri_formtable th {
+  background-color: #f4f4f4;
+  font-weight: bold;
+  border-bottom: 2px solid #ddd;
+}
+
+table.ri_datatable td, table.ri_formtable td  {
+  border-bottom: 1px solid #ddd;
+}
+
+table.ri_datatable tr {
+  background-color: #f0f0f0;
+  cursor: pointer;
+}
+
+table.ri_datatable tr:hover {
+  background-color: #fafafa;
+}
+
+
+/* Button Styling */
+button.ri_formbutton {
+  display: inline-block;
+  padding: 10px 20px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background-color 0.3s ease;
+}
+
+button.ri_formbutton:hover {
+  background-color: #0056b3;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .ri_form_container {
+    padding: 15px;
+  }
+
+  table.ri_datatable th, table.ri_formtable th,
+  table.ri_datatable td, table.ri_formtable td {
+    padding: 8px 10px;
+  }
+
+  button.ri_formbutton {
+    font-size: 0.9rem;
+    padding: 8px 15px;
+  }
+}
