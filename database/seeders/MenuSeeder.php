@@ -27,7 +27,7 @@ class MenuSeeder extends Seeder
             'page_id' => $mainMenu->id,
             'link_text' => 'Order Entry',
             'link_url' => '/order-entry',
-            'graphic_url' => '/images/order-entry-icon.png',
+            'graphic_url' => '/img/order-entry-icon.webp',
             'order' => 1
         ]);
 
@@ -35,7 +35,7 @@ class MenuSeeder extends Seeder
             'page_id' => $mainMenu->id,
             'link_text' => 'Donation Entry',
             'link_url' => '/donation-entry',
-            'graphic_url' => '/images/donation-entry-icon.png',
+            'graphic_url' => '/img/donation-entry-icon.webp',
             'order' => 2
         ]);
 
@@ -51,7 +51,7 @@ class MenuSeeder extends Seeder
             'page_id' => $setupMenu->id,
             'link_text' => 'Edit Statuses',
             'link_url' => '/setup/statuses',
-            'graphic_url' => '/images/edit-statuses-icon.png',
+            'graphic_url' => '/img/edit-statuses-icon.webp',
             'order' => 1
         ]);
 
@@ -59,7 +59,7 @@ class MenuSeeder extends Seeder
             'page_id' => $setupMenu->id,
             'link_text' => 'Edit Master Item List',
             'link_url' => '/setup/items',
-            'graphic_url' => '/images/edit-items-icon.png',
+            'graphic_url' => '/img/edit-items-icon.webp',
             'order' => 2
         ]);
 
@@ -67,7 +67,7 @@ class MenuSeeder extends Seeder
             'page_id' => $setupMenu->id,
             'link_text' => 'Edit Users',
             'link_url' => '/setup/users',
-            'graphic_url' => '/images/edit-users-icon.png',
+            'graphic_url' => '/img/edit-users-icon.webp',
             'order' => 3
         ]);
     }
