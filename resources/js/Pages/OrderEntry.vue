@@ -52,7 +52,12 @@ import ComboBox from '@/Components/ComboBox.vue';
 			  </tr>
 		      <tr>
 				<th>Person:</th>
-				<td> {{ selectedOrder.person.first_name }} {{ selectedOrder.person.last_name }}</td>
+				<td> 
+					<ComboBox 
+					v-model="selectedOrder.person_id"
+					:options="people" 
+					/>
+				</td>
 			  </tr>
 		      <tr>
 				<th>Status:</th>
@@ -93,6 +98,7 @@ export default {
       selectedOrder: null,
 	  editing: true,
       statuses: [],
+	  people: [],
     };
   },
   methods: {
@@ -116,6 +122,16 @@ export default {
 		  console.error("Error fetching statuses:", error);
 		});
 	},
+	fetchPeople() {
+	  axios
+		.get("/json/people")
+		.then((response) => {
+		  this.people = response.data;
+		})
+		.catch((error) => {
+		  console.error("Error fetching statuses:", error);
+		});
+	},
     calculateTotalItems(itemLedgers) {
       return itemLedgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0);
     },
@@ -130,6 +146,7 @@ export default {
   created() {
     this.fetchOrders();
 	this.fetchStatuses();
+	this.fetchPeople();
   },
 };
 </script>

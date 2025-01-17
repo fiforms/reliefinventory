@@ -1,73 +1,120 @@
-<script setup>
-import { onMounted, ref, computed } from 'vue';
-
-const model = defineModel({
-    type: [String, Number],
-    required: true,
-});
-
-const props = defineProps({
-  enabled: {
-    type: Boolean,
-    default: true,
-  },
-  options: {
-    type: Array,
-    required: true,
-    validator: (value) =>
-      value.every(
-        (item) => typeof item === 'object' && 'id' in item && 'name' in item
-      ),
-  },
-});
-
-const dropdownOpen = ref(false);
-
-const selectedLabel = computed(() => {
-  const selected = props.options.find((option) => option.id === model);
-  return selected ? selected.name : '';
-});
-
-const toggleDropdown = () => {
-  if (props.enabled) {
-    dropdownOpen.value = !dropdownOpen.value;
-  }
-};
-
-const selectOption = (id) => {
-  model = id; // Update the model value
-  dropdownOpen.value = false; // Close the dropdown
-};
-</script>
-
 <template>
-  <div class="relative">
-    <!-- Display selected value -->
-    <div
-      v-if="props.enabled"
-	  class="rounded-md border-gray-300 shadow-sm p-2 bg-white cursor-pointer"
-      @click="toggleDropdown"
-    >
-      <span>{{ selectedLabel }}</span>
-      <span class="float-right"> </span>
-    </div>
-
-    <!-- Dropdown options -->
+  <div class="ir-combo-box">
+    <input
+      type="text"
+      v-model="search"
+      @focus="isOpen = true"
+      @blur="handleBlur"
+      @input="filterOptions"
+      class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ir-combo-box-input"
+      placeholder="Select an option"
+    />
     <ul
-      v-if="dropdownOpen"
-      class="absolute left-0 mt-2 rounded-md border border-gray-300 bg-white shadow-lg z-10 max-h-40 overflow-y-auto"
+      v-if="isOpen && filteredOptions.length > 0"
+      class="ir-combo-box-dropdown"
     >
       <li
-        v-for="option in props.options"
+        v-for="(option, index) in filteredOptions"
         :key="option.id"
-        @click="selectOption(option.id)"
-        class="p-2 hover:bg-indigo-100 cursor-pointer"
+        @mousedown="selectOption(option)"
+        class="ir-combo-box-option"
       >
         {{ option.name }}
       </li>
     </ul>
-
-    <!-- Display read-only text if disabled -->
-    <span v-else-if="!props.enabled" class="ir_disabled_input">{{ selectedLabel }}</span>
   </div>
 </template>
+
+<script>
+export default {
+  name: "ComboBox",
+  props: {
+    options: {
+      type: Array,
+      required: true,
+    },
+    modelValue: {
+      type: [String, Number],
+      required: false,
+    },
+  },
+  data() {
+    return {
+      search: "",
+      isOpen: false,
+      filteredOptions: [],
+    };
+  },
+  watch: {
+    options: {
+      immediate: true,
+      handler(newOptions) {
+        this.filteredOptions = newOptions;
+      },
+    },
+    modelValue: {
+      immediate: true,
+      handler(newValue) {
+        const selectedOption = this.options.find(option => option.id === newValue);
+        this.search = selectedOption ? selectedOption.name : "";
+      },
+    },
+  },
+  methods: {
+    filterOptions() {
+      this.filteredOptions = this.options.filter((option) =>
+        option.name.toLowerCase().includes(this.search.toLowerCase())
+      );
+    },
+    selectOption(option) {
+      this.search = option.name;
+      this.isOpen = false;
+      this.$emit("update:modelValue", option.id);
+    },
+    handleBlur() {
+      setTimeout(() => {
+        this.isOpen = false;
+      }, 200);
+    },
+  },
+};
+</script>
+
+
+<style scoped>
+.ir-combo-box {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+}
+
+.ir-combo-box-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.ir-combo-box-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.ir-combo-box-option {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.ir-combo-box-option:hover {
+  background-color: #f0f0f0;
+}
+</style>

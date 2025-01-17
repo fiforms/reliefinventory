@@ -38,6 +38,7 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
 {
     // API route for listing all statuses
     Route::get('/statuses', [StatusController::class, 'index']);
+    Route::get('/people', [PeopleController::class, 'index']);
     Route::get('/menu-data', [MenuController::class, 'index']);
     Route::get('/orders', [OrderController::class, 'index']);
     
