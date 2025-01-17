@@ -1,6 +1,8 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import TextInput from '@/Components/TextInput.vue';
+import ComboBox from '@/Components/ComboBox.vue';
 
 </script>
 <template>
@@ -35,9 +37,32 @@ import { Head } from '@inertiajs/vue3';
 	      <h2 class="ri_dataform_head">Order Details</h2>
 		  <table class="ri_formtable">
 			<tbody>
-		      <tr><th>Order Date:</th><td> {{ selectedOrder.order_date }}</td></tr>
-		      <tr><th>Person:</th><td> {{ selectedOrder.person.first_name }} {{ selectedOrder.person.last_name }}</td></tr>
-		      <tr><th>Status:</th><td> {{ getStatusName(selectedOrder.status_id) }}</td></tr>
+		      <tr>
+				<th>Order Date:</th>
+				<td>
+				  <TextInput
+					    id="orderdate"
+					    type="date"
+					    v-model="selectedOrder.order_date"
+					    required
+					    autofocus
+						:enabled="editing"
+				  /> 
+				</td>
+			  </tr>
+		      <tr>
+				<th>Person:</th>
+				<td> {{ selectedOrder.person.first_name }} {{ selectedOrder.person.last_name }}</td>
+			  </tr>
+		      <tr>
+				<th>Status:</th>
+				<td> 
+					<ComboBox 
+					v-model="selectedOrder.status_id"
+					:options="statuses" 
+					/>
+				</td>
+			  </tr>
 			  <tr>
 				<td colspan="2" class="ri_container_cell">
 		          <h3>Items:</h3>
@@ -66,12 +91,8 @@ export default {
     return {
       orders: [],
       selectedOrder: null,
-      statuses: {
-        1: "Shopping Cart",
-        2: "New Order",
-        3: "Picking In Progress",
-        4: "Completed",
-      },
+	  editing: true,
+      statuses: [],
     };
   },
   methods: {
@@ -85,18 +106,30 @@ export default {
           console.error("Error fetching orders:", error);
         });
     },
+	fetchStatuses() {
+	  axios
+		.get("/json/statuses")
+		.then((response) => {
+		  this.statuses = response.data;
+		})
+		.catch((error) => {
+		  console.error("Error fetching statuses:", error);
+		});
+	},
     calculateTotalItems(itemLedgers) {
       return itemLedgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0);
     },
-    getStatusName(statusId) {
-      return this.statuses[statusId] || "Unknown";
-    },
+	getStatusName(statusId) {
+	  const status = this.statuses.find((status) => status.id === statusId);
+	  return status ? status.name : "Unknown";
+	},
     selectOrder(order) {
       this.selectedOrder = order;
     },
   },
   created() {
     this.fetchOrders();
+	this.fetchStatuses();
   },
 };
 </script>
