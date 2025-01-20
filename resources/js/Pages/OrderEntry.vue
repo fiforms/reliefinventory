@@ -34,7 +34,10 @@ import ComboBox from '@/Components/ComboBox.vue';
 	    </div>
 	
 	    <div v-else class="ri_dataform_container">
-	      <h2 class="ri_dataform_head">Order Details</h2>
+	      <h2 class="ri_dataform_head">
+			<img :src="editing ? '/img/edit-icon.webp' : '/img/edit-padlock-icon.webp'" style="width: 1.5em; float: right; cursor:pointer;" @click="toggleEdit()" />
+			Order Details
+		  </h2>
 		  <table class="ri_formtable">
 			<tbody>
 		      <tr>
@@ -56,6 +59,7 @@ import ComboBox from '@/Components/ComboBox.vue';
 					<ComboBox 
 					v-model="selectedOrder.person_id"
 					:options="people" 
+					:enabled="editing"
 					/>
 				</td>
 			  </tr>
@@ -65,6 +69,7 @@ import ComboBox from '@/Components/ComboBox.vue';
 					<ComboBox 
 					v-model="selectedOrder.status_id"
 					:options="statuses" 
+					:enabled="editing"
 					/>
 				</td>
 			  </tr>
@@ -96,7 +101,7 @@ export default {
     return {
       orders: [],
       selectedOrder: null,
-	  editing: true,
+	  editing: false,
       statuses: [],
 	  people: [],
     };
@@ -142,6 +147,9 @@ export default {
     selectOrder(order) {
       this.selectedOrder = order;
     },
+	toggleEdit() {
+		this.editing = !this.editing;
+	},
   },
   created() {
     this.fetchOrders();

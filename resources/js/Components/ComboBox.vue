@@ -1,6 +1,7 @@
 <template>
   <div class="ir-combo-box">
     <input
+	  v-if="enabled"
       type="text"
       v-model="search"
       @focus="isOpen = true"
@@ -10,7 +11,7 @@
       placeholder="Select an option"
     />
     <ul
-      v-if="isOpen && filteredOptions.length > 0"
+      v-if="enabled && isOpen && filteredOptions.length > 0"
       class="ir-combo-box-dropdown"
     >
       <li
@@ -22,6 +23,7 @@
         {{ option.name }}
       </li>
     </ul>
+	<span v-if="!enabled" class="ir_disabled_input">{{ this.search }}</span>
   </div>
 </template>
 
@@ -33,6 +35,11 @@ export default {
       type: Array,
       required: true,
     },
+	enabled: {
+		type: Boolean,
+		required: false,
+		default: true,
+	},
     modelValue: {
       type: [String, Number],
       required: false,
