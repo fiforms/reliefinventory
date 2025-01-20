@@ -65,9 +65,21 @@ table.ri_datatable tr:hover {
 
 /* Button Styling */
 button.ri_formbutton {
+  background-color: #888888;
+}
+
+button.ri_formbutton:hover {
+  background-color: #0056b3;
+}
+
+
+button.ri_defaultbutton {
+  background-color: #007bff;
+}
+
+button.ri_defaultbutton, button.ri_formbutton {
   display: inline-block;
   padding: 10px 20px;
-  background-color: #007bff;
   color: white;
   border: none;
   border-radius: 5px;
@@ -76,9 +88,6 @@ button.ri_formbutton {
   transition: background-color 0.3s ease;
 }
 
-button.ri_formbutton:hover {
-  background-color: #0056b3;
-}
 
 /* Responsive Design */
 @media (max-width: 768px) {

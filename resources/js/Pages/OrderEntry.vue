@@ -87,7 +87,9 @@ import ComboBox from '@/Components/ComboBox.vue';
 			     </tr>
 			   </tbody>
 		  </table>
-	      <button @click="selectedOrder = null" class="ri_formbutton">Back to Orders</button>
+	      <button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
+		  <button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
+		  <button v-if="!editing" @click="selectedOrder = null" class="ri_defaultbutton">Back to Orders</button>
 	    </div>
 	  </div>
 	</AuthenticatedLayout>
@@ -159,23 +161,7 @@ export default {
 };
 </script>
 
-<style scoped>
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-th, td {
-  padding: 10px;
-  text-align: left;
-}
-th {
-  background-color: #f4f4f4;
-}
-tr:hover {
-  cursor: pointer;
-  background-color: #f0f0f0;
-}
-</style>
+
 
 
 
