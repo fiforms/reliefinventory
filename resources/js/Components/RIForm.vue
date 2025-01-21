@@ -80,31 +80,30 @@ export default {
 	},
 	saveRecord() {
 	  if(this.record && this.record.id) {
-		// Record exists, we should update using POST
-		axios.post(this.datasource, this.record)
-		.then(function (response) {
-		  selectedIndex = this.records.findIndex((r) => {r.id == this.record.id});
-		  if(!selectedIndex) {
-			console.log('There was a problem updated local data');
+		// Record exists, we should update using PUT
+		axios.put(this.datasource + "/" + this.record.id, this.record)
+		.then((response) => {
+		  const selectedIndex = this.records.findIndex((r) => {return r.id == this.record.id});
+		  if(selectedIndex == -1) {
+			console.log('There was a problem updating local data');
 			return 1;
 		  }
-		  this.records[selectedIndex] = JSON.parse(this.JSON.stringify(this.record))
+		  this.records[selectedIndex] = JSON.parse(JSON.stringify(this.record))
 		  this.cancelRecord();
-		  console.log(response);
 		})
-		.catch(function (error) {
+		.catch((error) => {
 		  console.log(error);
 		});
 	  }
 	  else {
-	    // This is a new record, create is using PUT
-		axios.put(this.datasource, this.record)
-		.then(function (response) {
+	    // This is a new record, create is using POST
+		axios.post(this.datasource, this.record)
+		.then((response) => {
 		  this.records.append(JSON.parse(JSON.stringify(this.record)));
 		  this.cancelRecord();
 		  console.log(response);
 		})
-		.catch(function (error) {
+		.catch((error) => {
 		  console.log(error);
 		});
 	  }
