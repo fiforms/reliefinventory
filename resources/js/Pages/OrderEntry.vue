@@ -23,7 +23,7 @@ import ComboBox from '@/Components/ComboBox.vue';
 	          </tr>
 	        </thead>
 	        <tbody>
-	          <tr v-for="order in orders" :key="order.id" @click="selectOrder(order)">
+	          <tr v-for="(order, index) in orders" :key="order.id" @click="selectOrder(index)">
 	            <td>{{ order.order_date }}</td>
 	            <td>{{ order.person.first_name }} {{ order.person.last_name }}</td>
 	            <td>{{ calculateTotalItems(order.item_ledgers) }}</td>
@@ -89,7 +89,7 @@ import ComboBox from '@/Components/ComboBox.vue';
 		  </table>
 	      <button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
 		  <button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
-		  <button v-if="!editing" @click="selectedOrder = null" class="ri_defaultbutton">Back to Orders</button>
+		  <button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to Orders</button>
 	    </div>
 	  </div>
 	</AuthenticatedLayout>
@@ -103,6 +103,7 @@ export default {
     return {
       orders: [],
       selectedOrder: null,
+	  selectedIndex: null,
 	  editing: false,
       statuses: [],
 	  people: [],
@@ -146,9 +147,40 @@ export default {
 	  const status = this.statuses.find((status) => status.id === statusId);
 	  return status ? status.name : "Unknown";
 	},
-    selectOrder(order) {
-      this.selectedOrder = order;
+    selectOrder(orderIndex) {
+      this.selectedOrder = { ...this.orders[orderIndex] };
+	  this.selectedIndex = orderIndex;
     },
+	cancelRecord() {
+	  this.selectedOrder = null;
+	  this.selectedIndex = null;
+	},
+	saveRecord() {
+	  if(this.selectedIndex) {
+		// Record exists, we should update using POST
+		axios.post("/json/orders", this.selectedOrder)
+		.then(function (response) {
+		  this.orders[this.selectedIndex] = { ...this.selectedOrder }
+		  this.cancelRecord();
+		  console.log(response);
+		})
+		.catch(function (error) {
+		  console.log(error);
+		});
+	  }
+	  else {
+	    // This is a new record, create is using PUT
+		axios.put("/json/orders", this.selectedOrder)
+		.then(function (response) {
+		  this.orders.append(this.selectedOrder);
+		  this.cancelRecord();
+		  console.log(response);
+		})
+		.catch(function (error) {
+		  console.log(error);
+		});
+	  }
+	},
 	toggleEdit() {
 		this.editing = !this.editing;
 	},
