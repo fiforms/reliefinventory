@@ -31,10 +31,6 @@
 export default {
   name: "ComboBox",
   props: {
-    options: {
-      type: Array,
-      required: true,
-    },
 	enabled: {
 		type: Boolean,
 		required: false,
@@ -44,12 +40,17 @@ export default {
       type: [String, Number],
       required: false,
     },
+	optionsource: {
+	  type: String,
+	  required: true,	
+	}
   },
   data() {
     return {
       search: "",
       isOpen: false,
       filteredOptions: [],
+	  options: [],
     };
   },
   watch: {
@@ -57,6 +58,7 @@ export default {
       immediate: true,
       handler(newOptions) {
         this.filteredOptions = newOptions;
+		this.showOptionTitle();
       },
     },
     modelValue: {
@@ -68,7 +70,17 @@ export default {
     },
   },
   methods: {
-    filterOptions() {
+	fetchOptions() {
+	  axios
+		.get(this.optionsource)
+		.then((response) => {
+		  this.options = response.data;
+		})
+		.catch((error) => {
+		  console.error("Error fetching options:", error);
+		});
+	},
+	filterOptions() {
       this.filteredOptions = this.options.filter((option) =>
         option.name.toLowerCase().includes(this.search.toLowerCase())
       );
@@ -78,12 +90,19 @@ export default {
       this.isOpen = false;
       this.$emit("update:modelValue", option.id);
     },
+	showOptionTitle() {
+		const selectedOption = this.options.find(option => option.id === this.modelValue);
+		this.search = selectedOption ? selectedOption.name : "";
+	},
     handleBlur() {
       setTimeout(() => {
         this.isOpen = false;
       }, 200);
     },
   },
+  created() {
+    this.fetchOptions();
+  }
 };
 </script>
 

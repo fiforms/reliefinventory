@@ -32,7 +32,7 @@ import RIForm from '@/Components/RIForm.vue';
 		  <td> 
 		  	<ComboBox 
 		  	v-model="selectedOrder.person_id"
-		  	:options="people" 
+			optionsource="/json/statuses"
 		  	:enabled="editing"
 		  	/>
 		  </td>
@@ -42,7 +42,7 @@ import RIForm from '@/Components/RIForm.vue';
 		  <td> 
 		  	<ComboBox 
 		  	v-model="selectedOrder.status_id"
-		  	:options="statuses" 
+			optionsource="/json/people"
 		  	:enabled="editing"
 		  	/>
 		  </td>
@@ -73,8 +73,6 @@ export default {
     return {
       selectedOrder: null,
 	  editing: false,
-      statuses: [],
-	  people: [],
 	  tabularfields: [
 	    {
 			title: 'Order Date',
@@ -102,30 +100,8 @@ export default {
     };
   },
   methods: {
-	fetchStatuses() {
-	  axios
-		.get("/json/statuses")
-		.then((response) => {
-		  this.statuses = response.data;
-		})
-		.catch((error) => {
-		  console.error("Error fetching statuses:", error);
-		});
-	},
-	fetchPeople() {
-	  axios
-		.get("/json/people")
-		.then((response) => {
-		  this.people = response.data;
-		})
-		.catch((error) => {
-		  console.error("Error fetching statuses:", error);
-		});
-	},
   },
   created() {
-	this.fetchStatuses();
-	this.fetchPeople();
   },
 };
 </script>
