@@ -34,6 +34,6 @@ class PeopleController extends Controller
                 ];
         });
             
-            return response()->json($people);
+            return response()->json(['records' => $people]);
     }
 }

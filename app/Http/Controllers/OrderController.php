@@ -49,6 +49,7 @@ class OrderController extends Controller
                    'item_ledgers' => [
                         'item_id' => null,
                         'qty_subtracted' => null,
+                        'item' => ['description' => null],
                    ]
                 ]
               ]);

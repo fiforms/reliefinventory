@@ -7,6 +7,7 @@
 	        <tr>
 	          <slot name="thead"></slot>
 	          <th v-if="enabled" style="width: 3em;">&nbsp;</th> <!-- Needed above the edit icon --> 
+			  <th v-if="enabled" style="width: 3em;">&nbsp;</th> <!-- Needed above the delete icon --> 
 	        </tr>
 	      </thead>
 	      <tbody>
@@ -15,6 +16,9 @@
 			  <slot v-else :record="record" :index="index"></slot>
 			  <td v-if="enabled">
 			    <img :src="index == currentEdit ? '/img/edit-icon.webp' : '/img/edit-padlock-icon.webp'" style="width: 1em; cursor:pointer;" @click="toggleEdit(index)" />
+			  </td>
+			  <td v-if="enabled">
+			  	<img v-if="index == currentEdit" src="/img/delete-icon.webp" style="width: 1em; cursor:pointer;" @click="deleteLine()" />
 			  </td>
 	        </tr>
 	      </tbody>
@@ -70,7 +74,11 @@ export default {
 		const newRecord = JSON.parse(JSON.stringify(this.template));
 		this.records.push(newRecord);
 		this.currentEdit = this.records.length - 1;
-	}
+	},
+	deleteLine() {
+		this.records.splice(this.currentEdit,1);
+		this.currentEdit = null;
+	},
   }
 }
 

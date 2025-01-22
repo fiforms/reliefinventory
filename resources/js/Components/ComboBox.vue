@@ -74,7 +74,7 @@ export default {
 	  axios
 		.get(this.optionsource)
 		.then((response) => {
-		  this.options = response.data;
+		  this.options = response.data.records;
 		})
 		.catch((error) => {
 		  console.error("Error fetching options:", error);

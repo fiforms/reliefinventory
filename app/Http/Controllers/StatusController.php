@@ -15,7 +15,7 @@ class StatusController extends Controller
     public function index(): JsonResponse
     {
         $statuses = Status::all(); // Fetch all statuses
-        return response()->json($statuses, 200);
+        return response()->json(['records' => $statuses]);
     }
 }
 

@@ -40,6 +40,7 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::get('/statuses', [StatusController::class, 'index']);
     Route::get('/people', [PeopleController::class, 'index']);
     Route::get('/menu-data', [MenuController::class, 'index']);
+    Route::get('/items', [ItemController::class, 'index']);
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store'])->name('orders.store');
     Route::put('/orders/{id}', [OrderController::class, 'update'])->name('orders.update');
