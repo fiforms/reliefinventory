@@ -4,6 +4,7 @@ import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
+import RISubform from '@/Components/RISubform.vue';
 
 </script>
 <template>
@@ -49,16 +50,25 @@ import RIForm from '@/Components/RIForm.vue';
 		  </tr>
 		  <tr>
 		  <td colspan="2" class="ri_container_cell">
-		      <h3>Items:</h3>
-		        <table class="ri_subtable">
-		  		<tbody>
-		            <tr v-for="ledger in selectedOrder.item_ledgers" :key="ledger.id" class="ri_subtable_row">
-		              <td>{{ ledger.item.description }}</td><td>Quantity: {{ ledger.qty_subtracted }}</td>
-		       	      </tr >
-		     	    </tbody>
-		  	  </table>
-		     </td>
-		     </tr>
+			<RISubform 
+					title="Order Lines" 
+					:tabularfields="lineitemfields" 
+					v-model:records="selectedOrder.item_ledgers" 
+					v-slot="line"
+					:enabled="editing">
+				<ComboBox 
+					v-model="line.record.item_id"
+					optionsource="/json/items"
+					:enabled="true"
+					/>
+				<TextInput
+				    id="qty"
+				    v-model="line.record.qty_subtracted"
+					:enabled="true"
+				    /> 
+			</RISubform>
+ 	      </td>
+		 </tr>
 		</tbody>
 	  </table>
 	</RIForm>
@@ -95,6 +105,18 @@ export default {
 				return record.status.name;
 			},
 		},
+	  ],
+	  lineitemfields: [
+	      {
+			  title: "Description",
+			      calculation: (record) => {
+				      return record.item.description;
+			  },
+		  },
+		  {
+			  title: "Qty",
+			  name: "qty_subtracted",
+		  }
 	  ],
     };
   },
