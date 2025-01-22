@@ -1,3 +1,7 @@
+<!-- OrderEntry.vue -->
+
+<!-- This can be used as a prototype for additional vue components -->
+
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
