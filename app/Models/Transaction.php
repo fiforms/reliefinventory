@@ -16,10 +16,11 @@ class Transaction extends Model
     protected $fillable = [
         'id', 
         'type',
-        'person_id', // Foreign key linking to users
-        'status_id', // Status ID associated with the order-donation relation
+        'user_id',    // Foreign key linking to users
+        'person_id',  // Foreign key linking to people
+        'status_id',  // Status ID associated with the order-donation relation
         'order_date', // Date of the transaction
-        'comments', // Additional notes
+        'comments',   // Additional notes
     ];
     
     

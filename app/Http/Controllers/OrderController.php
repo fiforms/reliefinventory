@@ -4,9 +4,24 @@ namespace App\Http\Controllers;
 
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class OrderController extends Controller
 {
+    
+    private const validation = [
+        'type' => 'required|in:order',
+        'user_id' => 'required|exists:users,id',
+        'person_id' => 'nullable|exists:people,id',
+        'status_id' => 'required|exists:statuses,id',
+        'order_date' => 'required|date',
+        'comments' => 'nullable|string',
+        'item_ledgers' => 'nullable|array',
+        'item_ledgers.*.item_id' => 'required_with:item_ledgers|exists:items,id',
+        'item_ledgers.*.qty_added' => 'nullable|integer',
+        'item_ledgers.*.qty_subtracted' => 'nullable|integer',
+    ];
+    
     /**
      * Retrieve all orders with donations and their respective item ledger lines.
      *
@@ -23,6 +38,23 @@ class OrderController extends Controller
     }
     
     /**
+     * Retrieve a blank record datastructure
+     */
+    public function new()
+    {
+        $record = [
+                'type' => 'order',
+                'user_id' => Auth::id(),
+                'person_id' => null,
+                'status_id' => null,
+                'order_date' => date('Y-m-d'),
+                'comments' => null,
+                'item_ledgers' => []
+        ];
+        return response()->json($record);
+    }
+    
+    /**
      * Store a new order.
      *
      * @param \Illuminate\Http\Request $request
@@ -30,19 +62,7 @@ class OrderController extends Controller
      */
     public function store(Request $request)
     {
-        $data = $request->validate([
-            'type' => 'required|in:order,donation',
-            'person_id' => 'nullable|exists:people,id',
-            'status_id' => 'required|exists:statuses,id',
-            'user_id' => 'required|exists:users,id',
-            'order_date' => 'required|date',
-            'comments' => 'nullable|string',
-            'item_ledgers' => 'nullable|array',
-            'item_ledgers.*.item_id' => 'required_with:item_ledgers|exists:items,id',
-            'item_ledgers.*.qty_added' => 'nullable|integer',
-            'item_ledgers.*.qty_subtracted' => 'nullable|integer',
-        ]);
-        
+        $data = $request->validate(self::validation);
         $order = Transaction::create($data);
         
         // Handle related item_ledgers
@@ -54,7 +74,6 @@ class OrderController extends Controller
         
         return response()->json([
             'message' => 'Order created successfully.',
-            'order' => $order->load('itemLedgers'),
         ], 201);
     }
     
@@ -69,19 +88,7 @@ class OrderController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $data = $request->validate([
-            'type' => 'required|in:order,donation',
-            'person_id' => 'nullable|exists:people,id',
-            'status_id' => 'required|exists:statuses,id',
-            'user_id' => 'required|exists:users,id',
-            'order_date' => 'required|date',
-            'comments' => 'nullable|string',
-            'item_ledgers' => 'nullable|array',
-            'item_ledgers.*.id' => 'nullable|exists:item_ledgers,id',
-            'item_ledgers.*.item_id' => 'required_with:item_ledgers|exists:items,id',
-            'item_ledgers.*.qty_added' => 'nullable|integer',
-            'item_ledgers.*.qty_subtracted' => 'nullable|integer',
-        ]);
+        $data = $request->validate(self::validation);
         
         $order = Transaction::findOrFail($id);
         $order->update($data);
@@ -119,7 +126,6 @@ class OrderController extends Controller
         
         return response()->json([
             'message' => 'Order updated successfully.',
-            'order' => $order->load('itemLedgers'),
         ], 200);
     }
 }

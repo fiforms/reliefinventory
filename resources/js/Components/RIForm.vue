@@ -14,6 +14,7 @@
 	        </tr>
 	      </tbody>
 	    </table>
+		<button @click="newRecord()" class="ri_defaultbutton">New Record</button>
 	  </div>
 	  <div v-else class="ri_dataform_container">
 	    <h2 class="ri_dataform_head">
@@ -73,20 +74,21 @@ export default {
 			console.log('There was a problem updating local data');
 			return 1;
 		  }
-		  this.records[selectedIndex] = JSON.parse(JSON.stringify(this.record))
+		  this.records = [];
 		  this.cancelRecord();
+		  this.fetchRecords();
 		})
 		.catch((error) => {
 		  console.log(error);
 		});
 	  }
 	  else {
-	    // This is a new record, create is using POST
+	    // This is a new record, create it using POST
 		axios.post(this.datasource, this.record)
 		.then((response) => {
-		  this.records.append(JSON.parse(JSON.stringify(this.record)));
+		  this.records = [];
 		  this.cancelRecord();
-		  console.log(response);
+		  this.fetchRecords();
 		})
 		.catch((error) => {
 		  console.log(error);
@@ -100,6 +102,16 @@ export default {
 	toggleEdit() {
 		this.editing = !this.editing;
 	},
+	newRecord() {
+		axios.get(this.datasource + '/new')
+		  .then(response => {
+		    this.record = response.data;
+		    this.editing = true;
+		  })
+		  .catch(error => {
+		    console.error('Error fetching blank record:', error);
+		  });
+	}
   },
   created() {
     this.fetchRecords();

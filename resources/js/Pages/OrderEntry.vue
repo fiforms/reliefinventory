@@ -23,7 +23,8 @@ import RISubform from '@/Components/RISubform.vue';
 		</template>
 		<template #tbody="{ record, index }"> 
 			<td>{{ record.order_date }}</td>
-			<td>{{ record.person.first_name }} {{ record.person.last_name }}</td>
+			<td v-if="record.person">{{ record.person.first_name }} {{ record.person.last_name }}</td>
+			<td v-else> () </td>
 			<td>{{ record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0) }}</td>
 			<td>{{ record.status.name }}</td>
 		</template>
@@ -88,6 +89,7 @@ import RISubform from '@/Components/RISubform.vue';
 				  <td>
 					<TextInput
 					    id="qty"
+						type="number"
 					    v-model="record.qty_subtracted"
 						:enabled="true"
 					    /> 
