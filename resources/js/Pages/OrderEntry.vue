@@ -28,7 +28,7 @@ import RISubform from '@/Components/RISubform.vue';
 			<td>{{ record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0) }}</td>
 			<td>{{ record.status.name }}</td>
 		</template>
-		<template #default="{ record, editing }">
+		<template #default="{ record, editing, templates }">
 		<table class="ri_formtable">
 		<tbody>
 		    <tr>
@@ -68,7 +68,8 @@ import RISubform from '@/Components/RISubform.vue';
 		  <td colspan="2" class="ri_container_cell">
 			<RISubform 
 					title="Order Lines"  
-					v-model:records="record.item_ledgers" 
+					v-model:records="record.item_ledgers"
+					:template="templates.item_ledgers" 
 					:enabled="editing">
 				<template #thead>
 					<th>Description</th>

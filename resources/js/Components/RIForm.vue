@@ -21,7 +21,7 @@
 	  	  <img :src="editing ? '/img/edit-icon.webp' : '/img/edit-padlock-icon.webp'" style="width: 1.5em; float: right; cursor:pointer;" @click="toggleEdit()" />
 	  	  {{ title }} - Details
 	    </h2>
-		<slot :editing="editing" :record="record"></slot>
+		<slot :editing="editing" :record="record" :templates="templates"></slot>
 		<button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
 		<button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
 		<button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to Orders</button>
@@ -46,6 +46,7 @@ export default {
   data() {
     return {
       records: [],
+	  templates: [],
 	  record: null,
 	  editing: false,
     };
@@ -55,7 +56,8 @@ export default {
       axios
         .get(this.datasource)
         .then((response) => {
-          this.records = response.data;
+          this.records = response.data.records;
+		  this.templates = response.data.templates;
         })
         .catch((error) => {
           console.error("Error fetching records:", error);
@@ -103,14 +105,8 @@ export default {
 		this.editing = !this.editing;
 	},
 	newRecord() {
-		axios.get(this.datasource + '/new')
-		  .then(response => {
-		    this.record = response.data;
-		    this.editing = true;
-		  })
-		  .catch(error => {
-		    console.error('Error fetching blank record:', error);
-		  });
+		this.record = JSON.parse(JSON.stringify(this.templates['_default']));
+	    this.editing = true;
 	}
   },
   created() {

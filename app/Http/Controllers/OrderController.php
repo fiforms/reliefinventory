@@ -34,7 +34,24 @@ class OrderController extends Controller
         ->with(['itemLedgers.item.category','person','status'])
         ->get();
             
-            return response()->json($orders);
+            return response()->json([
+                'records' => $orders,
+                'templates' => [
+                    '_default' => [
+                        'type' => 'order',
+                        'user_id' => Auth::id(),
+                        'person_id' => null,
+                        'status_id' => null,
+                        'order_date' => date('Y-m-d'),
+                        'comments' => null,
+                        'item_ledgers' => [],
+                   ],
+                   'item_ledgers' => [
+                        'item_id' => null,
+                        'qty_subtracted' => null,
+                   ]
+                ]
+              ]);
     }
     
     /**
@@ -42,7 +59,7 @@ class OrderController extends Controller
      */
     public function new()
     {
-        $record = [
+        $templates = [
                 'type' => 'order',
                 'user_id' => Auth::id(),
                 'person_id' => null,

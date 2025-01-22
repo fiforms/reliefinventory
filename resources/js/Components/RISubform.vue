@@ -19,6 +19,7 @@
 	        </tr>
 	      </tbody>
 	    </table>
+		<button v-if="enabled" @click="newLine()" class="ri_defaultbutton">New Line</button>
 	  </div>
 	</div>
 </template>
@@ -34,6 +35,10 @@ export default {
 	  records: {
 	    type: Array,
 	    required: true,
+	  },
+	  template: {
+		type: Object,
+		required: false,
 	  },
 	  enabled: {
 	    type: Boolean,
@@ -60,7 +65,12 @@ export default {
       else {
         this.currentEdit = recordIndex;
       }
-    }
+    },
+	newLine() {
+		const newRecord = JSON.parse(JSON.stringify(this.template));
+		this.records.push(newRecord);
+		this.currentEdit = this.records.length - 1;
+	}
   }
 }
 
