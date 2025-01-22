@@ -41,9 +41,13 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::get('/people', [PeopleController::class, 'index']);
     Route::get('/menu-data', [MenuController::class, 'index']);
     Route::get('/items', [ItemController::class, 'index']);
+    
+    // Orders
     Route::get('/orders', [OrderController::class, 'index']);
-    Route::post('/orders', [OrderController::class, 'store'])->name('orders.store');
-    Route::put('/orders/{id}', [OrderController::class, 'update'])->name('orders.update');
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::put('/orders/{id}', [OrderController::class, 'update']);
+    Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
+    
 });
 
 

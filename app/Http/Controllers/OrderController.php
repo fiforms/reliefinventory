@@ -146,5 +146,22 @@ class OrderController extends Controller
             'message' => 'Order updated successfully.',
         ], 200);
     }
+    
+    public function destroy($id)
+    {
+        try {
+            $order = Transaction::findOrFail($id);
+            $order->delete();
+            
+            return response()->json([
+                'success' => true,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error deleting order item: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }
     

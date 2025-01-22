@@ -24,6 +24,7 @@
 		<slot :editing="editing" :record="record" :templates="templates"></slot>
 		<button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
 		<button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
+		<button v-if="editing" @click="deleteRecord()" class="ri_formbutton" style="float: right">Delete</button>
 		<button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to Orders</button>
 	  </div>
     </div>
@@ -71,11 +72,6 @@ export default {
 		// Record exists, we should update using PUT
 		axios.put(this.datasource + "/" + this.record.id, this.record)
 		.then((response) => {
-		  const selectedIndex = this.records.findIndex((r) => {return r.id == this.record.id});
-		  if(selectedIndex == -1) {
-			console.log('There was a problem updating local data');
-			return 1;
-		  }
 		  this.records = [];
 		  this.cancelRecord();
 		  this.fetchRecords();
@@ -96,6 +92,17 @@ export default {
 		  console.log(error);
 		});
 	  }
+	},
+	deleteRecord() {
+		axios.delete(this.datasource + "/" + this.record.id)
+		.then((response) => {
+			this.records = [];
+			this.cancelRecord();
+			this.fetchRecords();
+		})
+		.catch((error) => {
+		  console.log(error);
+		});
 	},
 	cancelRecord() {
 		this.editing = false;
