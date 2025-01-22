@@ -5,19 +5,14 @@
 	    <table border="1" class="ri_datatable">
 	      <thead>
 	        <tr>
-	          <th v-for="field in tabularfields"> {{ field.title }}</th>
+	          <slot name="thead"></slot>
 	          <th v-if="enabled" style="width: 3em;">&nbsp;</th> <!-- Needed above the edit icon --> 
 	        </tr>
 	      </thead>
 	      <tbody>
 	        <tr v-for="(record, index) in records" :key="record.id">
-	          <td v-if="index != currentEdit" v-for="field in tabularfields">
-				<span v-if="field.calculation"> {{ field.calculation(record) }} </span>
-				<span v-else > {{ record[field.name] }}  </span> 
-			  </td>
-			  <td v-else :colspan="tabularfields.length">
-			    <slot :record="record"></slot>
-			  </td>
+			  <slot v-if="index != currentEdit" name="tbody" :record="record" :index="index"></slot>
+			  <slot v-else :record="record" :index="index"></slot>
 			  <td v-if="enabled">
 			    <img :src="index == currentEdit ? '/img/edit-icon.webp' : '/img/edit-padlock-icon.webp'" style="width: 1em; cursor:pointer;" @click="toggleEdit(index)" />
 			  </td>
@@ -32,10 +27,6 @@
 
 export default {
   props: {
-	  tabularfields: {
-	    type: Array,
-	    required: true,
-	  },
 	  title: {
 	    type: String,
 	    required: true,

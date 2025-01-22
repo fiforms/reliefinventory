@@ -12,7 +12,22 @@ import RISubform from '@/Components/RISubform.vue';
   <AuthenticatedLayout>
 	<template #header>
 	</template>
-	<RIForm title="Daniel's Test Form" :tabularfields="tabularfields" datasource="/json/orders" v-model:record="selectedOrder" v-model:editing="editing">
+	<RIForm 
+	  title="Daniel's Test Form" 
+	  datasource="/json/orders">
+	    <template #thead>
+			<th>Order Date</th>
+			<th>Customer</th>
+			<th>Total Items</th>
+			<th>Status</th>
+		</template>
+		<template #tbody="{ record, index }"> 
+			<td>{{ record.order_date }}</td>
+			<td>{{ record.person.first_name }} {{ record.person.last_name }}</td>
+			<td>{{ record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0) }}</td>
+			<td>{{ record.status.name }}</td>
+		</template>
+		<template #default="{ record, editing }">
 		<table class="ri_formtable">
 		<tbody>
 		    <tr>
@@ -21,7 +36,7 @@ import RISubform from '@/Components/RISubform.vue';
 			  <TextInput
 				    id="orderdate"
 				    type="date"
-				    v-model="selectedOrder.order_date"
+				    v-model="record.order_date"
 				    required
 				    autofocus
 					:enabled="editing"
@@ -32,8 +47,8 @@ import RISubform from '@/Components/RISubform.vue';
 		  <th>Person:</th>
 		  <td> 
 		  	<ComboBox 
-		  	v-model="selectedOrder.person_id"
-			optionsource="/json/statuses"
+		  	v-model="record.person_id"
+			optionsource="/json/people"
 		  	:enabled="editing"
 		  	/>
 		  </td>
@@ -42,8 +57,8 @@ import RISubform from '@/Components/RISubform.vue';
 		  <th>Status:</th>
 		  <td> 
 		  	<ComboBox 
-		  	v-model="selectedOrder.status_id"
-			optionsource="/json/people"
+		  	v-model="record.status_id"
+			optionsource="/json/statuses"
 		  	:enabled="editing"
 		  	/>
 		  </td>
@@ -51,26 +66,39 @@ import RISubform from '@/Components/RISubform.vue';
 		  <tr>
 		  <td colspan="2" class="ri_container_cell">
 			<RISubform 
-					title="Order Lines" 
-					:tabularfields="lineitemfields" 
-					v-model:records="selectedOrder.item_ledgers" 
-					v-slot="line"
+					title="Order Lines"  
+					v-model:records="record.item_ledgers" 
 					:enabled="editing">
-				<ComboBox 
-					v-model="line.record.item_id"
-					optionsource="/json/items"
-					:enabled="true"
-					/>
-				<TextInput
-				    id="qty"
-				    v-model="line.record.qty_subtracted"
-					:enabled="true"
-				    /> 
+				<template #thead>
+					<th>Description</th>
+					<th>Quantity</th>
+				</template>
+				<template #tbody="{ record, index }">
+					<td>{{ record.item.description }}</td>
+					<td>{{ record.qty_subtracted }}</td>
+				</template>
+				<template #default="{ record, index }">
+				  <td>
+					<ComboBox 
+						v-model="record.item_id"
+						optionsource="/json/items"
+						:enabled="true"
+						/>
+				  </td>
+				  <td>
+					<TextInput
+					    id="qty"
+					    v-model="record.qty_subtracted"
+						:enabled="true"
+					    /> 
+				  </td>
+				</template>
 			</RISubform>
  	      </td>
 		 </tr>
 		</tbody>
 	  </table>
+	  </template>
 	</RIForm>
 	</AuthenticatedLayout>
 </template>
@@ -80,44 +108,6 @@ import RISubform from '@/Components/RISubform.vue';
 export default {
   data() {
     return {
-      selectedOrder: null,
-	  editing: false,
-	  tabularfields: [
-	    {
-			title: 'Order Date',
-	  		name: 'order_date',
-	    },
-	    {
-			title: 'Customer',
-			calculation: (record) => {
-				return record.person.first_name + " " + record.person.last_name;
-			},
-	    },
-		{
-			title: 'Total Items',
-			calculation: (record) => {
-				return record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0);
-			},
-		},
-		{
-			title: 'Status',
-			calculation: (record) => {
-				return record.status.name;
-			},
-		},
-	  ],
-	  lineitemfields: [
-	      {
-			  title: "Description",
-			      calculation: (record) => {
-				      return record.item.description;
-			  },
-		  },
-		  {
-			  title: "Qty",
-			  name: "qty_subtracted",
-		  }
-	  ],
     };
   },
 };

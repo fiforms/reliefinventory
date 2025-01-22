@@ -4,17 +4,13 @@
 	    <h2 class="ri_datatable_head">{{ title }}</h2>
 	    <table border="1" class="ri_datatable">
 	      <thead>
-	        <tr>
-	          <th v-for="field in tabularfields"> {{ field.title }}</th>
-	        </tr>
+			<tr>
+	          <slot name="thead"></slot>
+			</tr>
 	      </thead>
 	      <tbody>
 	        <tr v-for="(record, index) in records" :key="record.id" @click="selectRecord(index)">
-	          <td v-for="field in tabularfields">
-				<span v-if="field.calculation"> {{ field.calculation(record) }} </span>
-				<span v-else > {{ record[field.name] }}  </span> 
-				
-			  </td>
+			  <slot name="tbody" :record="record" :index="index"></slot>
 	        </tr>
 	      </tbody>
 	    </table>
@@ -24,7 +20,7 @@
 	  	  <img :src="editing ? '/img/edit-icon.webp' : '/img/edit-padlock-icon.webp'" style="width: 1.5em; float: right; cursor:pointer;" @click="toggleEdit()" />
 	  	  {{ title }} - Details
 	    </h2>
-		<slot></slot>
+		<slot :editing="editing" :record="record"></slot>
 		<button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
 		<button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
 		<button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to Orders</button>
@@ -37,10 +33,6 @@ import axios from "axios";
 
 export default {
   props: {
-	  tabularfields: {
-	    type: Array,
-	    required: true,
-	  },
 	  title: {
 	    type: String,
 	    required: true,
@@ -49,18 +41,12 @@ export default {
 	    type: String,
 	    required: true,
 	  },
-	  record: {
-	    type: [Object, null],
-	    required: true, // Ensure that the parent must provide this prop
-	  },
-	  editing: {
-		type: Boolean,
-		required: true,
-	  },
   },
   data() {
     return {
       records: [],
+	  record: null,
+	  editing: false,
     };
   },
   methods: {
@@ -75,8 +61,7 @@ export default {
         });
     },
 	selectRecord(recordIndex) {
-		const selectedRecord = JSON.parse(JSON.stringify(this.records[recordIndex]));
-		this.$emit("update:record", selectedRecord);
+		this.record = JSON.parse(JSON.stringify(this.records[recordIndex]));
 	},
 	saveRecord() {
 	  if(this.record && this.record.id) {
@@ -109,13 +94,11 @@ export default {
 	  }
 	},
 	cancelRecord() {
-		if(this.editing) {
-			this.$emit("update:editing", false);
-		}
-		this.$emit("update:record", null); // Reset the model in the parent
+		this.editing = false;
+		this.record = null; // Reset the model in the parent
 	},
 	toggleEdit() {
-		this.$emit("update:editing", !this.editing);
+		this.editing = !this.editing;
 	},
   },
   created() {
