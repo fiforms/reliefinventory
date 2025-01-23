@@ -1,3 +1,19 @@
+<!-- ComboBox Vue Componen -->
+
+<!-- 
+	This component accepts a double v-model binding:
+	  keyValue: updates the primary key in the parent datastructure.
+	  updates: copies the selected record object into the parent datastructure
+	  so that all linked properties can be updated in real time based on the selected object
+	  
+	Object data is loaded from the JSON url specified in the optionsource attribute
+	
+	This implementation expects the primary key of the options list to be "id"
+	It also expects a field	called "name" to populate the visible options and to be searchable
+	
+	This behavior may be modified in future versions  
+ -->
+
 <template>
   <div class="ri_formcontrol">
 	  <div class="ir-combo-box">

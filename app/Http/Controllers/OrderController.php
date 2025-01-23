@@ -54,24 +54,7 @@ class OrderController extends Controller
                 ]
               ]);
     }
-    
-    /**
-     * Retrieve a blank record datastructure
-     */
-    public function new()
-    {
-        $templates = [
-                'type' => 'order',
-                'user_id' => Auth::id(),
-                'person_id' => null,
-                'status_id' => null,
-                'order_date' => date('Y-m-d'),
-                'comments' => null,
-                'item_ledgers' => []
-        ];
-        return response()->json($record);
-    }
-    
+     
     /**
      * Store a new order.
      *

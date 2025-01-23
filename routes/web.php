@@ -40,7 +40,12 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::get('/statuses', [StatusController::class, 'index']);
     Route::get('/people', [PeopleController::class, 'index']);
     Route::get('/menu-data', [MenuController::class, 'index']);
+    
+    // Items
     Route::get('/items', [ItemController::class, 'index']);
+    Route::post('/items', [ItemController::class, 'store']);
+    Route::put('/items/{id}', [ItemController::class, 'update']);
+    Route::delete('/items/{id}', [ItemController::class, 'destroy']);
     
     // Orders
     Route::get('/orders', [OrderController::class, 'index']);
