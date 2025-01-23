@@ -28,13 +28,14 @@ defineExpose({ focus: () => input.value.focus() });
 </script>
 
 <template>
+  <div class="ri_formcontrol">
     <input
 	    v-if="enabled"
-        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500"
+        class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ri_forminput"
         v-model="model"
         ref="input"
 		:type="type"
     />
 	<span v-else class="ir_disabled_input">{{ model }}</span>
-
+  </div>
 </template>

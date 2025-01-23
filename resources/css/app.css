@@ -20,6 +20,11 @@
   background-color: white;
   border-radius: 8px;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1rem;
+  box-sizing: border-box;
 }
 
 /* Headings */
@@ -37,19 +42,19 @@ table.ri_datatable, table.ri_formtable {
   margin: 15px 0;
 }
 
-table.ri_datatable th, table.ri_formtable th,
-table.ri_datatable td, table.ri_formtable td {
+table.ri_datatable th, table.ri_datatable td {
   padding: 10px 15px;
   text-align: left;
 }
 
-table.ri_datatable th, table.ri_formtable th {
-  background-color: #f4f4f4;
+table.ri_datatable th {
+  background-color: #aaaaaa;
+  color: #ffffff;
   font-weight: bold;
   border-bottom: 2px solid #ddd;
 }
 
-table.ri_datatable td, table.ri_formtable td  {
+table.ri_datatable td  {
   border-bottom: 1px solid #ddd;
 }
 
@@ -88,20 +93,124 @@ button.ri_defaultbutton, button.ri_formbutton {
   transition: background-color 0.3s ease;
 }
 
+.ri_formtable {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.ri_fieldset {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.ri_fieldlabel {
+    flex: 0 0 200px; /* Set a fixed width for the label on larger screens */
+    text-align: right;
+    padding-right: 1rem;
+    box-sizing: border-box;
+    font-weight: bold;
+    font-size: 13pt;
+}
+
+.ri_formcontrol {
+    flex: 1;
+    min-width: 0; /* Ensure the input doesn't shrink below its minimum width */
+}
+
+input.ri_forminput {
+    width: 100%;
+    max-width: 100%;
+    padding: 0.5rem;
+    box-sizing: border-box;
+    border: 1px solid #ccc;
+    border-radius: 0.25rem;
+}
+
+.ir-combo-box {
+  position: relative;
+}
+
+.ir-combo-box-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.ir-combo-box-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background-color: white;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  max-height: 150px;
+  overflow-y: auto;
+  z-index: 1000;
+}
+
+.ir-combo-box-option {
+  padding: 8px;
+  cursor: pointer;
+}
+
+.ir-combo-box-option:hover {
+  background-color: #f0f0f0;
+}
+
+.ri_subtable_container {
+	border-style: solid;
+	border-width: 2px;
+	border-color: #888888;
+	padding-top: 0px;
+	padding-bottom: 6px;
+	margin-bottom: 12px;
+}
+
+.ri_subtable_container .ri_datatable {
+	margin: 0;
+}
+
+.ri_datasubtable_head {
+	background-color: #888888;
+	color: #ffffff;
+	font-weight: bold;
+	font-size: 14pt;
+	text-align: center;
+	padding: 3px;
+	margin-bottom: 0px;
+	
+}
 
 /* Responsive Design */
 @media (max-width: 768px) {
-  .ri_form_container {
-    padding: 15px;
-  }
+	  .ri_form_container {
+	    padding: 15px;
+	  }
+	
+	  table.ri_datatable th, table.ri_formtable th,
+	  table.ri_datatable td, table.ri_formtable td {
+	    padding: 8px 10px;
+	  }
+	
+	  button.ri_formbutton {
+	    font-size: 0.9rem;
+	    padding: 8px 15px;
+	  }
+  
+      .ri_fieldset {
+        flex-direction: column;
+        align-items: flex-start;
+      }
 
-  table.ri_datatable th, table.ri_formtable th,
-  table.ri_datatable td, table.ri_formtable td {
-    padding: 8px 10px;
-  }
-
-  button.ri_formbutton {
-    font-size: 0.9rem;
-    padding: 8px 15px;
-  }
+      .ri_fieldlabel {
+        flex: 1; /* Take up the full width */
+        text-align: left;
+        padding-right: 0;
+      }
 }

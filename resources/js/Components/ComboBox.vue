@@ -1,29 +1,31 @@
 <template>
-  <div class="ir-combo-box">
-    <input
-	  v-if="enabled"
-      type="text"
-      v-model="search"
-      @focus="isOpen = true"
-      @blur="handleBlur"
-      @input="filterOptions"
-      class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ir-combo-box-input"
-      placeholder="Select an option"
-    />
-    <ul
-      v-if="enabled && isOpen && filteredOptions.length > 0"
-      class="ir-combo-box-dropdown"
-    >
-      <li
-        v-for="(option, index) in filteredOptions"
-        :key="option.id"
-        @mousedown="selectOption(option)"
-        class="ir-combo-box-option"
-      >
-        {{ option.name }}
-      </li>
-    </ul>
-	<span v-if="!enabled" class="ir_disabled_input">{{ this.search }}</span>
+  <div class="ri_formcontrol">
+	  <div class="ir-combo-box">
+	    <input
+		  v-if="enabled"
+	      type="text"
+	      v-model="search"
+	      @focus="isOpen = true"
+	      @blur="handleBlur"
+	      @input="filterOptions"
+	      class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ir-combo-box-input ri_forminput"
+	      placeholder="Select an option"
+	    />
+	    <ul
+	      v-if="enabled && isOpen && filteredOptions.length > 0"
+	      class="ir-combo-box-dropdown"
+	    >
+	      <li
+	        v-for="(option, index) in filteredOptions"
+	        :key="option.id"
+	        @mousedown="selectOption(option)"
+	        class="ir-combo-box-option"
+	      >
+	        {{ option.name }}
+	      </li>
+	    </ul>
+		<span v-if="!enabled" class="ir_disabled_input">{{ this.search }}</span>
+	  </div>
   </div>
 </template>
 
@@ -106,41 +108,3 @@ export default {
 };
 </script>
 
-
-<style scoped>
-.ir-combo-box {
-  position: relative;
-  width: 100%;
-  max-width: 300px;
-}
-
-.ir-combo-box-input {
-  width: 100%;
-  padding: 8px;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  font-size: 14px;
-}
-
-.ir-combo-box-dropdown {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  right: 0;
-  background-color: white;
-  border: 1px solid #ccc;
-  border-radius: 4px;
-  max-height: 150px;
-  overflow-y: auto;
-  z-index: 1000;
-}
-
-.ir-combo-box-option {
-  padding: 8px;
-  cursor: pointer;
-}
-
-.ir-combo-box-option:hover {
-  background-color: #f0f0f0;
-}
-</style>

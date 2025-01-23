@@ -16,6 +16,10 @@ import RISubform from '@/Components/RISubform.vue';
   <AuthenticatedLayout>
 	<template #header>
 	</template>
+	
+	<!-- Include the the RIForm Component. This component will attach to the JSON
+	     API URL specified in the datasource="" attribute for loading and saving data.
+	  -->
 	<RIForm 
 	  title="Daniel's Test Form" 
 	  datasource="/json/orders">
@@ -33,12 +37,10 @@ import RISubform from '@/Components/RISubform.vue';
 			<td>{{ record.status.name }}</td>
 		</template>
 		<template #default="{ record, editing, templates }">
-		<table class="ri_formtable">
-		<tbody>
-		    <tr>
-			<th>Order Date:</th>
-			<td>
-			  <TextInput
+		<div class="ri_formtable">
+		  <div class="ri_fieldset">
+			<div class="ri_fieldlabel">Order Date:</div>
+			<TextInput
 				    id="orderdate"
 				    type="date"
 				    v-model="record.order_date"
@@ -46,30 +48,23 @@ import RISubform from '@/Components/RISubform.vue';
 				    autofocus
 					:enabled="editing"
 			  /> 
-			</td>
-		  </tr>
-		  <tr>
-		  <th>Person:</th>
-		  <td> 
+		  </div>
+		  <div class="ri_fieldset">
+		    <div class="ri_fieldlabel">Person:</div>
 		  	<ComboBox 
-		  	v-model="record.person_id"
-			optionsource="/json/people"
-		  	:enabled="editing"
+				  	v-model="record.person_id"
+					optionsource="/json/people"
+				  	:enabled="editing"
 		  	/>
-		  </td>
-		  </tr>
-		  <tr>
-		  <th>Status:</th>
-		  <td> 
+		  </div>
+		  <div class="ri_fieldset">
+		  	<div class="ri_fieldlabel">Status:</div>
 		  	<ComboBox 
-		  	v-model="record.status_id"
-			optionsource="/json/statuses"
-		  	:enabled="editing"
+				  	v-model="record.status_id"
+					optionsource="/json/statuses"
+				  	:enabled="editing"
 		  	/>
-		  </td>
-		  </tr>
-		  <tr>
-		  <td colspan="2" class="ri_container_cell">
+		  </div>
 			<RISubform 
 					title="Order Lines"  
 					v-model:records="record.item_ledgers"
@@ -101,10 +96,7 @@ import RISubform from '@/Components/RISubform.vue';
 				  </td>
 				</template>
 			</RISubform>
- 	      </td>
-		 </tr>
-		</tbody>
-	  </table>
+	  </div>
 	  </template>
 	</RIForm>
 	</AuthenticatedLayout>
