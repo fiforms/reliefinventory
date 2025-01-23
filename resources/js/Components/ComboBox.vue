@@ -37,7 +37,7 @@
 	        @mousedown="selectOption(option)"
 	        class="ir-combo-box-option"
 	      >
-	        {{ option.name }}
+	        {{ option[display] }}
 	      </li>
 	    </ul>
 		<span v-if="!enabled" class="ir_disabled_input">{{ this.search }}</span>
@@ -66,6 +66,11 @@ export default {
 		type: Object,
 		required: false
 	},
+	display: {
+		type: String,
+		required: false,
+		default: "name",
+	},
   },
   data() {
     return {
@@ -87,7 +92,7 @@ export default {
       immediate: true,
       handler(newValue) {
         const selectedOption = this.options.find(option => option.id === newValue);
-        this.search = selectedOption ? selectedOption.name : "";
+        this.search = selectedOption ? selectedOption[this.display] : "";
 		if(this.updates && selectedOption) {
 			this.$emit("update:updates", selectedOption);
 		}
@@ -107,18 +112,18 @@ export default {
 	},
 	filterOptions() {
       this.filteredOptions = this.options.filter((option) =>
-        option.name.toLowerCase().includes(this.search.toLowerCase())
+        option[this.display].toLowerCase().includes(this.search.toLowerCase())
       );
     },
     selectOption(option) {
-      this.search = option.name;
+      this.search = option[this.display];
       this.isOpen = false;
       this.$emit("update:keyValue", option.id);
 	  this.$emit("update:updates", option)
     },
 	showOptionTitle() {
 		const selectedOption = this.options.find(option => option.id === this.keyValue);
-		this.search = selectedOption ? selectedOption.name : "";
+		this.search = selectedOption ? selectedOption[this.display] : "";
 	},
     handleBlur() {
       setTimeout(() => {
