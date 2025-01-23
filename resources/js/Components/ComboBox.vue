@@ -38,14 +38,18 @@ export default {
 		required: false,
 		default: true,
 	},
-    modelValue: {
+    keyValue: {
       type: [String, Number],
       required: false,
     },
 	optionsource: {
 	  type: String,
 	  required: true,	
-	}
+	},
+	updates: {
+		type: Object,
+		required: false
+	},
   },
   data() {
     return {
@@ -63,11 +67,14 @@ export default {
 		this.showOptionTitle();
       },
     },
-    modelValue: {
+    keyValue: {
       immediate: true,
       handler(newValue) {
         const selectedOption = this.options.find(option => option.id === newValue);
         this.search = selectedOption ? selectedOption.name : "";
+		if(this.updates && selectedOption) {
+			this.$emit("update:updates", selectedOption);
+		}
       },
     },
   },
@@ -90,10 +97,11 @@ export default {
     selectOption(option) {
       this.search = option.name;
       this.isOpen = false;
-      this.$emit("update:modelValue", option.id);
+      this.$emit("update:keyValue", option.id);
+	  this.$emit("update:updates", option)
     },
 	showOptionTitle() {
-		const selectedOption = this.options.find(option => option.id === this.modelValue);
+		const selectedOption = this.options.find(option => option.id === this.keyValue);
 		this.search = selectedOption ? selectedOption.name : "";
 	},
     handleBlur() {

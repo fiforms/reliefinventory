@@ -52,7 +52,8 @@ import RISubform from '@/Components/RISubform.vue';
 		  <div class="ri_fieldset">
 		    <div class="ri_fieldlabel">Person:</div>
 		  	<ComboBox 
-				  	v-model="record.person_id"
+				  	v-model:keyValue="record.person_id"
+					v-model:updates="record.person"
 					optionsource="/json/people"
 				  	:enabled="editing"
 		  	/>
@@ -60,7 +61,8 @@ import RISubform from '@/Components/RISubform.vue';
 		  <div class="ri_fieldset">
 		  	<div class="ri_fieldlabel">Status:</div>
 		  	<ComboBox 
-				  	v-model="record.status_id"
+				  	v-model:keyValue="record.status_id"
+					v-model:updates="record.status"
 					optionsource="/json/statuses"
 				  	:enabled="editing"
 		  	/>
@@ -81,7 +83,8 @@ import RISubform from '@/Components/RISubform.vue';
 				<template #default="{ record, index }">
 				  <td>
 					<ComboBox 
-						v-model="record.item_id"
+						v-model:keyValue="record.item_id"
+						v-model:updates="record.item"
 						optionsource="/json/items"
 						:enabled="true"
 						/>
@@ -101,16 +104,6 @@ import RISubform from '@/Components/RISubform.vue';
 	</RIForm>
 	</AuthenticatedLayout>
 </template>
-
-<script>
-
-export default {
-  data() {
-    return {
-    };
-  },
-};
-</script>
 
 
 
