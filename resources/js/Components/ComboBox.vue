@@ -6,12 +6,16 @@
 	  updates: copies the selected record object into the parent datastructure
 	  so that all linked properties can be updated in real time based on the selected object
 	  
-	Object data is loaded from the JSON url specified in the optionsource attribute
+	Object data is loaded from the JSON url specified in the optionsource="" attribute
+	
+	the enabled="" attribute should link to the {editing} model passed from RIForm
+	
+	Finally the display="" identifies the fiel in the data source which should be displayed 
+	in the control, (default is "name")
 	
 	This implementation expects the primary key of the options list to be "id"
-	It also expects a field	called "name" to populate the visible options and to be searchable
 	
-	This behavior may be modified in future versions  
+ 
  -->
 
 <template>

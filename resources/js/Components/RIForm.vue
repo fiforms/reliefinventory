@@ -1,3 +1,62 @@
+<!-- RIForm.vue -->
+
+<!-- 
+	Component to create a data entry form bound to a JSON api 
+
+	This component expects attributes for "title" and the "datasource" JSON API url
+	
+	It has three slots: #thead, #tbody, and #default, with bindings as described below:
+	
+	#thead is nested inside a <tr></tr> element at the top of the data table, and should 
+	    contain multiple <th> headings corresponding to the columns desires to be
+		displayed, i.e.
+		
+		<template #thead>
+			<th>Name<th>
+			<th>Address</th>
+			<th>City</th>
+		</template>
+		 
+	#tbody is repeated for each row in table view.  It binds to {record, index} and expects
+	    <td> elements for each field, like this:
+			
+		<template #tbody="{ record, index }">	
+			<td>{{ record.first_name }} {{ record.last_name }}</td>
+			<td>{{ record.address }}</td>
+			<td>{{ record.city }}</td>
+		</template>	
+			
+		
+	#default slot contains the data entry form, with bound controls. This is a non-tabular 
+	    format for more flexibility. It has three bound models { record, editing, templates }
+		in order to pass data into the form controls. 
+		
+		{record} is an object containing the reactive record data that's currently 
+		being edited.
+		
+		{templates} is a collection of objects with blank records and default values for 
+		creating new records.  templates._default contains the template for the main form 
+		while other named templates can reflect new records in a subform.
+		
+		{editing} is simply a global boolean flag to indicate whether the form is open for 
+		editing.
+		
+		<template #default="{ record, editing, templates }">
+			<div class="ri_formtable">
+			  <div class="ri_fieldset">
+				<div class="ri_fieldlabel">Address:</div>
+				<TextInput
+					    id="address"
+					    v-model="record.address"
+					    required
+					    autofocus
+						:enabled="editing"
+				  /> 
+			  </div>
+			</div>
+		</template>
+		
+    -->
 <template>
 	<div class="ri_form_container">
 	  <div v-if="!record" class="ri_datatable_container">

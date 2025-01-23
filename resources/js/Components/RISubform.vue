@@ -1,3 +1,25 @@
+<!-- RISubform.vue -->
+
+<!-- 
+	Component to create a tabular subform inside an RIForm
+
+	This component expects attributes for "title" "template" "enabled" and "v-model:records" 
+	
+	title is simply the text title of the subform 
+	
+	enabled is a global boolean to indicate whether editing is allowed
+	
+	template should be an object containing values for a new record 
+	
+	v-model:records is an array of records to be displayed and edited (this would be passed
+	   in from an object returned by the RIForm.vue
+	
+	It has three slots: #thead, #tbody, and #default, with bindings similar to RIForm
+	   HOWEVER #default is nested inside of <tr> instead of a <div> so it expects
+	   <td> elements like #tbody, not <div> elements.
+	
+-->
+
 <template>
 	<div class="ri_subform_container">
 	  <div class="ri_subtable_container">
