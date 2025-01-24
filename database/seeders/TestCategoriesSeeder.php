@@ -17,19 +17,16 @@ class TestCategoriesSeeder extends Seeder
         $categories = [
             [
                 'name' => 'Food',
-                'measurement_unit' => 'kg', // Measurement unit for this category
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
             ],
             [
                 'name' => 'Clothing',
-                'measurement_unit' => 'pieces', // Measurement unit for this category
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
             ],
             [
                 'name' => 'Hygiene Supplies',
-                'measurement_unit' => 'packs', // Measurement unit for this category
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
             ],

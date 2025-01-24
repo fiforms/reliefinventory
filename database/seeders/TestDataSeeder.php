@@ -14,6 +14,7 @@ class TestDataSeeder extends Seeder
     {
         // Call test-specific seeders here
         $this->call(TestCategoriesSeeder::class);
+        $this->call(TestItemTypesSeeder::class);
         $this->call(TestItemsSeeder::class);
         $this->call(TestPeopleSeeder::class);
         $this->call(TestOrdersSeeder::class);

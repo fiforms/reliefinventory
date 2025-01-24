@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class Item extends Model
+class ItemType extends Model
 {
     use HasFactory;
     
@@ -14,7 +14,7 @@ class Item extends Model
      *
      * @var string
      */
-    protected $table = 'items';
+    protected $table = 'itemtypes';
     
     /**
      * The primary key associated with the table.
@@ -50,14 +50,12 @@ class Item extends Model
      * @var array
      */
     protected $fillable = [
-        'itemtype_id',
-        'packagetypes_id',
-        'pluscode',
-        'size',
-        'case_qty',
-        'active',
+        'number',
+        'category_id',
+        'unit_id',
+        'name',
         'description',
-        'upc',
+        'active',
     ];
     
     /**
@@ -66,8 +64,6 @@ class Item extends Model
      * @var array
      */
     protected $casts = [
-        'size' => 'decimal:2',
-        'case_qty' => 'integer',
         'active' => 'boolean',
     ];
     
@@ -75,15 +71,13 @@ class Item extends Model
      * Relationships
      */
     
-    public function itemtype()
+    public function category()
     {
-        return $this->belongsTo(ItemType::class, 'itemtype_id');
+        return $this->belongsTo(Category::class, 'category_id');
     }
     
-    public function packagetype()
+    public function items()
     {
-        return $this->belongsTo(PackageType::class, 'packagetypes_id');
+        return $this->hasMany(Item::class, 'itemtype_id');
     }
-    
-    // Add other relationships as necessary
 }

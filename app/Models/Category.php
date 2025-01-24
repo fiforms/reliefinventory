@@ -20,14 +20,13 @@ class Category extends Model
      */
     protected $fillable = [
         'name',
-        'measurement_unit',
     ];
 
     /**
-     * Get the items associated with the category.
+     * Get the item types associated with the category.
      */
-    public function items()
+    public function itemtypes()
     {
-        return $this->hasMany(Item::class, 'category_id');
+        return $this->hasMany(ItemType::class, 'category_id');
     }
 }
