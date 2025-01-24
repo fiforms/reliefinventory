@@ -9,6 +9,7 @@ import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
+import TextArea from '@/Components/TextArea.vue';
 
 </script>
 <template>
@@ -28,13 +29,15 @@ import RISubform from '@/Components/RISubform.vue';
 			<th>Customer</th>
 			<th>Total Items</th>
 			<th>Status</th>
+			<th>Comments</th>
 		</template>
 		<template #tbody="{ record, index }"> 
 			<td>{{ record.order_date }}</td>
 			<td v-if="record.person">{{ record.person.first_name }} {{ record.person.last_name }}</td>
-			<td v-else> () </td>
+			<td v-else> ("Enter Name") </td>
 			<td>{{ record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0) }}</td>
 			<td>{{ record.status.name }}</td>
+			<td>{{ record.comments ? record.comments.slice(0,50) : '' }}</td>
 		</template>
 		<template #default="{ record, editing, templates }">
 		<div class="ri_formtable">
@@ -59,7 +62,13 @@ import RISubform from '@/Components/RISubform.vue';
 		  	/>
 		  </div>
 		  <div class="ri_fieldset">
-		  	<div class="ri_fieldlabel">Status:</div>
+			<div class="ri_fieldlabel">Contact Info:</div>
+			<p>{{ record.person.address }} <br />
+			{{ record.person.city }}, {{ record.person.state }} {{ record.person.zip }}</p>
+		  </div>
+		  <div class="ri_fieldset">
+  	  	  	<div class="ri_fieldlabel">Status:</div>
+		  
 		  	<ComboBox 
 				  	v-model:keyValue="record.status_id"
 					v-model:updates="record.status"
@@ -67,6 +76,14 @@ import RISubform from '@/Components/RISubform.vue';
 				  	:enabled="editing"
 		  	/>
 		  </div>
+		  <div class="ri_fieldset">
+		  	<div class="ri_fieldlabel">Comments</div>
+		  	<TextArea
+		  				    v-model="record.comments"
+		  					:enabled="editing"
+		  			  /> 
+		  </div>
+			
 			<RISubform 
 					title="Order Lines"  
 					v-model:records="record.item_ledgers"

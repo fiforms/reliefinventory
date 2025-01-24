@@ -120,7 +120,7 @@ button.ri_defaultbutton, button.ri_formbutton {
     min-width: 0; /* Ensure the input doesn't shrink below its minimum width */
 }
 
-input.ri_forminput {
+.ri_forminput {
     width: 100%;
     max-width: 100%;
     padding: 0.5rem;
