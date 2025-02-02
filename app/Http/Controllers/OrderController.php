@@ -31,7 +31,7 @@ class OrderController extends Controller
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'order')
-        ->with(['itemLedgers.item.itemtype','person','status'])
+        ->with(['OrderLines.itemtype','itemLedgers.item.itemtype','person','status'])
         ->get();
             
             return response()->json([
@@ -50,7 +50,13 @@ class OrderController extends Controller
                         'item_id' => null,
                         'qty_subtracted' => null,
                         'item' => ['description' => null],
-                   ]
+                   ],
+                   'order_lines' => [
+                        'itemtype_id' => null,
+                        'packagetype_id' => null,
+                        'qty_requested' => null,
+                        'comments' => null,
+                   ],
                 ]
               ]);
     }

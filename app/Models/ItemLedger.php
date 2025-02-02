@@ -34,6 +34,11 @@ class ItemLedger extends Model
         return $this->belongsTo(Transaction::class);
     }
     
+    public function pallet()
+    {
+        return $this->belongsTo(Pallet::class);
+    }
+    
     public function item()
     {
         return $this->belongsTo(Item::class);

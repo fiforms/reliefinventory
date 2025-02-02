@@ -36,6 +36,12 @@ class Transaction extends Model
         return $this->belongsTo(Person::class);
     }
     
+    // Orders have separate lines indicating the desired items
+    public function orderLines()
+    {
+        return $this->hasMany(OrderLine::class, 'orderdonation_id');
+    }
+    
     // Define the relationship to ItemLedger model
     public function itemLedgers()
     {
