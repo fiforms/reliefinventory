@@ -1,4 +1,6 @@
 <?php
+// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
@@ -46,6 +48,12 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::post('/items', [ItemController::class, 'store']);
     Route::put('/items/{id}', [ItemController::class, 'update']);
     Route::delete('/items/{id}', [ItemController::class, 'destroy']);
+    
+    // ItemTypes
+    Route::get('/itemtypes', [ItemTypeController::class, 'index']);
+    Route::post('/itemtypess', [ItemTypeController::class, 'store']);
+    Route::put('/itemtypess/{id}', [ItemTypeController::class, 'update']);
+    Route::delete('/itemtypess/{id}', [ItemTypeController::class, 'destroy']);
     
     // Orders
     Route::get('/orders', [OrderController::class, 'index']);

@@ -1,3 +1,5 @@
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+     Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 <!-- OrderEntry.vue -->
 
 <!-- This can be used as a prototype for additional vue components -->
@@ -13,7 +15,7 @@ import TextArea from '@/Components/TextArea.vue';
 
 </script>
 <template>
-  <Head title="Order Entry" />
+  <Head title="Master Order Entry" />
   <AuthenticatedLayout>
 	<template #header>
 	</template>
@@ -22,7 +24,7 @@ import TextArea from '@/Components/TextArea.vue';
 	     API URL specified in the datasource="" attribute for loading and saving data.
 	  -->
 	<RIForm 
-	  title="Daniel's Test Form" 
+	  title="Master Order Entry and Fill Form" 
 	  datasource="/json/orders">
 	    <template #thead>
 			<th>Order Date</th>
@@ -83,9 +85,37 @@ import TextArea from '@/Components/TextArea.vue';
 		  					:enabled="editing"
 		  			  /> 
 		  </div>
+			<RISubform 
+					title="Order Filled Line Items"  
+								v-model:records="record.order_lines"
+								:template="templates.order_lines" 
+								:enabled="editing">
+				<template #thead>
+					<th>Item Type</th>
+					<th>Quantity</th>
+					<th>Package Type</th>
+					<th>Comments</th>
+				</template>
+				<template #tbody="{ record, index }">
+					<td>{{ record.itemType.name }}</td>
+					<td>{{ record.qty_requested }}</td>
+					<td>{{ record.packageType.type }}</td>
+					<td>{{ record.comments }}</td>
+				</template>
+				<template #default="{ record, index }">
+				  <td>
+					<ComboBox 
+						v-model:keyValue="record.itemtype_id"
+						v-model:updates="record.itemType"
+						optionsource="/json/itemstypes"
+						:enabled="true"
+						/>
+				  </td>
+				</template>
+			</RISubform>
 			
 			<RISubform 
-					title="Order Lines"  
+					title="Order Filled Line Items"  
 					v-model:records="record.item_ledgers"
 					:template="templates.item_ledgers" 
 					:enabled="editing">
