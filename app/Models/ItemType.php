@@ -82,4 +82,9 @@ class ItemType extends Model
     {
         return $this->hasMany(Item::class, 'itemtype_id');
     }
+    
+    public function unit()
+    {
+        return $this->belongsTo(Unit::class, 'unit_id');
+    }
 }
