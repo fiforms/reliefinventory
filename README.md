@@ -3,6 +3,8 @@
 Relief Inventory is a collaborative open source software project to facilitate tracking of donated goods in disaster response scenarios. 
 It was originally developed in cooperation with Adventist Community Services to facilitate warehouse management.
 
+You can find the latest information about the Relief Inventory project at our [website](https://reliefinventory.fiforms.net)
+
 # Setup 
 
 This software utilizes the Laravel Open Source PHP Framework and related software. The following brief list of steps
@@ -89,6 +91,9 @@ A helpful graphical tool for working directly with the MySQL Database is MySQL W
     
     You should have received a copy of the GNU General Public License
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+## Original Authors
+This software was originally designed and written by "The Preacher Hackers," a group of Seventh-day Adventist Ministers dedicated to the cause of helping those in need. Original contributing authors include Daniel McFeeters, Mark Kent, and 
 
 ## Purpose and Rationale
 The **Relief Inventory** project is an open-source software system designed to facilitate the management of donated goods in disaster relief efforts. It allows organizations to efficiently track, store, and distribute donated items to those in need. The goal of this project is to provide a **transparent, accessible, and collaborative** solution that enhances humanitarian aid operations.
