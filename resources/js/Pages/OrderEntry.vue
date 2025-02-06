@@ -86,7 +86,7 @@ import TextArea from '@/Components/TextArea.vue';
 		  			  /> 
 		  </div>
 			<RISubform 
-					title="Order Filled Line Items"  
+					title="Order Requested Items"  
 								v-model:records="record.order_lines"
 								:template="templates.order_lines" 
 								:enabled="editing">
@@ -97,19 +97,41 @@ import TextArea from '@/Components/TextArea.vue';
 					<th>Comments</th>
 				</template>
 				<template #tbody="{ record, index }">
-					<td>{{ record.itemType.name }}</td>
+					<td>{{ record.itemtype.name }}</td>
 					<td>{{ record.qty_requested }}</td>
-					<td>{{ record.packageType.type }}</td>
+					<td>{{ record.packagetype.type }}</td>
 					<td>{{ record.comments }}</td>
 				</template>
 				<template #default="{ record, index }">
 				  <td>
 					<ComboBox 
 						v-model:keyValue="record.itemtype_id"
-						v-model:updates="record.itemType"
-						optionsource="/json/itemstypes"
+						v-model:updates="record.itemtype"
+						optionsource="/json/itemtypes"
 						:enabled="true"
 						/>
+				  </td>
+				  <td>
+					<TextInput
+							type="number"
+						    v-model="record.qty_requested"
+							:enabled="true"
+					  /> 
+				  </td>
+				  <td>
+					  <ComboBox 
+					  	v-model:keyValue="record.packagetype_id"
+					  	v-model:updates="record.packagetype"
+					  	optionsource="/json/packagetypes"
+						display="type"
+					  	:enabled="true"
+					  	/>
+				  </td>
+				  <td>
+				    <TextInput
+				  	    v-model="record.comments"
+				  		:enabled="true"
+				    /> 
 				  </td>
 				</template>
 			</RISubform>

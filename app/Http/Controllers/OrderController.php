@@ -22,6 +22,11 @@ class OrderController extends Controller
         'item_ledgers.*.item_id' => 'required_with:item_ledgers|exists:items,id',
         'item_ledgers.*.qty_added' => 'nullable|integer',
         'item_ledgers.*.qty_subtracted' => 'nullable|integer',
+        'order_lines' => 'nullable|array',
+        'order_lines.*.itemtype_id' => 'required_with:order_lines|exists:itemtypes,id',
+        'order_lines.*.packagetype_id' => 'required_with:order_lines|exists:packagetypes,id',
+        'order_lines.*.qty_requested' => 'required_with:order_lines|integer|min:1',
+        'order_lines.*.comments' => 'nullable|string',
     ];
     
     /**
@@ -33,7 +38,7 @@ class OrderController extends Controller
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'order')
-        ->with(['OrderLines.itemtype','itemLedgers.item.itemtype','person','status'])
+        ->with(['OrderLines.itemtype','OrderLines.packagetype','itemLedgers.item.itemtype','person','status'])
         ->get();
             
             return response()->json([
@@ -78,6 +83,12 @@ class OrderController extends Controller
         if (!empty($data['item_ledgers'])) {
             foreach ($data['item_ledgers'] as $ledger) {
                 $order->itemLedgers()->create($ledger);
+            }
+        }
+        
+        if (!empty($data['order_lines'])) {
+            foreach ($data['order_lines'] as $line) {
+                $order->orderLines()->create($line);
             }
         }
         
@@ -132,6 +143,22 @@ class OrderController extends Controller
                 $order->itemLedgers()->create($ledger);
             }
         }
+        
+        // Similar algorithm for OrderLines
+        $existingLineIds = $order->orderLines->pluck('id')->toArray();
+        $updatedLineIds = collect($data['order_lines'] ?? [])->pluck('id')->filter()->toArray();
+        $deletedLineIds = array_diff($existingLineIds, $updatedLineIds);
+        if (!empty($deletedLineIds)) {
+            $order->orderLines()->whereIn('id', $deletedLineIds)->delete();
+        }
+        foreach ($data['order_lines'] ?? [] as $line) {
+            if (!empty($line['id'])) {
+                $order->orderLines()->find($line['id'])?->update($line);
+            } else {
+                $order->orderLines()->create($line);
+            }
+        }
+        
         
         return response()->json([
             'message' => 'Order updated successfully.',

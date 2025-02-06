@@ -55,6 +55,12 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::put('/itemtypes/{id}', [ItemTypeController::class, 'update']);
     Route::delete('/itemtypes/{id}', [ItemTypeController::class, 'destroy']);
     
+    // PackageTypes
+    Route::get('/packagetypes', [PackageTypeController::class, 'index']);
+    Route::post('/packagetypes', [PackageTypeController::class, 'store']);
+    Route::put('/packagetypes/{id}', [PackageTypeController::class, 'update']);
+    Route::delete('/packagetypes/{id}', [PackageTypeController::class, 'destroy']);
+    
     // Orders
     Route::get('/orders', [OrderController::class, 'index']);
     Route::post('/orders', [OrderController::class, 'store']);
