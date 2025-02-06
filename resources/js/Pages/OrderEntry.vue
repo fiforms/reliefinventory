@@ -106,7 +106,7 @@ import TextArea from '@/Components/TextArea.vue';
 					<ComboBox 
 						v-model:keyValue="record.itemtype_id"
 						v-model:updates="record.itemtype"
-						optionsource="/json/itemtypes"
+						optionsource="/json/itemtypes/noitems"
 						:enabled="true"
 						/>
 				  </td>

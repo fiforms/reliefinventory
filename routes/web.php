@@ -30,6 +30,10 @@ Route::get('/', function () {
         return Inertia::render('OrderEntry');
     })->middleware(['auth', 'verified'])->name('entry');
     
+    Route::get('/setup/items', function () {
+        return Inertia::render('ItemEntry');
+    })->middleware(['auth', 'verified'])->name('setup');
+    
     Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -49,8 +53,22 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::put('/items/{id}', [ItemController::class, 'update']);
     Route::delete('/items/{id}', [ItemController::class, 'destroy']);
     
+    // Units
+    Route::get('/units', [UnitController::class, 'index']);
+    Route::post('/units', [UnitController::class, 'store']);
+    Route::put('/units/{id}', [UnitController::class, 'update']);
+    Route::delete('/units/{id}', [UnitController::class, 'destroy']);
+    
+    // Categories
+    Route::get('/categories', [CategoryController::class, 'index']);
+    Route::post('/categories', [CategoryController::class, 'store']);
+    Route::put('/categories/{id}', [CategoryController::class, 'update']);
+    Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
+    
+    
     // ItemTypes
     Route::get('/itemtypes', [ItemTypeController::class, 'index']);
+    Route::get('/itemtypes/{mod}', [ItemTypeController::class, 'index']);
     Route::post('/itemtypes', [ItemTypeController::class, 'store']);
     Route::put('/itemtypes/{id}', [ItemTypeController::class, 'update']);
     Route::delete('/itemtypes/{id}', [ItemTypeController::class, 'destroy']);

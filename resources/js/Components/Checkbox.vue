@@ -1,34 +1,19 @@
 <script setup>
-import { computed } from 'vue';
-
-const emit = defineEmits(['update:checked']);
-
-const props = defineProps({
-    checked: {
-        type: [Array, Boolean],
-        required: true,
-    },
-    value: {
-        default: null,
-    },
+defineProps({
+    modelValue: Boolean,
+	enabled: Boolean,
 });
 
-const proxyChecked = computed({
-    get() {
-        return props.checked;
-    },
-
-    set(val) {
-        emit('update:checked', val);
-    },
-});
+const emit = defineEmits(['update:modelValue']);
 </script>
 
 <template>
     <input
+	    v-if="enabled"
         type="checkbox"
-        :value="value"
-        v-model="proxyChecked"
+        :checked="modelValue"
+        @change="emit('update:modelValue', $event.target.checked)"
         class="rounded border-gray-300 text-indigo-600 shadow-sm focus:ring-indigo-500"
     />
+	<span v-else class="ir_disabled_input"> <span v-if="modelValue"> &#x2713; </span> </span>
 </template>
