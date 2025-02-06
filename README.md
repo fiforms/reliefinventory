@@ -14,55 +14,63 @@ Install prerequisite packages:
 
 ** Use your package manager to install relevant packages, i.e. **
 
-  `sudo apt install php php-cli composer mariadb-server php-mysql php-redis git`
+    sudo apt install php php-cli composer mariadb-server php-mysql php-redis git
   
 ** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
 
-  `sudo apt install apache2 redis`
+    sudo apt install apache2 redis
 
 ** Clone the Repository (or see below for using the Eclipse editor instead) **
 
-  `git clone https://path/to/reliefinventory`
+    git clone https://path/to/reliefinventory
 
 ** Create a database to hold data (change YourPasswordHere accordingly) **
-  `mysql`
-  `create user reliefinventory@localhost identified by 'YourPasswordHere';`
-  `create database reliefinventory;`
-  `grant all on reliefinventory.* to reliefinventory@localhost;`
-  `exit`
+
+    mysql
+    create user reliefinventory@localhost identified by 'YourPasswordHere';
+    create database reliefinventory;
+    grant all on reliefinventory.* to reliefinventory@localhost;
+    exit
 
 ** Create your local configuration, and edit .env, adding the database info and password you created above **
-  `cd reliefinventory`
-  `cp .env.example .env`
-  `nano .env`
+
+    cd reliefinventory
+    cp .env.example .env
+    nano .env
 
 ** Install Laravel packages using composer **
-  `composer install`
+
+    composer install
   
 ** Install node packages **
-  `npm install`
+
+    npm install
 
 ** Create datastructures (If you have a database backup, this would be the point to restore it instead) **
-  `php artisan migrate`
+
+    php artisan migrate
   
 ** Create a new user (YOU MUST do this before loading test data) **
-  `php artisan user:create -u myusername -e myemail@example.com`
+
+    php artisan user:create -u myusername -e myemail@example.com
   
 ** Load initial data **
-  `# Creating essential data`
-  `php artisan db:seed`  
-  `# Loading additional test data`
-  `php artisan db:seed --class=TestDataSeeder`
+
+    # Creating essential data
+    php artisan db:seed
+    # Loading additional test data
+    php artisan db:seed --class=TestDataSeeder
 
 ** Spin up the instance **
-  `composer run dev`
+
+    composer run dev
   
 ** Running in Production **
 (These steps are still incomplete)
 
-  `php artisan key:generate`
-  `composer dump-autoload --optimize`
-  `npm run build`
+    php artisan key:generate
+    composer dump-autoload --optimize
+    npm run build
   
   
 # Eclipse IDE
