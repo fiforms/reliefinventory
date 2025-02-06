@@ -18,16 +18,38 @@ class PackageTypesSeeder extends Seeder
         // Sample data for the `items` table
         $pkg = [
             [
-                'type' => 'each',
+                'singular' => 'Unit',
+                'plural'   => 'Units',
             ],
             [
-                'type' => 'case',
+                'singular' => 'Case',
+                'plural'   => 'Cases',
+                
             ],
             [
-                'type' => 'bag',
+                'singular' => 'Bag',
+                'plural'   => 'Bags',
+                
             ],
             [
-                'type' => 'other',
+                'singular' => 'Pallet',
+                'plural'   => 'Pallets',
+            ],
+            [
+                'singular' => 'Gallon',
+                'plural'   => 'Gallons',
+            ],
+            [
+                'singular' => 'Ton',
+                'plural'   => 'Tons',
+            ],
+            [
+                'singular' => 'Shipping Container',
+                'plural'   => 'Shipping Containers',
+            ],
+            [
+                'singular' => 'Truckload',
+                'plural'   => 'Truckloads',
             ],
         ];
         // Insert data into the items table

@@ -92,14 +92,13 @@ import TextArea from '@/Components/TextArea.vue';
 								:enabled="editing">
 				<template #thead>
 					<th>Item Type</th>
-					<th>Quantity</th>
-					<th>Package Type</th>
+					<th colspan="2">Quantity</th>
 					<th>Comments</th>
 				</template>
 				<template #tbody="{ record, index }">
 					<td>{{ record.itemtype.name }}</td>
-					<td>{{ record.qty_requested }}</td>
-					<td>{{ record.packagetype.type }}</td>
+					<td colspan="2">{{ record.qty_requested }}
+					    {{ record.qty_requested > 1 ? record.packagetype.plural : record.packagetype.singular }}</td>
 					<td>{{ record.comments }}</td>
 				</template>
 				<template #default="{ record, index }">
@@ -123,7 +122,7 @@ import TextArea from '@/Components/TextArea.vue';
 					  	v-model:keyValue="record.packagetype_id"
 					  	v-model:updates="record.packagetype"
 					  	optionsource="/json/packagetypes"
-						display="type"
+						:display="record.qty_requested > 1 ? 'plural' : 'singular'"
 					  	:enabled="true"
 					  	/>
 				  </td>

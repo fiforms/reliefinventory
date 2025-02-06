@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
 class PackageTypeController extends Controller
 {
     private const VALIDATION_RULES = [
-        'type' => 'required|string|unique:packagetypes,type|max:255',
+        'singular' => 'required|string|unique:packagetypes,type|max:255',
+        'plural' => 'required|string|unique:packagetypes,type|max:255',
     ];
 
     /**
@@ -26,7 +27,8 @@ class PackageTypeController extends Controller
             'records' => $packageTypes,
             'templates' => [
                 '_default' => [
-                    'type' => '',
+                    'singular' => '',
+                    'plural' => '',
                 ],
             ],
         ]);
@@ -59,9 +61,7 @@ class PackageTypeController extends Controller
     public function update(Request $request, $id)
     {
         $packageType = PackageType::findOrFail($id);
-        $data = $request->validate([
-            'type' => 'required|string|max:255|unique:packagetypes,type,' . $packageType->id,
-        ]);
+        $data = $request->validate(self::VALIDATION_RULES);
 
         $packageType->update($data);
 

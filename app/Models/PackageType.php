@@ -14,7 +14,8 @@ class PackageType extends Model
     protected $table = 'packagetypes';
 
     protected $fillable = [
-        'type',
+        'plural',
+        'singular',
     ];
 
     /**
