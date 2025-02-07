@@ -101,7 +101,7 @@ A helpful graphical tool for working directly with the MySQL Database is MySQL W
     along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 ## Original Authors
-This software was originally designed and written by "The Preacher Hackers," a group of Seventh-day Adventist Ministers dedicated to the cause of helping those in need. Original contributing authors include Daniel McFeeters, Mark Kent, and 
+This software was originally designed and written by "The Preacher Hackers," a group of Seventh-day Adventist Ministers dedicated to the cause of helping those in need. Original contributing authors include [Daniel McFeeters](https://www.pastordaniel.net), Mark Kent, and Jonathan Cantrell.
 
 ## Purpose and Rationale
 The **Relief Inventory** project is an open-source software system designed to facilitate the management of donated goods in disaster relief efforts. It allows organizations to efficiently track, store, and distribute donated items to those in need. The goal of this project is to provide a **transparent, accessible, and collaborative** solution that enhances humanitarian aid operations.
