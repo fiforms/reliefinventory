@@ -97,6 +97,7 @@ import Checkbox from '@/Components/Checkbox.vue';
 				  <td>
 					<TextInput
 						    v-model="subrecord.description"
+							placeholder="Description"
 							:enabled="true"
 					  /> 
 				  </td>
@@ -106,12 +107,14 @@ import Checkbox from '@/Components/Checkbox.vue';
 						v-model:updates="subrecord.packagetype"
 						optionsource="/json/packagetypes"
 						display="singular"
+						placeholder="Pk Unit"
 						:enabled="true" />
 				  </td>
 				  <td>
 				  <TextInput
 				   		v-model="subrecord.size" 
 						type="number"
+						:placeholder="'Size in ' + record.unit.abbreviation"
 						:enabled="true"
 				        />
 				  </td>
@@ -119,6 +122,7 @@ import Checkbox from '@/Components/Checkbox.vue';
 				  <TextInput
 				   		v-model="subrecord.case_qty" 
 					  	type="number"
+						placeholder="Case Qty"
 					  	:enabled="true"
 				   />
 				  </td>
@@ -127,6 +131,7 @@ import Checkbox from '@/Components/Checkbox.vue';
 				  <td>
 				  <TextInput
 				  	    v-model="subrecord.upc"
+						placeholder="UPC"
 				  		:enabled="true"
 				    /> 
 				  </td>

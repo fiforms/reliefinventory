@@ -32,7 +32,7 @@
 	      @blur="handleBlur"
 	      @input="filterOptions"
 	      class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ir-combo-box-input ri_forminput"
-	      placeholder="Select an option"
+	      :placeholder="placeholder"
 	    />
 	    <ul
 	      v-if="enabled && isOpen && filteredOptions.length > 0"
@@ -77,6 +77,11 @@ export default {
 		type: String,
 		required: false,
 		default: "name",
+	},
+	placeholder: {
+		type: String,
+		required: false,
+		default: "Select an option",
 	},
   },
   data() {

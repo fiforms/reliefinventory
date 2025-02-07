@@ -17,6 +17,9 @@ const props = defineProps({
   type: {
 	type: String,
   },
+  placeholder: {
+	type: String,
+  },
 });
 
 const input = ref(null);
@@ -38,6 +41,7 @@ defineExpose({ focus: () => input.value.focus() });
         v-model="model"
         ref="input"
 		:type="type"
+		:placeholder="placeholder"
     />
 	<span v-else class="ir_disabled_input">{{ model }}</span>
   </div>
