@@ -84,29 +84,30 @@ import Checkbox from '@/Components/Checkbox.vue';
 					<th>Package</th>
 					<th>UPC</th>
 				</template>
-				<template #tbody="{ record, index }">
-					<td>{{ record.description }}</td>
-				     <td>{{ record.packagetype.singular }}</td>
-					 <td> {{ record.upc }}</td>
+				<template #tbody="{ subrecord, index }">
+					<td>{{ subrecord.description }}</td>
+				     <td>{{ subrecord.packagetype.singular }} 
+						 <span v-if="subrecord.case_qty"> of {{ subrecord.case_qty }} ( {{ subrecord.size }} {{ record.unit.abbreviation }} )</span></td>
+					 <td> {{ subrecord.upc }}</td>
 				</template>
-				<template #default="{ record, index }">
+				<template #default="{ subrecord, index }">
 				  <td>
 					<TextInput
-						    v-model="record.description"
+						    v-model="subrecord.description"
 							:enabled="true"
 					  /> 
 				  </td>
 				  <td>
 					<ComboBox 
-					    v-model:keyValue="record.packagetypes_id"
-						v-model:updates="record.packagetype"
+					    v-model:keyValue="subrecord.packagetypes_id"
+						v-model:updates="subrecord.packagetype"
 						optionsource="/json/packagetypes"
 						display="singular"
 						:enabled="true" />
 				  </td>
 				  <td>
 				  <TextInput
-				  	    v-model="record.upc"
+				  	    v-model="subrecord.upc"
 				  		:enabled="true"
 				    /> 
 				  </td>

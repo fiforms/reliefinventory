@@ -37,8 +37,8 @@
 	      </thead>
 	      <tbody>
 	        <tr v-for="(record, index) in records" :key="record.id">
-			  <slot v-if="index != currentEdit" name="tbody" :record="record" :index="index"></slot>
-			  <slot v-else :record="record" :index="index"></slot>
+			  <slot v-if="index != currentEdit" name="tbody" :subrecord="record" :index="index"></slot>
+			  <slot v-else :subrecord="record" :index="index"></slot>
 			  <td v-if="enabled">
 			    <img :src="index == currentEdit ? '/img/edit-icon.webp' : '/img/edit-padlock-icon.webp'" style="width: 1em; cursor:pointer;" @click="toggleEdit(index)" />
 			  </td>

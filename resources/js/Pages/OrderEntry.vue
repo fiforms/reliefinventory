@@ -95,17 +95,17 @@ import TextArea from '@/Components/TextArea.vue';
 					<th colspan="2">Quantity</th>
 					<th>Comments</th>
 				</template>
-				<template #tbody="{ record, index }">
-					<td>{{ record.itemtype.name }}</td>
-					<td colspan="2">{{ record.qty_requested }}
-					    {{ record.qty_requested > 1 ? record.packagetype.plural : record.packagetype.singular }}</td>
-					<td>{{ record.comments }}</td>
+				<template #tbody="{ subrecord, index }">
+					<td>{{ subrecord.itemtype.name }}</td>
+					<td colspan="2">{{ subrecord.qty_requested }}
+					    {{ subrecord.qty_requested > 1 ? subrecord.packagetype.plural : subrecord.packagetype.singular }}</td>
+					<td>{{ subrecord.comments }}</td>
 				</template>
-				<template #default="{ record, index }">
+				<template #default="{ subrecord, index }">
 				  <td>
 					<ComboBox 
-						v-model:keyValue="record.itemtype_id"
-						v-model:updates="record.itemtype"
+						v-model:keyValue="subrecord.itemtype_id"
+						v-model:updates="subrecord.itemtype"
 						optionsource="/json/itemtypes/noitems"
 						:enabled="true"
 						/>
@@ -113,22 +113,22 @@ import TextArea from '@/Components/TextArea.vue';
 				  <td>
 					<TextInput
 							type="number"
-						    v-model="record.qty_requested"
+						    v-model="subrecord.qty_requested"
 							:enabled="true"
 					  /> 
 				  </td>
 				  <td>
 					  <ComboBox 
-					  	v-model:keyValue="record.packagetype_id"
-					  	v-model:updates="record.packagetype"
+					  	v-model:keyValue="subrecord.packagetype_id"
+					  	v-model:updates="subrecord.packagetype"
 					  	optionsource="/json/packagetypes"
-						:display="record.qty_requested > 1 ? 'plural' : 'singular'"
+						:display="subrecord.qty_requested > 1 ? 'plural' : 'singular'"
 					  	:enabled="true"
 					  	/>
 				  </td>
 				  <td>
 				    <TextInput
-				  	    v-model="record.comments"
+				  	    v-model="subrecord.comments"
 				  		:enabled="true"
 				    /> 
 				  </td>
@@ -144,15 +144,15 @@ import TextArea from '@/Components/TextArea.vue';
 					<th>Description</th>
 					<th>Quantity</th>
 				</template>
-				<template #tbody="{ record, index }">
-					<td>{{ record.item.description }}</td>
-					<td>{{ record.qty_subtracted }}</td>
+				<template #tbody="{ subrecord, index }">
+					<td>{{ subrecord.item.description }}</td>
+					<td>{{ subrecord.qty_subtracted }}</td>
 				</template>
-				<template #default="{ record, index }">
+				<template #default="{ subrecord, index }">
 				  <td>
 					<ComboBox 
-						v-model:keyValue="record.item_id"
-						v-model:updates="record.item"
+						v-model:keyValue="subrecord.item_id"
+						v-model:updates="subrecord.item"
 						optionsource="/json/items"
 						:enabled="true"
 						/>
@@ -161,7 +161,7 @@ import TextArea from '@/Components/TextArea.vue';
 					<TextInput
 					    id="qty"
 						type="number"
-					    v-model="record.qty_subtracted"
+					    v-model="subrecord.qty_subtracted"
 						:enabled="true"
 					    /> 
 				  </td>
