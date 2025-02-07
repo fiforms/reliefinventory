@@ -8,7 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Page extends Model
 {
-    protected $fillable = ['menu_title', 'header_text', 'content'];
+    protected $fillable = ['hashtag','menu_title', 'header_text', 'content'];
 
     /**
      * Get the menu items associated with the page.

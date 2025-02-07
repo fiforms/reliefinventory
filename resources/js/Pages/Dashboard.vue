@@ -1,47 +1,48 @@
 <!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
-<script setup>
-import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
-
-</script>
-
 <template>
-    <Head title="Dashboard" />
+   <Head title="Dashboard" />
+   <AuthenticatedLayout>
+     <template #header></template>
 
-    <AuthenticatedLayout>
-        <template #header>
-        </template>
-
-	<div class="menu-container">
-	  <div v-for="page in pages" :key="page.id" class="menu-page">
-	    <h2 class="menu-title">{{ page.menu_title }}</h2>
-	    <p class="menu-header">{{ page.header_text }}</p>
-	    <div class="menu-items">
-	      <div 
-	        v-for="item in page.menu_items" 
-	        :key="item.id" 
-	        class="menu-item"
-	        @click="navigate(item.link_url)"
-	      >
-	        <img :src="item.graphic_url" :alt="item.link_text" class="menu-icon" />
-	        <span class="menu-text">{{ item.link_text }}</span>
-	      </div>
-	    </div>
-	  </div>
-	</div>
-    </AuthenticatedLayout>
+     <div v-if="currentPage" class="menu-container">
+       <div class="menu-page">
+         <h2 class="menu-title">{{ currentPage.menu_title }}</h2>
+         <p class="menu-header">{{ currentPage.header_text }}</p>
+         <div class="menu-items">
+           <div
+             v-for="item in currentPage.menu_items"
+             :key="item.id"
+             class="menu-item"
+             @click="navigate(item.link_url,false)"
+			 @contextmenu="navigate(item.link_url,true)"
+           >
+             <img :src="item.graphic_url" :alt="item.link_text" class="menu-icon" />
+             <span class="menu-text">{{ item.link_text }}</span>
+           </div>
+         </div>
+       </div>
+     </div>
+   </AuthenticatedLayout>
 </template>
 
 
 <script>
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { Head } from '@inertiajs/vue3';
+
 import axios from 'axios';
 
 export default {
   name: "MenuComponent",
+  components: {
+    AuthenticatedLayout,
+    Head
+  },
   data() {
     return {
       pages: [],
+	  currentPage: null,
     };
   },
   created() {
@@ -52,13 +53,39 @@ export default {
       try {
         const response = await axios.get('/json/menu-data');
         this.pages = response.data;
+		this.currentPage = this.pages.length ? this.pages[0] : null;
       } catch (error) {
         console.error("Failed to load menu data:", error);
       }
     },
-    navigate(url) {
-      window.location.href = url;
-    },
+    navigate(url,newWindow) {
+	  if (url.startsWith('#')) {
+		if(newWindow) return false;
+	    const targetPage = this.pages.find(page => page.hashtag === url.substring(1));
+	    if (targetPage) {
+	      this.currentPage = targetPage;	    }
+	  } else {
+	    if(newWindow) {
+			window.open('url','_blank');
+		}
+		else {
+			window.location.href = url;
+		}
+	  }
+	},
+	navigateToPage(hashtag) {
+	  const targetPage = this.pages.find(page => page.hashtag === hashtag);
+	  if (targetPage) {
+	    this.currentPage = targetPage;
+	  }
+	},
+	},
+	watch: {
+	    '$route.query.page'(newPage) {
+	      if (newPage) {
+	        this.navigateToPage(newPage);
+	      }
+	  }
   },
 };
 </script>
@@ -66,32 +93,39 @@ export default {
 <style scoped>
 .menu-container {
   display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
+  justify-content: center; /* Centers the .menu-page container */
   padding: 20px;
 }
+
 .menu-page {
-  flex: 1 1 calc(50% - 40px);
+  max-width: 1024px; /* Locks maximum width */
+  width: 100%; /* Ensures it scales responsively */
   border: 1px solid #ddd;
   border-radius: 8px;
   padding: 20px;
   background-color: #f9f9f9;
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+  text-align: center; /* Centers the text elements inside */
 }
+
 .menu-title {
   font-size: 1.5rem;
   margin-bottom: 10px;
 }
+
 .menu-header {
   font-size: 1rem;
   color: #555;
   margin-bottom: 20px;
 }
+
 .menu-items {
   display: flex;
   flex-wrap: wrap;
-  gap: 15px;
+  justify-content: center; /* Ensures icons are evenly spaced and centered */
+  gap: 20px; /* Increases spacing between items */
 }
+
 .menu-item {
   display: flex;
   flex-direction: column;
@@ -105,15 +139,18 @@ export default {
   width: 120px;
   transition: transform 0.2s, box-shadow 0.2s;
 }
+
 .menu-item:hover {
   transform: translateY(-5px);
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
+
 .menu-icon {
   width: 64px;
   height: 64px;
   margin-bottom: 10px;
 }
+
 .menu-text {
   font-size: 0.9rem;
   font-weight: bold;
@@ -125,5 +162,6 @@ export default {
     flex: 1 1 100%;
   }
 }
+
 </style>
 
