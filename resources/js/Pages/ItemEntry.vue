@@ -81,13 +81,16 @@ import Checkbox from '@/Components/Checkbox.vue';
 								:enabled="editing">
 				<template #thead>
 					<th>Item Description</th>
-					<th>Package</th>
+					<th colspan="3">Package</th>
+					<th>Total {{ record.unit.abbreviation }}</th>
 					<th>UPC</th>
 				</template>
 				<template #tbody="{ subrecord, index }">
 					<td>{{ subrecord.description }}</td>
-				     <td>{{ subrecord.packagetype.singular }} 
-						 <span v-if="subrecord.case_qty"> of {{ subrecord.case_qty }} ( {{ subrecord.size }} {{ record.unit.abbreviation }} )</span></td>
+				     <td colspan="3">{{ subrecord.packagetype.singular }} 
+						 <span v-if="subrecord.case_qty"> of {{ subrecord.case_qty }} ( {{ subrecord.size * 1.0 }} {{ record.unit.abbreviation }} )</span></td>
+					 <td><span v-if="subrecord.case_qty"> {{ subrecord.case_qty * subrecord.size }}</span>
+					     <span v-else>{{ subrecord.size * 1.0 }}</span></td>	 
 					 <td> {{ subrecord.upc }}</td>
 				</template>
 				<template #default="{ subrecord, index }">
@@ -105,6 +108,22 @@ import Checkbox from '@/Components/Checkbox.vue';
 						display="singular"
 						:enabled="true" />
 				  </td>
+				  <td>
+				  <TextInput
+				   		v-model="subrecord.size" 
+						type="number"
+						:enabled="true"
+				        />
+				  </td>
+				  <td>
+				  <TextInput
+				   		v-model="subrecord.case_qty" 
+					  	type="number"
+					  	:enabled="true"
+				   />
+				  </td>
+				  <td><span v-if="subrecord.case_qty"> {{ subrecord.case_qty * subrecord.size }}</span>
+					<span v-else>{{ subrecord.size * 1.0 }}</span></td>
 				  <td>
 				  <TextInput
 				  	    v-model="subrecord.upc"
