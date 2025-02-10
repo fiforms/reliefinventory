@@ -10,19 +10,23 @@ use Illuminate\Database\Eloquent\Model;
 class Location extends Model
 {
     use HasFactory;
-
+    
     protected $table = 'locations';
-
+    
     protected $fillable = [
+        'PullSequence',
+        'Route',
+        'Block',
+        'Aisle',
+        'Lane',
+        'Stack',
+        'use_id',
         'code',
         'status',
     ];
-
-    /**
-     * Define the relationship with PalletStatus.
-     */
-    public function palletStatuses()
+    
+    public function use()
     {
-        return $this->hasMany(PalletStatus::class);
+        return $this->belongsTo(UseModel::class, 'use_id');
     }
 }

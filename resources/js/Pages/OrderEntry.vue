@@ -1,8 +1,9 @@
 <!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
-<!-- OrderEntry.vue -->
-
-<!-- This can be used as a prototype for additional vue components -->
+	 
+<!-- OrderEntry.vue  
+     This is an RIForm Vue File. It's similar to a normal Vue file except that it 
+	 requires no script or code. Use this as a model for other RIForm Vue Files -->
 
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';

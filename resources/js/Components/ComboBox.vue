@@ -67,7 +67,11 @@ export default {
     },
 	optionsource: {
 	  type: String,
-	  required: true,	
+	  required: false,	
+	},
+	options: {
+	  type: Array,
+	  required: false,
 	},
 	updates: {
 		type: Object,
@@ -89,11 +93,11 @@ export default {
       search: "",
       isOpen: false,
       filteredOptions: [],
-	  options: [],
+	  optionlist: [],
     };
   },
   watch: {
-    options: {
+    optionlist: {
       immediate: true,
       handler(newOptions) {
         this.filteredOptions = newOptions;
@@ -103,7 +107,7 @@ export default {
     keyValue: {
       immediate: true,
       handler(newValue) {
-        const selectedOption = this.options.find(option => option.id === newValue);
+        const selectedOption = this.optionlist.find(option => option.id === newValue);
         this.search = selectedOption ? selectedOption[this.display] : "";
 		if(this.updates && selectedOption) {
 			this.$emit("update:updates", selectedOption);
@@ -113,17 +117,22 @@ export default {
   },
   methods: {
 	fetchOptions() {
-	  axios
-		.get(this.optionsource)
-		.then((response) => {
-		  this.options = response.data.records;
-		})
-		.catch((error) => {
-		  console.error("Error fetching options:", error);
-		});
+	  if(this.options) {
+		  this.optionlist = this.options;
+	  }
+	  else {
+		  axios
+			.get(this.optionsource)
+			.then((response) => {
+			  this.optionlist = response.data.records;
+			})
+			.catch((error) => {
+			  console.error("Error fetching options:", error);
+			});
+		}
 	},
 	filterOptions() {
-      this.filteredOptions = this.options.filter((option) =>
+      this.filteredOptions = this.optionlist.filter((option) =>
         option[this.display].toLowerCase().includes(this.search.toLowerCase())
       );
     },
@@ -134,7 +143,7 @@ export default {
 	  this.$emit("update:updates", option)
     },
 	showOptionTitle() {
-		const selectedOption = this.options.find(option => option.id === this.keyValue);
+		const selectedOption = this.optionlist.find(option => option.id === this.keyValue);
 		this.search = selectedOption ? selectedOption[this.display] : "";
 	},
     handleBlur() {

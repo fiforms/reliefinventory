@@ -18,8 +18,9 @@ class MenuController extends Controller
     public function index(): JsonResponse
     {
         // Fetch all pages with their associated menu items
-        $pages = Page::with('menuItems')->get();
-
+        $pages = Page::with(['menuItems' => function ($query) {
+            $query->orderBy('order');
+        }])->get();
         // Return the data as a JSON response
         return response()->json($pages);
     }

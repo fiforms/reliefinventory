@@ -34,6 +34,14 @@ Route::get('/', function () {
         return Inertia::render('ItemEntry');
     })->middleware(['auth', 'verified'])->name('setup');
     
+    Route::get('/setup/categories', function () {
+        return Inertia::render('CategoryEntry');
+    })->middleware(['auth', 'verified'])->name('setup');
+    
+    Route::get('/setup/locations', function () {
+        return Inertia::render('LocationEntry');
+    })->middleware(['auth', 'verified'])->name('setup');
+    
     Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
@@ -65,6 +73,17 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::put('/categories/{id}', [CategoryController::class, 'update']);
     Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
     
+    // Locations
+    Route::get('/locations', [LocationController::class, 'index']);
+    Route::post('/locations', [LocationController::class, 'store']);
+    Route::put('/locations/{id}', [LocationController::class, 'update']);
+    Route::delete('/locations/{id}', [LocationController::class, 'destroy']);
+    
+    // Uses (for Locations)
+    Route::get('/uses', [UseController::class, 'index']);
+    Route::post('/uses', [UseController::class, 'store']);
+    Route::put('/uses/{id}', [UseController::class, 'update']);
+    Route::delete('/uses/{id}', [UseController::class, 'destroy']);
     
     // ItemTypes
     Route::get('/itemtypes', [ItemTypeController::class, 'index']);
