@@ -1,41 +1,112 @@
 <?php
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
-// Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
 use App\Models\Person;
-use Illuminate\Http\JsonResponse;
 
 class PeopleController extends Controller
 {
+    // Validation rules for people
+    private const VALIDATION_RULES = [
+        'first_name' => 'required|string|max:255',
+        'last_name' => 'required|string|max:255',
+        'organization' => 'nullable|string|max:255',
+        'phone' => 'nullable|string|max:255',
+        'email' => 'nullable|email|max:255|unique:people,email',
+        'address' => 'nullable|string',
+        'city' => 'nullable|string|max:255',
+        'state' => 'nullable|string|max:2',
+        'zip' => 'nullable|string|max:10',
+        'type' => 'required|in:customer,donor',
+        'comments' => 'nullable|string',
+    ];
+
     /**
-     * Display a listing of the people with their calculated name field.
+     * Retrieve all people (customers and donors).
      *
-     * @return JsonResponse
+     * @return \Illuminate\Http\JsonResponse
      */
-    public function index(): JsonResponse
+    public function index()
     {
-        $people = Person::all()->map(function ($person) {
-            return [
-                'id' => $person->id,
-                'first_name' => $person->first_name,
-                'last_name' => $person->last_name,
-                'email' => $person->email,
-                'organization' => $person->organization,
-                'phone' => $person->phone,
-                'address' => $person->address,
-                'city' => $person->city,
-                'state' => $person->state,
-                'zip' => $person->zip,
-                'type' => $person->type,
-                'comments' => $person->comments,
-                'created_at' => $person->created_at,
-                'updated_at' => $person->updated_at,
-                'name' => "{$person->last_name}, {$person->first_name} ({$person->email})",
-                ];
-        });
-            
-            return response()->json(['records' => $people]);
+        $people = Person::all();
+
+        return response()->json([
+            'records' => $people,
+            'templates' => [
+                '_default' => [
+                    'first_name' => '',
+                    'last_name' => '',
+                    'organization' => '',
+                    'phone' => '',
+                    'email' => '',
+                    'address' => '',
+                    'city' => '',
+                    'state' => '',
+                    'zip' => '',
+                    'type' => 'customer',
+                    'comments' => '',
+                ]
+            ]
+        ]);
+    }
+
+    /**
+     * Store a new person (customer or donor).
+     *
+     * @param \Illuminate\Http\Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function store(Request $request)
+    {
+        $validatedData = $request->validate(self::VALIDATION_RULES);
+        
+        $person = Person::create($validatedData);
+
+        return response()->json([
+            'message' => 'Person added successfully.',
+            'record' => $person
+        ], 201);
+    }
+
+    /**
+     * Update an existing person.
+     *
+     * @param \Illuminate\Http\Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function update(Request $request, $id)
+    {
+        $person = Person::findOrFail($id);
+        
+        $rules = self::VALIDATION_RULES;
+        $rules['email'] = 'nullable|email|max:255|unique:people,email,' . $id;
+
+        $validatedData = $request->validate($rules);
+
+        $person->update($validatedData);
+
+        return response()->json([
+            'message' => 'Person updated successfully.',
+            'record' => $person
+        ], 200);
+    }
+
+    /**
+     * Delete a person.
+     *
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function destroy($id)
+    {
+        $person = Person::findOrFail($id);
+        $person->delete();
+
+        return response()->json([
+            'message' => 'Person deleted successfully.'
+        ], 200);
     }
 }

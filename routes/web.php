@@ -41,6 +41,10 @@ Route::get('/', function () {
     Route::get('/setup/items', function () {
         return Inertia::render('ItemEntry');
     })->middleware(['auth', 'verified'])->name('setup');
+  
+    Route::get('/setup/people', function () {
+        return Inertia::render('People');
+    })->middleware(['auth', 'verified'])->name('setup');
     
     Route::get('/setup/categories', function () {
         return Inertia::render('CategoryEntry');
@@ -67,7 +71,13 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
 {
     // API route for listing all statuses
     Route::get('/statuses', [StatusController::class, 'index']);
+    
     Route::get('/people', [PeopleController::class, 'index']);
+    Route::post('/people', [PeopleController::class, 'store']);
+    Route::put('/people/{id}', [PeopleController::class, 'update']);
+    Route::delete('/people/{id}', [PeopleController::class, 'destroy']);
+    
+    
     Route::get('/menu-data', [MenuController::class, 'index']);
     
     // Items

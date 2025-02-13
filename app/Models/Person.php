@@ -71,7 +71,6 @@ class Person extends Model
      * @var array
      */
     protected $casts = [
-        'type' => 'array', // Automatically casts the SET column to an array in Laravel
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

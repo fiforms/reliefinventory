@@ -1,0 +1,139 @@
+<script setup>
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { Head } from '@inertiajs/vue3';
+import TextInput from '@/Components/TextInput.vue';
+import ComboBox from '@/Components/ComboBox.vue';
+import RIForm from '@/Components/RIForm.vue';
+import TextArea from '@/Components/TextArea.vue';
+
+</script>
+
+<template>
+  <Head title="People Entry" />
+  <AuthenticatedLayout>
+    <template #header>
+    </template>
+
+    <RIForm 
+      title="People Entry Form" 
+      datasource="/json/people">
+      
+      <template #thead>
+        <th>First Name</th>
+        <th>Last Name</th>
+        <th>Organization</th>
+        <th>Phone</th>
+        <th>Email</th>
+        <th>Type</th>
+      </template>
+
+      <template #tbody="{ record }"> 
+        <td>{{ record.first_name }}</td>
+        <td>{{ record.last_name }}</td>
+        <td>{{ record.organization || 'N/A' }}</td>
+        <td>{{ record.phone || 'N/A' }}</td>
+        <td>{{ record.email || 'N/A' }}</td>
+        <td>{{ record.type }}</td>
+      </template>
+
+      <template #default="{ record, editing }">
+        <div class="ri_formtable">
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">First Name:</div>
+            <TextInput
+              v-model="record.first_name"
+              required
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Last Name:</div>
+            <TextInput
+              v-model="record.last_name"
+              required
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Organization:</div>
+            <TextInput
+              v-model="record.organization"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Phone:</div>
+            <TextInput
+              v-model="record.phone"
+              type="tel"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Email:</div>
+            <TextInput
+              v-model="record.email"
+              type="email"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Address:</div>
+            <TextArea
+              v-model="record.address"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">City:</div>
+            <TextInput
+              v-model="record.city"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">State:</div>
+            <TextInput
+              v-model="record.state"
+              maxlength="2"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">ZIP Code:</div>
+            <TextInput
+              v-model="record.zip"
+              maxlength="10"
+              :enabled="editing"
+            /> 
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Type:</div>
+            <ComboBox
+              v-model:keyValue="record.type"
+			  :options="[{ id: 'customer', name: 'Customer' }, { id: 'donor', name: 'Donor' },]"
+              :enabled="editing"
+            />
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Comments:</div>
+            <TextArea
+              v-model="record.comments"
+              :enabled="editing"
+            /> 
+          </div>
+        </div>
+      </template>
+    </RIForm>
+  </AuthenticatedLayout>
+</template>
