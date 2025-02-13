@@ -40,7 +40,12 @@ import RISubform from '@/Components/RISubform.vue';
 		    			<span style="font-weight: bold; font-size: 14pt;"> {{ record.id.toString().padStart(8, "0").substring(6,8) }}</span>
 						&nbsp; &nbsp;  (P{{ record.id.toString().padStart(8, "0") }})  
 		  </div></div>
-		  
+		  <div class="ri_fieldset">
+			<div class="ri_fieldlabel">  </div>
+			<p>
+			<button @click="printLabel(record.id)" class="ri_defaultbutton">Print Pallet Label</button>
+			</p>
+		  </div>  
 		  <div class="ri_formtable">
 		    <div class="ri_fieldset">
 		      <div class="ri_fieldlabel">Date Packed:</div>
@@ -102,3 +107,15 @@ import RISubform from '@/Components/RISubform.vue';
     </RIForm>
   </AuthenticatedLayout>
 </template>
+
+<script>
+
+export default {
+	
+	methods: {
+		printLabel(palletId) {
+		    window.open("/report/pallet/" + palletId,"_blank");
+		},
+    }
+}
+</script>
