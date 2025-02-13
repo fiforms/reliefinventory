@@ -30,6 +30,14 @@ Route::get('/', function () {
         return Inertia::render('OrderEntry');
     })->middleware(['auth', 'verified'])->name('entry');
     
+    Route::get('/donation-sorting', function () {
+        return Inertia::render('DonationSorting');
+    })->middleware(['auth', 'verified'])->name('entry');
+    
+    Route::get('/pallet-management', function () {
+        return Inertia::render('PalletManagement');
+    })->middleware(['auth', 'verified'])->name('entry');
+    
     Route::get('/setup/items', function () {
         return Inertia::render('ItemEntry');
     })->middleware(['auth', 'verified'])->name('setup');
@@ -41,6 +49,10 @@ Route::get('/', function () {
     Route::get('/setup/locations', function () {
         return Inertia::render('LocationEntry');
     })->middleware(['auth', 'verified'])->name('setup');
+    
+    Route::get('/reports/labels', function () {
+        return Inertia::render('PrintLabels');
+    })->middleware(['auth', 'verified'])->name('reports');
     
     Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -104,6 +116,18 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::put('/orders/{id}', [OrderController::class, 'update']);
     Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
     
+    // Donations
+    Route::get('/donations', [DonationController::class, 'index']);
+    Route::post('/donations', [DonationController::class, 'store']);
+    Route::put('/donations/{id}', [DonationController::class, 'update']);
+    Route::delete('/donations/{id}', [DonationController::class, 'destroy']);
+    
+    // Pallets
+    Route::get('/pallets', [PalletController::class, 'index']);
+    Route::get('/pallets/{status}', [PalletController::class, 'index']);
+    Route::post('/pallets', [PalletController::class, 'store']);
+    Route::put('/pallets/{id}', [PalletController::class, 'update']);
+    Route::delete('/pallets/{id}', [PalletController::class, 'destroy']);
 });
 
 

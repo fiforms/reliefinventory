@@ -33,6 +33,11 @@ class Pallet extends Model
         return $this->hasOne(PalletStatus::class)->latest('created_at');
     }
     
+    public function lastLocation()
+    {
+        return $this->belongsTo(Location::class,'last_location_id');
+    }
+    
     public function items()
     {
         return $this->hasMany(OrderLine::class);

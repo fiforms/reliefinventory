@@ -133,7 +133,7 @@ export default {
 	},
 	filterOptions() {
       this.filteredOptions = this.optionlist.filter((option) =>
-        option[this.display].toLowerCase().includes(this.search.toLowerCase())
+        option[this.display] && option[this.display].toLowerCase().includes(this.search.toLowerCase())
       );
     },
     selectOption(option) {

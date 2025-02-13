@@ -49,4 +49,9 @@ class Transaction extends Model
     {
         return $this->hasMany(ItemLedger::class, 'orderdonation_id');
     }
+    
+    public function user() 
+    {
+        return $this->belongsTo(User::class);
+    }
 }
