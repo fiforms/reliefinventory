@@ -32,9 +32,11 @@ class PalletController extends Controller
             'records' => $pallets,
             'templates' => [
                 '_default' => [
+                    'id' => null,
                     'datepacked' => now()->toDateString(),
                     'last_location_id' => null,
                     'last_status' => 'created',
+                    'statuses' => [],
                 ],
             ],
         ]);

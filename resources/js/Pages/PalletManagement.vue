@@ -33,7 +33,7 @@ import RISubform from '@/Components/RISubform.vue';
       <template #default="{ record, editing, templates }">
 		
 		<div class="ri_formtable">
-		  <div class="ri_fieldset">
+		  <div class="ri_fieldset"  v-if="record.id">
 		    <div class="ri_fieldlabel"> Pallet # </div>
 		    			<span style="font-weight: bold; font-size: 14pt;"> {{ record.id.toString().padStart(8, "0").substring(6,8) }}</span>
 						&nbsp; &nbsp;  (P{{ record.id.toString().padStart(8, "0") }})  
