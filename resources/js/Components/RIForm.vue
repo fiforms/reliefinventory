@@ -87,7 +87,7 @@
 		<button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
 		<button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
 		<button v-if="editing" @click="deleteRecord()" class="ri_formbutton" style="float: right">Delete</button>
-		<button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to Orders</button>
+		<button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to Listing</button>
 	  </div>
     </div>
 </template>
