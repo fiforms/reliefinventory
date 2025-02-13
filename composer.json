@@ -11,6 +11,7 @@
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
         "league/csv": "^9.21",
+        "milon/barcode": "^11.0",
         "spatie/laravel-pdf": "^1.5",
         "tightenco/ziggy": "^2.0"
     },

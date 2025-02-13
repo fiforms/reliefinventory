@@ -54,6 +54,9 @@ Route::get('/', function () {
         return Inertia::render('PrintLabels');
     })->middleware(['auth', 'verified'])->name('reports');
     
+    Route::get('/report/pallet/{id}', [PalletReportController::class, 'generateReport'])->name('report.pallet');
+    
+    
     Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('/profile', [ProfileController::class, 'update'])->name('profile.update');
