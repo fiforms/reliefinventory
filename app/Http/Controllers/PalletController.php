@@ -8,6 +8,13 @@ use Illuminate\Http\Request;
 
 class PalletController extends Controller
 {
+    
+    
+    private const validation = [
+        'datepacked' => 'required|date',
+        'last_location_id' => 'nullable|exists:locations,id',
+        'last_status' => 'required|in:created,wrapped,moved,unwrapped,archived',
+        ];
     /**
      * Display a listing of the pallets, optionally filtered by last_status.
      */
@@ -19,7 +26,7 @@ class PalletController extends Controller
             $query->where('last_status', $lastStatus);
         }
         
-        $pallets = $query->with('lastLocation')->get();
+        $pallets = $query->with('statuses.location')->get();
         
         return response()->json([
             'records' => $pallets,
@@ -38,11 +45,7 @@ class PalletController extends Controller
      */
     public function store(Request $request)
     {
-        $validatedData = $request->validate([
-            'datepacked' => 'required|date',
-            'last_location_id' => 'nullable|exists:locations,id',
-            'last_status' => 'required|in:created,wrapped,moved,unwrapped,archived',
-        ]);
+        $validatedData = $request->validate(self::validation);
         
         // Find the maximum existing pallet ID
         $maxPalletId = Pallet::max('id') ?? 0;
@@ -90,26 +93,15 @@ class PalletController extends Controller
     {
         $pallet = Pallet::findOrFail($id);
         
-        $validatedData = $request->validate([
-            'datepacked' => 'required|date',
-            'last_location_id' => 'nullable|exists:locations,id',
-            'last_status' => 'required|in:created,wrapped,moved,unwrapped,archived',
-        ]);
-        
-        $changes = [];
-        if ($pallet->last_status !== $validatedData['last_status']) {
-            $changes['status'] = $validatedData['last_status'];
-        }
-        if ($pallet->last_location_id !== $validatedData['last_location_id']) {
-            $changes['location_id'] = $validatedData['last_location_id'];
-        }
-        
+        $validatedData = $request->validate(self::validation);
         $pallet->update($validatedData);
         
-        // Log changes to palletstatus if any relevant field changed
-        if (!empty($changes)) {
-            PalletStatus::create(array_merge(['pallet_id' => $pallet->id], $changes));
-        }
+        // Log status change in palletstatus
+        PalletStatus::create([
+            'pallet_id' => $pallet->id,
+            'location_id' => $validatedData['last_location_id'],
+            'status' => $validatedData['last_status'],
+        ]);
         
         return response()->json([
             'message' => 'Pallet updated successfully.',

@@ -15,12 +15,15 @@ import RISubform from '@/Components/RISubform.vue';
       datasource="/json/pallets">
       
       <template #thead>
+		<th>#</th>
         <th>Packed Date</th>
         <th>Last Location</th>
         <th>Status</th>
       </template>
 
       <template #tbody="{ record, index }">
+		<td><span style="font-weight: bold; font-size: 14pt;"> {{ record.id.toString().padStart(8, "0").substring(6,8) }}</span>
+			&nbsp; &nbsp;  (P{{ record.id.toString().padStart(8, "0") }})</td>
         <td>{{ record.datepacked }}</td>
         <td v-if="record.last_location">{{ record.last_location.code }}</td>
         <td v-else>Unknown</td>
@@ -28,18 +31,26 @@ import RISubform from '@/Components/RISubform.vue';
       </template>
 
       <template #default="{ record, editing, templates }">
-        <div class="ri_formtable">
-          <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Date Packed:</div>
-            <TextInput
-              id="datepacked"
-              type="date"
-              v-model="record.datepacked"
-              required
-              autofocus
-              :enabled="editing"
-            />
-          </div>
+		
+		<div class="ri_formtable">
+		  <div class="ri_fieldset">
+		    <div class="ri_fieldlabel"> Pallet # </div>
+		    			<span style="font-weight: bold; font-size: 14pt;"> {{ record.id.toString().padStart(8, "0").substring(6,8) }}</span>
+						&nbsp; &nbsp;  (P{{ record.id.toString().padStart(8, "0") }})  
+		  </div></div>
+		  
+		  <div class="ri_formtable">
+		    <div class="ri_fieldset">
+		      <div class="ri_fieldlabel">Date Packed:</div>
+		      <TextInput
+		        id="datepacked"
+		        type="date"
+		        v-model="record.datepacked"
+		        required
+		        autofocus
+		        :enabled="editing"
+		      />
+		    </div>
           
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Location:</div>
@@ -48,6 +59,7 @@ import RISubform from '@/Components/RISubform.vue';
               v-model:updates="record.last_location"
               optionsource="/json/locations"
               :enabled="editing"
+			  display="code"
             />
           </div>
 
@@ -57,14 +69,14 @@ import RISubform from '@/Components/RISubform.vue';
               v-model:keyValue="record.last_status"
               :options="[{ id: 'created', name: 'Newly Created' }, { id: 'wrapped', name: 'Wrapped' }, { id: 'moved', name: 'Moved' },{ id: 'unwrapped', name: 'Unwrapped' },{ id: 'archived', name: 'Archived' },]"
               :enabled="editing"
-            />
+           />
           </div>
         </div>
 
         <RISubform
           title="Pallet Status History"
-          v-model:records="record.pallet_status"
-          :template="templates.pallet_status"
+          v-model:records="record.statuses"
+          :template="[]"
           :enabled="false">
           
           <template #thead>
@@ -75,7 +87,7 @@ import RISubform from '@/Components/RISubform.vue';
 
           <template #tbody="{ subrecord, index }">
             <td>{{ subrecord.created_at }}</td>
-            <td>{{ subrecord.location.code }}</td>
+            <td>{{ subrecord.location ? subrecord.location.code : '' }}</td>
             <td>{{ subrecord.status }}</td>
           </template>
 

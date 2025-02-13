@@ -15,6 +15,8 @@ class Pallet extends Model
 
     protected $fillable = [
         'datepacked',
+        'last_location_id',
+        'last_status',
     ];
 
 
