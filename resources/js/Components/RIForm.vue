@@ -63,7 +63,10 @@
 <template>
 	<div class="ri_form_container">
 	  <div v-if="!record" class="ri_datatable_container">
-	    <h2 class="ri_datatable_head">{{ title }}</h2>
+	    <h2 class="ri_datatable_head">{{ title }}
+			<button @click="newRecord()" class="ri_defaultbutton ri_floating">New Record</button>
+
+		</h2>
 	    <table border="1" class="ri_datatable">
 	      <thead>
 			<tr>
@@ -76,7 +79,6 @@
 	        </tr>
 	      </tbody>
 	    </table>
-		<button @click="newRecord()" class="ri_defaultbutton">New Record</button>
 	  </div>
 	  <div v-else class="ri_dataform_container">
 	    <h2 class="ri_dataform_head">
@@ -105,6 +107,10 @@ export default {
 	    type: String,
 	    required: true,
 	  },
+	  precreate: { 
+		type: Boolean,
+		default: false,
+	  }
   },
   data() {
     return {
@@ -174,8 +180,19 @@ export default {
 		this.editing = !this.editing;
 	},
 	newRecord() {
-		this.record = JSON.parse(JSON.stringify(this.templates['_default']));
-	    this.editing = true;
+		if(this.precreate) {
+			axios.post(this.datasource, [])
+					.then((response) => {
+					  this.record = response.data.record;
+					  this.editing = true;
+					  this.records = [];
+					  this.fetchRecords();
+					})
+		}
+		else {
+		  this.record = JSON.parse(JSON.stringify(this.templates['_default']));
+	      this.editing = true;
+		}
 	}
   },
   created() {

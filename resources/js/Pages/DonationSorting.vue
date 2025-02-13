@@ -31,13 +31,11 @@ import TextArea from '@/Components/TextArea.vue';
 			<th>Transaction Date</th>
 			<th>User</th>
 			<th>Total Items</th>
-			<th>Status</th>
 		</template>
 		<template #tbody="{ record, index }"> 
 			<td>{{ record.order_date }}</td>
 			<td>{{ record.user.name }}</td>
 			<td>{{ record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0) }}</td>
-			<td>{{ record.status.name }}</td>
 		</template>
 		<template #default="{ record, editing, templates }">
 		<div class="ri_formtable">
@@ -51,16 +49,6 @@ import TextArea from '@/Components/TextArea.vue';
 				    autofocus
 					:enabled="editing"
 			  /> 
-		  </div>
-		  <div class="ri_fieldset">
-  	  	  	<div class="ri_fieldlabel">Status:</div>
-		  
-		  	<ComboBox 
-				  	v-model:keyValue="record.status_id"
-					v-model:updates="record.status"
-					optionsource="/json/statuses"
-				  	:enabled="editing"
-		  	/>
 		  </div>
 		  <div class="ri_fieldset">
 		  	<div class="ri_fieldlabel">Comments</div>

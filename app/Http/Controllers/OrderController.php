@@ -48,10 +48,12 @@ class OrderController extends Controller
                         'type' => 'order',
                         'user_id' => Auth::id(),
                         'person_id' => null,
+                        'person' => [],
                         'status_id' => null,
                         'order_date' => date('Y-m-d'),
                         'comments' => null,
                         'item_ledgers' => [],
+                        'order_lines' => [],
                    ],
                    'item_ledgers' => [
                         'item_id' => null,

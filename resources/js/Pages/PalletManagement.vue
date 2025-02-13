@@ -12,7 +12,9 @@ import RISubform from '@/Components/RISubform.vue';
   <AuthenticatedLayout>
     <RIForm 
       title="Pallet Management"
-      datasource="/json/pallets">
+      datasource="/json/pallets"
+	  :precreate="true"
+	  >
       
       <template #thead>
 		<th>#</th>

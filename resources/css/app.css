@@ -82,6 +82,10 @@ button.ri_defaultbutton {
   background-color: #007bff;
 }
 
+button.ri_floating {
+	  float: right;
+}
+
 button.ri_defaultbutton, button.ri_formbutton {
   display: inline-block;
   padding: 10px 20px;

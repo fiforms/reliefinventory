@@ -33,7 +33,7 @@ class DonationController extends Controller
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'donation')
-        ->with(['itemLedgers.item.itemtype','user','status'])
+        ->with(['itemLedgers.item.itemtype','user'])
         ->get();
         
         return response()->json([
@@ -43,7 +43,7 @@ class DonationController extends Controller
                     'type' => 'donation',
                     'user_id' => Auth::id(),
                     'person_id' => null,
-                    'status_id' => null,
+                    'status_id' => 4,
                     'order_date' => date('Y-m-d'),
                     'comments' => null,
                     'item_ledgers' => [],

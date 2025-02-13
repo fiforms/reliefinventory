@@ -26,7 +26,7 @@ class PalletController extends Controller
             $query->where('last_status', $lastStatus);
         }
         
-        $pallets = $query->with('statuses.location')->get();
+        $pallets = $query->with('statuses.location')->orderBy('id','desc')->get();
         
         return response()->json([
             'records' => $pallets,
@@ -43,12 +43,11 @@ class PalletController extends Controller
     }
     
     /**
-     * Store a newly created pallet.
+     * Create a new pallet
      */
     public function store(Request $request)
     {
-        $validatedData = $request->validate(self::validation);
-        
+
         // Find the maximum existing pallet ID
         $maxPalletId = Pallet::max('id') ?? 0;
         
@@ -72,17 +71,18 @@ class PalletController extends Controller
         }
         
         // Create pallet with the custom ID
-        $pallet = Pallet::create(array_merge($validatedData, ['id' => $newPalletId]));
+        $pallet = Pallet::create(['id' => $newPalletId, 'last_status' => 'created', 'datepacked' => now()->toDateString()]);
         
         // Log status change in palletstatus
         PalletStatus::create([
             'pallet_id' => $pallet->id,
-            'location_id' => $validatedData['last_location_id'],
-            'status' => $validatedData['last_status'],
+            'status' => 'created',
         ]);
         
+        $pallet->statuses = [];
+        
         return response()->json([
-            'message' => 'Pallet created successfully.',
+            'status' => 'Pallet created successfully.',
             'record' => $pallet,
         ], 201);
     }
