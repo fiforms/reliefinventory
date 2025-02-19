@@ -48,7 +48,7 @@ class PeopleController extends Controller
                     'state' => '',
                     'zip' => '',
                     'comments' => '',
-                    'roles' => [],
+                    'people_roles' => [],
                 ],
                 'people_roles' => [
                   'role_id' => null,
@@ -68,6 +68,7 @@ class PeopleController extends Controller
         $data = $request->validate(self::VALIDATION_RULES);
         
         $person = Person::create($data);
+        $id = $person->id;
         
         // Insert new roles
         if (!empty($data['people_roles'])) {
