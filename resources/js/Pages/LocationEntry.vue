@@ -9,7 +9,11 @@ import RIForm from '@/Components/RIForm.vue';
 <template>
   <Head title="Location Management" />
   <AuthenticatedLayout>
-    <RIForm title="Manage Locations" datasource="/json/locations">
+    <RIForm 
+		title="Manage Locations" 
+		datasource="/json/locations" 
+		newrecordcaption="Add Location">
+		
       <template #thead>
         <th>Code</th>
         <th>Route</th>
