@@ -64,7 +64,7 @@
 	<div class="ri_form_container">
 	  <div v-if="!record" class="ri_datatable_container">
 	    <h2 class="ri_datatable_head">{{ title }}
-			<button @click="newRecord()" class="ri_defaultbutton ri_floating">New Record</button>
+			<button @click="newRecord()" class="ri_defaultbutton ri_floating">{{ newrecordcaption }}</button>
 
 		</h2>
 	    <table border="1" class="ri_datatable">
@@ -110,7 +110,11 @@ export default {
 	  precreate: { 
 		type: Boolean,
 		default: false,
-	  }
+	  },
+	  newrecordcaption: {
+		type: String,
+		default: "New Record",
+	  },
   },
   data() {
     return {

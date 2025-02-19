@@ -26,7 +26,8 @@ import TextArea from '@/Components/TextArea.vue';
 	  -->
 	<RIForm 
 	  title="Master Order Entry and Fill Form" 
-	  datasource="/json/orders">
+	  datasource="/json/orders"
+	  newrecordcaption="New Order">
 	    <template #thead>
 			<th>Order Date</th>
 			<th>Customer</th>
