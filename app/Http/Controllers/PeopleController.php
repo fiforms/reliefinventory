@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Person;
+use App\Models\PeopleRoles;
 
 class PeopleController extends Controller
 {
@@ -19,8 +20,9 @@ class PeopleController extends Controller
         'city' => 'nullable|string|max:255',
         'state' => 'nullable|string|max:2',
         'zip' => 'nullable|string|max:10',
-        'type' => 'required|in:customer,donor',
         'comments' => 'nullable|string',
+        'people_roles' => 'nullable|array',
+        'people_roles.*.role_id' => 'required|exists:roles,id',
     ];
 
     /**
@@ -30,7 +32,7 @@ class PeopleController extends Controller
      */
     public function index()
     {
-        $people = Person::all();
+        $people = Person::with(['people_roles'])->get();
 
         return response()->json([
             'records' => $people,
@@ -45,9 +47,12 @@ class PeopleController extends Controller
                     'city' => '',
                     'state' => '',
                     'zip' => '',
-                    'type' => 'customer',
                     'comments' => '',
-                ]
+                    'roles' => [],
+                ],
+                'people_roles' => [
+                  'role_id' => null,
+                ],
             ]
         ]);
     }
@@ -60,10 +65,21 @@ class PeopleController extends Controller
      */
     public function store(Request $request)
     {
-        $validatedData = $request->validate(self::VALIDATION_RULES);
+        $data = $request->validate(self::VALIDATION_RULES);
         
-        $person = Person::create($validatedData);
-
+        $person = Person::create($data);
+        
+        // Insert new roles
+        if (!empty($data['people_roles'])) {
+            $newRoles = array_map(fn($role) => [
+                'person_id' => $id,
+                'role_id' => $role['role_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ], $data['people_roles']);
+            
+            PeopleRoles::insert($newRoles);
+        }
         return response()->json([
             'message' => 'Person added successfully.',
             'record' => $person
@@ -84,13 +100,28 @@ class PeopleController extends Controller
         $rules = self::VALIDATION_RULES;
         $rules['email'] = 'nullable|email|max:255|unique:people,email,' . $id;
 
-        $validatedData = $request->validate($rules);
-
-        $person->update($validatedData);
-
+        $data = $request->validate($rules);
+        
+        // Update the person's details
+        $person->update($data);
+        
+        // Delete all existing roles for this person
+        PeopleRoles::where('person_id', $id)->delete();
+        
+        // Insert new roles
+        if (!empty($data['people_roles'])) {
+            $newRoles = array_map(fn($role) => [
+                'person_id' => $id,
+                'role_id' => $role['role_id'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ], $data['people_roles']);
+            
+            PeopleRoles::insert($newRoles);
+        }
+        
         return response()->json([
             'message' => 'Person updated successfully.',
-            'record' => $person
         ], 200);
     }
 

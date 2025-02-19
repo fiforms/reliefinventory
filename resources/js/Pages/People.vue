@@ -3,6 +3,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
+import MultiSelect from '@/Components/MultiSelect.vue';
 import RIForm from '@/Components/RIForm.vue';
 import TextArea from '@/Components/TextArea.vue';
 
@@ -36,7 +37,7 @@ import TextArea from '@/Components/TextArea.vue';
         <td>{{ record.type }}</td>
       </template>
 
-      <template #default="{ record, editing }">
+      <template #default="{ record, editing, templates }">
         <div class="ri_formtable">
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">First Name:</div>
@@ -117,11 +118,14 @@ import TextArea from '@/Components/TextArea.vue';
           </div>
 
           <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Type:</div>
-            <ComboBox
-              v-model:keyValue="record.type"
-			  :options="[{ id: 'customer', name: 'Customer' }, { id: 'donor', name: 'Donor' },]"
-              :enabled="editing"
+            <div class="ri_fieldlabel">Roles:</div>
+            <MultiSelect
+				v-model:records="record.people_roles"
+				:template="templates.people_roles" 
+				optionsource="/json/roles"
+                :enabled="editing"
+				fk_field="role_id"
+				display="name"
             />
           </div>
 

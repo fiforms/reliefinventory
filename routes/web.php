@@ -141,6 +141,12 @@ Route::group(['prefix' => 'json','middleware' => 'auth'], function()
     Route::post('/pallets', [PalletController::class, 'store']);
     Route::put('/pallets/{id}', [PalletController::class, 'update']);
     Route::delete('/pallets/{id}', [PalletController::class, 'destroy']);
+    
+    // Roles (for People
+    Route::get('/roles', [RoleController::class, 'index']);
+    Route::post('/roles', [RoleController::class, 'store']);
+    Route::put('/roles/{id}', [RoleController::class, 'update']);
+    Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
 });
 
 
