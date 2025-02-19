@@ -26,15 +26,20 @@ import Checkbox from '@/Components/Checkbox.vue';
 	  -->
 	<RIForm 
 	  title="Master Item List" 
-	  datasource="/json/itemtypes">
+	  datasource="/json/itemtypes"
+	  newrecordcaption="Add New Item">
+	 
+	  
 	    <template #thead>
 			<th>Category</th>
+			<th>ACS Item#</th>
 			<th>Item Type</th>
-			<th>Measured By</th>
+			<th>Unit</th>
 		    <th style="text-align:center;">Active</th>
 		</template>
 		<template #tbody="{ record, index }">
 			<td> {{ record.category.name }} </td> 
+			<td> {{ record.number }} </td>
 			<td> {{ record.name }} </td>
 			<td> {{ record.unit.abbreviation }} </td>
 			<td style="text-align: center;"> <span v-if="record.active"> &bull; </span> </td>
@@ -51,11 +56,19 @@ import Checkbox from '@/Components/Checkbox.vue';
 			    /> 
 		  </div>	
 		  <div class="ri_fieldset">
+		  		<div class="ri_fieldlabel">ACS Item#</div>
+		  		<TextInput
+		  			    v-model="record.number"
+		  			    required
+		  			    autofocus
+		  				:enabled="editing"
+		  		  /> 
+		  	  </div>
+		  <div class="ri_fieldset">
 			<div class="ri_fieldlabel">Item Type Desc</div>
 			<TextInput
 				    v-model="record.name"
 				    required
-				    autofocus
 					:enabled="editing"
 			  /> 
 		  </div>
@@ -81,12 +94,14 @@ import Checkbox from '@/Components/Checkbox.vue';
 								:template="templates.items" 
 								:enabled="editing">
 				<template #thead>
+					<th> Plus Code </th>
 					<th>Item Description</th>
 					<th colspan="3">Package</th>
 					<th>Total {{ record.unit.abbreviation }}</th>
 					<th>UPC</th>
 				</template>
 				<template #tbody="{ subrecord, index }">
+					<td>{{ subrecord.pluscode }}</td>
 					<td>{{ subrecord.description }}</td>
 				     <td colspan="3">{{ subrecord.packagetype.singular }} 
 						 <span v-if="subrecord.case_qty"> of {{ subrecord.case_qty }} ( {{ subrecord.size * 1.0 }} {{ record.unit.abbreviation }} )</span></td>
@@ -97,11 +112,18 @@ import Checkbox from '@/Components/Checkbox.vue';
 				<template #default="{ subrecord, index }">
 				  <td>
 					<TextInput
-						    v-model="subrecord.description"
-							placeholder="Description"
+						    v-model="subrecord.pluscode"
+							placeholder="Plus Code"
 							:enabled="true"
 					  /> 
 				  </td>
+				  <td>
+	  				<TextInput
+	  					    v-model="subrecord.description"
+	  						placeholder="Description"
+	  						:enabled="true"
+	  				  /> 
+				   </td>
 				  <td>
 					<ComboBox 
 					    v-model:keyValue="subrecord.packagetypes_id"
