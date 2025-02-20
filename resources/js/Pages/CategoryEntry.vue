@@ -13,7 +13,8 @@ import RIForm from '@/Components/RIForm.vue';
     
     <RIForm 
       title="Item Category Management" 
-      datasource="/json/categories">
+      datasource="/json/categories"
+	  newrecordcaption="Add Category">
       <template #thead>
         <th>Category Name</th>
       </template>
