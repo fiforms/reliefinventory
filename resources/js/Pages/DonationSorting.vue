@@ -26,7 +26,8 @@ import TextArea from '@/Components/TextArea.vue';
 	  -->
 	<RIForm 
 	  title="Donation Sorting" 
-	  datasource="/json/donations">
+	  datasource="/json/donations"
+	  newrecordcaption="Start Sorting">
 	    <template #thead>
 			<th>Transaction Date</th>
 			<th>User</th>
