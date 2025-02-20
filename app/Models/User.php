@@ -8,6 +8,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
+use Illuminate\Database\Eloquent\Builder;
 
 class User extends Authenticatable
 {
@@ -19,8 +20,13 @@ class User extends Authenticatable
      *
      * @var array<int, string>
      */
+    
+    protected $table = 'people';
+    
+    
     protected $fillable = [
-        'name',
+        'first_name',
+        'last_name',
         'email',
         'password',
     ];
@@ -46,5 +52,16 @@ class User extends Authenticatable
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
         ];
+    }
+    
+    /**
+     * The "booted" method of the model.
+     * This applies a global scope to filter out users where password is NULL.
+     */
+    protected static function booted()
+    {
+        static::addGlobalScope('excludeNullPasswords', function (Builder $builder) {
+            $builder->whereNotNull('password');
+        });
     }
 }

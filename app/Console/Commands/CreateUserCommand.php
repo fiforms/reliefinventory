@@ -18,7 +18,7 @@ class CreateUserCommand extends Command
      *
      * @var string
      */
-    protected $signature = 'user:create {--u|username= : Username of the newly created user.} {--e|email= : E-Mail of the newly created user.}';
+    protected $signature = 'user:create {--fn|firstname= : First Name} {--ln|lastname= : Last Name} {--e|email= : E-Mail Address}';
 
     /**
      * The console command description.
@@ -35,12 +35,17 @@ class CreateUserCommand extends Command
      */
     public function handle()
     {
-        // Enter username, if not present via command line option
-        $name = $this->option('username');
-        if ($name === null) {
-            $name = $this->ask('Please enter your username.');
+        // Enter Name, if not present via command line option
+        $firstname = $this->option('firstname');
+        if ($firstname === null) {
+            $firstname = $this->ask('Please enter your First Name.');
         }
-
+        
+        $lastname = $this->option('lastname');
+        if ($lastname === null) {
+            $lastname = $this->ask('Please enter your Last Name.');
+        }
+        
         // Enter email, if not present via command line option
         $email = $this->option('email');
         if ($email === null) {
@@ -60,7 +65,8 @@ class CreateUserCommand extends Command
 	    $user = new User();
 	    $user->password = Hash::make($password);
 	    $user->email = $email;
-	    $user->name = $name;
+	    $user->first_name = $firstname;
+	    $user->last_name = $lastname;
 	    $user->save();
         }
         catch (\Exception $e) {
