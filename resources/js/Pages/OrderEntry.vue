@@ -93,17 +93,34 @@ import TextArea from '@/Components/TextArea.vue';
 								:template="templates.order_lines" 
 								:enabled="editing">
 				<template #thead>
+					<th>ACS Item#</th>
+					<th>Quantity</th>
 					<th>Item Type</th>
-					<th colspan="2">Quantity</th>
+					<th>Unit</th>
 					<th>Comments</th>
 				</template>
 				<template #tbody="{ subrecord, index }">
+					<td>{{ subrecord.number }}</td>
+					<td >{{ subrecord.qty_requested }}
+										    {{ subrecord.qty_requested > 1 ? subrecord.packagetype.plural : subrecord.packagetype.singular }}</td>
 					<td>{{ subrecord.itemtype.name }}</td>
-					<td colspan="2">{{ subrecord.qty_requested }}
-					    {{ subrecord.qty_requested > 1 ? subrecord.packagetype.plural : subrecord.packagetype.singular }}</td>
 					<td>{{ subrecord.comments }}</td>
 				</template>
 				<template #default="{ subrecord, index }">
+				  <td>
+					<TextInput
+							type="text"
+						    v-model="subrecord.number"
+							:enabled="true"
+					  /> 
+				  </td>
+				  <td>
+				  	<TextInput
+		  					type="number"
+		  				    v-model="subrecord.qty_requested"
+		  					:enabled="true"
+				  	  /> 
+				  </td>
 				  <td>
 					<ComboBox 
 						v-model:keyValue="subrecord.itemtype_id"
@@ -112,13 +129,7 @@ import TextArea from '@/Components/TextArea.vue';
 						:enabled="true"
 						/>
 				  </td>
-				  <td>
-					<TextInput
-							type="number"
-						    v-model="subrecord.qty_requested"
-							:enabled="true"
-					  /> 
-				  </td>
+			
 				  <td>
 					  <ComboBox 
 					  	v-model:keyValue="subrecord.packagetype_id"
@@ -128,6 +139,7 @@ import TextArea from '@/Components/TextArea.vue';
 					  	:enabled="true"
 					  	/>
 				  </td>
+		  		  
 				  <td>
 				    <TextInput
 				  	    v-model="subrecord.comments"
