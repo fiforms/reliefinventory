@@ -42,7 +42,7 @@ import Checkbox from '@/Components/Checkbox.vue';
 			<td> {{ record.number }} </td>
 			<td> {{ record.name }} </td>
 			<td> {{ record.unit.abbreviation }} </td>
-			<td style="text-align: center;"> <span v-if="record.active"> &bull; </span> </td>
+			<td style="text-align: center;"> <span v-if="record.active"> &check; </span> </td>
 		</template>
 		<template #default="{ record, editing, templates }">
 		<div class="ri_formtable">
