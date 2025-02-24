@@ -67,6 +67,7 @@ class CreateUserCommand extends Command
 	    $user->email = $email;
 	    $user->first_name = $firstname;
 	    $user->last_name = $lastname;
+	    $user->email_verified_at = now();
 	    $user->save();
         }
         catch (\Exception $e) {

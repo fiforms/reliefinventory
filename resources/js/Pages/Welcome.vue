@@ -64,11 +64,11 @@ function handleImageError() {
                 Login
               </button>
 	    </a>
-	    <link v-if="canRegister" href="/register">
+	    <a href="/register">
               <button class="bg-gray-300 text-gray-800 px-6 py-3 rounded-lg shadow hover:bg-gray-400">
                 Register
               </button>
-	    </link>
+	    </a>
           </div>
         </div>
         <div class="mt-8 md:mt-0 md:w-1/2 flex justify-center">

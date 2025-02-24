@@ -30,9 +30,21 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         $request->authenticate();
-
+        
+        // Get the authenticated user
+        $user = $request->user();
+        //print_r($user); die();
+        
+        // If the user implements MustVerifyEmail and has not verified their email,
+        // log them out and redirect to a verification notice page with an error.
+        if ($user instanceof MustVerifyEmail && ! $user->hasVerifiedEmail()) {
+            Auth::logout();
+            return redirect()->route('verification.notice')
+            ->withErrors(['email' => 'You need to verify your email address before logging in.']);
+        }
+        
         $request->session()->regenerate();
-
+        
         return redirect()->intended(route('dashboard', absolute: false));
     }
 
