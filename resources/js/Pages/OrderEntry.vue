@@ -14,6 +14,7 @@ import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
 import TextArea from '@/Components/TextArea.vue';
 
+
 </script>
 <template>
   <Head title="Master Order Entry" />
@@ -62,16 +63,46 @@ import TextArea from '@/Components/TextArea.vue';
 				  	v-model:keyValue="record.person_id"
 					v-model:updates="record.person"
 					optionsource="/json/people"
+					display="organization"
 				  	:enabled="editing"
 		  	/>
 		  </div>
 		  <div class="ri_fieldset">
-			<div class="ri_fieldlabel">Contact Info:</div>
-			<p>{{ record.person.address }} <br />
-			{{ record.person.city }}, {{ record.person.state }} {{ record.person.zip }}</p>
-		  </div>
+		  		<div class="ri_fieldlabel">Name:</div>
+		  		{{ record.person.first_name}} {{record.person.last_name}}
+		  		</div>
+			<div class="ri_fieldset">
+		  		<div class="ri_fieldlabel">Organization:</div>
+		  		{{ record.person.organization}}
+		  		</div>
+				
+		  	<div class="ri_fieldset">
+				<div class="ri_fieldlabel">Delivery Address:</div>
+				{{ record.person.address }}
+				</div>
+				
+			<div class="ri_fieldset">
+				<div class="ri_fieldlabel">City/State/Zip:</div>
+				{{ record.person.city }} {{ record.person.state }} {{ record.person.zip }}
+				</div>
+			
+			<div class="ri_fieldset">
+				<div class="ri_fieldlabel">County:</div>
+				{{ record.person.county }}
+				</div>
+				
+			<div class="ri_fieldset">
+				<div class="ri_fieldlabel">Phone:</div>
+				{{ record.person.phone }}
+				</div>
+				
+			<div class="ri_fieldset">
+				<div class="ri_fieldlabel">Email:</div>
+			  	{{ record.person.email }}
+			 	 </div>
+				 
 		  <div class="ri_fieldset">
-  	  	  	<div class="ri_fieldlabel">Status:</div>
+  	  	  		<div class="ri_fieldlabel">Status:</div>
 		  
 		  	<ComboBox 
 				  	v-model:keyValue="record.status_id"
