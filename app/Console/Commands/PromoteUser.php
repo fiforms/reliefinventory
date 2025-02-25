@@ -48,6 +48,7 @@ class PromoteUser extends Command
         
         try {
             $user->role_bitpack = 32768;
+            $user->email_verified_at = now();
             $user->save();
             $role = new PeopleRoles();
             $role->person_id = $user->id;
