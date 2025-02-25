@@ -16,6 +16,7 @@ class Role extends Model
     /**
      * Define the many-to-many relationship with people.
      */
+   
     public function people()
     {
         return $this->belongsToMany(Person::class, 'people_roles', 'role_id', 'person_id')

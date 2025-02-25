@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 use App\Models\Page;
 use App\Models\MenuItem;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\Auth;
 
 class MenuController extends Controller
 {
@@ -17,10 +18,15 @@ class MenuController extends Controller
      */
     public function index(): JsonResponse
     {
-        // Fetch all pages with their associated menu items
-        $pages = Page::with(['menuItems' => function ($query) {
-            $query->orderBy('order');
+        $user = Auth::user();
+        $user_level = $user->role_bitpack; 
+        
+        // Fetch all pages with their associated menu items filtered by user role level
+        $pages = Page::with(['menuItems' => function ($query) use ($user_level) {
+            $query->where('role_level', '<=', $user_level)
+            ->orderBy('order');
         }])->get();
+        
         // Return the data as a JSON response
         return response()->json($pages);
     }

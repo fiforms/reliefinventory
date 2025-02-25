@@ -32,7 +32,7 @@ class ListUsersCommand extends Command
     public function handle()
     {
         // Retrieve all users
-        $users = User::select('id', 'first_name', 'last_name', 'email', 'created_at')->get();
+        $users = User::select('id', 'first_name', 'last_name', 'email', 'role_bitpack', 'created_at')->get();
 
         if ($users->isEmpty()) {
             $this->info('No users found.');
@@ -41,7 +41,7 @@ class ListUsersCommand extends Command
 
         // Display users in a table format
         $this->table(
-            ['ID', 'First Name', 'Last Name', 'Email', 'Created At'],
+            ['ID', 'First Name', 'Last Name', 'Email', 'Role Bitpack', 'Created At'],
             $users->toArray()
         );
 

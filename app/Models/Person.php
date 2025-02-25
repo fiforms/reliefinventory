@@ -62,6 +62,7 @@ class Person extends Model
         'state',
         'zip',
         'comments',
+        'role_bitpack',
     ];
 
     /**

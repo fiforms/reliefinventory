@@ -6,6 +6,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Models\Person;
 use App\Models\PeopleRoles;
+use Illuminate\Support\Facades\Auth;
+
 
 class PeopleController extends Controller
 {
@@ -32,7 +34,7 @@ class PeopleController extends Controller
      */
     public function index()
     {
-        $people = Person::with(['people_roles'])->get();
+        $people = Person::with(['people_roles','roles'])->get();
 
         return response()->json([
             'records' => $people,
@@ -65,9 +67,24 @@ class PeopleController extends Controller
      */
     public function store(Request $request)
     {
+        $user = Auth::user();
+        $user_level = $user->role_bitpack; 
+        
         $data = $request->validate(self::VALIDATION_RULES);
         
-        $person = Person::create($data);
+        // Calculate role_bitpack
+        $roleBitpack = $this->calculateRoleBitpack($data['roles'] ?? []);
+        
+        // Check if the new role bitpack contains a bit that is not in the current user's bitpack
+        if (($roleBitpack & ~$user_level) !== 0) {
+            return response()->json([
+                'message' => 'You cannot assign a higher privilege level than your own.'
+            ], 403);
+        }
+        
+        // Create person with computed role_bitpack
+        $person = Person::create(array_merge($data, ['role_bitpack' => $roleBitpack]));
+        
         $id = $person->id;
         
         // Insert new roles
@@ -96,14 +113,41 @@ class PeopleController extends Controller
      */
     public function update(Request $request, $id)
     {
+     
+        $user = Auth::user();
+        $user_level = $user->role_bitpack;
+        
         $person = Person::findOrFail($id);
+        
+        if (($person->role_bitpack & ~$user_level) !== 0) {
+            return response()->json([
+                'message' => 'You cannot modify information for a person with a higher privilege level than your own.'
+            ], 403);
+        }
+        
         
         $rules = self::VALIDATION_RULES;
         $rules['email'] = 'nullable|email|max:255|unique:people,email,' . $id;
-
+        
         $data = $request->validate($rules);
         
-        // Update the person's details
+        // Calculate role_bitpack
+        $roleBitpack = $this->calculateRoleBitpack($data['roles'] ?? []);
+        
+        // Check if the new role bitpack contains a bit that is not in the current user's bitpack
+        if (($roleBitpack & ~$user_level) !== 0) {
+            return response()->json([
+                'message' => 'You cannot assign a higher privilege level than your own.'
+            ], 403);
+        }
+
+        
+        // Calculate role_bitpack
+        $roleBitpack = $this->calculateRoleBitpack($data['people_roles'] ?? []);
+        $data['role_bitpack'] = $roleBitpack;
+        
+       
+        // Update person with computed role_bitpack
         $person->update($data);
         
         // Delete all existing roles for this person
@@ -140,5 +184,15 @@ class PeopleController extends Controller
         return response()->json([
             'message' => 'Person deleted successfully.'
         ], 200);
+    }
+    
+    
+    private function calculateRoleBitpack(array $roles): int
+    {
+        $bitpack = 0;
+        foreach ($roles as $role) {
+            $bitpack += pow(2, $role['role_id']);
+        }
+        return $bitpack;
     }
 }

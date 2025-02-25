@@ -25,7 +25,7 @@ import TextArea from '@/Components/TextArea.vue';
         <th>Organization</th>
         <th>Phone</th>
         <th>Email</th>
-        <th>Type</th>
+        <th>Roles</th>
       </template>
 
       <template #tbody="{ record }"> 
@@ -34,7 +34,7 @@ import TextArea from '@/Components/TextArea.vue';
         <td>{{ record.organization || 'N/A' }}</td>
         <td>{{ record.phone || 'N/A' }}</td>
         <td>{{ record.email || 'N/A' }}</td>
-        <td>{{ record.type }}</td>
+        <td class="comma-separated"><span v-for="sub in record.roles" > {{ sub.name }} </span></td>
       </template>
 
       <template #default="{ record, editing, templates }">
@@ -141,3 +141,10 @@ import TextArea from '@/Components/TextArea.vue';
     </RIForm>
   </AuthenticatedLayout>
 </template>
+
+<style scoped>
+
+td.comma-separated span:not(:last-child)::after {
+  content: ', ';
+}
+</style>

@@ -10,6 +10,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use App\Models\PeopleRoles;
 
 class CreateUserCommand extends Command
 {
@@ -68,7 +69,12 @@ class CreateUserCommand extends Command
 	    $user->first_name = $firstname;
 	    $user->last_name = $lastname;
 	    $user->email_verified_at = now();
+	    $user->role_bitpack = 32768;
 	    $user->save();
+	    $role = new PeopleRoles();
+	    $role->person_id = $user->id;
+	    $role->role_id = 15;
+	    $role->save();
         }
         catch (\Exception $e) {
             $this->error($e->getMessage());
