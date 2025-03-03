@@ -52,14 +52,18 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
-
+        
+        $user->email_verified_at = null;
+        $user->password = null;
+        
         Auth::logout();
 
-        $user->delete();
+        $user->save();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();
 
         return Redirect::to('/');
     }
+    
 }

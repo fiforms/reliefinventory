@@ -11,8 +11,11 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\Rules;
+use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
+use App\Models\BannedEmail;
+use Illuminate\Support\Str;
 
 class RegisteredUserController extends Controller
 {
@@ -61,6 +64,10 @@ class RegisteredUserController extends Controller
             ]);
         }
         
+        if (BannedEmail::isBanned($request->email)) {
+            throw ValidationException::withMessages(['email' => 'Registration with this email is not allowed.']);
+        }
+        
         $user = User::create([
             'first_name' => $request->first_name,
             'last_name' => $request->last_name,
@@ -74,4 +81,5 @@ class RegisteredUserController extends Controller
 
         return redirect(route('dashboard', absolute: false));
     }
+    
 }

@@ -8,22 +8,23 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
 use App\Models\User;
+use App\Models\PeopleRoles;
 
-class UpdateUserPasswordCommand extends Command
+class PromoteUser extends Command
 {
     /**
      * The name and signature of the console command.
      *
      * @var string
      */
-    protected $signature = 'user:update-password {--e|email= : User Email}';
+    protected $signature = 'user:deactivate {--e|email= : User Email}';
 
     /**
      * The console command description.
      *
      * @var string
      */
-    protected $description = 'Update an existing user\'s password from the command line.';
+    protected $description = 'Deactivate a user account';
 
     /**
      * Execute the console command.
@@ -44,25 +45,14 @@ class UpdateUserPasswordCommand extends Command
             $this->error('No user found with this email.');
             return 1;
         }
-
-        // Prompt for the new password
-        $password = $this->secret('Please enter the new password');
-        $passwordConfirmation = $this->secret('Please confirm the new password');
-
-        // Ensure passwords match
-        if ($password !== $passwordConfirmation) {
-            $this->error('Passwords do not match.');
-            return 1;
-        }
-
-        // Update the user's password
+        
         try {
-            $user->email_verified_at = now();
-            $user->password = Hash::make($password);
+            $user->email_verified_at = null;
+            $user->password = null;
             $user->save();
-            $this->info('Account verified and password updated successfully for ' . $user->email);
+            $this->info('User ' . $user->first_name . ' ' . $user->last_name . ' successfully deactivated');
         } catch (\Exception $e) {
-            $this->error('Error updating password: ' . $e->getMessage());
+            $this->error('Error deactivating user: ' . $e->getMessage());
             return 1;
         }
 

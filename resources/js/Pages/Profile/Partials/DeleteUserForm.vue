@@ -42,30 +42,30 @@ const closeModal = () => {
     <section class="space-y-6">
         <header>
             <h2 class="text-lg font-medium text-gray-900">
-                Delete Account
+                Deactivate Account
             </h2>
 
             <p class="mt-1 text-sm text-gray-600">
-                Once your account is deleted, all of its resources and data will
-                be permanently deleted. Before deleting your account, please
+                Once your account is deactivated, it will be inaccessible to you
+				until you reactivate it. Before deactivating your account, please
                 download any data or information that you wish to retain.
             </p>
         </header>
 
-        <DangerButton @click="confirmUserDeletion">Delete Account</DangerButton>
+        <DangerButton @click="confirmUserDeletion">Deactivate Account</DangerButton>
 
         <Modal :show="confirmingUserDeletion" @close="closeModal">
             <div class="p-6">
                 <h2
                     class="text-lg font-medium text-gray-900"
                 >
-                    Are you sure you want to delete your account?
+                    Are you sure you want to deactivate your account?
                 </h2>
 
                 <p class="mt-1 text-sm text-gray-600">
-                    Once your account is deleted, all of its resources and data
-                    will be permanently deleted. Please enter your password to
-                    confirm you would like to permanently delete your account.
+                    Once your account is deactivated, all of its resources and data
+                    will be inaccessible. Please enter your password to
+                    confirm you would like to deactivate your account.
                 </p>
 
                 <div class="mt-6">
@@ -99,7 +99,7 @@ const closeModal = () => {
                         :disabled="form.processing"
                         @click="deleteUser"
                     >
-                        Delete Account
+                        Deactivate Account
                     </DangerButton>
                 </div>
             </div>

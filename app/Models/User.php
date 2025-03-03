@@ -57,12 +57,12 @@ class User extends Authenticatable implements MustVerifyEmail
     
     /**
      * The "booted" method of the model.
-     * This applies a global scope to filter out users where password is NULL.
+     * This applies a global scope to filter out users where email is NULL.
      */
     protected static function booted()
     {
         static::addGlobalScope('excludeNullPasswords', function (Builder $builder) {
-            $builder->whereNotNull('password');
+            $builder->whereNotNull('email');
         });
     }
     
