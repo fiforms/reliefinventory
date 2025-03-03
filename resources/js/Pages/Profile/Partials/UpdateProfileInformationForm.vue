@@ -47,7 +47,7 @@ const form = useForm({
             class="mt-6 space-y-6"
         >
 		<div>
-		    <InputLabel for="name" value="First Name" />
+		    <InputLabel for="first_name" value="First Name" />
 
 		    <TextInput
 		        id="first_name"
