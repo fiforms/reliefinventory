@@ -19,6 +19,13 @@ const user = usePage().props.auth.user;
 const form = useForm({
 	first_name: user.first_name,
 	last_name: user.last_name,
+	organization: user.organization,
+	address: user.address,
+	city: user.city,
+	state: user.state,
+	zip: user.zip,
+	county_id: user.county_id,
+	phone: user.phone,
     email: user.email,
 });
 </script>
@@ -63,7 +70,6 @@ const form = useForm({
 		        class="mt-1 block w-full"
 		        v-model="form.last_name"
 		        required
-		        autofocus
 		        autocomplete="last_name"
 		    />
 
@@ -106,6 +112,104 @@ const form = useForm({
                 </div>
             </div>
 
+			<!-- Organization -->
+			<div>
+			    <InputLabel for="organization" value="Organization" />
+			    <TextInput
+			        id="organization"
+			        type="text"
+			        class="mt-1 block w-full"
+			        v-model="form.organization"
+			        required
+			        autocomplete="organization"
+			    />
+			    <InputError class="mt-2" :message="form.errors.organization" />
+			</div>
+			
+			    <!-- Address -->
+			    <div>
+			        <InputLabel for="address" value="Address" />
+			        <TextInput
+			            id="address"
+			            type="text"
+			            class="mt-1 block w-full"
+			            v-model="form.address"
+			            required
+			            autocomplete="address"
+			        />
+			        <InputError class="mt-2" :message="form.errors.address" />
+			    </div>
+
+			    <!-- City -->
+			    <div>
+			        <InputLabel for="city" value="City" />
+			        <TextInput
+			            id="city"
+			            type="text"
+			            class="mt-1 block w-full"
+			            v-model="form.city"
+			            required
+			            autocomplete="address-level2"
+			        />
+			        <InputError class="mt-2" :message="form.errors.city" />
+			    </div>
+
+			    <!-- State -->
+			    <div>
+			        <InputLabel for="state" value="State" />
+			        <TextInput
+			            id="state"
+			            type="text"
+			            class="mt-1 block w-full"
+			            v-model="form.state"
+			            required
+			            autocomplete="address-level1"
+			        />
+			        <InputError class="mt-2" :message="form.errors.state" />
+			    </div>
+
+			    <!-- Zip Code -->
+			    <div>
+			        <InputLabel for="zip" value="Zip Code" />
+			        <TextInput
+			            id="zip"
+			            type="text"
+			            class="mt-1 block w-full"
+			            v-model="form.zip"
+			            required
+			            autocomplete="postal-code"
+			        />
+			        <InputError class="mt-2" :message="form.errors.zip" />
+			    </div>
+
+			    <!-- County -->
+			    <div>
+			        <InputLabel for="county_id" value="County" />
+			        <!-- <TextInput
+			            id="county_id"
+			            type="text"
+			            class="mt-1 block w-full"
+			            v-model="form.county_id"
+			            required
+			        />--> <i>Coming Soon...</i>
+			        <InputError class="mt-2" :message="form.errors.county_id" />
+			    </div> 
+
+			    <!-- Phone -->
+			    <div>
+			        <InputLabel for="phone" value="Phone" />
+			        <TextInput
+			            id="phone"
+			            type="tel"
+			            class="mt-1 block w-full"
+			            v-model="form.phone"
+			            required
+			            autocomplete="tel"
+			        />
+			        <InputError class="mt-2" :message="form.errors.phone" />
+			    </div>
+			
+			
             <div class="flex items-center gap-4">
                 <PrimaryButton :disabled="form.processing">Save</PrimaryButton>
 
