@@ -14,4 +14,14 @@ class County extends Model
     protected $fillable = [
         'id', 'county', 'state', 'created_at', 'updated_at',
     ];
+    
+    /**
+     * Get a list of unique state abbreviations.
+     *
+     * @return array
+     */
+    public static function getDistinctStates()
+    {
+        return self::distinct()->pluck('state')->toArray();
+    }
 }

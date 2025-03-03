@@ -83,6 +83,10 @@ Route::get('/', function () {
     
         // API route for listing all statuses
         Route::get('/statuses', [StatusController::class, 'index']);
+        
+        Route::get('/counties', [CountyController::class, 'index']);
+        Route::get('/states', [CountyController::class, 'states']);
+        
     });
     
     
@@ -149,6 +153,11 @@ Route::get('/', function () {
         
         // Roles (for People
         Route::get('/roles', [RoleController::class, 'index']);
+        
+        // Counties
+        Route::post('/counties', [CountyController::class, 'store']);
+        Route::put('/counties/{id}', [CountyController::class, 'update']);
+        Route::delete('/counties/{id}', [CountyController::class, 'destroy']);
     
     });
     
