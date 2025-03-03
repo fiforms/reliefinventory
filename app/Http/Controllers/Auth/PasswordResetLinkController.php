@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,8 +18,15 @@ class PasswordResetLinkController extends Controller
      */
     public function create(): Response
     {
+        $turnstileSiteKey = env('CLOUDFLARE_TURNSTILE_SITE_KEY');
+        
+        if (empty($turnstileSiteKey)) {
+            abort(500, 'Cloudflare Turnstile is not properly configured.');
+        }
+        
         return Inertia::render('Auth/ForgotPassword', [
             'status' => session('status'),
+            'turnstile_site_key' => $turnstileSiteKey,
         ]);
     }
 
@@ -31,21 +39,30 @@ class PasswordResetLinkController extends Controller
     {
         $request->validate([
             'email' => 'required|email',
+            'cf-turnstile-response' => 'required', // Ensure Turnstile response exists
         ]);
-
-        // We will send the password reset link to this user. Once we have attempted
-        // to send the link, we will examine the response then see the message we
-        // need to show to the user. Finally, we'll send out a proper response.
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
-
-        if ($status == Password::RESET_LINK_SENT) {
-            return back()->with('status', __($status));
+        
+        // Verify Turnstile response with Cloudflare
+        $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+            'secret' => env('CLOUDFLARE_TURNSTILE_SECRET_KEY'),
+            'response' => $request->input('cf-turnstile-response'),
+            'remoteip' => $request->ip(),
+        ])->json();
+        
+        // If Turnstile verification fails
+        if (!$response['success']) {
+            throw ValidationException::withMessages([
+                'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
+            ]);
         }
 
-        throw ValidationException::withMessages([
-            'email' => [trans($status)],
-        ]);
+        // Introduce a slight random delay (between 500ms and 4500ms) to prevent timing attacks
+        usleep(random_int(500000, 4500000));
+        
+        // Always return the same response to avoid user enumeration
+        Password::sendResetLink($request->only('email'));
+        
+        return back()->with('status', __('If the email exists, a reset link has been sent.'));
+        
     }
 }
