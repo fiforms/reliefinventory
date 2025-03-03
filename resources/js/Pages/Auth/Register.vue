@@ -5,7 +5,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
-import { onMounted } from 'vue';
+import { onMounted, watch } from 'vue';
 
 defineProps({
 	turnstile_site_key: {
@@ -21,7 +21,21 @@ const form = useForm({
     password: '',
     password_confirmation: '',
 	'cf-turnstile-response': '', // Add Turnstile response field
+	cfturnstile: null,
 });
+
+// Function to reload Turnstile
+const reloadTurnstile = () => {
+    if (window.turnstile) {
+	    window.turnstile.reset(form.cfturnstile);
+    }
+};
+
+const renderTurnstile = () => {
+    if (window.turnstile) {
+	    form.cfturnstile = window.turnstile.render('.cf-turnstile');
+    }
+};
 
 const submit = () => {
 	// Get the Turnstile response token
@@ -34,20 +48,25 @@ const submit = () => {
 
 	// Add Turnstile token to the form
 	form['cf-turnstile-response'] = turnstileResponse;
+	form.cfturnstileenabled = false;
 
 	// Submit the form
     form.post(route('register'), {
-        onFinish: () => form.reset('password', 'password_confirmation'),
+        onFinish: () => {
+			form.reset('password', 'password_confirmation');
+			reloadTurnstile();
+		},
     });
 };
 
 // Load Cloudflare Turnstile script on mount
 onMounted(() => {
     const script = document.createElement("script");
-    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js";
+    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
     script.async = true;
     script.defer = true;
     document.head.appendChild(script);
+	window.setTimeout(renderTurnstile,500);
 });
 </script>
 
