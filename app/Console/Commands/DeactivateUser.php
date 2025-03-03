@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Hash;
 use App\Models\User;
 use App\Models\PeopleRoles;
 
-class PromoteUser extends Command
+class DeactivateUser extends Command
 {
     /**
      * The name and signature of the console command.
