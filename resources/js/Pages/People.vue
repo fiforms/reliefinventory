@@ -117,6 +117,17 @@ import TextArea from '@/Components/TextArea.vue';
             /> 
           </div>
 
+		  <div class="ri_fieldset">
+		    <div class="ri_fieldlabel">County:</div>
+		    <ComboBox
+				v-model:keyValue="record.county_id"
+				v-model:updates="record.county_id"
+				optionsource="/json/counties"
+				display="county"
+			  	:enabled="editing"
+		    /> 
+		  </div>
+
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Roles:</div>
             <MultiSelect

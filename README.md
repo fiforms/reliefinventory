@@ -14,7 +14,7 @@ Install prerequisite packages:
 
 ** Use your package manager to install relevant packages, i.e. **
 
-    sudo apt install php php-cli composer mariadb-server php-mysql php-redis git
+    sudo apt install php php-cli composer mariadb-server php-mysql php-redis git php-xml npm
   
 ** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
 
@@ -41,6 +41,8 @@ Install prerequisite packages:
 ** Install Laravel packages using composer **
 
     composer install
+    php artisan key:generate
+    
   
 ** Install node packages **
 
@@ -52,7 +54,7 @@ Install prerequisite packages:
   
 ** Create a new user (YOU MUST do this before loading test data) **
 
-    php artisan user:create -u myusername -e myemail@example.com
+    php artisan user:create
   
 ** Load initial data **
 
@@ -65,10 +67,47 @@ Install prerequisite packages:
 
     composer run dev
   
-** Running in Production **
+== Running in Production ==
 (These steps are still incomplete)
 
-    php artisan key:generate
+** Setup SMTP Server **
+
+Modify these values in .env to point to a working SMTP server, e.g. you can 
+use an app password from Gmail and relay through a gmail account:
+
+    MAIL_MAILER=smtp
+    MAIL_HOST=smtp.gmail.com
+    MAIL_PORT=587
+    MAIL_USERNAME=my_email_address@example.com
+    MAIL_PASSWORD=apppasswordhere
+    MAIL_ENCRYPTION=tls
+    MAIL_FROM_ADDRESS="my_email_address@example.com"
+    MAIL_FROM_NAME="${APP_NAME}"
+    
+** Setup Cloudflare Turnstile for User Registration **
+
+Get a Turnstile Site Key and Secret Key from [Cloudflare](https://www.cloudflare.com/application-services/products/turnstile/)
+
+Put them into .env:
+
+    CLOUDFLARE_TURNSTILE_SITE_KEY=
+    CLOUDFLARE_TURNSTILE_SECRET_KEY=
+
+** Ban User Signups from Disposable Email Domains **
+
+Download the listing of disposable domains from 
+[this GitHub Project](https://github.com/disposable-email-domains/disposable-email-domains)
+
+    php artisan user:import-banned /path/to/disposable_email_blocklist.conf
+    
+** Import Listing of Counties **
+
+Download a county listing from the [census.gov website](https://www.census.gov/library/reference/code-lists/ansi.html#cou)
+
+    php artisan counties:import /path/to/downloaded/file.txt
+
+** Recompile Project **
+
     composer dump-autoload --optimize
     npm run build
   

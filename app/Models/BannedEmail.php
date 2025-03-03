@@ -27,6 +27,20 @@ class BannedEmail extends Model
     }
 
     /**
+     * Find the pattern that causes an email to be banned
+     *
+     * @param string $email
+     * @return string
+     */
+    public static function bannedBy($email)
+    {
+        return self::pluck('pattern')->first(function ($pattern) use ($email) {
+            return self::matchesPattern($email, $pattern);
+        });
+    }
+    
+    
+    /**
      * Helper function to check if an email matches a pattern.
      *
      * @param string $email

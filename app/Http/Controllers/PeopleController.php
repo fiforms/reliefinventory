@@ -34,7 +34,7 @@ class PeopleController extends Controller
      */
     public function index()
     {
-        $people = Person::with(['people_roles','roles'])->get();
+        $people = Person::with(['people_roles','roles','county'])->get();
 
         return response()->json([
             'records' => $people,
@@ -49,6 +49,7 @@ class PeopleController extends Controller
                     'city' => '',
                     'state' => '',
                     'zip' => '',
+                    'county_id' => null,
                     'comments' => '',
                     'people_roles' => [],
                 ],

@@ -95,6 +95,11 @@ class Person extends Model
         ->withTimestamps();
     }
     
+    public function county()
+    {
+        return $this->belongsTo(County::class, 'county_id');
+    }
+    
     public function people_roles()
     {
         return $this->hasMany(PeopleRoles::class, 'person_id');
