@@ -9,6 +9,7 @@ use App\Http\Controllers\ProfileController;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
+use App\Http\Controllers\PalletStatusController;
 
 
 Route::get('/', function () {
@@ -32,6 +33,10 @@ Route::get('/', function () {
     
     Route::get('/donation-sorting', function () {
         return Inertia::render('DonationSorting');
+    })->middleware(['auth', 'role:4'])->name('entry');
+    
+    Route::get('/inventory-movement', function () {
+        return Inertia::render('PalletLocation');
     })->middleware(['auth', 'role:4'])->name('entry');
     
     Route::get('/pallet-management', function () {
@@ -116,14 +121,18 @@ Route::get('/', function () {
         // Categories
         Route::get('/categories', [CategoryController::class, 'index']);
     
-        
         // Locations
         Route::get('/locations', [LocationController::class, 'index']);
-    
         
         // Uses (for Locations)
         Route::get('/uses', [UseController::class, 'index']);
     
+        // Pallet Status routes - add these to the appropriate middleware group
+        Route::get('/palletstatus', [PalletStatusController::class, 'index']);
+        Route::get('/palletstatus/statuses', [PalletStatusController::class, 'statuses']);
+        Route::post('/palletstatus', [PalletStatusController::class, 'store']);
+        Route::put('/palletstatus/{id}', [PalletStatusController::class, 'update']);
+        Route::delete('/palletstatus/{id}', [PalletStatusController::class, 'destroy']);
         
         // ItemTypes
         Route::get('/itemtypes', [ItemTypeController::class, 'index']);
