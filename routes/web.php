@@ -128,6 +128,9 @@ Route::get('/', function () {
         // Locations
         Route::get('/locations', [LocationController::class, 'index']);
         
+        // Warehouses
+        Route::get('/json/warehouses', [WarehouseController::class, 'index']);
+        
         // Uses (for Locations)
         Route::get('/uses', [UseController::class, 'index']);
     
@@ -204,6 +207,12 @@ Route::get('/', function () {
         Route::post('/roles', [RoleController::class, 'store']);
         Route::put('/roles/{id}', [RoleController::class, 'update']);
         Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
+        
+        // Warehouses
+        Route::post('/json/warehouses', [WarehouseController::class, 'store']);
+        Route::put('/json/warehouses/{id}', [WarehouseController::class, 'update']);
+        Route::delete('/json/warehouses/{id}', [WarehouseController::class, 'destroy']);
+ 
     });
 
 
