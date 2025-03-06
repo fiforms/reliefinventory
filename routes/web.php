@@ -27,6 +27,10 @@ Route::get('/', function () {
         return Inertia::render('Dashboard');
     })->middleware(['auth', 'verified'])->name('dashboard');
     
+    Route::get('/qrcode-test', function () {
+        return Inertia::render('QRCodeTest');
+    })->middleware(['auth', 'verified']);
+    
     Route::get('/order-entry', function () {
         return Inertia::render('OrderEntry');
     })->middleware(['auth']);

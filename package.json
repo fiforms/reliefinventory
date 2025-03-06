@@ -19,6 +19,7 @@
         "vue": "^3.5.13"
     },
     "dependencies": {
+        "html5-qrcode": "^2.3.8",
         "puppeteer": "^24.2.0"
     }
 }
