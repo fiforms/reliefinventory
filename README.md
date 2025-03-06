@@ -15,10 +15,6 @@ Install prerequisite packages:
 ** Use your package manager to install relevant packages, i.e. **
 
     sudo apt install php php-cli composer mariadb-server php-mysql php-redis git php-xml npm
-  
-** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
-
-    sudo apt install apache2 redis
 
 ** Clone the Repository (or see below for using the Eclipse editor instead) **
 
@@ -48,7 +44,9 @@ Install prerequisite packages:
 
     npm install
 
-** Create datastructures (If you have a database backup, this would be the point to restore it instead) **
+** Create datastructures **
+
+*(If you have a database backup, this would be the point to restore it instead)*
 
     php artisan migrate
   
@@ -60,15 +58,26 @@ Install prerequisite packages:
 
     # Creating essential data
     php artisan db:seed
-    # Loading additional test data
+    
+*This is a great place to import site-specific data. Refer to site-specific documentation outside of GitHub*
+    
+    # (Optional) Load additional test data, if you aren't importing site-specific data
     php artisan db:seed --class=TestDataSeeder
 
-** Spin up the instance **
+
+# Running in a testing environment 
+
+** Spin up the instance from the command line **
 
     composer run dev
   
-== Running in Production ==
+# Running in Production
+
 (These steps are still incomplete)
+
+** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
+
+    sudo apt install apache2 redis
 
 ** Setup SMTP Server **
 
