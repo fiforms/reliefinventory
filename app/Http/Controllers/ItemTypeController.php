@@ -7,6 +7,8 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use App\Models\ItemType;
+use App\Helpers\UPCGenerator;
+
 
 class ItemTypeController extends Controller
 {
@@ -44,7 +46,8 @@ class ItemTypeController extends Controller
                 'unit_id' => null,
                 'name' => '',
                 'description' => '',
-                'active' => 1,
+                'active' => true,
+                'items' => [],
             ],
             'items' => [
                 'packagetype_id' => null,
@@ -66,33 +69,65 @@ class ItemTypeController extends Controller
     // Store a newly created item type in storage
     public function store(Request $request)
     {
-        $validator = Validator::make($request->all(), self::validation);
-
+        $data = $request->all();
+        
+        // Ensure 'number' is numeric and format it correctly
+        if (!ctype_digit($data['number']) || strlen($data['number']) > 5) {
+            return response()->json(['errors' => ['number' => 'The number must be a 5-digit numeric code.']], 422);
+        }
+        
+        // Pad number to 5 digits
+        $data['number'] = str_pad($data['number'], 5, '0', STR_PAD_LEFT);
+        
+        $validator = Validator::make($data, self::validation);
+        
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
-
-        $itemType = ItemType::create($request->all());
-
+        
+        $itemType = ItemType::create($data);
+        
+        // Generate the UPC using the helper class
+        $upc = UPCGenerator::makeUPCFromItemNumber($data['number']);
+        
+        // Create a generic item linked to this ItemType
+        $itemType->items()->create([
+            'packagetypes_id' => 1, // Assuming default package type ID
+            'pluscode' => '0000',
+            'size' => 1.0,
+            'case_qty' => 1,
+            'active' => 1,
+            'description' => $itemType->name . " GENERIC ITEM",
+            'upc' => $upc,
+        ]);
+        
         return response()->json($itemType, 201);
     }
-
+    
     // Update the specified item type in storage
     public function update(Request $request, $id)
     {
         $itemType = ItemType::findOrFail($id);
-
+        $data = $request->all();
+        
+        // Ensure 'number' is numeric and format it correctly
+        if (!ctype_digit($data['number']) || strlen($data['number']) > 5) {
+            return response()->json(['errors' => ['number' => 'The number must be a 5-digit numeric code.']], 422);
+        }
+        
+        // Pad number to 5 digits
+        $data['number'] = str_pad($data['number'], 5, '0', STR_PAD_LEFT);
+        
         $validationRules = self::validation;
         $validationRules['number'] = 'required|string|max:255|unique:itemtypes,number,' . $id;
         
-        $validator = Validator::make($request->all(), $validationRules);
+        $validator = Validator::make($data, $validationRules);
         
-
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
-
-        $itemType->update($request->all());
+        
+        $itemType->update($data);
 
         // Retrieve current item IDs from the database
         $existingItemIds = $itemType->items()->pluck('id')->toArray();

@@ -13,7 +13,7 @@ class OrderController extends Controller
     
     private const validation = [
         'type' => 'required|in:order',
-        'user_id' => 'required|exists:users,id',
+        'person_id_user' => 'required|exists:people,id',
         'person_id' => 'nullable|exists:people,id',
         'status_id' => 'required|exists:statuses,id',
         'order_date' => 'required|date',
@@ -46,7 +46,7 @@ class OrderController extends Controller
                 'templates' => [
                     '_default' => [
                         'type' => 'order',
-                        'user_id' => Auth::id(),
+                        'person_id_user' => Auth::id(),
                         'person_id' => null,
                         'person' => [],
                         'status_id' => null,
@@ -113,6 +113,10 @@ class OrderController extends Controller
         $data = $request->validate(self::validation);
         
         $order = Transaction::findOrFail($id);
+        
+        // Ensure person_id_user is never updated
+        unset($data['person_id_user']);
+
         $order->update($data);
         
         // Retrieve current item_ledgers IDs from the database
