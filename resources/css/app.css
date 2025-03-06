@@ -191,6 +191,11 @@ button.ri_defaultbutton, button.ri_formbutton {
 	
 }
 
+h2.text-xl {
+	padding-top: 0.5em;
+	padding-bottom: 0.5em;
+}
+
 /* Responsive Design */
 @media (max-width: 768px) {
 	  .ri_form_container {

@@ -22,9 +22,12 @@ const showingNavigationDropdown = ref(false);
                 <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <div class="flex h-16 justify-between">
                         <div class="flex">
+							<div class="space-x-8 sm:-my-px sm:ms-10 sm:flex" style="padding-top: 12px; font-size: 26px;">
+							<a href="/dashboard">🚚</a>
+							</div>
                             <!-- Navigation Links -->
                             <div
-                                class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex"
+                                class="hidden space-x-8 sm:-my-px sm:ms-10 sm:flex" style="margin-left: 10px;"
                             >
                                 <NavLink
                                     :href="route('dashboard')"
@@ -179,7 +182,7 @@ const showingNavigationDropdown = ref(false);
                 class="bg-white shadow"
                 v-if="$slots.header"
             >
-                <div class="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+                <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
                     <slot name="header" />
                 </div>
             </header>
