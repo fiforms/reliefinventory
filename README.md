@@ -66,9 +66,7 @@ Install prerequisite packages:
 
 # Updating
 
-After updating in your development/testing environment
-via git pull, etc, you may need to run some or all of 
-these commands:
+After updating (git pull, etc) you may need to run some or all of these commands:
 
     php artisan migrate
     composer install
@@ -127,18 +125,9 @@ Download a county listing from the [census.gov website](https://www.census.gov/l
 
 ** Recompile Project **
 
-You will need to run these commands each time the 
-project files are updated.
-
     composer dump-autoload --optimize
     npm run build
-
-Additionally, you may need to run these commands prior
-if updating packages or database:
-
-    php artisan migrate
-    composer install
-    npm install
+  
   
 # Eclipse IDE
 
