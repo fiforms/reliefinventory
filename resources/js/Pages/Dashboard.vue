@@ -43,17 +43,32 @@ export default {
     return {
       pages: [],
 	  currentPage: null,
+	  route: "",
     };
   },
   created() {
     this.fetchMenuData();
+	this.route = window.location.hash;
+	window.addEventListener(
+	  "hashchange",
+	  () => {
+		    this.route = location.hash;
+			this.navigate(this.route, false);
+	   },
+	  false,
+	);
   },
   methods: {
     async fetchMenuData() {
       try {
         const response = await axios.get('/json/menu-data');
         this.pages = response.data;
-		this.currentPage = this.pages.length ? this.pages[0] : null;
+		if(this.route) {
+			this.navigate(this.route, false)
+		}
+		else {
+			this.currentPage = this.pages.length ? this.pages[0] : null;
+		}
       } catch (error) {
         console.error("Failed to load menu data:", error);
       }
@@ -63,10 +78,12 @@ export default {
 		if(newWindow) return false;
 	    const targetPage = this.pages.find(page => page.hashtag === url.substring(1));
 	    if (targetPage) {
+		  window.location.hash = url;
+		  this.route = url;
 	      this.currentPage = targetPage;	    }
 	  } else {
 	    if(newWindow) {
-			window.open('url','_blank');
+			window.open(url,'_blank');
 		}
 		else {
 			window.location.href = url;
