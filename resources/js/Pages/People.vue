@@ -7,11 +7,17 @@ import MultiSelect from '@/Components/MultiSelect.vue';
 import RIForm from '@/Components/RIForm.vue';
 import TextArea from '@/Components/TextArea.vue';
 
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
+
 </script>
 
 <template>
   <Head title="People Entry" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
     <template #header>
     </template>
 

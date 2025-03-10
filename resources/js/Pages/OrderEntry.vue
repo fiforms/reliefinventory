@@ -14,11 +14,16 @@ import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
 import TextArea from '@/Components/TextArea.vue';
 
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 
 </script>
 <template>
   <Head title="Master Order Entry" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
 	<template #header>
 	</template>
 	

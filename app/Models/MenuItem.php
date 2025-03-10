@@ -25,5 +25,37 @@ class MenuItem extends Model
     {
         return $this->belongsTo(Page::class, 'submenu_page_id');
     }
+    
+    /**
+     * Recursively build the breadcrumb trail.
+     *
+     * @param string $url
+     * @return array
+     */
+    public static function getBreadcrumb($url)
+    {
+
+        $menuItem = self::where('link_url', $url)->first();
+        
+        $breadcrumbs = [[
+            'href' => $menuItem->link_url,
+            'title' => $menuItem->link_text
+        ]];
+        
+        $page = $menuItem->page;
+        
+        while ($page && $page->id > 1) {
+
+            array_unshift($breadcrumbs, [
+                'href' => '/dashboard#' . $page->hashtag,
+                'title' => $page->menu_title
+            ]);
+            
+            $linkingmenu = self::where('link_url', '#'.$page->hashtag)->first();
+            $page = $linkingmenu->page;
+        }
+        
+        return $breadcrumbs;
+    }
 }
 

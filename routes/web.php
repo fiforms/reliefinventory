@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\PalletStatusController;
+use App\Models\MenuItem;
 
 
 Route::get('/', function () {
@@ -31,8 +32,16 @@ Route::get('/', function () {
         return Inertia::render('QRCodeTest');
     })->middleware(['auth', 'verified']);
     
+    /*
+    $breadcrumb = [
+        ['href' => '/dashboard#setup','title' => 'Setup Menu'],
+        ['href' => '/order-entry','title' => 'Order Entry'],           
+    ];
+    */
+    
     Route::get('/order-entry', function () {
-        return Inertia::render('OrderEntry');
+        return Inertia::render('OrderEntry', 
+            ['breadcrumb' => MenuItem::getBreadcrumb('/order-entry')]);
     })->middleware(['auth']);
     
     Route::get('/donation-sorting', function () {
@@ -52,7 +61,8 @@ Route::get('/', function () {
     })->middleware(['auth', 'role:4'])->name('setup');
   
     Route::get('/setup/people', function () {
-        return Inertia::render('People');
+        return Inertia::render('People',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/setup/people')]);
     })->middleware(['auth', 'role:4'])->name('setup');
     
     Route::get('/setup/categories', function () {
