@@ -14,10 +14,15 @@ import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
 import Checkbox from '@/Components/Checkbox.vue';
 
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 </script>
 <template>
   <Head title="Master Item Catalog" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
 	<template #header>
 	</template>
 	

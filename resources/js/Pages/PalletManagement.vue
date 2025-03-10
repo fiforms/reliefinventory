@@ -5,11 +5,17 @@ import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
+
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 </script>
 
 <template>
   <Head title="Pallet Management" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
     <RIForm 
       title="Pallet Management"
       datasource="/json/pallets"

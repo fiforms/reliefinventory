@@ -14,10 +14,15 @@ import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
 import TextArea from '@/Components/TextArea.vue';
 
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 </script>
 <template>
   <Head title="Donation Sorting" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
 	<template #header>
 	</template>
 	

@@ -3,11 +3,17 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import RIForm from '@/Components/RIForm.vue';
+
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 </script>
 
 <template>
   <Head title="Item Category Entry" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
     <template #header>
     </template>
     

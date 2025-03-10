@@ -8,10 +8,15 @@ import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 </script>
 <template>
   <Head title="Master Item Catalog" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
 	<template #header>
 	</template>
 	<div class="ri_fieldset">

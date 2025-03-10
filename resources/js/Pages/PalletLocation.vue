@@ -11,11 +11,17 @@ import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import TextArea from '@/Components/TextArea.vue';
+
+defineProps({
+    breadcrumb: {
+        type: Array,
+    },
+});
 </script>
 
 <template>
   <Head title="Pallet Location Tracking" />
-  <AuthenticatedLayout>
+  <AuthenticatedLayout :breadcrumb="breadcrumb">
     <template #header>
     </template>
     
