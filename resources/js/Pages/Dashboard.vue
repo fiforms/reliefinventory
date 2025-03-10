@@ -2,7 +2,7 @@
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 <template>
    <Head title="Dashboard" />
-   <AuthenticatedLayout>
+   <AuthenticatedLayout :breadcrumb="breadcrumb">
      <template #header></template>
 
      <div v-if="currentPage" class="menu-container">
@@ -44,6 +44,7 @@ export default {
       pages: [],
 	  currentPage: null,
 	  route: "",
+	  breadcrumb: [],
     };
   },
   created() {
@@ -78,9 +79,16 @@ export default {
 		if(newWindow) return false;
 	    const targetPage = this.pages.find(page => page.hashtag === url.substring(1));
 	    if (targetPage) {
+		  this.currentPage = targetPage;
+		  this.route = url;	
 		  window.location.hash = url;
-		  this.route = url;
-	      this.currentPage = targetPage;	    }
+		  if(targetPage.id == 1) {
+			  this.breadcrumb = [];
+		  }
+		  else {
+			  this.breadcrumb = [{href: '/dashboard#' + targetPage.hashtag, title: targetPage.menu_title}];
+		  }
+ 	    }
 	  } else {
 	    if(newWindow) {
 			window.open(url,'_blank');
