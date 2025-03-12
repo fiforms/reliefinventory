@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\PalletStatusController;
+use App\Models\MenuItem;
 
 
 Route::get('/', function () {
@@ -31,41 +32,51 @@ Route::get('/', function () {
         return Inertia::render('QRCodeTest');
     })->middleware(['auth', 'verified']);
     
+   
     Route::get('/order-entry', function () {
-        return Inertia::render('OrderEntry');
+        return Inertia::render('OrderEntry', 
+            ['breadcrumb' => MenuItem::getBreadcrumb('/order-entry')]);
     })->middleware(['auth']);
     
     Route::get('/donation-sorting', function () {
-        return Inertia::render('DonationSorting');
-    })->middleware(['auth', 'role:4'])->name('entry');
+        return Inertia::render('DonationSorting',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/donation-sorting')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/inventory-movement', function () {
-        return Inertia::render('PalletLocation');
-    })->middleware(['auth', 'role:4'])->name('entry');
+        return Inertia::render('PalletLocation',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/inventory-movement')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/pallet-management', function () {
-        return Inertia::render('PalletManagement');
-    })->middleware(['auth', 'role:4'])->name('entry');
+        return Inertia::render('PalletManagement',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/pallet-management')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/setup/items', function () {
-        return Inertia::render('ItemEntry');
-    })->middleware(['auth', 'role:4'])->name('setup');
+        return Inertia::render('ItemEntry',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/setup/items')]);
+    })->middleware(['auth', 'role:4']);
   
     Route::get('/setup/people', function () {
-        return Inertia::render('People');
-    })->middleware(['auth', 'role:4'])->name('setup');
+        return Inertia::render('People',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/setup/people')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/setup/categories', function () {
-        return Inertia::render('CategoryEntry');
-    })->middleware(['auth', 'role:4'])->name('setup');
+        return Inertia::render('CategoryEntry',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/setup/categories')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/setup/locations', function () {
-        return Inertia::render('LocationEntry');
-    })->middleware(['auth', 'role:4'])->name('setup');
+        return Inertia::render('LocationEntry',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/reports/labels', function () {
-        return Inertia::render('PrintLabels');
-    })->middleware(['auth', 'role:4'])->name('reports');
+        return Inertia::render('PrintLabels',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/reports/labels')]);
+    })->middleware(['auth', 'role:4']);
     
     Route::get('/report/pallet/{id}', 
         [PalletReportController::class, 'generateReport'])

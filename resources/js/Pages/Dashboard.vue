@@ -2,7 +2,7 @@
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 <template>
    <Head title="Dashboard" />
-   <AuthenticatedLayout>
+   <AuthenticatedLayout :breadcrumb="breadcrumb">
      <template #header></template>
 
      <div v-if="currentPage" class="menu-container">
@@ -43,17 +43,33 @@ export default {
     return {
       pages: [],
 	  currentPage: null,
+	  route: "",
+	  breadcrumb: [],
     };
   },
   created() {
     this.fetchMenuData();
+	this.route = window.location.hash;
+	window.addEventListener(
+	  "hashchange",
+	  () => {
+		    this.route = location.hash;
+			this.navigate(this.route, false);
+	   },
+	  false,
+	);
   },
   methods: {
     async fetchMenuData() {
       try {
         const response = await axios.get('/json/menu-data');
         this.pages = response.data;
-		this.currentPage = this.pages.length ? this.pages[0] : null;
+		if(this.route) {
+			this.navigate(this.route, false)
+		}
+		else {
+			this.currentPage = this.pages.length ? this.pages[0] : null;
+		}
       } catch (error) {
         console.error("Failed to load menu data:", error);
       }
@@ -63,10 +79,19 @@ export default {
 		if(newWindow) return false;
 	    const targetPage = this.pages.find(page => page.hashtag === url.substring(1));
 	    if (targetPage) {
-	      this.currentPage = targetPage;	    }
+		  this.currentPage = targetPage;
+		  this.route = url;	
+		  window.location.hash = url;
+		  if(targetPage.id == 1) {
+			  this.breadcrumb = [];
+		  }
+		  else {
+			  this.breadcrumb = [{href: '/dashboard#' + targetPage.hashtag, title: targetPage.menu_title}];
+		  }
+ 	    }
 	  } else {
 	    if(newWindow) {
-			window.open('url','_blank');
+			window.open(url,'_blank');
 		}
 		else {
 			window.location.href = url;

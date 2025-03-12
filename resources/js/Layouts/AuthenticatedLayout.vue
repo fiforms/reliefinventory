@@ -31,10 +31,17 @@ const showingNavigationDropdown = ref(false);
                             >
                                 <NavLink
                                     :href="route('dashboard')"
-                                    :active="route().current('dashboard')"
+                                    :active="fullroute == '/dashboard' || fullroute == '/dashboard#main'"
                                 >
                                     Relief Inventory Dashboard
                                 </NavLink>
+								<NavLink
+								    v-for="crumb in breadcrumb"
+								    :href="crumb.href"
+									:active="fullroute == crumb.href"
+								>
+								    → {{ crumb.title }}
+								</NavLink>
                             </div>
                         </div>
 
@@ -194,3 +201,31 @@ const showingNavigationDropdown = ref(false);
         </div>
     </div>
 </template>
+
+<script>
+export default {
+	props: {
+		breadcrumb: {
+			type: Array,
+			required: false,
+			default: [],
+		},
+	},
+	data() {
+	  return {
+	      fullroute: "",
+	  };
+	},
+	created() {
+		this.fullroute = window.location.href.substring(window.location.origin.length);
+		console.log('fullroute is ' + this.fullroute)
+		window.addEventListener(
+		  "hashchange",
+		  () => {
+			    this.fullroute = window.location.href.substring(window.location.origin.length);
+		   },
+		  false,
+		);
+	},
+}
+</script>
