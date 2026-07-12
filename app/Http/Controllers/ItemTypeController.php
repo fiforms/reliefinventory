@@ -70,7 +70,13 @@ class ItemTypeController extends Controller
     public function store(Request $request)
     {
         $data = $request->all();
-        
+
+        // Auto-assign the next item number when none was provided
+        // (quick-add from the sorting page doesn't ask sorters for numbers)
+        if (empty($data['number'])) {
+            $data['number'] = str_pad((string) (((int) ItemType::max('number')) + 1), 5, '0', STR_PAD_LEFT);
+        }
+
         // Ensure 'number' is numeric and format it correctly
         if (!ctype_digit($data['number']) || strlen($data['number']) > 5) {
             return response()->json(['errors' => ['number' => 'The number must be a 5-digit numeric code.']], 422);

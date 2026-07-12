@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use App\Http\Controllers\PalletStatusController;
+use App\Http\Controllers\SortingSessionController;
 use App\Models\MenuItem;
 
 
@@ -165,6 +166,21 @@ Route::get('/', function () {
         Route::put('/orders/{id}', [OrderController::class, 'update']);
         Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
         
+        // Sorting sessions (scan-driven donation sorting; lines autosave one at a time)
+        Route::get('/sorting-sessions', [SortingSessionController::class, 'index']);
+        Route::post('/sorting-sessions', [SortingSessionController::class, 'store']);
+        Route::get('/sorting-sessions/pallet/{tag}', [SortingSessionController::class, 'pallet']);
+        Route::get('/sorting-sessions/{id}', [SortingSessionController::class, 'show']);
+        Route::patch('/sorting-sessions/{id}', [SortingSessionController::class, 'update']);
+        Route::post('/sorting-sessions/{id}/lines', [SortingSessionController::class, 'storeLine']);
+        Route::put('/sorting-sessions/{id}/lines/{lineId}', [SortingSessionController::class, 'updateLine']);
+        Route::delete('/sorting-sessions/{id}/lines/{lineId}', [SortingSessionController::class, 'destroyLine']);
+
+        // Sorters may add new categories/item types/items on the fly when
+        // unfamiliar goods arrive (update/delete remain admin-only below)
+        Route::post('/categories', [CategoryController::class, 'store']);
+        Route::post('/itemtypes', [ItemTypeController::class, 'store']);
+
         // Donations
         Route::get('/donations', [DonationController::class, 'index']);
         Route::post('/donations', [DonationController::class, 'store']);
@@ -195,7 +211,6 @@ Route::get('/', function () {
 
         Route::delete('/people/{id}', [PeopleController::class, 'destroy']);
         
-        Route::post('/categories', [CategoryController::class, 'store']);
         Route::put('/categories/{id}', [CategoryController::class, 'update']);
         Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
         
@@ -207,7 +222,6 @@ Route::get('/', function () {
         Route::put('/uses/{id}', [UseController::class, 'update']);
         Route::delete('/uses/{id}', [UseController::class, 'destroy']);
         
-        Route::post('/itemtypes', [ItemTypeController::class, 'store']);
         Route::put('/itemtypes/{id}', [ItemTypeController::class, 'update']);
         Route::delete('/itemtypes/{id}', [ItemTypeController::class, 'destroy']);
         

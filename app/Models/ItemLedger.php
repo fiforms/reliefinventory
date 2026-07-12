@@ -18,8 +18,10 @@ class ItemLedger extends Model
     protected $fillable = [
         'orderdonation_id', // Foreign key linking to transactions
         'item_id',          // Foreign key linking to master list of items and descriptions
+        'pallet_id',        // Foreign key linking to the source pallet (donation provenance)
         'qty_added',        // Quantity of the items added
         'qty_subtracted',   // Quanitity of items removed
+        'disposition',      // usable | trashed | diverted
         'transaction_type', // Type of transaction (e.g., 'addition', 'removal')
         'reference_id',     // Reference ID for the related entity (e.g., order, donation)
         'description',      // Description of the transaction

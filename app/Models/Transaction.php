@@ -16,9 +16,9 @@ class Transaction extends Model
     
     // Specify the fields
     protected $fillable = [
-        'id', 
+        'id',
         'type',
-        'user_id',    // Foreign key linking to users
+        'person_id_user', // Foreign key linking to people (the user who entered the transaction)
         'person_id',  // Foreign key linking to people
         'status_id',  // Status ID associated with the order-donation relation
         'order_date', // Date of the transaction
@@ -50,8 +50,9 @@ class Transaction extends Model
         return $this->hasMany(ItemLedger::class, 'orderdonation_id');
     }
     
-    public function user() 
+    // The person (user) who entered the transaction
+    public function enteredBy()
     {
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(Person::class, 'person_id_user');
     }
 }

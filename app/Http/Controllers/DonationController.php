@@ -13,7 +13,7 @@ class DonationController extends Controller
     
     private const validation = [
         'type' => 'required|in:donation',
-        'user_id' => 'required|exists:users,id',
+        'person_id_user' => 'required|exists:people,id',
         'person_id' => 'nullable|exists:people,id',
         'status_id' => 'required|exists:statuses,id',
         'order_date' => 'required|date',
@@ -33,7 +33,7 @@ class DonationController extends Controller
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'donation')
-        ->with(['itemLedgers.item.itemtype','user'])
+        ->with(['itemLedgers.item.itemtype','enteredBy'])
         ->get();
         
         return response()->json([
@@ -41,7 +41,7 @@ class DonationController extends Controller
             'templates' => [
                 '_default' => [
                     'type' => 'donation',
-                    'user_id' => Auth::id(),
+                    'person_id_user' => Auth::id(),
                     'person_id' => null,
                     'status_id' => 4,
                     'order_date' => date('Y-m-d'),
