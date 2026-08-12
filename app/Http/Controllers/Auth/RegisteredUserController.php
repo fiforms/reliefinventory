@@ -24,7 +24,7 @@ class RegisteredUserController extends Controller
      */
     public function create(): Response
     {
-        $turnstileSiteKey = env('CLOUDFLARE_TURNSTILE_SITE_KEY');
+        $turnstileSiteKey = config('services.turnstile.site_key');
         
         if (empty($turnstileSiteKey)) {
             abort(500, 'Cloudflare Turnstile is not properly configured.');
@@ -52,7 +52,7 @@ class RegisteredUserController extends Controller
         
         // Verify Turnstile response with Cloudflare
         $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-            'secret' => env('CLOUDFLARE_TURNSTILE_SECRET_KEY'),
+            'secret' => config('services.turnstile.secret_key'),
             'response' => $request->input('cf-turnstile-response'),
             'remoteip' => $request->ip(),
         ])->json();

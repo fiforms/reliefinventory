@@ -86,6 +86,7 @@
 	  	  {{ title }} - Details
 	    </h2>
 		<slot :editing="editing" :record="record" :templates="templates"></slot>
+		<p v-if="saveError" class="ri_error">{{ saveError }}</p>
 		<button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
 		<button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
 		<button v-if="editing" @click="deleteRecord()" class="ri_formbutton" style="float: right">Delete</button>
@@ -122,9 +123,17 @@ export default {
 	  templates: [],
 	  record: null,
 	  editing: false,
+	  saveError: null,
     };
   },
   methods: {
+	describeSaveError(error) {
+	  const errors = error.response?.data?.errors;
+	  if (errors) {
+	    return Object.values(errors).flat().join(' ');
+	  }
+	  return error.response?.data?.message || 'Could not save. Please try again.';
+	},
     fetchRecords() {
       axios
         .get(this.datasource)
@@ -140,6 +149,7 @@ export default {
 		this.record = JSON.parse(JSON.stringify(this.records[recordIndex]));
 	},
 	saveRecord() {
+	  this.saveError = null;
 	  if(this.record && this.record.id) {
 		// Record exists, we should update using PUT
 		axios.put(this.datasource + "/" + this.record.id, this.record)
@@ -150,6 +160,7 @@ export default {
 		})
 		.catch((error) => {
 		  console.log(error);
+		  this.saveError = this.describeSaveError(error);
 		});
 	  }
 	  else {
@@ -162,6 +173,7 @@ export default {
 		})
 		.catch((error) => {
 		  console.log(error);
+		  this.saveError = this.describeSaveError(error);
 		});
 	  }
 	},
@@ -179,6 +191,7 @@ export default {
 	cancelRecord() {
 		this.editing = false;
 		this.record = null; // Reset the model in the parent
+		this.saveError = null;
 	},
 	toggleEdit() {
 		this.editing = !this.editing;

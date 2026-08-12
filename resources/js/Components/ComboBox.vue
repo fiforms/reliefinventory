@@ -26,12 +26,21 @@
 	  <div class="ir-combo-box">
 	    <input
 		  v-if="enabled"
+		  ref="searchInput"
 	      type="text"
 	      v-model="search"
 	      @focus="isOpen = true"
 	      @blur="handleBlur"
 	      @input="filterOptions"
+	      @keydown="handleKeydown"
 	      class="rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 ir-combo-box-input ri_forminput"
+	      name="ri-combo-search"
+	      autocomplete="off"
+	      autocorrect="off"
+	      autocapitalize="off"
+	      spellcheck="false"
+	      data-lpignore="true"
+	      data-1p-ignore
 	      :placeholder="placeholder"
 	    />
 	    <ul
@@ -41,10 +50,10 @@
 	      <li
 	        v-for="(option, index) in filteredOptions"
 	        :key="option.id"
-	        @mousedown="selectOption(option)"
-	        class="ir-combo-box-option"
+	        @mousedown.prevent="selectOption(option)"
+	        :class="['ir-combo-box-option', { ir_combo_box_highlighted: index === highlightedIndex }]"
 	      >
-	        {{ option[display] }}
+	        {{ option[display] }}<span v-if="secondaryDisplay && option[secondaryDisplay]"> &mdash; {{ option[secondaryDisplay] }}</span>
 	      </li>
 	    </ul>
 		<span v-if="!enabled" class="ir_disabled_input">{{ this.search }}</span>
@@ -82,6 +91,14 @@ export default {
 		required: false,
 		default: "name",
 	},
+	secondaryDisplay: {
+		type: String,
+		required: false,
+	},
+	searchFields: {
+		type: Array,
+		required: false,
+	},
 	placeholder: {
 		type: String,
 		required: false,
@@ -94,6 +111,7 @@ export default {
       isOpen: false,
       filteredOptions: [],
 	  optionlist: [],
+	  highlightedIndex: -1,
     };
   },
   watch: {
@@ -132,16 +150,42 @@ export default {
 		}
 	},
 	filterOptions() {
+      const fields = this.searchFields && this.searchFields.length ? this.searchFields : [this.display];
+      const term = this.search.toLowerCase();
       this.filteredOptions = this.optionlist.filter((option) =>
-        option[this.display] && option[this.display].toLowerCase().includes(this.search.toLowerCase())
+        fields.some((field) => option[field] && String(option[field]).toLowerCase().includes(term))
       );
+	  this.highlightedIndex = this.filteredOptions.length ? 0 : -1;
     },
     selectOption(option) {
       this.search = option[this.display];
       this.isOpen = false;
+	  this.highlightedIndex = -1;
       this.$emit("update:keyValue", option.id);
-	  this.$emit("update:updates", option)
+	  this.$emit("update:updates", option);
+	  this.$emit("selected", option);
     },
+	focus() {
+	  this.$nextTick(() => this.$refs.searchInput?.focus());
+	},
+	handleKeydown(event) {
+	  if (!this.isOpen || this.filteredOptions.length === 0) return;
+	  if (event.key === "ArrowDown") {
+	    event.preventDefault();
+	    this.highlightedIndex = (this.highlightedIndex + 1) % this.filteredOptions.length;
+	  } else if (event.key === "ArrowUp") {
+	    event.preventDefault();
+	    this.highlightedIndex = (this.highlightedIndex - 1 + this.filteredOptions.length) % this.filteredOptions.length;
+	  } else if (event.key === "Enter" || event.key === "Tab") {
+	    const option = this.filteredOptions[this.highlightedIndex] ?? this.filteredOptions[0];
+	    if (option) {
+	      if (event.key === "Enter") event.preventDefault();
+	      this.selectOption(option);
+	    }
+	  } else if (event.key === "Escape") {
+	    this.isOpen = false;
+	  }
+	},
 	showOptionTitle() {
 		const selectedOption = this.optionlist.find(option => option.id === this.keyValue);
 		this.search = selectedOption ? selectedOption[this.display] : "";

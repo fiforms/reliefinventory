@@ -19,15 +19,32 @@ class OrderController extends Controller
         'order_date' => 'required|date',
         'comments' => 'nullable|string',
         'item_ledgers' => 'nullable|array',
-        'item_ledgers.*.item_id' => 'required_with:item_ledgers|exists:items,id',
+        'item_ledgers.*.item_id' => 'nullable|exists:items,id',
         'item_ledgers.*.qty_added' => 'nullable|integer',
         'item_ledgers.*.qty_subtracted' => 'nullable|integer',
         'order_lines' => 'nullable|array',
-        'order_lines.*.itemtype_id' => 'required_with:order_lines|exists:itemtypes,id',
-        'order_lines.*.packagetype_id' => 'required_with:order_lines|exists:packagetypes,id',
-        'order_lines.*.qty_requested' => 'required_with:order_lines|integer|min:1',
+        'order_lines.*.itemtype_id' => 'nullable|exists:itemtypes,id',
+        'order_lines.*.packagetype_id' => 'nullable|exists:packagetypes,id',
+        'order_lines.*.qty_requested' => 'nullable|integer|min:1',
         'order_lines.*.comments' => 'nullable|string',
     ];
+
+    /**
+     * Drop incomplete lines (e.g. the always-present blank trailing row left
+     * by the quick-entry "Enter starts a new line" flow) so they don't block
+     * saving the rest of a legitimately in-progress order.
+     */
+    private static function completeLinesOnly(array $lines, array $requiredFields): array
+    {
+        return array_values(array_filter($lines, function ($line) use ($requiredFields) {
+            foreach ($requiredFields as $field) {
+                if (empty($line[$field])) {
+                    return false;
+                }
+            }
+            return true;
+        }));
+    }
     
     /**
      * Retrieve all orders with donations and their respective item ledger lines.
@@ -38,9 +55,14 @@ class OrderController extends Controller
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'order')
-        ->with(['OrderLines.itemtype','OrderLines.packagetype','itemLedgers.item.itemtype','person','status'])
+        ->with(['OrderLines.itemtype.unit','OrderLines.packagetype','itemLedgers.item.itemtype','person','status'])
         ->get();
-            
+
+        // New orders always start in the "New Order" status; status is not
+        // user-selectable at creation, it progresses automatically as the
+        // order is worked.
+        $newOrderStatus = \App\Models\Status::where('name', 'New Order')->first();
+
             return response()->json([
                 'records' => $orders,
                 'templates' => [
@@ -49,7 +71,8 @@ class OrderController extends Controller
                         'person_id_user' => Auth::id(),
                         'person_id' => null,
                         'person' => [],
-                        'status_id' => null,
+                        'status_id' => $newOrderStatus->id ?? null,
+                        'status' => $newOrderStatus,
                         'order_date' => date('Y-m-d'),
                         'comments' => null,
                         'item_ledgers' => [],
@@ -79,15 +102,17 @@ class OrderController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate(self::validation);
+        $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
+        $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
         $order = Transaction::create($data);
-        
+
         // Handle related item_ledgers
         if (!empty($data['item_ledgers'])) {
             foreach ($data['item_ledgers'] as $ledger) {
                 $order->itemLedgers()->create($ledger);
             }
         }
-        
+
         if (!empty($data['order_lines'])) {
             foreach ($data['order_lines'] as $line) {
                 $order->orderLines()->create($line);
@@ -111,7 +136,9 @@ class OrderController extends Controller
     public function update(Request $request, $id)
     {
         $data = $request->validate(self::validation);
-        
+        $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
+        $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
+
         $order = Transaction::findOrFail($id);
         
         // Ensure person_id_user is never updated

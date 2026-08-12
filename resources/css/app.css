@@ -133,6 +133,27 @@ button.ri_defaultbutton, button.ri_formbutton {
     border-radius: 0.25rem;
 }
 
+.ri_error {
+    color: #b91c1c;
+    margin: 6px 0;
+}
+
+.ri_qty_input input {
+    width: 4em;
+    max-width: 4em;
+}
+
+.ri_qty_input input[type="number"]::-webkit-outer-spin-button,
+.ri_qty_input input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+
+.ri_qty_input input[type="number"] {
+    appearance: textfield;
+    -moz-appearance: textfield;
+}
+
 .ir-combo-box {
   position: relative;
 }
@@ -165,6 +186,10 @@ button.ri_defaultbutton, button.ri_formbutton {
 
 .ir-combo-box-option:hover {
   background-color: #f0f0f0;
+}
+
+.ir_combo_box_highlighted {
+  background-color: #e0e7ff;
 }
 
 .ri_subtable_container {

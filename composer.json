@@ -13,6 +13,7 @@
         "laravel/tinker": "^2.10|^3.0",
         "league/csv": "^9.21",
         "milon/barcode": "^11.0|^12.0|^13.0",
+        "resend/resend-php": "^1.8",
         "spatie/laravel-pdf": "^1.5|^2.0",
         "tightenco/ziggy": "^2.0"
     },

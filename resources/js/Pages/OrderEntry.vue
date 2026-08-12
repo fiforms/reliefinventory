@@ -6,6 +6,7 @@
 	 requires no script or code. Use this as a model for other RIForm Vue Files -->
 
 <script setup>
+import { ref, nextTick } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
@@ -20,6 +21,21 @@ defineProps({
     },
 });
 
+// Requested-items quick entry: selecting an item number moves focus to
+// quantity, and pressing Enter in quantity starts a new line at item number
+// (rapid data entry from a paper order form / catalog).
+const requestedItemsSubform = ref(null);
+const itemNumberCombo = ref(null);
+const qtyInput = ref(null);
+
+function onItemNumberSelected() {
+    nextTick(() => qtyInput.value?.focus());
+}
+
+function onQtyEnter() {
+    requestedItemsSubform.value?.newLine();
+    nextTick(() => itemNumberCombo.value?.focus());
+}
 </script>
 <template>
   <Head title="Master Order Entry" />
@@ -74,47 +90,41 @@ defineProps({
 		  </div>
 		  <div class="ri_fieldset">
 		  		<div class="ri_fieldlabel">Name:</div>
-		  		{{ record.person.first_name}} {{record.person.last_name}}
+		  		{{ record.person?.first_name }} {{ record.person?.last_name }}
 		  		</div>
 			<div class="ri_fieldset">
 		  		<div class="ri_fieldlabel">Organization:</div>
-		  		{{ record.person.organization}}
+		  		{{ record.person?.organization }}
 		  		</div>
-				
+
 		  	<div class="ri_fieldset">
 				<div class="ri_fieldlabel">Delivery Address:</div>
-				{{ record.person.address }}
+				{{ record.person?.address }}
 				</div>
-				
+
 			<div class="ri_fieldset">
 				<div class="ri_fieldlabel">City/State/Zip:</div>
-				{{ record.person.city }} {{ record.person.state }} {{ record.person.zip }}
+				{{ record.person?.city }} {{ record.person?.state }} {{ record.person?.zip }}
 				</div>
-			
+
 			<div class="ri_fieldset">
 				<div class="ri_fieldlabel">County:</div>
-				{{ record.person.county }}
+				{{ record.person?.county }}
 				</div>
-				
+
 			<div class="ri_fieldset">
 				<div class="ri_fieldlabel">Phone:</div>
-				{{ record.person.phone }}
+				{{ record.person?.phone }}
 				</div>
-				
+
 			<div class="ri_fieldset">
 				<div class="ri_fieldlabel">Email:</div>
-			  	{{ record.person.email }}
+			  	{{ record.person?.email }}
 			 	 </div>
 				 
 		  <div class="ri_fieldset">
   	  	  		<div class="ri_fieldlabel">Status:</div>
-		  
-		  	<ComboBox 
-				  	v-model:keyValue="record.status_id"
-					v-model:updates="record.status"
-					optionsource="/json/statuses"
-				  	:enabled="editing"
-		  	/>
+		  		{{ record.status ? record.status.name : '' }}
 		  </div>
 		  <div class="ri_fieldset">
 		  	<div class="ri_fieldlabel">Comments</div>
@@ -123,10 +133,11 @@ defineProps({
 		  					:enabled="editing"
 		  			  /> 
 		  </div>
-			<RISubform 
-					title="Order Requested Items"  
+			<RISubform
+					ref="requestedItemsSubform"
+					title="Order Requested Items"
 								v-model:records="record.order_lines"
-								:template="templates.order_lines" 
+								:template="templates.order_lines"
 								:enabled="editing">
 				<template #thead>
 					<th>ACS Item#</th>
@@ -136,44 +147,41 @@ defineProps({
 					<th>Comments</th>
 				</template>
 				<template #tbody="{ subrecord, index }">
-					<td>{{ subrecord.number }}</td>
-					<td >{{ subrecord.qty_requested }}
-										    {{ subrecord.qty_requested > 1 ? subrecord.packagetype.plural : subrecord.packagetype.singular }}</td>
-					<td>{{ subrecord.itemtype.name }}</td>
+					<td>{{ subrecord.itemtype ? subrecord.itemtype.number : '' }}</td>
+					<td>{{ subrecord.qty_requested }}</td>
+					<td>{{ subrecord.itemtype ? subrecord.itemtype.name : '' }}</td>
+					<td>{{ subrecord.itemtype && subrecord.itemtype.unit ? subrecord.itemtype.unit.name : '' }}</td>
 					<td>{{ subrecord.comments }}</td>
 				</template>
 				<template #default="{ subrecord, index }">
 				  <td>
-					<TextInput
-							type="text"
-						    v-model="subrecord.number"
-							:enabled="true"
-					  /> 
-				  </td>
-				  <td>
-				  	<TextInput
-		  					type="number"
-		  				    v-model="subrecord.qty_requested"
-		  					:enabled="true"
-				  	  /> 
-				  </td>
-				  <td>
-					<ComboBox 
+					<ComboBox
+						ref="itemNumberCombo"
 						v-model:keyValue="subrecord.itemtype_id"
 						v-model:updates="subrecord.itemtype"
 						optionsource="/json/itemtypes/noitems"
+						display="number"
+						secondaryDisplay="name"
+						:searchFields="['number', 'name']"
+						placeholder="Item #"
 						:enabled="true"
+						@selected="onItemNumberSelected"
 						/>
 				  </td>
-			
+				  <td class="ri_qty_input">
+				  	<TextInput
+		  					ref="qtyInput"
+		  					type="number"
+		  				    v-model="subrecord.qty_requested"
+		  					:enabled="true"
+		  					@keydown.enter.prevent="onQtyEnter"
+				  	  />
+				  </td>
 				  <td>
-					  <ComboBox 
-					  	v-model:keyValue="subrecord.packagetype_id"
-					  	v-model:updates="subrecord.packagetype"
-					  	optionsource="/json/packagetypes"
-						:display="subrecord.qty_requested > 1 ? 'plural' : 'singular'"
-					  	:enabled="true"
-					  	/>
+					  {{ subrecord.itemtype ? subrecord.itemtype.name : '' }}
+				  </td>
+				  <td>
+					  {{ subrecord.itemtype && subrecord.itemtype.unit ? subrecord.itemtype.unit.name : '' }}
 				  </td>
 		  		  
 				  <td>
@@ -185,11 +193,12 @@ defineProps({
 				</template>
 			</RISubform>
 			
-			<RISubform 
-					title="Order Filled Line Items"  
+			<RISubform
+					title="Order Filled Line Items"
 					v-model:records="record.item_ledgers"
-					:template="templates.item_ledgers" 
-					:enabled="editing">
+					:template="templates.item_ledgers"
+					:enabled="editing"
+					:allowAdd="false">
 				<template #thead>
 					<th>Description</th>
 					<th>Quantity</th>
