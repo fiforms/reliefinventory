@@ -79,11 +79,30 @@ Route::get('/', function () {
             ['breadcrumb' => MenuItem::getBreadcrumb('/reports/labels')]);
     })->middleware(['auth', 'role:4']);
     
-    Route::get('/report/pallet/{id}', 
+    Route::get('/report/pallet/{id}',
         [PalletReportController::class, 'generateReport'])
         ->name('report.pallet')
         ->middleware(['auth', 'role:4']);
-    
+
+    // Roadmap pages linked from the main menu but not yet built.
+    // Renders a "coming soon" placeholder instead of 404ing.
+    foreach ([
+        '/order-filling' => 'Order Filling',
+        '/reports/orders' => 'Outstanding Orders Report',
+        '/reports/inventory' => 'Inventory Report',
+        '/reports/flow' => 'Inventory Flow Report',
+        '/reports/donors' => 'Donor Report',
+        '/reports/customers' => 'Customer Report',
+        '/setup/users' => 'User Management',
+    ] as $path => $feature) {
+        Route::get($path, function () use ($path, $feature) {
+            return Inertia::render('ComingSoon', [
+                'breadcrumb' => MenuItem::getBreadcrumb($path),
+                'feature' => $feature,
+            ]);
+        })->middleware(['auth', 'role:4']);
+    }
+
     
     Route::middleware('auth')->group(function () {
         Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');

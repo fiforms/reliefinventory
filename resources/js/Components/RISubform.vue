@@ -36,7 +36,7 @@
 	        </tr>
 	      </thead>
 	      <tbody>
-	        <tr v-for="(record, index) in records" :key="record.id">
+	        <tr v-for="(record, index) in records" :key="record.id ?? index">
 			  <slot v-if="index != currentEdit" name="tbody" :subrecord="record" :index="index"></slot>
 			  <slot v-else :subrecord="record" :index="index"></slot>
 			  <td v-if="enabled">
@@ -48,7 +48,7 @@
 	        </tr>
 	      </tbody>
 	    </table>
-		<button v-if="enabled" @click="newLine()" class="ri_defaultbutton">New Line</button>
+		<button v-if="enabled && allowAdd" @click="newLine()" class="ri_defaultbutton">New Line</button>
 	  </div>
 	</div>
 </template>
@@ -72,6 +72,11 @@ export default {
 	  enabled: {
 	    type: Boolean,
 	    required: true,
+	  },
+	  allowAdd: {
+	    type: Boolean,
+	    required: false,
+	    default: true,
 	  },
   },
   data() {

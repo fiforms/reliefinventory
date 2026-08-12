@@ -250,8 +250,13 @@ export default {
 			this.entry = { item_id: null, item: null, qty: null, disposition: this.entry.disposition };
 			this.$refs.itemSelect?.focus();
 		},
+		findLineIndex(line) {
+			return this.lines.findIndex((entry) =>
+				(line.tempId !== undefined && entry.tempId === line.tempId) || entry === line);
+		},
 		async saveLine(line) {
-			line.status = 'saving';
+			const startIdx = this.findLineIndex(line);
+			if (startIdx !== -1) this.lines.splice(startIdx, 1, { ...line, status: 'saving' });
 			try {
 				const response = await axios.post('/json/sorting-sessions/' + this.session.id + '/lines', {
 					item_id: line.item_id,
@@ -259,12 +264,18 @@ export default {
 					disposition: line.disposition,
 					pallet_tag: line.pallet_id ? String(line.pallet_id) : null,
 				});
-				Object.assign(line, response.data.record, { status: 'saved' });
+				const idx = this.findLineIndex(line);
+				if (idx !== -1) {
+					this.lines.splice(idx, 1, { ...line, ...response.data.record, status: 'saved' });
+				}
 			} catch (error) {
-				line.status = 'failed';
-				line.errorMessage = error.response?.data?.message
+				const idx = this.findLineIndex(line);
+				const errorMessage = error.response?.data?.message
 					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
 					|| 'Network error';
+				if (idx !== -1) {
+					this.lines.splice(idx, 1, { ...line, status: 'failed', errorMessage });
+				}
 			}
 		},
 		async deleteLine(line) {
