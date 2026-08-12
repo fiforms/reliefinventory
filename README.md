@@ -14,7 +14,7 @@ Install prerequisite packages:
 
 ** Use your package manager to install relevant packages, i.e. **
 
-    sudo apt install php php-cli composer mariadb-server php-mysql php-redis git php-xml npm
+    sudo apt install php php-cli composer mariadb-server php-mysql php-redis php-gd git php-xml npm
 
 ** Clone the Repository (or see below for using the Eclipse editor instead) **
 
