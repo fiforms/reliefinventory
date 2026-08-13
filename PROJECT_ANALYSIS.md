@@ -86,7 +86,7 @@ Fix everything in the Critical/High tables above. Concretely:
 
 1. Convert donations to `person_id_user` (matching orders), remove `user_id`/`user()` from the `Transaction` model, fix `DonationSorting.vue` to show the person's name.
 2. Add `store/update/destroy` to `ItemController` or remove those routes; fix the `/json/json/warehouses` prefix.
-3. Rewrite `CheckRole` as a true bitmask test; define role constants in one place (e.g. a `Role` enum) and use them in routes.
+3. ~~Rewrite `CheckRole` as a true bitmask test; define role constants in one place (e.g. a `Role` enum) and use them in routes.~~ **Superseded by Part 7** (Aug 2026) — don't patch the bitmask comparison, replace the mechanism with the granular permissions model.
 4. Set `person_id_user` from `Auth::id()` server-side; wrap all multi-row saves in `DB::transaction()`.
 5. Replace pallet ID generation with a transaction-safe approach.
 6. Remove dead menu items (or stub their pages with "coming soon") so the menu never 404s.
@@ -363,3 +363,58 @@ There is currently **no mail/notification infrastructure anywhere in the app** �
 - External recipients are not `people`/role-based system users (they need to receive a report, not log into the app) — needs its own lightweight recipient list, not the People/roles table.
 
 Related design docs: the pallet-container-model, picking-and-inventory-inference, and sorting-page-design-decisions memory files carry the fuller reasoning trail for this session.
+
+### Donation Offers (pre-arrival tracking, lives inside Receiving)
+
+Real case: a company calls ahead to offer a donation before anything ships. Not every donation goes through this — some show up unannounced, others get weeks of advance notice — `DonationOffer` exists to track the ones with advance notice and drive an accept/refuse/divert decision before goods arrive.
+
+```
+offered ──┬─→ refused    (terminal — free-text reason, reference only)
+          ├─→ diverted   (terminal here — where-to; real cross-warehouse routing waits on
+          │               Part 5's facility network, not built yet)
+          └─→ accepted   (who/when/how — captures ETA + transit notes, only known once
+                           logistics are coordinated after saying yes)
+                  │
+                  ▼
+              pending    (accepted, awaiting arrival — an ETA-sorted "expected donations"
+                           worklist inside Receiving)
+                  ├─→ cancelled  (terminal, distinct from `refused` — accepted then fell
+                  │               through is different information than refused outright.
+                  │               reason/notes/who/when/how.)
+                  └─→ received  (matched at Receiving when goods arrive — named to match the
+                                  Donation's own status vocabulary rather than invent a new
+                                  word. Produces a Donation starting at the already-designed
+                                  `received` status; no new donation-side status needed.)
+```
+
+Matching an arrival to a `pending` offer doesn't have to happen at the dock — if it's not obvious, receiving still proceeds and the donation is flagged for later matching (same asynchronous-resolution shape as the sorting close-out list above).
+
+- **Audit as one log table, not per-status column pairs**: `donation_offer_status_log` (offer_id, from_status, to_status, changed_by_person_id [server-set from `Auth::id()`], changed_at, contact_method, notes) — one row per transition. Matches the tamper-evident audit-log pattern already used for facility-status changes and request edits in Part 5, and answers "who do we ask" for any transition, not just acceptance.
+- **Donor history must be visible at decision time** (accept/refuse/divert screen) — past donations, past offers and outcomes, donor-quality-scoring metrics from Part 4 once built. The decision shouldn't be made blind.
+- **Approval authority is a granted permission, not a hardcoded role check** — see Part 7. First concrete permission: `approve_donation_offers`.
+- Mark named the full pipeline as "receiving, sorting, storing, and shipping" — **Storing** (goods at rest in inventory between sorting and shipment, the existing W-pallet sealed/open/empty concept from Part 4/picking-and-inventory-inference) was named for the first time here. Working assumption, not yet confirmed: doesn't need its own top-level nav item since it's a resting state rather than an active work queue — covered by the Inventory Report + W-pallet management instead.
+
+### Not everything received is a donation
+
+The warehouse also receives non-donation shipments — equipment, supplies, other operational inbound. "Manifest" is really the general Receiving-event record; donation is one category, not the only one it handles.
+
+- Manifest/receiving record gets a `category`: **`donation` | `equipment` | `supplies` | `other`**.
+- Only `donation` proceeds into the Donation pipeline (sorting, item-ledger, donor-quality scoring) described above. **Open, not designed**: whether `equipment`/`supplies`/`other` need their own downstream tracking (closer to an asset register — what it is, condition, location, assigned-to — than a sortable consumable-goods pipeline) rather than being forced through Sorting/item_ledger, which doesn't obviously fit equipment. Needs its own design pass before being built, not an assumption that it reuses the donation path as-is.
+- "Who it's from" stays on the same Person-search infrastructure regardless of category (a vendor for equipment/supplies is still just an org in `people`) — just not labeled "donor" outside the donation category.
+- **Manifest log/audit view required**: a reviewable list of manifest entries, filterable by category, so `other`-categorized entries (and any entry generally) can be checked later for correct categorization.
+
+## Part 7 — Granular Permissions Model (planning session, Aug 2026)
+
+Surfaced by the Donation Offers design above when "who can approve a donation offer" didn't map onto the existing role tiers (Volunteer / Team Leader / Administrator). **Supersedes Phase 0 item 3** ("rewrite `CheckRole` as a true bitmask test") — don't patch the bitmask comparison, replace the mechanism.
+
+**The problem**: today's `role_bitpack` is a single numeric level per person (`CheckRole` does `role_bitpack < $level`) — already flagged as not a real bitmask test. Roles are coarse, fixed bundles; there's no way to say "this specific volunteer, who isn't a Team Leader, should still be able to approve donation offers" without changing their whole role.
+
+**The model**:
+- **`permissions`**: id, key (slug, e.g. `approve_donation_offers`, `edit_master_items`), name, description — one row per distinct capability.
+- **`role_permissions`**: role_id, permission_id — the **default** permission set a role grants. Roles stay meaningful, named bundles; this table is what each bundle actually contains, replacing a single opaque numeric level with an explicit, listable set.
+- **`person_permissions`**: person_id, permission_id, granted (boolean) — **per-person override** on top of role defaults. `true` adds a capability beyond the person's roles; `false` explicitly revokes one a role would otherwise grant. Only needed where a person deviates from their role's defaults.
+- **Effective check**: an explicit `person_permissions` row for permission X wins if present (either direction); otherwise fall back to whether any of the person's roles grants X via `role_permissions`.
+
+Strictly additive to the existing `Role`/`people_roles` structure — roles don't go away, they become "a named default bundle of permissions" instead of "a single bit implying an opaque privilege level." Mirrors how Part 5's `facility_assignments` already separates *global* role from *where/what* it applies — this does the analogous thing for *which specific capabilities*, system-wide. Route/action gates become permission-key checks (e.g. `can('approve_donation_offers')`) rather than numeric level comparisons.
+
+**First concrete use**: `approve_donation_offers`, defaulted onto whichever role(s) represent warehouse/office/receiving management, with per-person grants for volunteers who function as managers without holding that role.
