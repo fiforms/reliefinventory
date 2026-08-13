@@ -297,3 +297,69 @@ A map/list view of active facilities (for coordinators finding the nearest POD/r
 | 3 | (mostly absorbed by 1.5) Remaining piece: delivery/receiving + signed BOL upload. |
 | **3.5 (new)** | Shipment scheduling — v1 defined/static routes module, toggleable off for pickup-only facilities; v2 (optimized routing) explicitly deferred. |
 | 4 | (unchanged, expanded) Polish + notifications infra + facility-status audit trail. Facility map/list view: outsource, don't build in-house.
+
+## Part 6 — Receiving, Sorting Separation & Container Hierarchy (planning session, Aug 2026)
+
+Triggered by a real scenario during the live beta (see below): a warehouse manager received 8 pallets of donated dog food with no manifest detail beyond a pallet count, and needed to inventory it coarsely on intake but distribute it precisely (by bag) later. Working through that case exposed that **Phase 1 item 1 ("Donation intake page") as originally scoped is too thin** — it assumed intake and sorting happen together. They need to be two separate stages, separated in time, each with its own dashboard. This section supersedes Phase 1 item 1 and item 2's donor handling; it does not change Phase 1 items 3–4 (stock-on-hand, inventory report) or Parts 1–5 otherwise.
+
+**Context**: this design session happened during an actual, unplanned live beta test at a real warehouse responding to a real disaster incident (call came in 2026-08-12). Treat the operational scenarios that drove it as real production pressure-tests of the sorting/pallet design in Parts 1, 4, and 5 — not hypothetical edge cases.
+
+### Receiving is a separate stage from Sorting, with its own dashboard
+
+Today's `DonationSorting.vue` conflates donor entry with item-level sorting. Splitting them:
+
+- **Receiving** (new top-level nav item, opens the Receiving dashboard): donor search-or-create, a rough container count, a free-text paragraph description of contents (the "manifest"), and optional shipment-level weight (see below). Creates the donation (`Transaction`, type `donation`) in `received` status. Fast, dock-side entry — must not block on item-level detail.
+- **Sorting** stays close to today's implementation, minus donor entry — donor arrives already attached from Receiving, so the sorting session no longer needs a donor search field at all (this was already flagged as a to-do in the sorting-page design notes: donor ties to the receiving pallet at the dock, not the session).
+- **Simplified top-level nav** replacing today's flat menu: **Receiving | Sorting | Orders | Shipping** — one entry point per stage of a donation's life through the warehouse, each opening that stage's dashboard. Shipping maps to the currently-stubbed `/order-filling` "Coming Soon" placeholder (Phase 2's Order Filling page) — claim the nav position now, keep it routed to the placeholder until Phase 2 is built.
+- **Photo of the incoming load**: valuable, explicitly deferred — not required for Phase 1 completion, but keep on the design list. Requires new infrastructure (there is currently no file/photo upload capability anywhere in the app), not just a form field.
+
+### Manifest weight — shipment-level, advisory, never derived into a count
+
+A driver's manifest may state total shipment weight without a pallet-by-pallet or bag-by-bag breakdown. Capture what's actually known, at the level it's actually known, and never fabricate precision:
+
+- `manifest_weight_lbs`, nullable, **on the donation record** (shipment-level) — this is the common case (one manifest weight for the whole truckload). Never split/estimated across pallets; pallets are rarely equal weight.
+- An optional per-pallet weight field exists too, for the rarer case where pallets were individually weighed/tagged at origin.
+- **Never derive an item/bag count from weight.** Weight is receipt documentation (useful for early dashboard visibility — "~35,000 lbs inbound, sorting pending" — and FEMA paperwork), not inventory. The real, ledger-true count comes only from sorting.
+
+### Intake precision: manifest count when trustworthy, count-while-sorting when not
+
+Resolves the original dog-food scenario. Two honest cases, not one fudged rule:
+
+- **When a reliable per-container count exists** (donor's packing manifest, a known standard case-pack), trust it — enter that count directly at sorting rather than re-verifying by hand.
+- **When no manifest exists**, count while sorting rather than guessing. This isn't extra labor: sorting already requires touching every unit to assess its disposition (usable/outdated/trashed/diverted), so tallying while doing that is additive, not a separate headcount exercise. A volunteer recount pass is unnecessary precision the design was never meant to require — pallet contents are explicitly advisory pre-sort; sorting is one of the "hard events" contents are supposed to be established at (see Part 4/pallet-container-model's "hard truth at location level, pallet contents advisory" rule).
+- **Item granularity should not over-specify.** For goods a warehouse treats interchangeably regardless of exact size (e.g. "a bag of dry dog food" whether 5 lb or 35 lb), register one `Item` with `size` left null rather than one Item per exact size — avoids manufacturing precision nobody needs.
+
+### Container hierarchy: Truck → Pallet/Gaylord → generic Container
+
+Extends the five-kind pallet model with a tier above and a tier alongside it, resolved along **handling equipment required**, not container size or "is it technically a box":
+
+- **Truck** (new top tier): the physical vehicle/trailer a donation arrives on. Gets received the moment it's dropped off — donor, manifest weight, rough pallet estimate, contents summary — even before it's unloaded, so it shows up on the Receiving dashboard as "waiting to be sorted" and can't be forgotten sitting in a parking lot. Lifecycle: **`received → unloaded`** (two states — unloaded is to a Truck what `empty` is to a Pallet: children fully accounted for, done). Optional nullable trailer/truck ID/number field, captured when available.
+- **Pallet** (existing R/W/S/H/Q model, unchanged): stays first-class with its own model/controller/workflow, specifically *because* moving one requires a pallet jack or forklift — a real physical distinction, not just a labeling one. Gets a `container_type` sub-field distinguishing **`pallet` vs `gaylord`** — a gaylord is "just a big box" functionally but needs the same equipment to move, so it shares Pallet's table and lifecycle rather than living in the lighter generic Container model. `pallet_tag` in the sorting UI stays exactly as named; no rename needed.
+- **Generic Container** (new, separate, simpler model): everything hand-liftable — box, bin, bag — that doesn't need equipment to move. Gets its own `container_type` lookup (extensible). Containment is one-directional and enforced structurally, not just by convention: Container has a nullable `pallet_id` (which pallet it currently sits on, if any); Pallet has no equivalent field pointing at a container. A box can sit on a pallet; a pallet can never sit inside a box. Pallet is the largest container inside the warehouse.
+- **Per-warehouse toggle**: a small warehouse running boxes-and-bins-only shouldn't have Pallet-specific UI/controller surface cluttering its workflow. Add a `pallets_enabled` boolean to the existing `Warehouse` model (already built, currently has no settings/config columns) — cheap to add now, and carries forward cleanly when Part 5's `Facility` model eventually generalizes `Warehouse`.
+
+### Donation status: stored, transactionally consistent, asymmetric rollup
+
+- Donation (`Transaction`, type `donation`) gets a stored `status`: **`received → sorting → complete`** — same three-stage shape as Pallet's `received → sorting → empty`, container-appropriate terminal label for each (a donation isn't a physical thing that empties; it's a process that completes). Chosen to be stored rather than computed-on-read specifically because it needs to support fast counts and daily reports (see below) — a computed rollup would also have worked for correctness, but stored is the right call given the read pattern.
+- **Rollup is asymmetric — first pallet starts it, last pallet finishes it**, not a simple mirror of any single pallet:
+  - `received → sorting` fires the moment **any one** of the donation's pallets/trucks leaves `received` (first one touched).
+  - `sorting → complete` fires only once **every** pallet belonging to the donation has reached `empty`.
+- **Must update in the same transaction as the triggering pallet status change** (`DB::transaction()`, per existing project convention), and that update logic must live in one shared code path — never duplicated across controllers — to avoid the stored status silently drifting out of sync with its pallets.
+- Add `status_changed_at` (set whenever status changes) directly on the donation, so the close-out report below is a plain indexed query rather than reconstructing history from pallet logs.
+
+### Daily close-out: a state condition, not a timer
+
+A donation can legitimately sit in `sorting` for days while many pallets are still being worked — that's healthy, not stale, and shouldn't be flagged. The actual neglect signal is narrower: **a donation down to exactly one non-`empty` pallet, and that pallet already in `sorting`** — i.e., probably actually finished, just never marked. No arbitrary "N days" threshold needed; the condition itself is the flag, checked once daily.
+
+- Daily close-out view (Sorting dashboard, local management): lists every such donation with enough context to judge (donor, which pallet, last activity). Two actions: **confirm still open** (no state change — legitimately still in progress, re-list tomorrow if still true) or **close out** (correct the forgotten pallet to `empty`, which rolls the donation to `complete`).
+- No "acknowledged" suppression state — if a donation is still genuinely open, reappearing on tomorrow's list is correct, not noise.
+
+### Daily reporting — two separate outputs, one internal, one external
+
+There is currently **no mail/notification infrastructure anywhere in the app** — `resend/resend-php` is a dependency but nothing uses it yet. This is real work to build, not a config flip.
+
+- **Internal ops email** (local management only): today's throughput (pallets sorted, reusing the existing timestamped `palletstatus` history — no new schema needed for this figure) plus the close-out candidate list. Actions happen in-app, not via email links.
+- **External throughput report** (broader distribution — potentially state/federal reps with no login to the app): aggregate numbers only, no internal operational detail (the close-out list has no place here). Must be a self-contained document, not a dashboard summary with a link — generate as a PDF via the existing `spatie/laravel-pdf` setup (already used for pallet labels), matching the FEMA-documentation bar the rest of this design targets.
+- External recipients are not `people`/role-based system users (they need to receive a report, not log into the app) — needs its own lightweight recipient list, not the People/roles table.
+
+Related design docs: the pallet-container-model, picking-and-inventory-inference, and sorting-page-design-decisions memory files carry the fuller reasoning trail for this session.
