@@ -138,6 +138,11 @@ button.ri_defaultbutton, button.ri_formbutton {
     margin: 6px 0;
 }
 
+.ri_success {
+    color: #15803d;
+    margin: 6px 0;
+}
+
 .ri_qty_input input {
     width: 4em;
     max-width: 4em;
