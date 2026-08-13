@@ -66,4 +66,40 @@ class ItemController extends Controller
 
         return response()->json(['record' => $item], 201);
     }
+
+    /**
+     * Update an existing item.
+     */
+    public function update(Request $request, $id)
+    {
+        $item = Item::findOrFail($id);
+
+        $data = $request->validate([
+            'itemtype_id' => 'required|exists:itemtypes,id',
+            'description' => 'required|string|max:255',
+            'upc' => 'nullable|string|max:50|unique:items,upc,' . $id,
+            'packagetypes_id' => 'nullable|exists:packagetypes,id',
+            'pluscode' => 'nullable|string|max:4',
+            'size' => 'nullable|numeric',
+            'case_qty' => 'nullable|integer',
+            'active' => 'nullable|boolean',
+        ]);
+
+        $item->update($data);
+        $item->load('itemtype');
+        $item->name = self::displayName($item);
+
+        return response()->json(['record' => $item], 200);
+    }
+
+    /**
+     * Remove the specified item.
+     */
+    public function destroy($id)
+    {
+        $item = Item::findOrFail($id);
+        $item->delete();
+
+        return response()->json(['message' => 'Item deleted successfully.'], 200);
+    }
 }

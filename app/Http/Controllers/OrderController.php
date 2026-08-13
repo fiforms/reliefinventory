@@ -7,13 +7,13 @@ namespace App\Http\Controllers;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
-    
+
     private const validation = [
         'type' => 'required|in:order',
-        'person_id_user' => 'required|exists:people,id',
         'person_id' => 'nullable|exists:people,id',
         'status_id' => 'required|exists:statuses,id',
         'order_date' => 'required|date',
@@ -102,23 +102,27 @@ class OrderController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate(self::validation);
+        $data['person_id_user'] = Auth::id();
         $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
         $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
-        $order = Transaction::create($data);
 
-        // Handle related item_ledgers
-        if (!empty($data['item_ledgers'])) {
-            foreach ($data['item_ledgers'] as $ledger) {
-                $order->itemLedgers()->create($ledger);
-            }
-        }
+        DB::transaction(function () use ($data) {
+            $order = Transaction::create($data);
 
-        if (!empty($data['order_lines'])) {
-            foreach ($data['order_lines'] as $line) {
-                $order->orderLines()->create($line);
+            // Handle related item_ledgers
+            if (!empty($data['item_ledgers'])) {
+                foreach ($data['item_ledgers'] as $ledger) {
+                    $order->itemLedgers()->create($ledger);
+                }
             }
-        }
-        
+
+            if (!empty($data['order_lines'])) {
+                foreach ($data['order_lines'] as $line) {
+                    $order->orderLines()->create($line);
+                }
+            }
+        });
+
         return response()->json([
             'message' => 'Order created successfully.',
         ], 201);
@@ -139,60 +143,58 @@ class OrderController extends Controller
         $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
         $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
 
-        $order = Transaction::findOrFail($id);
-        
-        // Ensure person_id_user is never updated
-        unset($data['person_id_user']);
+        DB::transaction(function () use ($data, $id) {
+            $order = Transaction::findOrFail($id);
 
-        $order->update($data);
-        
-        // Retrieve current item_ledgers IDs from the database
-        $existingLedgerIds = $order->itemLedgers->pluck('id')->toArray();
-        
-        // Extract IDs from the incoming request
-        $updatedLedgerIds = collect($data['item_ledgers'] ?? [])
-        ->pluck('id')
-        ->filter() // Remove nulls (new records won't have IDs)
-        ->toArray();
-        
-        // Find IDs that need to be deleted
-        $deletedLedgerIds = array_diff($existingLedgerIds, $updatedLedgerIds);
-        
-        // Delete removed ledgers
-        if (!empty($deletedLedgerIds)) {
-            $order->itemLedgers()->whereIn('id', $deletedLedgerIds)->delete();
-        }
-        
-        // Handle updated and new ledgers
-        foreach ($data['item_ledgers'] ?? [] as $ledger) {
-            if (!empty($ledger['id'])) {
-                // Update existing ledger
-                $existingLedger = $order->itemLedgers()->find($ledger['id']);
-                if ($existingLedger) {
-                    $existingLedger->update($ledger);
+            $order->update($data);
+
+            // Retrieve current item_ledgers IDs from the database
+            $existingLedgerIds = $order->itemLedgers->pluck('id')->toArray();
+
+            // Extract IDs from the incoming request
+            $updatedLedgerIds = collect($data['item_ledgers'] ?? [])
+            ->pluck('id')
+            ->filter() // Remove nulls (new records won't have IDs)
+            ->toArray();
+
+            // Find IDs that need to be deleted
+            $deletedLedgerIds = array_diff($existingLedgerIds, $updatedLedgerIds);
+
+            // Delete removed ledgers
+            if (!empty($deletedLedgerIds)) {
+                $order->itemLedgers()->whereIn('id', $deletedLedgerIds)->delete();
+            }
+
+            // Handle updated and new ledgers
+            foreach ($data['item_ledgers'] ?? [] as $ledger) {
+                if (!empty($ledger['id'])) {
+                    // Update existing ledger
+                    $existingLedger = $order->itemLedgers()->find($ledger['id']);
+                    if ($existingLedger) {
+                        $existingLedger->update($ledger);
+                    }
+                } else {
+                    // Create new ledger
+                    $order->itemLedgers()->create($ledger);
                 }
-            } else {
-                // Create new ledger
-                $order->itemLedgers()->create($ledger);
             }
-        }
-        
-        // Similar algorithm for OrderLines
-        $existingLineIds = $order->orderLines->pluck('id')->toArray();
-        $updatedLineIds = collect($data['order_lines'] ?? [])->pluck('id')->filter()->toArray();
-        $deletedLineIds = array_diff($existingLineIds, $updatedLineIds);
-        if (!empty($deletedLineIds)) {
-            $order->orderLines()->whereIn('id', $deletedLineIds)->delete();
-        }
-        foreach ($data['order_lines'] ?? [] as $line) {
-            if (!empty($line['id'])) {
-                $order->orderLines()->find($line['id'])?->update($line);
-            } else {
-                $order->orderLines()->create($line);
+
+            // Similar algorithm for OrderLines
+            $existingLineIds = $order->orderLines->pluck('id')->toArray();
+            $updatedLineIds = collect($data['order_lines'] ?? [])->pluck('id')->filter()->toArray();
+            $deletedLineIds = array_diff($existingLineIds, $updatedLineIds);
+            if (!empty($deletedLineIds)) {
+                $order->orderLines()->whereIn('id', $deletedLineIds)->delete();
             }
-        }
-        
-        
+            foreach ($data['order_lines'] ?? [] as $line) {
+                if (!empty($line['id'])) {
+                    $order->orderLines()->find($line['id'])?->update($line);
+                } else {
+                    $order->orderLines()->create($line);
+                }
+            }
+        });
+
         return response()->json([
             'message' => 'Order updated successfully.',
         ], 200);

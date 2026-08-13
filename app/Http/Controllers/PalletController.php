@@ -47,31 +47,11 @@ class PalletController extends Controller
      */
     public function store(Request $request)
     {
-
-        // Find the maximum existing pallet ID
-        $maxPalletId = Pallet::max('id') ?? 0;
-        
-        // Get all pallets where last_status = 'created'
-        $createdPallets = Pallet::where('last_status', 'created')->pluck('id')->toArray();
-        
-        // If there are fewer than 100 pallets with last_status='created', assign a new unique last 2 digits
-        if (count($createdPallets) < 100) {
-            // Generate a unique ID with a unique last two digits
-            $newPalletId = null;
-            for ($i = 1; $i <= 100; $i++) {
-                $candidateId = $maxPalletId + $i; // Ensure last two digits are unique
-                if (!in_array($candidateId, $createdPallets)) {
-                    $newPalletId = $candidateId;
-                    break;
-                }
-            }
-        } else {
-            // If there are already 100 created pallets, fallback to normal auto-increment behavior
-            $newPalletId = $maxPalletId + 1;
-        }
-        
-        // Create pallet with the custom ID
-        $pallet = Pallet::create(['id' => $newPalletId, 'last_status' => 'created', 'datepacked' => now()->toDateString()]);
+        // Plain auto-increment pallet IDs. A prior "unique last two digits"
+        // scheme lived here; it compared full IDs (so it never actually
+        // produced unique-last-two-digit results) and raced under concurrent
+        // creates. Renumbering was never needed at 1700+ pallet scale.
+        $pallet = Pallet::create(['last_status' => 'created', 'datepacked' => now()->toDateString()]);
         
         // Log status change in palletstatus
         PalletStatus::create([

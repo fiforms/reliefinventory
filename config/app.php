@@ -123,4 +123,18 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    /*
+    |--------------------------------------------------------------------------
+    | Hosting Attribution
+    |--------------------------------------------------------------------------
+    |
+    | Shown on the welcome page to credit whoever hosts a given deployment
+    | (each install is independently deployable per the project README).
+    |
+    */
+
+    'hosted_by' => env('HOSTED_BY', 'unknown'),
+
+    'hosted_link' => env('HOSTED_LINK', 'https://example.com'),
+
 ];
