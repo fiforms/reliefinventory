@@ -18,14 +18,16 @@ class PasswordResetLinkController extends Controller
      */
     public function create(): Response
     {
-        $turnstileSiteKey = env('CLOUDFLARE_TURNSTILE_SITE_KEY');
-        
-        if (empty($turnstileSiteKey)) {
+        $turnstileEnabled = config('services.turnstile.enabled');
+        $turnstileSiteKey = config('services.turnstile.site_key');
+
+        if ($turnstileEnabled && empty($turnstileSiteKey)) {
             abort(500, 'Cloudflare Turnstile is not properly configured.');
         }
-        
+
         return Inertia::render('Auth/ForgotPassword', [
             'status' => session('status'),
+            'turnstile_enabled' => $turnstileEnabled,
             'turnstile_site_key' => $turnstileSiteKey,
         ]);
     }
@@ -37,23 +39,27 @@ class PasswordResetLinkController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        $turnstileEnabled = config('services.turnstile.enabled');
+
         $request->validate([
             'email' => 'required|email',
-            'cf-turnstile-response' => 'required', // Ensure Turnstile response exists
+            'cf-turnstile-response' => $turnstileEnabled ? 'required' : 'nullable',
         ]);
-        
-        // Verify Turnstile response with Cloudflare
-        $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-            'secret' => env('CLOUDFLARE_TURNSTILE_SECRET_KEY'),
-            'response' => $request->input('cf-turnstile-response'),
-            'remoteip' => $request->ip(),
-        ])->json();
-        
-        // If Turnstile verification fails
-        if (!$response['success']) {
-            throw ValidationException::withMessages([
-                'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
-            ]);
+
+        if ($turnstileEnabled) {
+            // Verify Turnstile response with Cloudflare
+            $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                'secret' => config('services.turnstile.secret_key'),
+                'response' => $request->input('cf-turnstile-response'),
+                'remoteip' => $request->ip(),
+            ])->json();
+
+            // If Turnstile verification fails
+            if (!$response['success']) {
+                throw ValidationException::withMessages([
+                    'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
+                ]);
+            }
         }
 
         // Introduce a slight random delay (between 500ms and 4500ms) to prevent timing attacks

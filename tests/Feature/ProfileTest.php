@@ -18,7 +18,8 @@ test('profile information can be updated', function () {
     $response = $this
         ->actingAs($user)
         ->patch('/profile', [
-            'name' => 'Test User',
+            'first_name' => 'Test',
+            'last_name' => 'User',
             'email' => 'test@example.com',
         ]);
 
@@ -28,7 +29,8 @@ test('profile information can be updated', function () {
 
     $user->refresh();
 
-    $this->assertSame('Test User', $user->name);
+    $this->assertSame('Test', $user->first_name);
+    $this->assertSame('User', $user->last_name);
     $this->assertSame('test@example.com', $user->email);
     $this->assertNull($user->email_verified_at);
 });
@@ -39,7 +41,8 @@ test('email verification status is unchanged when the email address is unchanged
     $response = $this
         ->actingAs($user)
         ->patch('/profile', [
-            'name' => 'Test User',
+            'first_name' => 'Test',
+            'last_name' => 'User',
             'email' => $user->email,
         ]);
 
@@ -50,7 +53,7 @@ test('email verification status is unchanged when the email address is unchanged
     $this->assertNotNull($user->refresh()->email_verified_at);
 });
 
-test('user can delete their account', function () {
+test('deleting an account revokes access but keeps the person record and transaction history', function () {
     $user = User::factory()->create();
 
     $response = $this
@@ -64,7 +67,13 @@ test('user can delete their account', function () {
         ->assertRedirect('/');
 
     $this->assertGuest();
-    $this->assertNull($user->fresh());
+
+    // The record itself must survive — orders/donations trace back to it
+    // (e.g. "who denied donation #1287") even after access is revoked.
+    $stillExists = $user->fresh();
+    $this->assertNotNull($stillExists);
+    $this->assertNull($stillExists->password);
+    $this->assertNull($stillExists->email_verified_at);
 });
 
 test('correct password must be provided to delete account', function () {

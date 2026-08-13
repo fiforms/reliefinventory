@@ -36,6 +36,12 @@ return [
     ],
 
     'turnstile' => [
+        // Off by default only in the testing environment (see phpunit.xml).
+        // Deployments running on a closed network with no internet access
+        // (e.g. a LAN-only warehouse install) should set
+        // CLOUDFLARE_TURNSTILE_ENABLED=false in .env — Turnstile requires
+        // reaching challenges.cloudflare.com and cannot function offline.
+        'enabled' => env('CLOUDFLARE_TURNSTILE_ENABLED', true),
         'site_key' => env('CLOUDFLARE_TURNSTILE_SITE_KEY'),
         'secret_key' => env('CLOUDFLARE_TURNSTILE_SECRET_KEY'),
     ],

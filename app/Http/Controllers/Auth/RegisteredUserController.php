@@ -24,14 +24,16 @@ class RegisteredUserController extends Controller
      */
     public function create(): Response
     {
+        $turnstileEnabled = config('services.turnstile.enabled');
         $turnstileSiteKey = config('services.turnstile.site_key');
-        
-        if (empty($turnstileSiteKey)) {
+
+        if ($turnstileEnabled && empty($turnstileSiteKey)) {
             abort(500, 'Cloudflare Turnstile is not properly configured.');
         }
-        
-        return Inertia::render('Auth/Register',[
-            'turnstile_site_key' => $turnstileSiteKey, // Pass the site key
+
+        return Inertia::render('Auth/Register', [
+            'turnstile_enabled' => $turnstileEnabled,
+            'turnstile_site_key' => $turnstileSiteKey,
         ]);
     }
 
@@ -42,28 +44,32 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
+        $turnstileEnabled = config('services.turnstile.enabled');
+
         $request->validate([
             'first_name' => 'string|max:255',
             'last_name' => 'required|string|max:255',
             'email' => 'required|string|lowercase|email|max:255|unique:'.User::class,
             'password' => ['required', 'confirmed', Rules\Password::defaults()],
-            'cf-turnstile-response' => 'required', // Ensure Turnstile response exists
+            'cf-turnstile-response' => $turnstileEnabled ? 'required' : 'nullable',
         ]);
-        
-        // Verify Turnstile response with Cloudflare
-        $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-            'secret' => config('services.turnstile.secret_key'),
-            'response' => $request->input('cf-turnstile-response'),
-            'remoteip' => $request->ip(),
-        ])->json();
-        
-        // If Turnstile verification fails
-        if (!$response['success']) {
-            throw ValidationException::withMessages([
-                'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
-            ]);
+
+        if ($turnstileEnabled) {
+            // Verify Turnstile response with Cloudflare
+            $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
+                'secret' => config('services.turnstile.secret_key'),
+                'response' => $request->input('cf-turnstile-response'),
+                'remoteip' => $request->ip(),
+            ])->json();
+
+            // If Turnstile verification fails
+            if (!$response['success']) {
+                throw ValidationException::withMessages([
+                    'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
+                ]);
+            }
         }
-        
+
         if (BannedEmail::isBanned($request->email)) {
             throw ValidationException::withMessages(['email' => 'Registration with this email is not allowed.']);
         }

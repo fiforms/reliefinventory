@@ -7,10 +7,14 @@ import TextInput from '@/Components/TextInput.vue';
 import { Head, Link, useForm } from '@inertiajs/vue3';
 import { onMounted, watch } from 'vue';
 
-defineProps({
+const props = defineProps({
+	turnstile_enabled: {
+	    type: Boolean,
+	    default: true,
+	},
 	turnstile_site_key: {
 	    type: String,
-	    required: true,
+	    default: null,
 	},
 });
 
@@ -38,29 +42,32 @@ const renderTurnstile = () => {
 };
 
 const submit = () => {
-	// Get the Turnstile response token
-	const turnstileResponse = document.querySelector("[name='cf-turnstile-response']")?.value;
+	if (props.turnstile_enabled) {
+		// Get the Turnstile response token
+		const turnstileResponse = document.querySelector("[name='cf-turnstile-response']")?.value;
 
-	if (!turnstileResponse) {
-	    alert("Please complete the CAPTCHA verification.");
-	    return;
+		if (!turnstileResponse) {
+		    alert("Please complete the CAPTCHA verification.");
+		    return;
+		}
+
+		// Add Turnstile token to the form
+		form['cf-turnstile-response'] = turnstileResponse;
 	}
-
-	// Add Turnstile token to the form
-	form['cf-turnstile-response'] = turnstileResponse;
-	form.cfturnstileenabled = false;
 
 	// Submit the form
     form.post(route('register'), {
         onFinish: () => {
 			form.reset('password', 'password_confirmation');
-			reloadTurnstile();
+			if (props.turnstile_enabled) reloadTurnstile();
 		},
     });
 };
 
-// Load Cloudflare Turnstile script on mount
+// Load Cloudflare Turnstile script on mount (skipped when Turnstile is
+// disabled, e.g. a closed-network deployment with no internet access)
 onMounted(() => {
+    if (!props.turnstile_enabled) return;
     const script = document.createElement("script");
     script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
     script.async = true;
@@ -157,9 +164,8 @@ onMounted(() => {
                 />
             </div>
 
-			<!-- Cloudflare Turnstile -->
-			<div class="" style="margin-top: 1em;">
-
+			<!-- Cloudflare Turnstile (hidden on closed-network deployments) -->
+			<div v-if="turnstile_enabled" style="margin-top: 1em;">
 				<div class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
 			</div>
 			
