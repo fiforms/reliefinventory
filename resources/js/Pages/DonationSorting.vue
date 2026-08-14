@@ -618,7 +618,7 @@ export default {
 						v-model="itemModal.itemtype_id"
 						optionsource="/json/itemtypes/noitems"
 						display="name"
-						:searchfields="['name', 'number']"
+						:searchfields="['name', 'display_number']"
 						placeholder="Search item types..."
 						:allowcreate="true"
 						@create="startNewType"

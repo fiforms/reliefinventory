@@ -147,7 +147,7 @@ function onQtyEnter() {
 					<th>Comments</th>
 				</template>
 				<template #tbody="{ subrecord, index }">
-					<td>{{ subrecord.itemtype ? subrecord.itemtype.number : '' }}</td>
+					<td>{{ subrecord.itemtype ? subrecord.itemtype.display_number : '' }}</td>
 					<td>{{ subrecord.qty_requested }}</td>
 					<td>{{ subrecord.itemtype ? subrecord.itemtype.name : '' }}</td>
 					<td>{{ subrecord.itemtype && subrecord.itemtype.unit ? subrecord.itemtype.unit.name : '' }}</td>

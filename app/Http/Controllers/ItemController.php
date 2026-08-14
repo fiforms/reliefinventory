@@ -17,7 +17,7 @@ class ItemController extends Controller
      */
     private static function displayName(Item $item): string
     {
-        $number = $item->itemtype->number ?? '';
+        $number = $item->itemtype->display_number ?? '';
         return trim($number . ' ' . ($item->description ?? ''));
     }
 

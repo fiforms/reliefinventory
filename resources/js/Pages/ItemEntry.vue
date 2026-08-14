@@ -43,8 +43,8 @@ defineProps({
 		    <th style="text-align:center;">Active</th>
 		</template>
 		<template #tbody="{ record, index }">
-			<td> {{ record.category.name }} </td> 
-			<td> {{ record.number }} </td>
+			<td> {{ record.category.name }} </td>
+			<td> {{ record.display_number }} </td>
 			<td> {{ record.name }} </td>
 			<td> {{ record.unit.abbreviation }} </td>
 			<td style="text-align: center;"> <span v-if="record.active"> &check; </span> </td>
@@ -61,13 +61,21 @@ defineProps({
 			    /> 
 		  </div>	
 		  <div class="ri_fieldset">
-		  		<div class="ri_fieldlabel">ACS Item#</div>
+		  		<div class="ri_fieldlabel">Family</div>
 		  		<TextInput
-		  			    v-model="record.number"
-		  			    required
+		  			    v-model="record.family"
+		  			    placeholder="e.g. 318"
 		  			    autofocus
 		  				:enabled="editing"
-		  		  /> 
+		  		  />
+		  	  </div>
+		  <div class="ri_fieldset">
+		  		<div class="ri_fieldlabel">Variant (optional)</div>
+		  		<TextInput
+		  			    v-model="record.variant"
+		  			    placeholder="e.g. 90"
+		  				:enabled="editing"
+		  		  />
 		  	  </div>
 		  <div class="ri_fieldset">
 			<div class="ri_fieldlabel">Item Type Desc</div>

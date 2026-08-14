@@ -5,30 +5,37 @@ namespace App\Helpers;
 class UPCGenerator
 {
     /**
-     * Generate a valid UPC from a given 5-digit item number.
+     * Generate a valid UPC-A from a family/variant item number.
      *
-     * @param string $itemNumber A 5-digit numeric string.
-     * @return string A valid 12-digit UPC.
+     * The 10-digit data field is family (zero-padded to 4 digits) + variant
+     * (zero-padded to 2 digits, "00" when there is no variant), then
+     * left-padded with zeros to fill all 10 digits. That leftover leading
+     * space is deliberate: a location code could be written into those
+     * digits later without changing the field width or check-digit math.
+     *
+     * @param  string  $family  3 or 4 digit family number (e.g. "318", "1100").
+     * @param  string|null  $variant  2-digit variant, or null for the bare item.
+     * @return string A valid 12-digit UPC-A.
      */
-    public static function makeUPCFromItemNumber(string $itemNumber): string
+    public static function makeUPC(string $family, ?string $variant = null): string
     {
-        // Ensure the item number is exactly 5 digits
-        $itemNumber = str_pad($itemNumber, 5, '0', STR_PAD_LEFT);
+        $familyPadded = str_pad($family, 4, '0', STR_PAD_LEFT);
+        $variantPadded = str_pad($variant ?? '00', 2, '0', STR_PAD_LEFT);
 
-        // Construct the base UPC (prefix "2" + item number + padding)
-        $upcBase = '2' . $itemNumber;
-        $upcBase = str_pad($upcBase, 11, '0', STR_PAD_RIGHT); // Ensure 11 digits
+        $itemCode = str_pad($familyPadded.$variantPadded, 10, '0', STR_PAD_LEFT);
 
-        // Calculate the check digit
+        // "2" = GS1 in-store/internal-use number system prefix.
+        $upcBase = '2'.$itemCode; // 11 digits: 1 prefix + 10 data
+
         $checkDigit = self::calculateUPCCheckDigit($upcBase);
 
-        return $upcBase . $checkDigit; // Full 12-digit UPC
+        return $upcBase.$checkDigit; // 12-digit UPC-A
     }
 
     /**
      * Calculate the UPC check digit using the standard UPC-A formula.
      *
-     * @param string $upcBase The first 11 digits of a UPC.
+     * @param  string  $upcBase  The first 11 digits of a UPC.
      * @return int The calculated check digit.
      */
     private static function calculateUPCCheckDigit(string $upcBase): int
@@ -42,6 +49,7 @@ class UPCGenerator
         }
 
         $modulo = $sum % 10;
+
         return ($modulo === 0) ? 0 : (10 - $modulo);
     }
 }

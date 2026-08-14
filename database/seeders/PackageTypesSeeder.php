@@ -36,6 +36,18 @@ class PackageTypesSeeder extends Seeder
                 'plural'   => 'Pallets',
             ],
             [
+                'singular' => 'Each',
+                'plural'   => 'Each',
+            ],
+            [
+                'singular' => 'Gaylord',
+                'plural'   => 'Gaylords',
+            ],
+            [
+                'singular' => 'Roll',
+                'plural'   => 'Rolls',
+            ],
+            [
                 'singular' => 'Gallon',
                 'plural'   => 'Gallons',
             ],

@@ -22,6 +22,8 @@ class Category extends Model
      */
     protected $fillable = [
         'name',
+        'block_start',
+        'block_end',
     ];
 
     /**
