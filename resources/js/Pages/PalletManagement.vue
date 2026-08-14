@@ -11,48 +11,67 @@ defineProps({
         type: Array,
     },
 });
+
+const kindOptions = [
+	{ id: 'R', name: 'Receiving' },
+	{ id: 'W', name: 'Warehouse' },
+	{ id: 'S', name: 'Shipping' },
+	{ id: 'H', name: 'Hold' },
+	{ id: 'Q', name: 'Quarantine' },
+];
 </script>
 
 <template>
   <Head title="Pallet Management" />
   <AuthenticatedLayout :breadcrumb="breadcrumb">
-    <RIForm 
+    <RIForm
       title="Pallet Management"
       datasource="/json/pallets"
-	  :precreate="true"
+	  :precreate="false"
 	  >
-      
+
       <template #thead>
-		<th>#</th>
+		<th>Tag</th>
+        <th>Kind</th>
         <th>Packed Date</th>
-        <th>Last Location</th>
+        <th>Location</th>
         <th>Status</th>
       </template>
 
       <template #tbody="{ record, index }">
-		<td><span style="font-weight: bold; font-size: 14pt;"> {{ record.id.toString().padStart(8, "0").substring(6,8) }}</span>
-			&nbsp; &nbsp;  (P{{ record.id.toString().padStart(8, "0") }})</td>
+		<td><span style="font-weight: bold; font-size: 14pt;"> {{ record.kind }}{{ record.id.toString().padStart(8, "0") }}</span></td>
+        <td>{{ record.kind }}</td>
         <td>{{ record.datepacked }}</td>
-        <td v-if="record.last_location">{{ record.last_location.code }}</td>
+        <td v-if="record.location">{{ record.location.code }}</td>
         <td v-else>Unknown</td>
-        <td>{{ record.last_status }}</td>
+        <td>{{ record.status }}</td>
       </template>
 
       <template #default="{ record, editing, templates }">
-		
+
 		<div class="ri_formtable">
-		  <div class="ri_fieldset"  v-if="record.id">
-		    <div class="ri_fieldlabel"> Pallet # </div>
-		    			<span style="font-weight: bold; font-size: 14pt;"> {{ record.id.toString().padStart(8, "0").substring(6,8) }}</span>
-						&nbsp; &nbsp;  (P{{ record.id.toString().padStart(8, "0") }})  
-		  </div></div>
-		  <div class="ri_fieldset">
+		  <div class="ri_fieldset" v-if="record.id">
+		    <div class="ri_fieldlabel"> Pallet Tag </div>
+		    <span style="font-weight: bold; font-size: 14pt;"> {{ record.kind }}{{ record.id.toString().padStart(8, "0") }}</span>
+		  </div>
+		</div>
+		  <div class="ri_fieldset" v-if="record.id">
 			<div class="ri_fieldlabel">  </div>
 			<p>
 			<button @click="printLabel(record.id)" class="ri_defaultbutton">Print Pallet Label</button>
 			</p>
-		  </div>  
+		  </div>
 		  <div class="ri_formtable">
+		    <div class="ri_fieldset">
+		      <div class="ri_fieldlabel">Kind:</div>
+			  <!-- Fixed forever once labeled (new-label-per-trip rule) -->
+			  <ComboBox
+			  	v-model:keyValue="record.kind"
+			  	:options="kindOptions"
+			  	:enabled="editing && !record.id"
+			  />
+		    </div>
+
 		    <div class="ri_fieldset">
 		      <div class="ri_fieldlabel">Date Packed:</div>
 		      <TextInput
@@ -64,12 +83,12 @@ defineProps({
 		        :enabled="editing"
 		      />
 		    </div>
-          
+
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Location:</div>
             <ComboBox
-              v-model:keyValue="record.last_location_id"
-              v-model:updates="record.last_location"
+              v-model:keyValue="record.location_id"
+              v-model:updates="record.location"
               optionsource="/json/locations"
               :enabled="editing"
 			  display="code"
@@ -78,12 +97,61 @@ defineProps({
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Status:</div>
-            <ComboBox
-              v-model:keyValue="record.last_status"
-              :options="[{ id: 'created', name: 'Newly Created' }, { id: 'wrapped', name: 'Wrapped' }, { id: 'moved', name: 'Moved' },{ id: 'unwrapped', name: 'Unwrapped' },{ id: 'archived', name: 'Archived' },]"
+            <TextInput
+              v-model="record.status"
+              placeholder="e.g. received, sorting, empty, missing..."
               :enabled="editing"
            />
           </div>
+
+		  <div class="ri_fieldset">
+			<div class="ri_fieldlabel">Container Type:</div>
+			<ComboBox
+			  v-model:keyValue="record.container_type"
+			  :options="[{ id: 'pallet', name: 'Pallet' }, { id: 'gaylord', name: 'Gaylord' }]"
+			  :enabled="editing"
+			/>
+		  </div>
+
+		  <div class="ri_fieldset" v-if="record.kind === 'R'">
+			<div class="ri_fieldlabel">Donor:</div>
+			<ComboBox
+			  v-model:keyValue="record.donor_person_id"
+			  v-model:updates="record.donor"
+			  optionsource="/json/people"
+			  display="last_name"
+			  :enabled="editing"
+			/>
+		  </div>
+
+		  <div class="ri_fieldset" v-if="record.kind === 'H'">
+			<div class="ri_fieldlabel">Destination:</div>
+			<ComboBox
+			  v-model:keyValue="record.destination_person_id"
+			  v-model:updates="record.destination"
+			  optionsource="/json/people"
+			  display="last_name"
+			  :enabled="editing"
+			/>
+		  </div>
+
+		  <div class="ri_fieldset" v-if="record.kind === 'W'">
+			<div class="ri_fieldlabel">Earliest Expiry:</div>
+			<TextInput
+			  type="date"
+			  v-model="record.earliest_expiry"
+			  :enabled="editing"
+			/>
+		  </div>
+
+		  <div class="ri_fieldset" v-if="record.condition">
+			<div class="ri_fieldlabel">Condition:</div>
+			<ComboBox
+			  v-model:keyValue="record.condition"
+			  :options="[{ id: 'pending', name: 'Pending QC' }, { id: 'good', name: 'Good' }, { id: 'condemned', name: 'Condemned' }]"
+			  :enabled="editing"
+			/>
+		  </div>
         </div>
 
         <RISubform
@@ -91,17 +159,19 @@ defineProps({
           v-model:records="record.statuses"
           :template="[]"
           :enabled="false">
-          
+
           <template #thead>
             <th>Date</th>
             <th>Location</th>
             <th>Status</th>
+			<th>Notes</th>
           </template>
 
           <template #tbody="{ subrecord, index }">
             <td>{{ subrecord.created_at }}</td>
             <td>{{ subrecord.location ? subrecord.location.code : '' }}</td>
             <td>{{ subrecord.status }}</td>
+			<td>{{ subrecord.notes }}</td>
           </template>
 
           <template #default="{ subrecord, index }">
@@ -117,7 +187,7 @@ defineProps({
 <script>
 
 export default {
-	
+
 	methods: {
 		printLabel(palletId) {
 		    window.open("/report/pallet/" + palletId,"_blank");

@@ -1,141 +1,103 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
-use App\Models\PalletStatus;
 use App\Models\Pallet;
+use App\Models\PalletStatus;
+use App\Support\PalletKind;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 
+/**
+ * Read/audit access to pallet status history, plus a movement-logging entry
+ * point for the standalone "Pallet Location Tracking" page. Writes always
+ * go through Pallet::transitionTo() (the same path PalletController::update
+ * uses) so there is exactly one place that keeps pallets and their history
+ * in sync — never duplicated logic that could drift.
+ */
 class PalletStatusController extends Controller
 {
-    private const validation = [
+    private const VALIDATION = [
         'pallet_id' => 'required|exists:pallets,id',
-        'location_id' => 'required|exists:locations,id',
-        'status' => 'required|in:created,wrapped,moved,unwrapped,archived',
+        'location_id' => 'nullable|exists:locations,id',
+        'status' => 'required|string',
         'notes' => 'nullable|string',
     ];
-    
-    /**
-     * Retrieve all pallet status records.
-     *
-     * @return \Illuminate\Http\JsonResponse
-     */
+
     public function index()
     {
-        // Retrieve all pallet status records with their related pallet and location
         $palletStatuses = PalletStatus::with(['pallet', 'location'])
             ->orderBy('created_at', 'desc')
             ->get();
-            
+
         return response()->json([
             'records' => $palletStatuses,
             'templates' => [
                 '_default' => [
                     'pallet_id' => null,
                     'location_id' => null,
-                    'status' => 'moved', // Default status for pallet movement
+                    'status' => null,
                     'notes' => null,
                     'pallet' => null,
                     'location' => null,
                 ],
-            ]
+            ],
         ]);
     }
-    
+
     /**
-     * Get available status options for pallets.
-     *
-     * @return \Illuminate\Http\JsonResponse
+     * Status options are kind-specific, so this needs the pallet's kind
+     * (e.g. GET /json/palletstatus/statuses?kind=W) rather than one global list.
      */
-    public function statuses()
+    public function statuses(Request $request)
     {
-        $statuses = [
-            ['id' => 'created', 'name' => 'Created'],
-            ['id' => 'wrapped', 'name' => 'Wrapped'],
-            ['id' => 'moved', 'name' => 'Moved'],
-            ['id' => 'unwrapped', 'name' => 'Unwrapped'],
-            ['id' => 'archived', 'name' => 'Archived'],
-        ];
-        
-        return response()->json([
-            'records' => $statuses
-        ]);
+        $kind = $request->query('kind');
+        $lifecycle = PalletKind::LIFECYCLES[$kind] ?? array_unique(array_merge(...array_values(PalletKind::LIFECYCLES)));
+
+        $statuses = array_map(fn ($status) => ['id' => $status, 'name' => ucfirst($status)], $lifecycle);
+        $statuses[] = ['id' => PalletKind::MISSING, 'name' => 'Missing'];
+
+        return response()->json(['records' => $statuses]);
     }
-     
-    /**
-     * Store a new pallet status record.
-     *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
+
     public function store(Request $request)
     {
-        $data = $request->validate(self::validation);
-        
-        $palletStatus = PalletStatus::create($data);
-        
-        // Update the pallet's last location and status
+        $data = $request->validate(self::VALIDATION);
         $pallet = Pallet::findOrFail($data['pallet_id']);
-        $pallet->update([
-            'last_location_id' => $data['location_id'],
-            'last_status' => $data['status']
-        ]);
-        
+
+        if ($data['status'] === PalletKind::MISSING) {
+            $pallet->markMissing($data['notes'] ?? null);
+        } elseif (! PalletKind::isValidStatus($pallet->kind, $data['status'])) {
+            return response()->json([
+                'errors' => ['status' => ["\"{$data['status']}\" is not valid for a ".(PalletKind::LABELS[$pallet->kind] ?? $pallet->kind).' pallet.'],
+                ],
+            ], 422);
+        } else {
+            $pallet->transitionTo($data['status'], $data['location_id'] ?? null, $data['notes'] ?? null);
+        }
+
         return response()->json([
-            'message' => 'Pallet status created successfully.',
-            'record' => $palletStatus
+            'message' => 'Pallet status recorded successfully.',
+            'record' => $pallet->statuses()->latest('id')->first(),
         ], 201);
     }
-    
-    /**
-     * Update an existing pallet status record.
-     *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
-     */
+
     public function update(Request $request, $id)
     {
-        $data = $request->validate(self::validation);
-        
-        $palletStatus = PalletStatus::findOrFail($id);
-        $palletStatus->update($data);
-        
-        // Also update the pallet's last location and status
-        $pallet = Pallet::findOrFail($data['pallet_id']);
-        $pallet->update([
-            'last_location_id' => $data['location_id'],
-            'last_status' => $data['status']
-        ]);
-        
+        // Status history is an append-only audit trail — editing a past
+        // entry in place would let the record silently drift from what
+        // actually happened. Log a new entry via store() instead.
         return response()->json([
-            'message' => 'Pallet status updated successfully.'
-        ], 200);
+            'message' => 'Pallet status history cannot be edited after the fact. Log a new status change instead.',
+        ], 405);
     }
-    
-    /**
-     * Delete a pallet status record.
-     *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
-     */
+
     public function destroy($id)
     {
-        try {
-            $palletStatus = PalletStatus::findOrFail($id);
-            $palletStatus->delete();
-            
-            return response()->json([
-                'success' => true,
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error deleting pallet status: ' . $e->getMessage()
-            ], 500);
-        }
+        return response()->json([
+            'message' => 'Pallet status history cannot be deleted.',
+        ], 405);
     }
 }

@@ -39,6 +39,7 @@
 @endphp
     </div>
         <p class="pallet-info">{{ $pallet_id_str}}</p>
+        <div class="pallet-info">{{ $pallet_kind_label }}</div>
         <div class="pallet-info">Created: {{ $date_created }}</div>
         
     </div>

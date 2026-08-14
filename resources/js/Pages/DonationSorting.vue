@@ -210,7 +210,9 @@ export default {
 			this.resolvePallet();
 		},
 		palletTagStr(id) {
-			return 'P' + String(id).padStart(8, '0');
+			// Sorting only ever scans Receiving pallets (enforced
+			// server-side), so the R prefix is always correct here.
+			return 'R' + String(id).padStart(8, '0');
 		},
 
 		// ---------- line entry (autosaved per line) ----------
@@ -493,7 +495,7 @@ export default {
 						type="text"
 						v-model="palletTagInput"
 						class="ri_forminput"
-						placeholder="Scan or type pallet tag (e.g. P00000042)"
+						placeholder="Scan or type pallet tag (e.g. R00000042)"
 						@keydown.enter.prevent="resolvePallet"
 					/>
 					<button @click="resolvePallet" class="ri_formbutton">Set Pallet</button>
@@ -503,7 +505,7 @@ export default {
 				<template v-else>
 					<span class="sort_pallet_label">
 						Sorting from pallet <strong>{{ palletTagStr(pallet.id) }}</strong>
-						(packed {{ pallet.datepacked }}<span v-if="pallet.last_location">, at {{ pallet.last_location.code }}</span>)
+						(packed {{ pallet.datepacked }}<span v-if="pallet.location">, at {{ pallet.location.code }}</span>)
 					</span>
 					<button @click="clearPallet" class="ri_formbutton">Change Pallet</button>
 				</template>

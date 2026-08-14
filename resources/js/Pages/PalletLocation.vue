@@ -73,9 +73,9 @@ defineProps({
           
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Status:</div>
-            <ComboBox 
-                v-model:keyValue="record.status"
-                optionsource="/json/palletstatus/statuses"
+            <TextInput
+                v-model="record.status"
+                placeholder="e.g. received, sorting, empty, missing..."
                 :enabled="editing"
             />
           </div>
@@ -96,7 +96,7 @@ defineProps({
             </div>
             <div class="ri_fieldset">
               <div class="ri_fieldlabel">Current Status:</div>
-              {{ record.pallet ? record.pallet.last_status : 'Unknown' }}
+              {{ record.pallet ? record.pallet.status : 'Unknown' }}
             </div>
           </div>
         </div>

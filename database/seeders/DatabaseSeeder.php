@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
         $this->call(PackageTypesSeeder::class);
         $this->call(CategoriesSeeder::class);
         $this->call(ItemFamilySeeder::class);
+        $this->call(ContainerTypesSeeder::class);
 
     }
 }

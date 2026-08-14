@@ -17,6 +17,11 @@ class Warehouse extends Model
         'zip',
         'county_id',
         'manager_id',
+        'pallets_enabled',
+    ];
+
+    protected $casts = [
+        'pallets_enabled' => 'boolean',
     ];
 
     /**

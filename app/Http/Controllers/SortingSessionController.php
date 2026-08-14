@@ -1,4 +1,5 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -7,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Models\Pallet;
 use App\Models\Status;
 use App\Models\Transaction;
+use App\Support\PalletKind;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
@@ -23,6 +25,7 @@ use Illuminate\Support\Facades\Auth;
 class SortingSessionController extends Controller
 {
     private const STATUS_IN_PROGRESS = 'Sorting In Progress';
+
     private const STATUS_COMPLETED = 'Completed';
 
     private const WITH_RELATIONS = [
@@ -51,6 +54,7 @@ class SortingSessionController extends Controller
     public static function palletIdFromTag(string $tag): ?int
     {
         $digits = preg_replace('/\D/', '', $tag);
+
         return $digits === '' ? null : (int) $digits;
     }
 
@@ -135,16 +139,30 @@ class SortingSessionController extends Controller
 
     /**
      * Resolve a scanned pallet tag so the UI can show pallet context.
+     * Sorting only ever works receiving (R) pallets — scanning any other
+     * kind is rejected rather than silently accepted. The first scan of a
+     * session auto-advances the pallet from "received" to "sorting"
+     * (pallet-container-model: "Sorting auto-advances receiving pallets").
      */
     public function pallet(string $tag)
     {
         $id = self::palletIdFromTag($tag);
-        $pallet = $id ? Pallet::with('lastLocation')->find($id) : null;
+        $pallet = $id ? Pallet::with('location')->find($id) : null;
 
-        if (!$pallet) {
+        if (! $pallet) {
             return response()->json([
-                'message' => 'Unknown pallet tag: ' . $tag,
+                'message' => 'Unknown pallet tag: '.$tag,
             ], 404);
+        }
+
+        if ($pallet->kind !== PalletKind::RECEIVING) {
+            return response()->json([
+                'message' => 'That tag belongs to a '.(PalletKind::LABELS[$pallet->kind] ?? $pallet->kind).' pallet, not a Receiving pallet.',
+            ], 422);
+        }
+
+        if ($pallet->status === 'received') {
+            $pallet->transitionTo('sorting');
         }
 
         return response()->json(['record' => $pallet]);
@@ -160,11 +178,12 @@ class SortingSessionController extends Controller
         $data = $request->validate(self::LINE_VALIDATION);
 
         $palletId = null;
-        if (!empty($data['pallet_tag'])) {
+        if (! empty($data['pallet_tag'])) {
             $palletId = self::palletIdFromTag($data['pallet_tag']);
-            if (!$palletId || !Pallet::whereKey($palletId)->exists()) {
+            $pallet = $palletId ? Pallet::find($palletId) : null;
+            if (! $pallet || $pallet->kind !== PalletKind::RECEIVING) {
                 return response()->json([
-                    'errors' => ['pallet_tag' => ['Unknown pallet tag.']],
+                    'errors' => ['pallet_tag' => ['Unknown receiving pallet tag.']],
                 ], 422);
             }
         }

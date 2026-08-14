@@ -8,30 +8,33 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
-class PalletStatus extends Model
+/**
+ * Generic Container — everything hand-liftable (box, bin, bag) that doesn't
+ * need a pallet jack or forklift to move. Containment is one-directional
+ * and structural: a Container can sit on a Pallet, but a Pallet never sits
+ * inside a Container. Pallet is the largest container in the warehouse.
+ */
+class Container extends Model
 {
     use HasFactory;
 
-    protected $table = 'palletstatus';
-
     protected $fillable = [
+        'container_type_id',
         'pallet_id',
         'location_id',
-        'status',
-        'notes',
+        'description',
     ];
 
-    /**
-     * Define relationship with Pallet.
-     */
+    public function containerType()
+    {
+        return $this->belongsTo(ContainerType::class);
+    }
+
     public function pallet()
     {
         return $this->belongsTo(Pallet::class);
     }
 
-    /**
-     * Define relationship with Location.
-     */
     public function location()
     {
         return $this->belongsTo(Location::class);

@@ -206,12 +206,29 @@ Route::get('/', function () {
         Route::put('/donations/{id}', [DonationController::class, 'update']);
         Route::delete('/donations/{id}', [DonationController::class, 'destroy']);
         
-        // Pallets
+        // Pallets (five-kind model: Receiving/Warehouse/Shipping/Hold/Quarantine)
         Route::get('/pallets', [PalletController::class, 'index']);
-        Route::get('/pallets/{status}', [PalletController::class, 'index']);
+        Route::get('/pallets/{kind}', [PalletController::class, 'index']);
+        Route::get('/pallets/{kind}/{status}', [PalletController::class, 'index']);
         Route::post('/pallets', [PalletController::class, 'store']);
         Route::put('/pallets/{id}', [PalletController::class, 'update']);
         Route::delete('/pallets/{id}', [PalletController::class, 'destroy']);
+
+        // Trucks (top of the container hierarchy)
+        Route::get('/trucks', [TruckController::class, 'index']);
+        Route::post('/trucks', [TruckController::class, 'store']);
+        Route::put('/trucks/{id}', [TruckController::class, 'update']);
+        Route::delete('/trucks/{id}', [TruckController::class, 'destroy']);
+
+        // Generic Containers (box/bin/bag — the tier below Pallet)
+        Route::get('/containers', [ContainerController::class, 'index']);
+        Route::post('/containers', [ContainerController::class, 'store']);
+        Route::put('/containers/{id}', [ContainerController::class, 'update']);
+        Route::delete('/containers/{id}', [ContainerController::class, 'destroy']);
+        Route::get('/container-types', [ContainerTypeController::class, 'index']);
+
+        // Pickup streams (Goodwill, recycler, disposal thresholds)
+        Route::get('/streams', [StreamController::class, 'index']);
         
         // Roles (for People
         Route::get('/roles', [RoleController::class, 'index']);
@@ -256,7 +273,17 @@ Route::get('/', function () {
         Route::post('/json/warehouses', [WarehouseController::class, 'store']);
         Route::put('/json/warehouses/{id}', [WarehouseController::class, 'update']);
         Route::delete('/json/warehouses/{id}', [WarehouseController::class, 'destroy']);
- 
+
+        // Container types (lookup table)
+        Route::post('/container-types', [ContainerTypeController::class, 'store']);
+        Route::put('/container-types/{id}', [ContainerTypeController::class, 'update']);
+        Route::delete('/container-types/{id}', [ContainerTypeController::class, 'destroy']);
+
+        // Pickup streams (threshold config)
+        Route::post('/streams', [StreamController::class, 'store']);
+        Route::put('/streams/{id}', [StreamController::class, 'update']);
+        Route::delete('/streams/{id}', [StreamController::class, 'destroy']);
+
     });
 
 
