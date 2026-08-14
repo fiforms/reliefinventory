@@ -25,6 +25,17 @@ class Transaction extends Model
     // the donation lifecycle — this is their terminal status instead.
     public const STATUS_LOGGED = 'Logged';
 
+    // Order lifecycle (New Order -> Filling -> Filled -> Shipped). Only
+    // "New Order" is intake-editable; the rest progress from filling
+    // actions, never from the entry form.
+    public const STATUS_NEW_ORDER = 'New Order';
+
+    public const STATUS_FILLING = 'Filling';
+
+    public const STATUS_FILLED = 'Filled';
+
+    public const STATUS_SHIPPED = 'Shipped';
+
     // Define the table associated with the model
     protected $table = 'orderdonations';
 

@@ -128,8 +128,6 @@ Route::middleware('auth')->group(function () {
 Route::group(['prefix' => 'json', 'middleware' => ['auth']], function () {
     Route::get('/menu-data', [MenuController::class, 'index']);
 
-    Route::post('/orders', [OrderController::class, 'store']);
-
     // API route for listing all statuses
     Route::get('/statuses', [StatusController::class, 'index']);
 
@@ -155,9 +153,18 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pe
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {
+    // Order intake sessions (header created at customer confirm; requested
+    // lines autosave one at a time — see OrderController)
     Route::get('/orders', [OrderController::class, 'index']);
-    Route::put('/orders/{id}', [OrderController::class, 'update']);
+    // before /orders/{id} so "stock-hints" isn't captured as an id
+    Route::get('/orders/stock-hints', [OrderController::class, 'stockHints']);
+    Route::post('/orders', [OrderController::class, 'store']);
+    Route::get('/orders/{id}', [OrderController::class, 'show']);
+    Route::patch('/orders/{id}', [OrderController::class, 'update']);
     Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
+    Route::post('/orders/{id}/lines', [OrderController::class, 'storeLine']);
+    Route::put('/orders/{id}/lines/{lineId}', [OrderController::class, 'updateLine']);
+    Route::delete('/orders/{id}/lines/{lineId}', [OrderController::class, 'destroyLine']);
 
     // Dead code (no consuming Vue page — SortingSessionController owns
     // donation creation now), left routed rather than silently

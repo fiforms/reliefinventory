@@ -5,219 +5,219 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Status;
 use App\Models\Transaction;
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
+/**
+ * Order intake sessions.
+ *
+ * Like donation sorting (and unlike the RIForm document model), order entry
+ * is an event stream: the order header is created the moment a customer is
+ * confirmed, and each requested line is committed as it is entered. A crash
+ * or dropped connection never loses more than the line being typed. Phone
+ * orders and hand-entered PDF order forms both come through this same API —
+ * they are the same activity (a volunteer rapid-keying item numbers).
+ *
+ * Orders are only editable while in "New Order" status; once filling starts
+ * the order locks against intake edits (server-enforced, mirroring sorting's
+ * completed-session rule).
+ */
 class OrderController extends Controller
 {
-    private const validation = [
-        'type' => 'required|in:order',
-        'person_id' => 'nullable|exists:people,id',
-        // Accepted from the form payload but never trusted: status is
-        // system-controlled (forced to "New Order" on create, untouched on
-        // update) — see store()/update().
-        'status_id' => 'nullable|exists:statuses,id',
-        'order_date' => 'required|date',
+    private const WITH_RELATIONS = [
+        'person.county',
+        'enteredBy',
+        'status',
+        'orderLines.itemtype.unit',
+        'itemLedgers.item.itemtype',
+    ];
+
+    private const LINE_VALIDATION = [
+        'itemtype_id' => 'required|exists:itemtypes,id',
+        'qty_requested' => 'required|integer|min:1',
         'comments' => 'nullable|string',
-        'item_ledgers' => 'nullable|array',
-        'item_ledgers.*.item_id' => 'nullable|exists:items,id',
-        'item_ledgers.*.qty_added' => 'nullable|integer',
-        'item_ledgers.*.qty_subtracted' => 'nullable|integer',
-        'order_lines' => 'nullable|array',
-        'order_lines.*.itemtype_id' => 'nullable|exists:itemtypes,id',
-        'order_lines.*.packagetype_id' => 'nullable|exists:packagetypes,id',
-        'order_lines.*.qty_requested' => 'nullable|integer|min:1',
-        'order_lines.*.comments' => 'nullable|string',
     ];
 
     /**
-     * Drop incomplete lines (e.g. the always-present blank trailing row left
-     * by the quick-entry "Enter starts a new line" flow) so they don't block
-     * saving the rest of a legitimately in-progress order.
+     * Intake edits are only allowed while the order is still "New Order" —
+     * once filling has begun, changing the requested lines would silently
+     * desync what the floor is picking from what the customer sees.
      */
-    private static function completeLinesOnly(array $lines, array $requiredFields): array
+    private function rejectIfLocked(Transaction $order)
     {
-        return array_values(array_filter($lines, function ($line) use ($requiredFields) {
-            foreach ($requiredFields as $field) {
-                if (empty($line[$field])) {
-                    return false;
-                }
-            }
+        if ($order->status?->name !== Transaction::STATUS_NEW_ORDER) {
+            abort(response()->json([
+                'message' => 'This order is being filled and can no longer be edited.',
+            ], 409));
+        }
+    }
 
-            return true;
-        }));
+    private function orderQuery()
+    {
+        return Transaction::where('type', 'order')
+            ->with(self::WITH_RELATIONS);
     }
 
     /**
-     * Retrieve all orders with donations and their respective item ledger lines.
-     *
-     * @return JsonResponse
+     * Open orders (still in intake or being filled) and recently
+     * shipped/completed ones.
      */
     public function index()
     {
-        // Retrieve all orders with donations and their item ledger lines
-        $orders = Transaction::where('type', 'order')
-            ->with(['OrderLines.itemtype.unit', 'OrderLines.packagetype', 'itemLedgers.item.itemtype', 'person.county', 'status'])
-            ->get();
-
-        // New orders always start in the "New Order" status; status is not
-        // user-selectable at creation, it progresses automatically as the
-        // order is worked.
-        $newOrderStatus = Status::where('name', 'New Order')->first();
+        $openStatuses = [
+            Transaction::statusId(Transaction::STATUS_NEW_ORDER),
+            Transaction::statusId(Transaction::STATUS_FILLING),
+            Transaction::statusId(Transaction::STATUS_FILLED),
+        ];
 
         return response()->json([
-            'records' => $orders,
-            'templates' => [
-                '_default' => [
-                    'type' => 'order',
-                    'person_id_user' => Auth::id(),
-                    'person_id' => null,
-                    'person' => [],
-                    'status_id' => $newOrderStatus->id ?? null,
-                    'status' => $newOrderStatus,
-                    'order_date' => date('Y-m-d'),
-                    'comments' => null,
-                    'item_ledgers' => [],
-                    'order_lines' => [],
-                ],
-                'item_ledgers' => [
-                    'item_id' => null,
-                    'qty_subtracted' => null,
-                    'item' => ['description' => null],
-                ],
-                'order_lines' => [
-                    'itemtype_id' => null,
-                    'packagetype_id' => null,
-                    'qty_requested' => null,
-                    'comments' => null,
-                ],
-            ],
+            'open' => $this->orderQuery()
+                ->whereIn('status_id', $openStatuses)
+                ->orderBy('id', 'desc')
+                ->get(),
+            'recent' => $this->orderQuery()
+                ->whereNotIn('status_id', $openStatuses)
+                ->orderBy('id', 'desc')
+                ->limit(25)
+                ->get(),
         ]);
     }
 
     /**
-     * Store a new order.
-     *
-     * @return JsonResponse
+     * Advisory usable stock on hand per itemtype, for the intake screen's
+     * "~N on hand" hint. Staff-facing only — customer-facing surfaces must
+     * never show actual quantities (three-state availability at most).
      */
-    public function store(Request $request)
+    public function stockHints()
     {
-        $data = $request->validate(self::validation);
-        $data['person_id_user'] = Auth::id();
-        $data['status_id'] = Transaction::statusId('New Order');
-        $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
-        $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
+        // Ledger rows predating the disposition column count as usable.
+        $hints = DB::table('item_ledgers')
+            ->join('items', 'items.id', '=', 'item_ledgers.item_id')
+            ->groupBy('items.itemtype_id')
+            ->selectRaw("items.itemtype_id,
+                SUM(CASE WHEN COALESCE(item_ledgers.disposition, 'usable') = 'usable'
+                    THEN COALESCE(item_ledgers.qty_added, 0) ELSE 0 END)
+                - SUM(COALESCE(item_ledgers.qty_subtracted, 0)) AS on_hand")
+            ->pluck('on_hand', 'itemtype_id');
 
-        DB::transaction(function () use ($data) {
-            $order = Transaction::create($data);
-
-            // Handle related item_ledgers
-            if (! empty($data['item_ledgers'])) {
-                foreach ($data['item_ledgers'] as $ledger) {
-                    $order->itemLedgers()->create($ledger);
-                }
-            }
-
-            if (! empty($data['order_lines'])) {
-                foreach ($data['order_lines'] as $line) {
-                    $order->orderLines()->create($line);
-                }
-            }
-        });
-
-        return response()->json([
-            'message' => 'Order created successfully.',
-        ], 201);
+        return response()->json(['hints' => $hints]);
     }
 
     /**
-     * Update an existing order.
-     *
-     * @param  int  $id
-     * @return JsonResponse
+     * Open a new order for a confirmed customer. Status is system-controlled:
+     * every order starts as "New Order" and progresses via filling actions,
+     * never from the form.
+     */
+    public function store(Request $request)
+    {
+        $data = $request->validate([
+            'person_id' => 'required|exists:people,id',
+            'order_date' => 'nullable|date',
+            'comments' => 'nullable|string',
+        ]);
+
+        $order = Transaction::create([
+            'type' => 'order',
+            'person_id' => $data['person_id'],
+            'person_id_user' => Auth::id(),
+            'status_id' => Transaction::statusId(Transaction::STATUS_NEW_ORDER),
+            'order_date' => $data['order_date'] ?? now()->toDateString(),
+            'comments' => $data['comments'] ?? null,
+        ]);
+
+        return response()->json([
+            'record' => $order->load(self::WITH_RELATIONS),
+        ], 201);
+    }
+
+    public function show($id)
+    {
+        return response()->json([
+            'record' => $this->orderQuery()->findOrFail($id),
+        ]);
+    }
+
+    /**
+     * Update order header fields (customer, date, comments).
      */
     public function update(Request $request, $id)
     {
-        $data = $request->validate(self::validation);
-        unset($data['status_id']); // status progresses automatically, never from the form
-        $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
-        $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
+        $order = Transaction::where('type', 'order')->findOrFail($id);
+        $this->rejectIfLocked($order);
 
-        DB::transaction(function () use ($data, $id) {
-            $order = Transaction::findOrFail($id);
+        $data = $request->validate([
+            'person_id' => 'sometimes|required|exists:people,id',
+            'order_date' => 'sometimes|required|date',
+            'comments' => 'nullable|string',
+        ]);
 
-            $order->update($data);
-
-            // Retrieve current item_ledgers IDs from the database
-            $existingLedgerIds = $order->itemLedgers->pluck('id')->toArray();
-
-            // Extract IDs from the incoming request
-            $updatedLedgerIds = collect($data['item_ledgers'] ?? [])
-                ->pluck('id')
-                ->filter() // Remove nulls (new records won't have IDs)
-                ->toArray();
-
-            // Find IDs that need to be deleted
-            $deletedLedgerIds = array_diff($existingLedgerIds, $updatedLedgerIds);
-
-            // Delete removed ledgers
-            if (! empty($deletedLedgerIds)) {
-                $order->itemLedgers()->whereIn('id', $deletedLedgerIds)->delete();
-            }
-
-            // Handle updated and new ledgers
-            foreach ($data['item_ledgers'] ?? [] as $ledger) {
-                if (! empty($ledger['id'])) {
-                    // Update existing ledger
-                    $existingLedger = $order->itemLedgers()->find($ledger['id']);
-                    if ($existingLedger) {
-                        $existingLedger->update($ledger);
-                    }
-                } else {
-                    // Create new ledger
-                    $order->itemLedgers()->create($ledger);
-                }
-            }
-
-            // Similar algorithm for OrderLines
-            $existingLineIds = $order->orderLines->pluck('id')->toArray();
-            $updatedLineIds = collect($data['order_lines'] ?? [])->pluck('id')->filter()->toArray();
-            $deletedLineIds = array_diff($existingLineIds, $updatedLineIds);
-            if (! empty($deletedLineIds)) {
-                $order->orderLines()->whereIn('id', $deletedLineIds)->delete();
-            }
-            foreach ($data['order_lines'] ?? [] as $line) {
-                if (! empty($line['id'])) {
-                    $order->orderLines()->find($line['id'])?->update($line);
-                } else {
-                    $order->orderLines()->create($line);
-                }
-            }
-        });
+        $order->fill($data)->save();
 
         return response()->json([
-            'message' => 'Order updated successfully.',
-        ], 200);
+            'record' => $order->load(self::WITH_RELATIONS),
+        ]);
     }
 
     public function destroy($id)
     {
-        try {
-            $order = Transaction::findOrFail($id);
-            $order->delete();
+        $order = Transaction::where('type', 'order')->findOrFail($id);
+        $this->rejectIfLocked($order);
 
-            return response()->json([
-                'success' => true,
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Error deleting order item: '.$e->getMessage(),
-            ], 500);
-        }
+        DB::transaction(function () use ($order) {
+            $order->orderLines()->delete();
+            $order->delete();
+        });
+
+        return response()->json(['success' => true]);
+    }
+
+    /**
+     * Append one requested line as it is entered.
+     */
+    public function storeLine(Request $request, $id)
+    {
+        $order = Transaction::where('type', 'order')->findOrFail($id);
+        $this->rejectIfLocked($order);
+        $data = $request->validate(self::LINE_VALIDATION);
+
+        $line = $order->orderLines()->create($data);
+
+        return response()->json([
+            'record' => $line->load('itemtype.unit'),
+        ], 201);
+    }
+
+    /**
+     * Correct a previously entered line (also used to combine duplicate
+     * entries of the same item into one line).
+     */
+    public function updateLine(Request $request, $id, $lineId)
+    {
+        $order = Transaction::where('type', 'order')->findOrFail($id);
+        $this->rejectIfLocked($order);
+        $line = $order->orderLines()->findOrFail($lineId);
+
+        $data = $request->validate([
+            'itemtype_id' => 'sometimes|required|exists:itemtypes,id',
+            'qty_requested' => 'sometimes|required|integer|min:1',
+            'comments' => 'nullable|string',
+        ]);
+
+        $line->fill($data)->save();
+
+        return response()->json([
+            'record' => $line->load('itemtype.unit'),
+        ]);
+    }
+
+    public function destroyLine($id, $lineId)
+    {
+        $order = Transaction::where('type', 'order')->findOrFail($id);
+        $this->rejectIfLocked($order);
+        $order->orderLines()->findOrFail($lineId)->delete();
+
+        return response()->json(['success' => true]);
     }
 }

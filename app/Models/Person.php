@@ -84,7 +84,10 @@ class Person extends Model
 
     public function getFullNameAttribute(): string
     {
-        return trim(($this->first_name ?? '').' '.($this->last_name ?? ''));
+        $name = trim(($this->first_name ?? '').' '.($this->last_name ?? ''));
+
+        // Organization-only records (no personal name) still need a visible label
+        return $name !== '' ? $name : ($this->organization ?? '');
     }
 
     /**
