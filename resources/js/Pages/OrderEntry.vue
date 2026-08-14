@@ -59,9 +59,9 @@ function onQtyEnter() {
 		</template>
 		<template #tbody="{ record, index }"> 
 			<td>{{ record.order_date }}</td>
-			<td v-if="record.person">{{ record.person.first_name }} {{ record.person.last_name }}</td>
-			<td v-else> ("Enter Name") </td>
-			<td>{{ record.item_ledgers.reduce((total, ledger) => total + ledger.qty_subtracted, 0) }}</td>
+			<td v-if="record.person">{{ record.person.full_name }}</td>
+			<td v-else>(no customer)</td>
+			<td>{{ (record.order_lines || []).reduce((total, line) => total + (Number(line.qty_requested) || 0), 0) }}</td>
 			<td>{{ record.status.name }}</td>
 			<td>{{ record.comments ? record.comments.slice(0,50) : '' }}</td>
 		</template>
@@ -80,11 +80,14 @@ function onQtyEnter() {
 		  </div>
 		  <div class="ri_fieldset">
 		    <div class="ri_fieldlabel">Person:</div>
-		  	<ComboBox 
+		  	<ComboBox
 				  	v-model:keyValue="record.person_id"
 					v-model:updates="record.person"
 					optionsource="/json/people"
-					display="organization"
+					display="full_name"
+					secondaryDisplay="organization"
+					:searchFields="['full_name', 'organization']"
+					placeholder="Search people..."
 				  	:enabled="editing"
 		  	/>
 		  </div>
@@ -109,7 +112,7 @@ function onQtyEnter() {
 
 			<div class="ri_fieldset">
 				<div class="ri_fieldlabel">County:</div>
-				{{ record.person?.county }}
+				{{ record.person?.county?.county }}
 				</div>
 
 			<div class="ri_fieldset">
@@ -160,9 +163,9 @@ function onQtyEnter() {
 						v-model:keyValue="subrecord.itemtype_id"
 						v-model:updates="subrecord.itemtype"
 						optionsource="/json/itemtypes/noitems"
-						display="number"
+						display="display_number"
 						secondaryDisplay="name"
-						:searchFields="['number', 'name']"
+						:searchFields="['display_number', 'name']"
 						placeholder="Item #"
 						:enabled="true"
 						@selected="onItemNumberSelected"

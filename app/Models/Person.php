@@ -77,6 +77,17 @@ class Person extends Model
     ];
 
     /**
+     * Combined display name for search/combo controls — there is no single
+     * name column, and controls like ComboBox can only display one field.
+     */
+    protected $appends = ['full_name'];
+
+    public function getFullNameAttribute(): string
+    {
+        return trim(($this->first_name ?? '').' '.($this->last_name ?? ''));
+    }
+
+    /**
      * Define relationships to other models (if applicable).
      */
 

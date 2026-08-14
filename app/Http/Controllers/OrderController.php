@@ -1,21 +1,26 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
+use App\Models\Status;
 use App\Models\Transaction;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
 class OrderController extends Controller
 {
-
     private const validation = [
         'type' => 'required|in:order',
         'person_id' => 'nullable|exists:people,id',
-        'status_id' => 'required|exists:statuses,id',
+        // Accepted from the form payload but never trusted: status is
+        // system-controlled (forced to "New Order" on create, untouched on
+        // update) — see store()/update().
+        'status_id' => 'nullable|exists:statuses,id',
         'order_date' => 'required|date',
         'comments' => 'nullable|string',
         'item_ledgers' => 'nullable|array',
@@ -42,67 +47,68 @@ class OrderController extends Controller
                     return false;
                 }
             }
+
             return true;
         }));
     }
-    
+
     /**
      * Retrieve all orders with donations and their respective item ledger lines.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index()
     {
         // Retrieve all orders with donations and their item ledger lines
         $orders = Transaction::where('type', 'order')
-        ->with(['OrderLines.itemtype.unit','OrderLines.packagetype','itemLedgers.item.itemtype','person','status'])
-        ->get();
+            ->with(['OrderLines.itemtype.unit', 'OrderLines.packagetype', 'itemLedgers.item.itemtype', 'person.county', 'status'])
+            ->get();
 
         // New orders always start in the "New Order" status; status is not
         // user-selectable at creation, it progresses automatically as the
         // order is worked.
-        $newOrderStatus = \App\Models\Status::where('name', 'New Order')->first();
+        $newOrderStatus = Status::where('name', 'New Order')->first();
 
-            return response()->json([
-                'records' => $orders,
-                'templates' => [
-                    '_default' => [
-                        'type' => 'order',
-                        'person_id_user' => Auth::id(),
-                        'person_id' => null,
-                        'person' => [],
-                        'status_id' => $newOrderStatus->id ?? null,
-                        'status' => $newOrderStatus,
-                        'order_date' => date('Y-m-d'),
-                        'comments' => null,
-                        'item_ledgers' => [],
-                        'order_lines' => [],
-                   ],
-                   'item_ledgers' => [
-                        'item_id' => null,
-                        'qty_subtracted' => null,
-                        'item' => ['description' => null],
-                   ],
-                   'order_lines' => [
-                        'itemtype_id' => null,
-                        'packagetype_id' => null,
-                        'qty_requested' => null,
-                        'comments' => null,
-                   ],
-                ]
-              ]);
+        return response()->json([
+            'records' => $orders,
+            'templates' => [
+                '_default' => [
+                    'type' => 'order',
+                    'person_id_user' => Auth::id(),
+                    'person_id' => null,
+                    'person' => [],
+                    'status_id' => $newOrderStatus->id ?? null,
+                    'status' => $newOrderStatus,
+                    'order_date' => date('Y-m-d'),
+                    'comments' => null,
+                    'item_ledgers' => [],
+                    'order_lines' => [],
+                ],
+                'item_ledgers' => [
+                    'item_id' => null,
+                    'qty_subtracted' => null,
+                    'item' => ['description' => null],
+                ],
+                'order_lines' => [
+                    'itemtype_id' => null,
+                    'packagetype_id' => null,
+                    'qty_requested' => null,
+                    'comments' => null,
+                ],
+            ],
+        ]);
     }
-     
+
     /**
      * Store a new order.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
         $data = $request->validate(self::validation);
         $data['person_id_user'] = Auth::id();
+        $data['status_id'] = Transaction::statusId('New Order');
         $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
         $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
 
@@ -110,13 +116,13 @@ class OrderController extends Controller
             $order = Transaction::create($data);
 
             // Handle related item_ledgers
-            if (!empty($data['item_ledgers'])) {
+            if (! empty($data['item_ledgers'])) {
                 foreach ($data['item_ledgers'] as $ledger) {
                     $order->itemLedgers()->create($ledger);
                 }
             }
 
-            if (!empty($data['order_lines'])) {
+            if (! empty($data['order_lines'])) {
                 foreach ($data['order_lines'] as $line) {
                     $order->orderLines()->create($line);
                 }
@@ -127,19 +133,17 @@ class OrderController extends Controller
             'message' => 'Order created successfully.',
         ], 201);
     }
-    
-    
-    
+
     /**
      * Update an existing order.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
         $data = $request->validate(self::validation);
+        unset($data['status_id']); // status progresses automatically, never from the form
         $data['item_ledgers'] = self::completeLinesOnly($data['item_ledgers'] ?? [], ['item_id']);
         $data['order_lines'] = self::completeLinesOnly($data['order_lines'] ?? [], ['itemtype_id', 'qty_requested']);
 
@@ -153,21 +157,21 @@ class OrderController extends Controller
 
             // Extract IDs from the incoming request
             $updatedLedgerIds = collect($data['item_ledgers'] ?? [])
-            ->pluck('id')
-            ->filter() // Remove nulls (new records won't have IDs)
-            ->toArray();
+                ->pluck('id')
+                ->filter() // Remove nulls (new records won't have IDs)
+                ->toArray();
 
             // Find IDs that need to be deleted
             $deletedLedgerIds = array_diff($existingLedgerIds, $updatedLedgerIds);
 
             // Delete removed ledgers
-            if (!empty($deletedLedgerIds)) {
+            if (! empty($deletedLedgerIds)) {
                 $order->itemLedgers()->whereIn('id', $deletedLedgerIds)->delete();
             }
 
             // Handle updated and new ledgers
             foreach ($data['item_ledgers'] ?? [] as $ledger) {
-                if (!empty($ledger['id'])) {
+                if (! empty($ledger['id'])) {
                     // Update existing ledger
                     $existingLedger = $order->itemLedgers()->find($ledger['id']);
                     if ($existingLedger) {
@@ -183,11 +187,11 @@ class OrderController extends Controller
             $existingLineIds = $order->orderLines->pluck('id')->toArray();
             $updatedLineIds = collect($data['order_lines'] ?? [])->pluck('id')->filter()->toArray();
             $deletedLineIds = array_diff($existingLineIds, $updatedLineIds);
-            if (!empty($deletedLineIds)) {
+            if (! empty($deletedLineIds)) {
                 $order->orderLines()->whereIn('id', $deletedLineIds)->delete();
             }
             foreach ($data['order_lines'] ?? [] as $line) {
-                if (!empty($line['id'])) {
+                if (! empty($line['id'])) {
                     $order->orderLines()->find($line['id'])?->update($line);
                 } else {
                     $order->orderLines()->create($line);
@@ -199,22 +203,21 @@ class OrderController extends Controller
             'message' => 'Order updated successfully.',
         ], 200);
     }
-    
+
     public function destroy($id)
     {
         try {
             $order = Transaction::findOrFail($id);
             $order->delete();
-            
+
             return response()->json([
                 'success' => true,
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting order item: ' . $e->getMessage()
+                'message' => 'Error deleting order item: '.$e->getMessage(),
             ], 500);
         }
     }
 }
-    
