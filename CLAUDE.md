@@ -89,8 +89,8 @@ edit view via the `#default` slot (scoped with `{record, editing, templates}`), 
 save/cancel/delete against the datasource URL using REST verbs inferred from whether `record.id` is set.
 `RISubform.vue` is the equivalent for nested child collections (e.g. order lines) within an `RIForm`.
 Read the doc comment at the top of `RIForm.vue` before touching it — it documents the slot contracts.
-Note RIForm currently only logs save/delete errors to the console (no user-facing error surfacing, no
-delete confirmation) — a known gap, see `PROJECT_ANALYSIS.md`.
+RIForm surfaces save/delete errors inline (`saveError`) and uses a two-step inline delete confirm (no
+`window.confirm`); its detail-view buttons sit in a `.ri_formactions` flex action bar styled in `app.css`.
 
 **Donation sorting is the one exception to the RIForm pattern.** `DonationSorting.vue` +
 `SortingSessionController` implement a scan-driven, autosaving flow instead: a sorting session is created

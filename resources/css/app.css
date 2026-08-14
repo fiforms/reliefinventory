@@ -74,7 +74,7 @@ button.ri_formbutton {
 }
 
 button.ri_formbutton:hover {
-  background-color: #0056b3;
+  background-color: #6b7280;
 }
 
 
@@ -82,11 +82,24 @@ button.ri_defaultbutton {
   background-color: #007bff;
 }
 
+button.ri_defaultbutton:hover {
+  background-color: #0056b3;
+}
+
+button.ri_deletebutton {
+  background-color: #dc2626;
+}
+
+button.ri_deletebutton:hover,
+button.ri_deletebutton.ri_confirming {
+  background-color: #b91c1c;
+}
+
 button.ri_floating {
 	  float: right;
 }
 
-button.ri_defaultbutton, button.ri_formbutton {
+button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton {
   display: inline-block;
   padding: 10px 20px;
   color: white;
@@ -95,6 +108,33 @@ button.ri_defaultbutton, button.ri_formbutton {
   font-size: 1rem;
   cursor: pointer;
   transition: background-color 0.3s ease;
+}
+
+/* Action bar at the bottom of the RIForm detail view: evenly spaced
+   buttons, separated from the form fields, with Delete pushed to the
+   far edge so it can't be hit by accident. */
+.ri_formactions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  padding-top: 1rem;
+  border-top: 1px solid #e5e7eb;
+}
+
+.ri_formactions .ri_deletebutton {
+  margin-left: auto;
+}
+
+button.ri_linkbutton {
+  background: none;
+  border: none;
+  padding: 0;
+  color: #6b7280;
+  text-decoration: underline;
+  font-size: 0.9rem;
+  cursor: pointer;
 }
 
 .ri_formtable {
@@ -237,7 +277,7 @@ h2.text-xl {
 	    padding: 8px 10px;
 	  }
 	
-	  button.ri_formbutton {
+	  button.ri_formbutton, button.ri_defaultbutton, button.ri_deletebutton {
 	    font-size: 0.9rem;
 	    padding: 8px 15px;
 	  }

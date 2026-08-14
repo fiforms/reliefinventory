@@ -86,10 +86,15 @@
       </h2>
       <slot :editing="editing" :record="record" :templates="templates"></slot>
       <p v-if="saveError" class="ri_error">{{ saveError }}</p>
-      <button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
-      <button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
-      <button v-if="editing" @click="deleteRecord()" class="ri_formbutton" style="float: right">Delete</button>
-      <button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to List</button>
+      <div class="ri_formactions">
+        <button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
+        <button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
+        <button v-if="editing" @click="deleteRecord()" class="ri_deletebutton" :class="{ ri_confirming: confirmingDelete }">
+          {{ confirmingDelete ? 'Confirm Delete — cannot be undone' : 'Delete' }}
+        </button>
+        <button v-if="editing && confirmingDelete" @click="confirmingDelete = false" class="ri_linkbutton">Keep Record</button>
+        <button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to List</button>
+      </div>
     </div>
   </div>
 </template>
@@ -124,6 +129,7 @@ export default {
       editing: false,
       saveError: null,
       successMessage: null,
+      confirmingDelete: false,
     };
   },
   methods: {
@@ -152,6 +158,7 @@ export default {
     saveRecord() {
       this.saveError = null;
       this.successMessage = null;
+      this.confirmingDelete = false;
       if (this.record && this.record.id) {
         // Record exists, we should update using PUT
         axios.put(this.datasource + "/" + this.record.id, this.record)
@@ -181,9 +188,12 @@ export default {
       }
     },
     deleteRecord() {
-      if (!window.confirm('Delete this record? This cannot be undone.')) {
+      // Two-step inline confirm: first click arms the button, second deletes.
+      if (!this.confirmingDelete) {
+        this.confirmingDelete = true;
         return;
       }
+      this.confirmingDelete = false;
       this.saveError = null;
       this.successMessage = null;
       axios.delete(this.datasource + "/" + this.record.id)
@@ -202,9 +212,11 @@ export default {
       this.editing = false;
       this.record = null; // Reset the model in the parent
       this.saveError = null;
+      this.confirmingDelete = false;
     },
     toggleEdit() {
       this.editing = !this.editing;
+      this.confirmingDelete = false;
     },
     newRecord() {
       this.successMessage = null;
