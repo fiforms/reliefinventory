@@ -16,6 +16,13 @@
 	    reporting.
 	  - Sorters can add new items (and item types / categories) on the fly
 	    when unfamiliar goods show up.
+	  - Finishing a pallet is one tap ("Pallet Empty") plus an optional
+	    damage observation; the empty transition rolls the donation to
+	    Complete when its last pallet empties. Final QC stays with a
+	    supervisor - the sorter's observation is a status-history note only.
+	  - Completed sessions open read-only (server-enforced too); Reopen
+	    Session is the explicit way back in. Donor is read-only-with-Edit
+	    for donations recorded at Receiving, fully editable for ad-hoc ones.
 -->
 
 <script>
@@ -53,17 +60,23 @@ export default {
 			lines: [],
 			headerSaving: false,
 			headerError: null,
+			notice: null,
+			editingDonor: false,
+			confirmingComplete: false,
 
 			// pallet context
 			palletTagInput: '',
 			pallet: null,
 			palletError: null,
 			showScanner: false,
+			emptyingPallet: false,
 
 			// line entry
 			entry: { item_id: null, qty: null, disposition: 'usable' },
 			lineError: null,
 			nextTempId: -1,
+			confirmingLineKey: null,
+			retryTimer: null,
 
 			// quick-add item modal
 			showItemModal: false,
@@ -73,8 +86,27 @@ export default {
 		};
 	},
 	computed: {
+		// Completed sessions open read-only; "Reopen Session" is the way back in.
+		readonly() {
+			return this.session?.status?.name === 'Complete';
+		},
+		// Donations that came through Receiving carry their donor from the
+		// dock; ad-hoc untagged sessions have no Receiving record.
+		fromReceiving() {
+			return !!(this.session && ((this.session.pallets_count ?? 0) > 0 || this.session.manifest));
+		},
+		failedLines() {
+			return this.lines.filter((line) => line.status === 'failed');
+		},
 		sortedLines() {
-			return [...this.lines].sort((a, b) => (b.id ?? 0) - (a.id ?? 0) || (b.tempId ?? 0) - (a.tempId ?? 0));
+			// Unsaved lines are the newest — keep them on top instead of
+			// letting them jump from bottom to top when the save lands.
+			return [...this.lines].sort((a, b) => {
+				const aSaved = a.id != null;
+				const bSaved = b.id != null;
+				if (aSaved !== bSaved) return aSaved ? 1 : -1;
+				return aSaved ? b.id - a.id : a.tempId - b.tempId;
+			});
 		},
 		totals() {
 			const sum = (disposition) => this.lines
@@ -132,6 +164,11 @@ export default {
 			this.pallet = null;
 			this.palletTagInput = '';
 			this.palletError = null;
+			this.notice = null;
+			this.editingDonor = false;
+			this.emptyingPallet = false;
+			this.confirmingComplete = false;
+			this.confirmingLineKey = null;
 			this.entry = { item_id: null, qty: null, disposition: 'usable' };
 			this.view = 'session';
 			this.$nextTick(() => this.$refs.palletInput?.focus());
@@ -167,20 +204,27 @@ export default {
 			}
 		},
 		donorSelected(person) {
+			this.editingDonor = false;
 			this.patchSession({ person_id: person ? person.id : null });
 		},
 		commentsChanged() {
 			this.patchSession({ comments: this.session.comments });
 		},
 		async completeSession() {
-			if (this.pendingCount > 0 &&
-				!confirm(this.pendingCount + ' line(s) have not finished saving. Complete anyway?')) {
+			// Two-step inline confirm when lines haven't reached the server.
+			if (this.pendingCount > 0 && !this.confirmingComplete) {
+				this.confirmingComplete = true;
 				return;
 			}
+			this.confirmingComplete = false;
 			await this.patchSession({ completed: true });
 			if (!this.headerError) {
 				await this.closeSession();
 			}
+		},
+		async reopenSession() {
+			this.notice = null;
+			await this.patchSession({ completed: false });
 		},
 
 		// ---------- pallet context ----------
@@ -202,7 +246,31 @@ export default {
 			this.pallet = null;
 			this.palletTagInput = '';
 			this.palletError = null;
-			this.$refs.palletInput?.focus();
+			this.emptyingPallet = false;
+			this.$nextTick(() => this.$refs.palletInput?.focus());
+		},
+		/**
+		 * One-tap "pallet finished": records the sorter's damage observation
+		 * as a note, transitions the pallet to empty (which rolls the donation
+		 * to Complete once its last pallet empties), and readies the next scan.
+		 */
+		async markPalletEmpty(observation) {
+			this.palletError = null;
+			const tag = this.palletTagStr(this.pallet.id);
+			try {
+				const response = await axios.post(
+					'/json/sorting-sessions/pallet/' + encodeURIComponent(tag) + '/empty',
+					{ observation }
+				);
+				this.notice = 'Pallet ' + tag + ' marked empty'
+					+ (observation === 'damaged' ? ' and flagged for QC' : '')
+					+ (response.data.donation_status === 'Complete'
+						? ' — that was the last pallet, donation is fully sorted!' : '.');
+				this.clearPallet();
+			} catch (error) {
+				this.emptyingPallet = false;
+				this.palletError = error.response?.data?.message || 'Could not mark the pallet empty.';
+			}
 		},
 		onScanned(text) {
 			this.showScanner = false;
@@ -224,6 +292,7 @@ export default {
 		},
 		addLine() {
 			this.lineError = null;
+			this.confirmingLineKey = null;
 			if (!this.entry.item_id) {
 				this.lineError = 'Choose an item first.';
 				return;
@@ -280,8 +349,16 @@ export default {
 				}
 			}
 		},
+		lineKey(line) {
+			return line.id ?? line.tempId;
+		},
 		async deleteLine(line) {
-			if (!confirm('Delete this line?')) return;
+			// Two-step inline confirm: first tap arms this line, second deletes.
+			if (this.confirmingLineKey !== this.lineKey(line)) {
+				this.confirmingLineKey = this.lineKey(line);
+				return;
+			}
+			this.confirmingLineKey = null;
 			if (!line.id) {
 				// never reached the server; just drop it locally
 				this.lines = this.lines.filter((entry) => entry !== line);
@@ -292,6 +369,17 @@ export default {
 				this.lines = this.lines.filter((entry) => entry !== line);
 			} catch (error) {
 				this.lineError = 'Could not delete the line. Try again.';
+			}
+		},
+		retryFailed() {
+			this.failedLines.forEach((line) => this.saveLine(line));
+		},
+		// Auto-retry failed autosaves: whenever connectivity returns, and on a
+		// slow heartbeat as backup — 45-minute sessions on warehouse Wi-Fi
+		// shouldn't need the sorter to babysit a Retry button.
+		autoRetry() {
+			if (this.view === 'session' && !this.readonly && this.failedLines.length) {
+				this.retryFailed();
 			}
 		},
 		lineTime(line) {
@@ -396,6 +484,14 @@ export default {
 	created() {
 		this.fetchSessions();
 	},
+	mounted() {
+		window.addEventListener('online', this.autoRetry);
+		this.retryTimer = setInterval(this.autoRetry, 30000);
+	},
+	unmounted() {
+		window.removeEventListener('online', this.autoRetry);
+		clearInterval(this.retryTimer);
+	},
 };
 </script>
 
@@ -416,7 +512,7 @@ export default {
 
 			<div v-if="sessions.open.length" class="sort_section">
 				<h3>In Progress - tap to resume</h3>
-				<table class="ri_datatable" border="1">
+				<div class="sort_tablewrap"><table class="ri_datatable" border="1">
 					<thead>
 						<tr><th>Date</th><th>Started By</th><th>Donor</th><th>Lines</th><th>Items</th></tr>
 					</thead>
@@ -430,12 +526,12 @@ export default {
 							<td>{{ sessionSummary(record).total }}</td>
 						</tr>
 					</tbody>
-				</table>
+				</table></div>
 			</div>
 
 			<div v-if="sessions.receivable.length" class="sort_section">
 				<h3>Ready to Sort - tap to pick up</h3>
-				<table class="ri_datatable" border="1">
+				<div class="sort_tablewrap"><table class="ri_datatable" border="1">
 					<thead>
 						<tr><th>Date Received</th><th>Donor</th><th>Manifest</th></tr>
 					</thead>
@@ -447,13 +543,13 @@ export default {
 							<td>{{ record.manifest }}</td>
 						</tr>
 					</tbody>
-				</table>
+				</table></div>
 			</div>
 
 			<div class="sort_section">
 				<h3>Recently Completed</h3>
 				<p v-if="!sessions.recent.length && !listLoading">No completed sorting sessions yet.</p>
-				<table v-else class="ri_datatable" border="1">
+				<div v-else class="sort_tablewrap"><table class="ri_datatable" border="1">
 					<thead>
 						<tr><th>Date</th><th>Sorted By</th><th>Donor</th><th>Lines</th><th>Items</th></tr>
 					</thead>
@@ -467,7 +563,7 @@ export default {
 							<td>{{ sessionSummary(record).total }}</td>
 						</tr>
 					</tbody>
-				</table>
+				</table></div>
 			</div>
 		</div>
 
@@ -475,20 +571,47 @@ export default {
 		<div v-else-if="session" class="sort_container">
 			<div class="sort_topbar">
 				<button @click="closeSession" class="ri_formbutton">&larr; All Sessions</button>
-				<span class="sort_title">Sorting Session &mdash; {{ session.order_date }}</span>
-				<span class="sort_savestate">
-					<span v-if="headerSaving || pendingCount > 0">Saving...</span>
+				<span class="sort_title">
+					Sorting Session &mdash; {{ session.order_date }}
+					<span v-if="readonly" class="sort_completed_badge">Completed</span>
+				</span>
+				<span class="sort_savestate" v-if="!readonly">
+					<span v-if="failedLines.length" class="sort_error_inline">
+						{{ failedLines.length }} line(s) failed to save
+						<button @click="retryFailed" class="ri_linkbutton">Retry All</button>
+					</span>
+					<span v-else-if="headerSaving || pendingCount > 0">Saving...</span>
 					<span v-else class="sort_saved">All changes saved</span>
 				</span>
-				<button @click="completeSession" class="ri_defaultbutton">Complete Session</button>
+				<template v-if="!readonly">
+					<button v-if="confirmingComplete" @click="confirmingComplete = false" class="ri_linkbutton">Keep Sorting</button>
+					<button @click="completeSession" :class="confirmingComplete ? 'ri_deletebutton' : 'ri_defaultbutton'">
+						{{ confirmingComplete
+							? 'Complete with ' + pendingCount + ' unsaved line(s)' + (failedLines.length ? ' (' + failedLines.length + ' failed)' : '') + '?'
+							: 'Complete Session' }}
+					</button>
+				</template>
+				<button v-else @click="reopenSession" class="ri_defaultbutton">Reopen Session</button>
 			</div>
 			<p v-if="headerError" class="sort_error">{{ headerError }}</p>
+			<p v-if="notice" class="sort_notice">{{ notice }}</p>
 
-			<!-- session header: donor + comments, autosaved on change -->
+			<!-- session header: donor + comments, autosaved on change.
+			     Donations from Receiving carry the donor recorded at the dock,
+			     so it shows read-only with an explicit Edit; ad-hoc untagged
+			     sessions edit the donor directly. -->
 			<div class="sort_header">
 				<div class="sort_field">
 					<label>Donor / Source:</label>
+					<template v-if="readonly || (fromReceiving && !editingDonor)">
+						<span>
+							{{ personLabel(session.person) }}
+							<em v-if="fromReceiving" class="sort_donor_src">(recorded at receiving)</em>
+						</span>
+						<button v-if="!readonly" @click="editingDonor = true" class="ri_linkbutton">Edit</button>
+					</template>
 					<SearchSelect
+						v-else
 						v-model="session.person_id"
 						optionsource="/json/people"
 						display="organization"
@@ -499,12 +622,12 @@ export default {
 				</div>
 				<div class="sort_field">
 					<label>Comments:</label>
-					<TextArea v-model="session.comments" :enabled="true" @change="commentsChanged" />
+					<TextArea v-model="session.comments" :enabled="!readonly" @change="commentsChanged" />
 				</div>
 			</div>
 
 			<!-- pallet context: scanned once, applied to every following line -->
-			<div class="sort_pallet" :class="pallet ? 'sort_pallet_active' : ''">
+			<div v-if="!readonly" class="sort_pallet" :class="pallet ? 'sort_pallet_active' : ''">
 				<template v-if="!pallet">
 					<label>Pallet Tag:</label>
 					<input
@@ -519,18 +642,28 @@ export default {
 					<button @click="showScanner = true" class="ri_formbutton">Camera Scan</button>
 					<span class="sort_pallet_hint">Lines entered without a pallet won't be source-traceable.</span>
 				</template>
-				<template v-else>
+				<template v-else-if="!emptyingPallet">
 					<span class="sort_pallet_label">
 						Sorting from pallet <strong>{{ palletTagStr(pallet.id) }}</strong>
 						(packed {{ pallet.datepacked }}<span v-if="pallet.location">, at {{ pallet.location.code }}</span>)
 					</span>
+					<button @click="emptyingPallet = true" class="ri_defaultbutton">Pallet Empty</button>
 					<button @click="clearPallet" class="ri_formbutton">Change Pallet</button>
+				</template>
+				<template v-else>
+					<!-- one optional observation tap; final QC stays with a supervisor -->
+					<span class="sort_pallet_label">
+						Pallet <strong>{{ palletTagStr(pallet.id) }}</strong> finished &mdash; how did it look?
+					</span>
+					<button @click="markPalletEmpty('ok')" class="ri_defaultbutton">Pallet looks OK</button>
+					<button @click="markPalletEmpty('damaged')" class="ri_deletebutton">Set aside &mdash; damaged?</button>
+					<button @click="emptyingPallet = false" class="ri_linkbutton">Cancel</button>
 				</template>
 			</div>
 			<p v-if="palletError" class="sort_error">{{ palletError }}</p>
 
 			<!-- line entry -->
-			<div class="sort_entry">
+			<div v-if="!readonly" class="sort_entry">
 				<div class="sort_entry_item">
 					<SearchSelect
 						ref="itemSelect"
@@ -568,7 +701,7 @@ export default {
 			<p v-if="lineError" class="sort_error">{{ lineError }}</p>
 
 			<!-- entered lines -->
-			<table class="ri_datatable sort_lines" border="1">
+			<div class="sort_tablewrap"><table class="ri_datatable sort_lines" border="1">
 				<thead>
 					<tr>
 						<th>Time</th><th>Item</th><th>Qty</th><th>Disposition</th><th>Pallet</th><th></th>
@@ -588,14 +721,18 @@ export default {
 								<span :title="line.errorMessage">failed</span>
 								<button @click="saveLine(line)" class="ri_formbutton">Retry</button>
 							</template>
-							<img v-else src="/img/delete-icon.webp" class="sort_delete" @click="deleteLine(line)" />
+							<template v-else-if="confirmingLineKey === lineKey(line)">
+								<button @click="deleteLine(line)" class="sort_confirm_delete">Delete?</button>
+								<button @click="confirmingLineKey = null" class="ri_linkbutton">Keep</button>
+							</template>
+							<img v-else-if="!readonly" src="/img/delete-icon.webp" class="sort_delete" @click="deleteLine(line)" />
 						</td>
 					</tr>
 					<tr v-if="!lines.length">
 						<td colspan="6" class="sort_empty">No lines yet - scan a pallet tag, then start entering items.</td>
 					</tr>
 				</tbody>
-			</table>
+			</table></div>
 
 			<!-- running totals -->
 			<div class="sort_totals" v-if="lines.length">
@@ -852,6 +989,44 @@ export default {
 .sort_error {
 	color: #b91c1c;
 	margin: 6px 0;
+}
+.sort_error_inline {
+	color: #b91c1c;
+	font-weight: bold;
+}
+.sort_notice {
+	color: #15803d;
+	margin: 6px 0;
+}
+.sort_completed_badge {
+	background: #e5e7eb;
+	color: #374151;
+	font-size: 0.75rem;
+	font-weight: bold;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 2px 8px;
+	border-radius: 10px;
+	vertical-align: middle;
+}
+.sort_donor_src {
+	color: #888;
+	font-size: 0.85em;
+}
+.sort_confirm_delete {
+	background: #dc2626;
+	color: white;
+	border: none;
+	border-radius: 5px;
+	padding: 4px 10px;
+	font-size: 0.85rem;
+	cursor: pointer;
+}
+.sort_confirm_delete:hover {
+	background: #b91c1c;
+}
+.sort_tablewrap {
+	overflow-x: auto;
 }
 .sort_modal_overlay {
 	position: fixed;

@@ -52,6 +52,20 @@ class SortingSessionController extends Controller
     }
 
     /**
+     * Completed sessions are read-only: line writes are rejected server-side
+     * regardless of what the UI shows. Reopening (update with completed=false)
+     * is the one sanctioned way back in.
+     */
+    private function rejectIfCompleted(Transaction $session)
+    {
+        if ($session->status?->name === self::STATUS_COMPLETED) {
+            abort(response()->json([
+                'message' => 'This session is completed. Reopen it before making changes.',
+            ], 409));
+        }
+    }
+
+    /**
      * Normalize a scanned pallet tag ("P00000042", "p42", "42") to a pallet ID.
      */
     public static function palletIdFromTag(string $tag): ?int
@@ -71,21 +85,26 @@ class SortingSessionController extends Controller
         $received = $this->statusId(Transaction::STATUS_RECEIVED);
         $completed = $this->statusId(self::STATUS_COMPLETED);
 
+        // pallets_count lets the UI distinguish donations that came through
+        // Receiving (donor recorded at the dock) from ad-hoc untagged sessions.
         $open = Transaction::where('type', 'donation')
             ->where('status_id', $inProgress)
             ->with(self::WITH_RELATIONS)
+            ->withCount('pallets')
             ->orderBy('id', 'desc')
             ->get();
 
         $receivable = Transaction::where('type', 'donation')
             ->where('status_id', $received)
             ->with(self::WITH_RELATIONS)
+            ->withCount('pallets')
             ->orderBy('id')
             ->get();
 
         $recent = Transaction::where('type', 'donation')
             ->where('status_id', $completed)
             ->with(self::WITH_RELATIONS)
+            ->withCount('pallets')
             ->orderBy('id', 'desc')
             ->limit(25)
             ->get();
@@ -120,7 +139,7 @@ class SortingSessionController extends Controller
         }
 
         return response()->json([
-            'record' => $session->load(self::WITH_RELATIONS),
+            'record' => $session->load(self::WITH_RELATIONS)->loadCount('pallets'),
         ], 201);
     }
 
@@ -128,6 +147,7 @@ class SortingSessionController extends Controller
     {
         $session = Transaction::where('type', 'donation')
             ->with(self::WITH_RELATIONS)
+            ->withCount('pallets')
             ->findOrFail($id);
 
         return response()->json(['record' => $session]);
@@ -146,6 +166,11 @@ class SortingSessionController extends Controller
             'completed' => 'nullable|boolean',
         ]);
 
+        // A completed session accepts exactly one change: being reopened.
+        if (! array_key_exists('completed', $data) || $data['completed']) {
+            $this->rejectIfCompleted($session);
+        }
+
         if (array_key_exists('completed', $data)) {
             $session->status_id = $this->statusId(
                 $data['completed'] ? self::STATUS_COMPLETED : self::STATUS_IN_PROGRESS
@@ -156,7 +181,7 @@ class SortingSessionController extends Controller
         $session->fill($data)->save();
 
         return response()->json([
-            'record' => $session->load(self::WITH_RELATIONS),
+            'record' => $session->load(self::WITH_RELATIONS)->loadCount('pallets'),
         ]);
     }
 
@@ -192,12 +217,49 @@ class SortingSessionController extends Controller
     }
 
     /**
+     * The sorter's one-tap "pallet empty" at the end of working a pallet
+     * (pallet-container-model). Their damage observation is recorded as a
+     * status-history note only — condition itself goes to "pending" for a
+     * supervisor to resolve; sorters never do final pallet QC. The empty
+     * transition triggers the donation rollup, where the last pallet to
+     * reach "empty" completes the donation.
+     */
+    public function palletEmpty(Request $request, string $tag)
+    {
+        $data = $request->validate(['observation' => 'nullable|in:ok,damaged']);
+
+        $id = self::palletIdFromTag($tag);
+        $pallet = $id ? Pallet::find($id) : null;
+
+        if (! $pallet) {
+            return response()->json(['message' => 'Unknown pallet tag: '.$tag], 404);
+        }
+        if ($pallet->kind !== PalletKind::RECEIVING) {
+            return response()->json([
+                'message' => 'That tag belongs to a '.(PalletKind::LABELS[$pallet->kind] ?? $pallet->kind).' pallet, not a Receiving pallet.',
+            ], 422);
+        }
+
+        if ($pallet->status !== 'empty') {
+            $pallet->transitionTo('empty', null, ($data['observation'] ?? 'ok') === 'damaged'
+                ? 'Sorter: set aside - possible damage'
+                : 'Sorter: pallet looks OK');
+        }
+
+        return response()->json([
+            'record' => $pallet->load('location'),
+            'donation_status' => $pallet->donation?->status?->name,
+        ]);
+    }
+
+    /**
      * Append one sorted line to the session. Called once per line as the
      * sorter works, so entered data is never held only in the browser.
      */
     public function storeLine(Request $request, $id)
     {
         $session = Transaction::where('type', 'donation')->findOrFail($id);
+        $this->rejectIfCompleted($session);
         $data = $request->validate(self::LINE_VALIDATION);
 
         $palletId = null;
@@ -229,6 +291,7 @@ class SortingSessionController extends Controller
     public function updateLine(Request $request, $id, $lineId)
     {
         $session = Transaction::where('type', 'donation')->findOrFail($id);
+        $this->rejectIfCompleted($session);
         $line = $session->itemLedgers()->findOrFail($lineId);
 
         $data = $request->validate([
@@ -259,6 +322,7 @@ class SortingSessionController extends Controller
     public function destroyLine($id, $lineId)
     {
         $session = Transaction::where('type', 'donation')->findOrFail($id);
+        $this->rejectIfCompleted($session);
         $session->itemLedgers()->findOrFail($lineId)->delete();
 
         return response()->json(['success' => true]);
