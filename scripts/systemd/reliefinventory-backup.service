@@ -1,0 +1,7 @@
+[Unit]
+Description=Relief Inventory scheduled backup (runs only when due; see scripts/BACKUPS.md)
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /var/www/reliefinventory-demo/scripts/update.sh --scheduled

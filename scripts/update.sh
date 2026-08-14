@@ -8,8 +8,15 @@
 # Run as root on the server (app commands are dropped to www-data internally):
 #
 #   bash scripts/update.sh                     full update
-#   bash scripts/update.sh --backup-only       backup, nothing else (for cron/timer)
+#   bash scripts/update.sh --backup-only       backup now, nothing else
+#   bash scripts/update.sh --scheduled         backup only if one is due (systemd timer)
 #   bash scripts/update.sh --seed-permissions  full update + PermissionsSeeder
+#
+# Backups are tiered: every backup lands in daily/, and the first backup of a
+# month/year is also promoted (as hardlinks, so promotion costs no space) into
+# monthly/ and yearly/. Retention, schedule time, and frequency come from
+# storage/app/backup-settings.conf — a www-data-writable file, so the admin
+# panel can later manage the schedule without root. See scripts/BACKUPS.md.
 #
 # Sequence: backup (DB dump + storage/app + .env + current git SHA) -> maintenance
 # mode -> git reset to origin -> composer/npm only if lock files changed -> asset
@@ -23,13 +30,27 @@
 
 set -Eeuo pipefail
 
+# Re-exec from a temp copy: 'git reset --hard' below may replace this very file
+# mid-run, and bash reads scripts lazily, so running from the checkout directly
+# could execute a corrupted mix of old and new script. The copy is immune.
+if [ -z "${RI_UPDATE_REEXEC:-}" ]; then
+    _self_copy="$(mktemp /tmp/ri-update.XXXXXX.sh)"
+    cp "${BASH_SOURCE[0]}" "$_self_copy"
+    RI_UPDATE_REEXEC=1 exec bash "$_self_copy" "$@"
+fi
+COOKIE_JAR=""
+cleanup() {
+    [ -n "$COOKIE_JAR" ] && rm -f "$COOKIE_JAR"
+    rm -f "$0"   # the temp copy of ourselves
+}
+trap cleanup EXIT
+
 # ---------------------------------------------------------------- configuration
 APP_DIR="${APP_DIR:-/var/www/reliefinventory-demo}"
 APP_USER="${APP_USER:-www-data}"
 APP_USER_HOME="${APP_USER_HOME:-/var/www}"
 BACKUP_DIR="${BACKUP_DIR:-/var/backups/reliefinventory}"
 LOG_DIR="${LOG_DIR:-/var/log/reliefinventory}"
-KEEP_BACKUPS="${KEEP_BACKUPS:-14}"
 PHP="${PHP:-php8.4}"
 BRANCH="${BRANCH:-master}"
 QUEUE_SERVICE="${QUEUE_SERVICE:-reliefinventory-demo-queue}"
@@ -40,9 +61,11 @@ HEALTH_URL="${HEALTH_URL:-}"
 
 BACKUP_ONLY=0
 SEED_PERMISSIONS=0
+SCHEDULED=0
 for arg in "$@"; do
     case "$arg" in
         --backup-only) BACKUP_ONLY=1 ;;
+        --scheduled) SCHEDULED=1; BACKUP_ONLY=1 ;;
         --seed-permissions) SEED_PERMISSIONS=1 ;;
         *) echo "Unknown option: $arg" >&2; exit 2 ;;
     esac
@@ -50,6 +73,46 @@ done
 
 [ "$(id -u)" -eq 0 ] || { echo "Run as root (app steps drop to $APP_USER)." >&2; exit 2; }
 [ -f "$APP_DIR/artisan" ] || { echo "No artisan found in $APP_DIR" >&2; exit 2; }
+
+# ------------------------------------------------- backup schedule + retention
+# Settings live in a www-data-writable file so the admin panel can manage them
+# without root. The file is parsed key-by-key with strict validation and is
+# NEVER sourced — a value that fails validation silently falls back to the
+# default, so a garbled (or malicious) file can't break backups or inject shell.
+SETTINGS_FILE="${SETTINGS_FILE:-$APP_DIR/storage/app/backup-settings.conf}"
+setting() { # setting <key> <default> <valid-regex>
+    local raw
+    raw="$(sed -n "s/^$1=//p" "$SETTINGS_FILE" 2>/dev/null | head -n1 | tr -d "[:space:]\"'")"
+    if printf '%s' "$raw" | grep -Eqx "$3"; then printf '%s' "$raw"; else printf '%s' "$2"; fi
+}
+BACKUP_FREQUENCY="$(setting BACKUP_FREQUENCY daily 'daily|weekly')"
+BACKUP_HOUR="$(setting BACKUP_HOUR 2 '[0-9]|1[0-9]|2[0-3]')"          # 0-23, in BACKUP_TZ
+BACKUP_DOW="$(setting BACKUP_DOW 7 '[1-7]')"                          # weekly only: 1=Mon..7=Sun
+BACKUP_TZ="$(setting BACKUP_TZ America/Los_Angeles '[A-Za-z0-9_/+-]+')"
+KEEP_DAILY="$(setting KEEP_DAILY 14 '[0-9]{1,3}')"
+KEEP_MONTHLY="$(setting KEEP_MONTHLY 12 '[0-9]{1,3}')"
+KEEP_YEARLY="$(setting KEEP_YEARLY 3 '[0-9]{1,2}')"
+
+# --scheduled (the hourly systemd timer) only proceeds when a backup is due:
+# we're at/past the configured hour in the configured timezone (>= rather than
+# ==, so a reboot that skips the exact hour still catches up later that day),
+# on the right weekday for weekly mode, and none has run yet that day.
+MARKER="$BACKUP_DIR/.last-scheduled"
+if [ "$SCHEDULED" -eq 1 ]; then
+    NOW_HOUR=$((10#$(TZ="$BACKUP_TZ" date +%H)))
+    TODAY="$(TZ="$BACKUP_TZ" date +%Y%m%d)"
+    NOW_DOW="$(TZ="$BACKUP_TZ" date +%u)"
+    if [ "$NOW_HOUR" -lt "$BACKUP_HOUR" ]; then
+        echo "Scheduled check: not due yet (before $BACKUP_HOUR:00 $BACKUP_TZ)"; exit 0
+    fi
+    if [ "$BACKUP_FREQUENCY" = "weekly" ] && [ "$NOW_DOW" -ne "$BACKUP_DOW" ]; then
+        echo "Scheduled check: not due (weekly, day $BACKUP_DOW)"; exit 0
+    fi
+    if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$TODAY" ]; then
+        echo "Scheduled check: already backed up today"; exit 0
+    fi
+    echo "Scheduled backup due ($BACKUP_FREQUENCY at $BACKUP_HOUR:00 $BACKUP_TZ)"
+fi
 
 # Run a command as the app user, in the app dir, with the app user's HOME so
 # composer/npm caches land under $APP_USER_HOME and never as root.
@@ -87,7 +150,7 @@ on_error() {
 trap 'on_error $LINENO' ERR
 
 # -------------------------------------------------------------------- 1. backup
-BACKUP_PATH="$BACKUP_DIR/$STAMP"
+BACKUP_PATH="$BACKUP_DIR/daily/$STAMP"
 mkdir -p "$BACKUP_PATH"
 echo "-- Backing up to $BACKUP_PATH"
 
@@ -109,11 +172,40 @@ fi
 chmod -R go-rwx "$BACKUP_PATH"   # dump + .env hold credentials
 echo "-- Backup complete: $(du -sh "$BACKUP_PATH" | cut -f1)"
 
-# Rotation: keep the newest $KEEP_BACKUPS timestamped directories.
-ls -1d "$BACKUP_DIR"/*/ 2>/dev/null | sort | head -n -"$KEEP_BACKUPS" | while read -r old; do
-    echo "-- Pruning old backup $old"
-    rm -rf "$old"
-done
+# Promotion: the first backup of a month/year is also linked into monthly/ or
+# yearly/. cp -al hardlinks the files, so a promoted backup costs no extra
+# space until the daily copy it shares data with is pruned.
+promote() { # promote <tier> <stamp-prefix>
+    local tier="$1" prefix="$2" existing
+    mkdir -p "$BACKUP_DIR/$tier"
+    existing=( "$BACKUP_DIR/$tier/$prefix"* )
+    if [ ! -e "${existing[0]}" ]; then
+        echo "-- Promoting this backup to $tier/ (first of $prefix)"
+        cp -al "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP"
+    fi
+}
+promote monthly "$(date +%Y%m)"
+promote yearly "$(date +%Y)"
+
+# Per-tier rotation. Stamp names sort chronologically, so glob order is age order.
+prune_tier() { # prune_tier <dir> <keep-count>
+    local dir="$1" keep="$2"
+    [ -d "$dir" ] || return 0
+    local entries=( "$dir"/*/ )
+    [ -e "${entries[0]}" ] || return 0
+    while [ "${#entries[@]}" -gt "$keep" ]; do
+        echo "-- Pruning old backup ${entries[0]}"
+        rm -rf "${entries[0]}"
+        entries=( "${entries[@]:1}" )
+    done
+}
+prune_tier "$BACKUP_DIR/daily" "$KEEP_DAILY"
+prune_tier "$BACKUP_DIR/monthly" "$KEEP_MONTHLY"
+prune_tier "$BACKUP_DIR/yearly" "$KEEP_YEARLY"
+
+if [ "$SCHEDULED" -eq 1 ]; then
+    echo "$TODAY" > "$MARKER"
+fi
 
 if [ "$BACKUP_ONLY" -eq 1 ]; then
     echo "== Backup-only run finished OK =="
@@ -170,7 +262,6 @@ systemctl reload "$FPM_SERVICE"
 # -------------------------------------------------- 7. health check, then go up
 BASE_URL="${HEALTH_URL:-$(env_get APP_URL)}"
 COOKIE_JAR="$(mktemp)"
-trap 'rm -f "$COOKIE_JAR"' EXIT
 echo "-- Health check against $BASE_URL/up (via maintenance bypass)"
 curl -fskL -c "$COOKIE_JAR" -o /dev/null "$BASE_URL/$SECRET"
 STATUS="$(curl -sk -b "$COOKIE_JAR" -o /dev/null -w '%{http_code}' "$BASE_URL/up")"

@@ -94,7 +94,7 @@ bash scripts/update.sh
 - Every future deploy is just: push to GitHub, then `bash scripts/update.sh` on
   the box. No more rsync — the recurring storage-ownership breakage was caused
   by rsync itself and goes away with it.
-- Scheduled backups: `bash scripts/update.sh --backup-only` from cron or a
-  systemd timer (it rotates, keeping the newest 14 by default).
+- Scheduled backups: see `scripts/BACKUPS.md` for the tiered
+  (daily/monthly/yearly) retention scheme and the systemd timer install.
 - If a deploy changed permissions/roles, use `bash scripts/update.sh
   --seed-permissions`. Never run plain `db:seed` on the live box.

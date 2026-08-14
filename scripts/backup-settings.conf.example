@@ -1,0 +1,25 @@
+# Relief Inventory backup schedule + retention settings.
+#
+# Live copy belongs at: storage/app/backup-settings.conf (www-data-writable,
+# so the admin panel can manage it). Parsed strictly by scripts/update.sh —
+# one KEY=value per line, no quotes needed, unknown keys ignored, invalid
+# values fall back to the defaults shown here.
+
+# daily or weekly
+BACKUP_FREQUENCY=daily
+
+# Hour of day to back up, 0-23, interpreted in BACKUP_TZ.
+# 2 + America/Los_Angeles = 2am Pacific (DST handled automatically).
+BACKUP_HOUR=2
+
+# Weekly mode only: day of week, 1=Monday .. 7=Sunday.
+BACKUP_DOW=7
+
+# IANA timezone the schedule is expressed in — set to where the deployment
+# is operating, not where the server lives.
+BACKUP_TZ=America/Los_Angeles
+
+# Retention per tier (see scripts/BACKUPS.md for how tiers work).
+KEEP_DAILY=14
+KEEP_MONTHLY=12
+KEEP_YEARLY=3

@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly check for a due Relief Inventory backup
+
+[Timer]
+# Fires hourly on purpose: the script itself decides whether a backup is due
+# from storage/app/backup-settings.conf (time/frequency/timezone), so the
+# schedule can be changed by the app without touching systemd or needing root.
+OnCalendar=*-*-* *:17:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
