@@ -32,38 +32,46 @@ same day, helped by `Persistent=true`), the right `BACKUP_DOW` in weekly mode,
 and no scheduled backup recorded yet that day (tracked in
 `/var/backups/reliefinventory/.last-scheduled`).
 
-## Admin panel integration (future)
+## Admin panel integration
 
-This design is deliberately panel-ready:
+The System Administration panel (`/setup/system`, permission `admin-system`,
+`SystemController` + `SystemAdmin.vue`) manages all of this:
 
-- **Schedule/retention changes** = the app rewriting
+- **Schedule/retention changes**: the app rewrites
   `storage/app/backup-settings.conf`, which `www-data` owns. No root, no
-  systemd interaction, takes effect at the next hourly check.
-- The script **never sources** the settings file — each key is extracted and
-  validated against a strict pattern, and bad values fall back to defaults —
-  so the file being web-writable does not give the web app shell access as
-  root.
-- **"Back up now" button** = triggering one run of
-  `reliefinventory-backup.service`… but note `--scheduled` applies the
-  due-check, so an on-demand button should get its own oneshot unit running
-  `update.sh --backup-only`, started via a narrow sudoers rule
-  (`www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start <unit>`).
-- **Reading backup status** for display: list the tier directories, or show
-  the timestamp in `.last-scheduled` (both readable via a small artisan
-  command run as root is *not* needed — make the backup dir group-readable or
-  expose status by having the script write a www-data-readable status file if
-  the panel needs it; decide when building the panel).
+  systemd interaction, takes effect at the next hourly check. The script
+  **never sources** the settings file — each key is extracted and validated
+  against a strict pattern with bad values falling back to defaults — so the
+  file being web-writable does not give the web app shell access as root.
+- **"Back up now"** starts `reliefinventory-backup-now.service` (plain
+  `--backup-only`, no due-check) and **"Install Update"** starts
+  `reliefinventory-update.service` (full update) — both via the sudoers rule
+  in `scripts/systemd/reliefinventory-sudoers`, which allows exactly those
+  two `systemctl start --no-block` commands and nothing else.
+- **Status display**: the panel lists tier directory names (contents stay
+  root-only; the names are enough), reads `.last-scheduled`, and follows a
+  running update through `storage/app/system-update-status.json`, which
+  `update.sh` writes at start/success/failure of full updates. During the
+  update's maintenance window the panel's polls get 503s and it shows that
+  as progress, not an error.
 
 ## One-time install (per server)
 
 ```bash
 cd /var/www/reliefinventory-demo
 runuser -u www-data -- cp scripts/backup-settings.conf.example storage/app/backup-settings.conf
-cp scripts/systemd/reliefinventory-backup.service /etc/systemd/system/
-cp scripts/systemd/reliefinventory-backup.timer   /etc/systemd/system/
+cp scripts/systemd/reliefinventory-backup.service \
+   scripts/systemd/reliefinventory-backup.timer \
+   scripts/systemd/reliefinventory-update.service \
+   scripts/systemd/reliefinventory-backup-now.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now reliefinventory-backup.timer
 systemctl list-timers reliefinventory-backup.timer   # verify next firing
+
+# Sudoers rule so the admin panel can trigger updates/backups (see file header)
+cp scripts/systemd/reliefinventory-sudoers /etc/sudoers.d/reliefinventory
+chmod 440 /etc/sudoers.d/reliefinventory
+visudo -c
 ```
 
 After changing the unit files in the repo, re-copy them and `systemctl

@@ -56,6 +56,7 @@ class PermissionsSeeder extends Seeder
         'manage-roles' => 'View roles',
         'admin-roles' => 'Create, update, and delete roles',
         'manage-counties' => 'Create, update, and delete counties',
+        'admin-system' => 'System administration: software updates, backups, and the backup schedule',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [

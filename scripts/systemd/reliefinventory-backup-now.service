@@ -1,0 +1,7 @@
+[Unit]
+Description=Relief Inventory on-demand backup (triggered from the System Administration panel)
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /var/www/reliefinventory-demo/scripts/update.sh --backup-only

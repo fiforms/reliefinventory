@@ -77,6 +77,11 @@ Route::get('/setup/locations', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations')]);
 })->middleware(['auth', 'permission:manage-locations']);
 
+Route::get('/setup/system', function () {
+    return Inertia::render('SystemAdmin',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/system')]);
+})->middleware(['auth', 'permission:admin-system']);
+
 Route::get('/reports/labels', function () {
     return Inertia::render('PrintLabels',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/labels')]);
@@ -320,6 +325,18 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-con
     Route::post('/container-types', [ContainerTypeController::class, 'store']);
     Route::put('/container-types/{id}', [ContainerTypeController::class, 'update']);
     Route::delete('/container-types/{id}', [ContainerTypeController::class, 'destroy']);
+});
+
+// System administration: software updates, backup inventory, and the backup
+// schedule. The update/backup-now endpoints only start systemd units (via a
+// sudoers rule scoped to exactly those units) — the heavy lifting happens in
+// scripts/update.sh outside the request cycle.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
+    Route::get('/system/status', [SystemController::class, 'status']);
+    Route::post('/system/check-updates', [SystemController::class, 'checkUpdates']);
+    Route::post('/system/update', [SystemController::class, 'update']);
+    Route::post('/system/backup', [SystemController::class, 'backupNow']);
+    Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-streams']], function () {

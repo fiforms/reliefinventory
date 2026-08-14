@@ -120,6 +120,16 @@ as_app() {
     runuser -u "$APP_USER" -- env HOME="$APP_USER_HOME" "$@"
 }
 
+# Progress reporting for the admin panel (full updates only): a small JSON
+# file the app can read back while this script runs outside the request cycle.
+STATUS_FILE="${STATUS_FILE:-$APP_DIR/storage/app/system-update-status.json}"
+write_status() { # write_status <state> <message>
+    [ "$BACKUP_ONLY" -eq 1 ] && return 0
+    printf '{"state":"%s","message":"%s","sha":"%s","updated_at":"%s"}\n' \
+        "$1" "$2" "${NEW_SHA:-${OLD_SHA:-}}" "$(date -u +%FT%TZ)" > "$STATUS_FILE"
+    chown "$APP_USER" "$STATUS_FILE" 2>/dev/null || true
+}
+
 mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 LOG_FILE="$LOG_DIR/update-$STAMP.log"
@@ -140,6 +150,7 @@ env_get() {
 MAINTENANCE_DOWN=0
 on_error() {
     echo "!! FAILED at line $1. See $LOG_FILE" >&2
+    write_status failed "Update failed (line $1, log update-$STAMP.log)"
     if [ "$MAINTENANCE_DOWN" -eq 1 ]; then
         echo "!! The site has been LEFT IN MAINTENANCE MODE on purpose." >&2
         echo "!! To roll back: restore $BACKUP_PATH/db.sql.gz into the database," >&2
@@ -148,6 +159,8 @@ on_error() {
     fi
 }
 trap 'on_error $LINENO' ERR
+
+write_status running "Update running (started $STAMP)"
 
 # -------------------------------------------------------------------- 1. backup
 BACKUP_PATH="$BACKUP_DIR/daily/$STAMP"
@@ -275,4 +288,5 @@ MAINTENANCE_DOWN=0
 STATUS="$(curl -sk -o /dev/null -w '%{http_code}' "$BASE_URL/up")"
 [ "$STATUS" = "200" ] || { echo "!! Site is up but /up returned $STATUS — check manually." >&2; exit 1; }
 
+write_status success "Updated to ${NEW_SHA:0:9}"
 echo "== Update finished OK: now on $NEW_SHA =="
