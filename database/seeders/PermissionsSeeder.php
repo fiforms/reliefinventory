@@ -57,6 +57,7 @@ class PermissionsSeeder extends Seeder
         'admin-roles' => 'Create, update, and delete roles',
         'manage-counties' => 'Create, update, and delete counties',
         'admin-system' => 'System administration: software updates, backups, and the backup schedule',
+        'view-reports' => 'View inventory and operational reports',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -64,7 +65,7 @@ class PermissionsSeeder extends Seeder
         'manage-categories', 'manage-locations', 'manage-warehouses', 'manage-uses',
         'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
         'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
-        'manage-roles', 'manage-counties',
+        'manage-roles', 'manage-counties', 'view-reports',
     ];
 
     public function run(): void

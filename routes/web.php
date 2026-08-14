@@ -99,12 +99,16 @@ Route::get('/report/pallets/donation/{id}',
     ->name('report.pallets.donation')
     ->middleware(['auth', 'permission:manage-receiving']);
 
+Route::get('/reports/inventory', function () {
+    return Inertia::render('InventoryReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/inventory')]);
+})->middleware(['auth', 'permission:view-reports']);
+
 // Roadmap pages linked from the main menu but not yet built.
 // Renders a "coming soon" placeholder instead of 404ing.
 foreach ([
     '/order-filling' => 'Order Filling',
     '/reports/orders' => 'Outstanding Orders Report',
-    '/reports/inventory' => 'Inventory Report',
     '/reports/flow' => 'Inventory Flow Report',
     '/reports/donors' => 'Donor Report',
     '/reports/customers' => 'Customer Report',
@@ -230,6 +234,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-it
     Route::get('/itemtypes/{mod}', [ItemTypeController::class, 'index']);
     // Sorters may add new item types on the fly (update/delete remain admin-only below)
     Route::post('/itemtypes', [ItemTypeController::class, 'store']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-reports']], function () {
+    Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {
