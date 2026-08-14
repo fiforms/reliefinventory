@@ -93,7 +93,10 @@ export default {
 		<template #header></template>
 
 		<div class="inv_container">
-			<h2 class="ri_datatable_head">Inventory Report</h2>
+			<h2 class="ri_datatable_head">
+				Inventory Report
+				<a href="/report/inventory.pdf" class="ri_defaultbutton ri_floating" target="_blank">Download PDF</a>
+			</h2>
 
 			<p v-if="error" class="inv_error">{{ error }}</p>
 			<p v-if="loading">Loading...</p>

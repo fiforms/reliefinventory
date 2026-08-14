@@ -269,6 +269,10 @@ Route::get('/report/sitrep.pdf', [SitrepController::class, 'pdf'])
     ->name('report.sitrep')
     ->middleware(['auth', 'permission:view-sitrep']);
 
+Route::get('/report/inventory.pdf', [InventoryReportController::class, 'pdf'])
+    ->name('report.inventory')
+    ->middleware(['auth', 'permission:view-reports']);
+
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {
     Route::get('/packagetypes', [PackageTypeController::class, 'index']);
 });

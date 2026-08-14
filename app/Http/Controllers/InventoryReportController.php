@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ItemType;
 use Illuminate\Support\Facades\DB;
+use Spatie\LaravelPdf\Facades\Pdf;
 
 /**
  * Stock-on-hand rollup — the ledger (item_ledgers) never gets aggregated
@@ -23,6 +24,29 @@ use Illuminate\Support\Facades\DB;
 class InventoryReportController extends Controller
 {
     public function index()
+    {
+        return response()->json(['records' => $this->buildRecords()]);
+    }
+
+    /**
+     * Printable snapshot — same numbers as the on-screen report, restricted
+     * to item types with any recorded activity (a dump of the full ~450-
+     * entry catalog, most of it at zero, wouldn't be a useful report).
+     * Polish (letterhead, category subtotals, etc.) can follow later; this
+     * is the plumbing.
+     */
+    public function pdf()
+    {
+        $records = $this->buildRecords()->filter(
+            fn ($r) => $r['on_hand'] !== 0 || $r['outdated'] !== 0 || $r['trashed'] !== 0 || $r['diverted'] !== 0
+        )->values();
+
+        return Pdf::view('reports.inventory', ['records' => $records, 'generatedAt' => now()])
+            ->format('letter')
+            ->name('inventory-report-'.now()->format('Y-m-d').'.pdf');
+    }
+
+    private function buildRecords()
     {
         // Item-level rollup first (one itemtype can span several brands/
         // SKUs), then grouped up to itemtype in PHP — simpler than nested
@@ -73,6 +97,6 @@ class InventoryReportController extends Controller
             ['display_number', 'asc'],
         ])->values();
 
-        return response()->json(['records' => $records]);
+        return $records;
     }
 }

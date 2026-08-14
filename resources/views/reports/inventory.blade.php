@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Inventory Report</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            color: #222;
+            margin: 0;
+            padding: 36px 42px;
+        }
+        h1 {
+            font-size: 24px;
+            margin: 0 0 2px 0;
+        }
+        .subtitle {
+            color: #666;
+            font-size: 13px;
+            margin-bottom: 20px;
+        }
+        h2.category {
+            font-size: 14px;
+            color: #1e3a8a;
+            border-bottom: 2px solid #1e3a8a;
+            padding-bottom: 4px;
+            margin: 22px 0 8px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 11.5px;
+        }
+        th, td {
+            text-align: left;
+            padding: 4px 8px;
+            border-bottom: 1px solid #eee;
+        }
+        th {
+            color: #666;
+            font-weight: normal;
+            border-bottom: 2px solid #ccc;
+        }
+        td.num, th.num {
+            text-align: right;
+        }
+        td.num {
+            font-weight: bold;
+        }
+        .loss {
+            color: #b91c1c;
+            font-weight: normal;
+        }
+        .totals td {
+            font-weight: bold;
+            border-top: 2px solid #ccc;
+            border-bottom: none;
+        }
+        .disclaimer {
+            font-size: 11px;
+            color: #888;
+            font-style: italic;
+            border-top: 1px solid #ddd;
+            padding-top: 6px;
+            margin-top: 26px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Inventory Report</h1>
+    <div class="subtitle">
+        {{ config('app.name') }} &mdash; stock on hand, generated {{ $generatedAt->format('F j, Y \a\t g:i A T') }}
+    </div>
+
+    @foreach($records->groupBy('category') as $category => $rows)
+        <h2 class="category">{{ $category ?? 'Uncategorized' }}</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Item #</th>
+                    <th>Name</th>
+                    <th>Unit</th>
+                    <th class="num">On Hand</th>
+                    <th class="num">Outdated</th>
+                    <th class="num">Trashed</th>
+                    <th class="num">Diverted</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach($rows as $row)
+                    <tr>
+                        <td>{{ $row['display_number'] ?? '(unnumbered)' }}</td>
+                        <td>{{ $row['name'] }}</td>
+                        <td>{{ $row['unit'] }}</td>
+                        <td class="num">{{ $row['on_hand'] }}</td>
+                        <td class="num loss">{{ $row['outdated'] ?: '' }}</td>
+                        <td class="num loss">{{ $row['trashed'] ?: '' }}</td>
+                        <td class="num">{{ $row['diverted'] ?: '' }}</td>
+                    </tr>
+                @endforeach
+            </tbody>
+        </table>
+    @endforeach
+
+    @if($records->isEmpty())
+        <p>No stock on hand yet.</p>
+    @else
+        <table>
+            <tbody>
+                <tr class="totals">
+                    <td colspan="3">Totals ({{ $records->count() }} item type{{ $records->count() === 1 ? '' : 's' }})</td>
+                    <td class="num">{{ $records->sum('on_hand') }}</td>
+                    <td class="num">{{ $records->sum('outdated') ?: '' }}</td>
+                    <td class="num">{{ $records->sum('trashed') ?: '' }}</td>
+                    <td class="num">{{ $records->sum('diverted') ?: '' }}</td>
+                </tr>
+            </tbody>
+        </table>
+    @endif
+
+    <div class="disclaimer">
+        Generated at the moment of viewing from currently recorded ledger activity. Only item types with recorded
+        usable, outdated, trashed, or diverted quantity are listed; the full catalog is larger.
+    </div>
+</body>
+</html>
