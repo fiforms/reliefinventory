@@ -39,6 +39,11 @@ Route::get('/', function () {
             ['breadcrumb' => MenuItem::getBreadcrumb('/order-entry')]);
     })->middleware(['auth']);
     
+    Route::get('/receiving', function () {
+        return Inertia::render('Receiving',
+            ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
+    })->middleware(['auth', 'role:4']);
+
     Route::get('/donation-sorting', function () {
         return Inertia::render('DonationSorting',
             ['breadcrumb' => MenuItem::getBreadcrumb('/donation-sorting')]);
@@ -194,6 +199,12 @@ Route::get('/', function () {
         Route::post('/sorting-sessions/{id}/lines', [SortingSessionController::class, 'storeLine']);
         Route::put('/sorting-sessions/{id}/lines/{lineId}', [SortingSessionController::class, 'updateLine']);
         Route::delete('/sorting-sessions/{id}/lines/{lineId}', [SortingSessionController::class, 'destroyLine']);
+
+        // Receiving (dock-side donation/equipment/supplies intake)
+        Route::get('/receiving', [ReceivingController::class, 'index']);
+        Route::post('/receiving', [ReceivingController::class, 'store']);
+        Route::post('/receiving/{id}/pallets', [ReceivingController::class, 'createPallets']);
+        Route::post('/receiving/{id}/close-out', [ReceivingController::class, 'closeOut']);
 
         // Sorters may add new categories/item types/items on the fly when
         // unfamiliar goods arrive (update/delete remain admin-only below)

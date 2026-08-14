@@ -24,9 +24,12 @@ use Illuminate\Support\Facades\Auth;
  */
 class SortingSessionController extends Controller
 {
-    private const STATUS_IN_PROGRESS = 'Sorting In Progress';
+    // Shared with Transaction's donation-lifecycle vocabulary — a session's
+    // "in progress" state is exactly the donation's "sorting" status, not a
+    // separate parallel concept.
+    private const STATUS_IN_PROGRESS = Transaction::STATUS_SORTING;
 
-    private const STATUS_COMPLETED = 'Completed';
+    private const STATUS_COMPLETED = Transaction::STATUS_COMPLETE;
 
     private const WITH_RELATIONS = [
         'person',
@@ -59,11 +62,14 @@ class SortingSessionController extends Controller
     }
 
     /**
-     * List open sessions (resumable) and recently completed ones.
+     * List open sessions (resumable), donations ready to pick up from
+     * Receiving (not yet started), and recently completed ones.
      */
     public function index()
     {
         $inProgress = $this->statusId(self::STATUS_IN_PROGRESS);
+        $received = $this->statusId(Transaction::STATUS_RECEIVED);
+        $completed = $this->statusId(self::STATUS_COMPLETED);
 
         $open = Transaction::where('type', 'donation')
             ->where('status_id', $inProgress)
@@ -71,8 +77,14 @@ class SortingSessionController extends Controller
             ->orderBy('id', 'desc')
             ->get();
 
+        $receivable = Transaction::where('type', 'donation')
+            ->where('status_id', $received)
+            ->with(self::WITH_RELATIONS)
+            ->orderBy('id')
+            ->get();
+
         $recent = Transaction::where('type', 'donation')
-            ->where('status_id', '!=', $inProgress)
+            ->where('status_id', $completed)
             ->with(self::WITH_RELATIONS)
             ->orderBy('id', 'desc')
             ->limit(25)
@@ -80,21 +92,32 @@ class SortingSessionController extends Controller
 
         return response()->json([
             'open' => $open,
+            'receivable' => $receivable,
             'recent' => $recent,
         ]);
     }
 
     /**
-     * Start a new sorting session.
+     * Start a sorting session — either picking up an existing donation
+     * Receiving already created (the normal path), or starting fresh for
+     * untagged/walk-in goods with no Receiving record (never block sorting
+     * on a data problem).
      */
     public function store(Request $request)
     {
-        $session = Transaction::create([
-            'type' => 'donation',
-            'person_id_user' => Auth::id(),
-            'status_id' => $this->statusId(self::STATUS_IN_PROGRESS),
-            'order_date' => now()->toDateString(),
-        ]);
+        $data = $request->validate(['donation_id' => 'nullable|exists:orderdonations,id']);
+
+        if (! empty($data['donation_id'])) {
+            $session = Transaction::where('type', 'donation')->findOrFail($data['donation_id']);
+        } else {
+            $session = Transaction::create([
+                'type' => 'donation',
+                'category' => 'donation',
+                'person_id_user' => Auth::id(),
+                'status_id' => $this->statusId(self::STATUS_IN_PROGRESS),
+                'order_date' => now()->toDateString(),
+            ]);
+        }
 
         return response()->json([
             'record' => $session->load(self::WITH_RELATIONS),

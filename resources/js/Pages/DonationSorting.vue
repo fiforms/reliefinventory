@@ -44,7 +44,7 @@ export default {
 
 			// list view
 			view: 'list', // 'list' | 'session'
-			sessions: { open: [], recent: [] },
+			sessions: { open: [], receivable: [], recent: [] },
 			listLoading: false,
 			listError: null,
 
@@ -108,13 +108,13 @@ export default {
 				this.listLoading = false;
 			}
 		},
-		async startSession() {
+		async startSession(donationId) {
 			this.listError = null;
 			try {
-				const response = await axios.post('/json/sorting-sessions');
+				const response = await axios.post('/json/sorting-sessions', donationId ? { donation_id: donationId } : {});
 				this.openSession(response.data.record);
 			} catch (error) {
-				this.listError = 'Could not start a new sorting session.';
+				this.listError = donationId ? 'Could not pick up that donation.' : 'Could not start a new sorting session.';
 			}
 		},
 		async resumeSession(id) {
@@ -408,7 +408,7 @@ export default {
 		<div v-if="view === 'list'" class="sort_container">
 			<h2 class="ri_datatable_head">
 				Donation Sorting
-				<button @click="startSession" class="ri_defaultbutton ri_floating">Start Sorting</button>
+				<button @click="startSession()" class="ri_defaultbutton ri_floating">Start Sorting (untagged)</button>
 			</h2>
 
 			<p v-if="listError" class="sort_error">{{ listError }}</p>
@@ -428,6 +428,23 @@ export default {
 							<td>{{ personLabel(record.person) }}</td>
 							<td>{{ sessionSummary(record).lines }}</td>
 							<td>{{ sessionSummary(record).total }}</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+
+			<div v-if="sessions.receivable.length" class="sort_section">
+				<h3>Ready to Sort - tap to pick up</h3>
+				<table class="ri_datatable" border="1">
+					<thead>
+						<tr><th>Date Received</th><th>Donor</th><th>Manifest</th></tr>
+					</thead>
+					<tbody>
+						<tr v-for="record in sessions.receivable" :key="record.id"
+							class="sort_rowlink" @click="startSession(record.id)">
+							<td>{{ record.order_date }}</td>
+							<td>{{ personLabel(record.person) }}</td>
+							<td>{{ record.manifest }}</td>
 						</tr>
 					</tbody>
 				</table>

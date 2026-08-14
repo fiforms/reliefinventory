@@ -8,6 +8,7 @@ namespace App\Models;
 use App\Support\PalletKind;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 
 /**
  * A pallet record is one load's trip, not the physical wood underneath it
@@ -29,6 +30,7 @@ class Pallet extends Model
         'donor_person_id',
         'destination_person_id',
         'truck_id',
+        'orderdonation_id',
         'location_id',
         'datepacked',
         'earliest_expiry',
@@ -70,6 +72,12 @@ class Pallet extends Model
         return $this->hasMany(Container::class);
     }
 
+    // The donation (Receiving) this pallet belongs to, if any.
+    public function donation()
+    {
+        return $this->belongsTo(Transaction::class, 'orderdonation_id');
+    }
+
     /**
      * Printed/scanned tag: kind letter + zero-padded id ("R00000042").
      * Purely a human-readable label — lookups resolve by the numeric id
@@ -93,22 +101,42 @@ class Pallet extends Model
             throw new \InvalidArgumentException("\"{$status}\" is not a valid status for pallet kind \"{$this->kind}\".");
         }
 
-        $this->status = $status;
-        if ($locationId !== null) {
-            $this->location_id = $locationId;
-        }
-        if ($status === 'empty' && $this->condition === null) {
-            // Empty-pallet QC starts pending; a supervisor (never the
-            // sorter) later resolves it to good or condemned.
-            $this->condition = 'pending';
-        }
-        $this->save();
+        DB::transaction(function () use ($status, $locationId, $notes) {
+            $this->status = $status;
+            if ($locationId !== null) {
+                $this->location_id = $locationId;
+            }
+            if ($status === 'empty' && $this->condition === null) {
+                // Empty-pallet QC starts pending; a supervisor (never the
+                // sorter) later resolves it to good or condemned.
+                $this->condition = 'pending';
+            }
+            $this->save();
 
-        $this->statuses()->create([
-            'location_id' => $locationId ?? $this->location_id,
-            'status' => $status,
-            'notes' => $notes,
-        ]);
+            $this->statuses()->create([
+                'location_id' => $locationId ?? $this->location_id,
+                'status' => $status,
+                'notes' => $notes,
+            ]);
+
+            $this->syncDonationStatus();
+        });
+    }
+
+    /**
+     * Push the donation status rollup in the same transaction as this
+     * pallet's own status change — the one place this is ever triggered
+     * from, so the two records never drift out of sync.
+     */
+    private function syncDonationStatus(): void
+    {
+        if ($this->orderdonation_id) {
+            // Always re-fetch rather than use $this->donation: if this
+            // Pallet instance is reused across more than one transition
+            // (e.g. in a longer-lived process), a cached relation here
+            // would carry stale sibling-pallet statuses into the rollup.
+            Transaction::find($this->orderdonation_id)?->syncStatusFromPallets();
+        }
     }
 
     /**
@@ -118,15 +146,19 @@ class Pallet extends Model
      */
     public function markMissing(?string $notes = null): void
     {
-        $this->status_before_missing = $this->status;
-        $this->status = PalletKind::MISSING;
-        $this->save();
+        DB::transaction(function () use ($notes) {
+            $this->status_before_missing = $this->status;
+            $this->status = PalletKind::MISSING;
+            $this->save();
 
-        $this->statuses()->create([
-            'location_id' => $this->location_id,
-            'status' => PalletKind::MISSING,
-            'notes' => $notes,
-        ]);
+            $this->statuses()->create([
+                'location_id' => $this->location_id,
+                'status' => PalletKind::MISSING,
+                'notes' => $notes,
+            ]);
+
+            $this->syncDonationStatus();
+        });
     }
 
     /**
@@ -140,14 +172,19 @@ class Pallet extends Model
         }
 
         $restored = $this->status_before_missing;
-        $this->status = $restored;
-        $this->status_before_missing = null;
-        $this->save();
 
-        $this->statuses()->create([
-            'location_id' => $this->location_id,
-            'status' => $restored,
-            'notes' => 'Restored from missing on re-scan.',
-        ]);
+        DB::transaction(function () use ($restored) {
+            $this->status = $restored;
+            $this->status_before_missing = null;
+            $this->save();
+
+            $this->statuses()->create([
+                'location_id' => $this->location_id,
+                'status' => $restored,
+                'notes' => 'Restored from missing on re-scan.',
+            ]);
+
+            $this->syncDonationStatus();
+        });
     }
 }
