@@ -12,7 +12,8 @@ distribution points, with full source (donor/pallet) traceability.
 `PROJECT_ANALYSIS.md` at the repo root is a detailed audit of known defects and a phased completion plan
 — read it before starting non-trivial work here, since it documents which "existing" features are
 actually broken or unwired (e.g. donation sorting not yet recording pallet provenance end-to-end,
-several dead menu links, a role middleware that isn't a real bitmask check).
+several dead menu links). Note that the item flagging "a role middleware that isn't a real bitmask
+check" has since been resolved — see the granular permissions model described below.
 
 ## Commands
 
@@ -43,17 +44,17 @@ Useful artisan commands specific to this project: `php artisan user:create`, `ph
 
 Routes live in `routes/web.php`. Page routes render Inertia views directly from closures (not
 controllers) and pass a `breadcrumb` prop via `MenuItem::getBreadcrumb('/path')`. Data for those pages
-is then fetched client-side from a parallel REST-ish API namespaced under `/json/*`, grouped into three
-tiers by `role:N` middleware (`CheckRole`, bitmask against `people.role_bitpack`):
-- unrestricted (any authenticated user): menu data, statuses, counties, order creation
-- `role:4` (Volunteer and above): most CRUD — items, pallets, donations, orders, sorting sessions
-- `role:32768` (Administrator only): destructive/structural ops — deleting people/categories/locations,
-  role management, warehouse writes
+is then fetched client-side from a parallel REST-ish API namespaced under `/json/*`, gated by
+`permission:<key>` middleware (`CheckPermission`) — one permission key per resource (e.g.
+`manage-people`, `admin-people`, `manage-orders`), not a numeric role hierarchy. A person's effective
+permissions are their roles' default grants (`role_permissions`) with any per-person overrides
+(`person_permissions`, `granted` true/false) layered on top; see `HasPermissions` (shared by `Person`
+and `User`) and `PermissionsSeeder` for the full key list and default role bundles.
 
-When adding a route, match this pattern: page route with `->middleware(['auth', 'role:N'])` rendering an
-Inertia component, plus `/json/...` endpoints for the data that component needs, gated at the same or a
-compatible role level (there are known auth-level mismatches between page routes and their JSON
-endpoints — see `PROJECT_ANALYSIS.md` item 9 — don't repeat that pattern).
+When adding a route, match this pattern: page route with `->middleware(['auth', 'permission:<key>'])`
+rendering an Inertia component, plus `/json/...` endpoints for the data that component needs, gated on
+the same permission key (there are known historical auth-level mismatches between page routes and their
+JSON endpoints — see `PROJECT_ANALYSIS.md` item 9 — don't repeat that pattern).
 
 ### Data model core
 
@@ -68,10 +69,12 @@ endpoints — see `PROJECT_ANALYSIS.md` item 9 — don't repeat that pattern).
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
   unit that donation sorting scans to establish provenance.
 - `people` / `roles` / `people_roles` — a single `Person` table replaced a dropped `users` table (see
-  migration `2025_02_20_155051_drop_users_table.php`); auth is on `Person`, not a `User` model. Roles are
-  bit-packed onto `role_bitpack` (values like 1, 2, 4, 8... not sequential IDs) — always check role logic
-  against the actual bit values in `database/migrations/2025_02_25_155049_reseed_roles_table.php` and
-  similar, don't assume a numeric hierarchy.
+  migration `2025_02_20_155051_drop_users_table.php`); auth is on `Person`, not a `User` model (both map
+  to the same `people` table/row — `User` is what `Auth::user()` returns, `Person` is the general party
+  record; they share permission-resolution logic via the `HasPermissions` trait rather than a common
+  class). `people_roles` links a person to zero or more `roles`; `permissions` / `role_permissions` /
+  `person_permissions` implement the granular permission-key model described above. There is no
+  `role_bitpack` column — it was dropped when the permission-key model replaced it.
 - `MenuItem` — drives the main nav and supplies `getBreadcrumb($path)` used by page routes.
 
 ### Frontend: Inertia pages + a shared CRUD form framework
@@ -113,5 +116,11 @@ from a 5-digit item number for printed item labels.
 - Wrap multi-row writes (a transaction header plus its ledger/order lines) in `DB::transaction()`.
 - Don't use `env()` outside `config/*.php` files — read from `config()` instead, since `env()` returns
   null once config is cached in production.
-- New JSON endpoints go under the `prefix => 'json'` route groups in `routes/web.php`, at the role tier
-  matching their sensitivity (see the three tiers above).
+- New JSON endpoints go under the `prefix => 'json'` route groups in `routes/web.php`, gated by
+  `permission:<key>` matching the resource being accessed (see the permission-key model above). If a new
+  resource needs a new permission key, add it to `PermissionsSeeder`'s key list and default role bundles.
+- Granting a role or per-person permission override (`PeopleController`) requires the acting user to
+  already hold that permission themselves, and to hold every permission the target person currently has
+  — even for edits that don't touch permissions at all, and even for a pure revoke. This is deliberately
+  conservative (prevents using an unrelated edit as cover to touch someone you shouldn't be able to
+  touch) — see `PeopleController::assertNoEscalation()`.

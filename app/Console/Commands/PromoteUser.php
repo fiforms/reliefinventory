@@ -5,10 +5,9 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Hash;
-use App\Models\User;
 use App\Models\PeopleRoles;
+use App\Models\User;
+use Illuminate\Console\Command;
 
 class PromoteUser extends Command
 {
@@ -35,28 +34,29 @@ class PromoteUser extends Command
     {
         // Get email, either from the command line option or prompt the user
         $email = $this->option('email');
-        if (!$email) {
+        if (! $email) {
             $email = $this->ask('Please enter the user\'s email');
         }
 
         // Find the user by email
         $user = User::where('email', $email)->first();
-        if (!$user) {
+        if (! $user) {
             $this->error('No user found with this email.');
+
             return 1;
         }
-        
+
         try {
-            $user->role_bitpack = 32768;
             $user->email_verified_at = now();
             $user->save();
-            $role = new PeopleRoles();
+            $role = new PeopleRoles;
             $role->person_id = $user->id;
             $role->role_id = 15;
             $role->save();
-            $this->info('User ' . $user->first_name . ' ' . $user->last_name . ' successfully promoted to Super User');
+            $this->info('User '.$user->first_name.' '.$user->last_name.' successfully promoted to Super User');
         } catch (\Exception $e) {
-            $this->error('Error promoting user: ' . $e->getMessage());
+            $this->error('Error promoting user: '.$e->getMessage());
+
             return 1;
         }
 

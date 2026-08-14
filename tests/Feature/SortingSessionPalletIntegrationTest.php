@@ -1,10 +1,9 @@
 <?php
 
 use App\Models\Pallet;
-use App\Models\User;
 
 test('scanning a receiving pallet auto-advances it from received to sorting', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
     $pallet = Pallet::create(['kind' => 'R', 'status' => 'received', 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'received']);
 
@@ -18,7 +17,7 @@ test('scanning a receiving pallet auto-advances it from received to sorting', fu
 });
 
 test('re-scanning a pallet already in sorting does not create a duplicate history row', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
     $pallet = Pallet::create(['kind' => 'R', 'status' => 'received', 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'received']);
 
@@ -31,7 +30,7 @@ test('re-scanning a pallet already in sorting does not create a duplicate histor
 });
 
 test('scanning a non-receiving pallet tag is rejected with a clear message', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
     $pallet = Pallet::create(['kind' => 'W', 'status' => 'sealed', 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'sealed']);
 
@@ -43,7 +42,7 @@ test('scanning a non-receiving pallet tag is rejected with a clear message', fun
 });
 
 test('scanning an unknown pallet tag 404s', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
 
     $this->actingAs($user)->getJson('/json/sorting-sessions/pallet/R99999999')
         ->assertStatus(404);

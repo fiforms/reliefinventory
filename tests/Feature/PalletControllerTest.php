@@ -1,10 +1,9 @@
 <?php
 
 use App\Models\Pallet;
-use App\Models\User;
 
 test('creating pallets assigns plain sequential auto-increment ids with no collision logic', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-pallets');
 
     $first = $this->actingAs($user)->postJson('/json/pallets', ['kind' => 'R'])->assertCreated()->json('record');
     $second = $this->actingAs($user)->postJson('/json/pallets', ['kind' => 'R'])->assertCreated()->json('record');
@@ -14,7 +13,7 @@ test('creating pallets assigns plain sequential auto-increment ids with no colli
 });
 
 test('a new pallet starts at its kind\'s initial status and logs one history row', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-pallets');
 
     $record = $this->actingAs($user)->postJson('/json/pallets', ['kind' => 'W'])
         ->assertCreated()->json('record');
@@ -26,14 +25,14 @@ test('a new pallet starts at its kind\'s initial status and logs one history row
 });
 
 test('an unrecognized kind is rejected', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-pallets');
 
     $this->actingAs($user)->postJson('/json/pallets', ['kind' => 'X'])
         ->assertStatus(422);
 });
 
 test('updating status logs a new history row and does not corrupt the audit trail', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-pallets');
 
     $pallet = Pallet::create(['kind' => 'R', 'status' => 'received', 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'received']);
@@ -48,7 +47,7 @@ test('updating status logs a new history row and does not corrupt the audit trai
 });
 
 test('an invalid status for the pallet\'s kind is rejected without changing anything', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-pallets');
 
     $pallet = Pallet::create(['kind' => 'R', 'status' => 'received', 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'received']);
@@ -61,7 +60,7 @@ test('an invalid status for the pallet\'s kind is rejected without changing anyt
 });
 
 test('marking a pallet missing then restoring round-trips through the controller', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-pallets');
 
     $pallet = Pallet::create(['kind' => 'W', 'status' => 'open', 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'open']);

@@ -1,4 +1,5 @@
-<?php 
+<?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -16,10 +17,18 @@ class Role extends Model
     /**
      * Define the many-to-many relationship with people.
      */
-   
     public function people()
     {
         return $this->belongsToMany(Person::class, 'people_roles', 'role_id', 'person_id')
-                    ->withTimestamps();
+            ->withTimestamps();
+    }
+
+    /**
+     * This role's default permission bundle.
+     */
+    public function permissions()
+    {
+        return $this->belongsToMany(Permission::class, 'role_permissions', 'role_id', 'permission_id')
+            ->withTimestamps();
     }
 }

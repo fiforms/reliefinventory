@@ -1,4 +1,5 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -8,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class MenuItem extends Model
 {
-    protected $fillable = ['page_id', 'link_text', 'link_url', 'submenu_page_id', 'graphic_url', 'order'];
+    protected $fillable = ['page_id', 'link_text', 'link_url', 'submenu_page_id', 'graphic_url', 'order', 'permission_key'];
 
     /**
      * Get the page associated with the menu item.
@@ -25,37 +26,36 @@ class MenuItem extends Model
     {
         return $this->belongsTo(Page::class, 'submenu_page_id');
     }
-    
+
     /**
      * Recursively build the breadcrumb trail.
      *
-     * @param string $url
+     * @param  string  $url
      * @return array
      */
     public static function getBreadcrumb($url)
     {
 
         $menuItem = self::where('link_url', $url)->first();
-        
+
         $breadcrumbs = [[
             'href' => $menuItem->link_url,
-            'title' => $menuItem->link_text
+            'title' => $menuItem->link_text,
         ]];
-        
+
         $page = $menuItem->page;
-        
+
         while ($page && $page->id > 1) {
 
             array_unshift($breadcrumbs, [
-                'href' => '/dashboard#' . $page->hashtag,
-                'title' => $page->menu_title
+                'href' => '/dashboard#'.$page->hashtag,
+                'title' => $page->menu_title,
             ]);
-            
+
             $linkingmenu = self::where('link_url', '#'.$page->hashtag)->first();
             $page = $linkingmenu->page;
         }
-        
+
         return $breadcrumbs;
     }
 }
-

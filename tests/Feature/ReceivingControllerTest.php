@@ -2,10 +2,9 @@
 
 use App\Models\Pallet;
 use App\Models\Transaction;
-use App\Models\User;
 
 test('recording a donation intake creates it in received status', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-receiving');
 
     $record = $this->actingAs($user)->postJson('/json/receiving', [
         'category' => 'donation',
@@ -22,7 +21,7 @@ test('recording a donation intake creates it in received status', function () {
 });
 
 test('a non-donation category is logged but never enters the donation pipeline', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-receiving');
 
     $record = $this->actingAs($user)->postJson('/json/receiving', [
         'category' => 'equipment',
@@ -35,7 +34,7 @@ test('a non-donation category is logged but never enters the donation pipeline',
 });
 
 test('creating pallets for a donation links them and puts them in received status', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-receiving');
     $donation = Transaction::create([
         'type' => 'donation', 'category' => 'donation',
         'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
@@ -52,7 +51,7 @@ test('creating pallets for a donation links them and puts them in received statu
 });
 
 test('close-out fires only when exactly one pallet remains, already in sorting', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-receiving');
     $donation = Transaction::create([
         'type' => 'donation', 'category' => 'donation',
         'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
@@ -77,7 +76,7 @@ test('close-out fires only when exactly one pallet remains, already in sorting',
 });
 
 test('the Receiving dashboard lists open donations and close-out candidates separately', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-receiving');
     $donation = Transaction::create([
         'type' => 'donation', 'category' => 'donation',
         'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),

@@ -1,5 +1,10 @@
 <?php
 
+use App\Models\Permission;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -11,8 +16,8 @@
 |
 */
 
-pest()->extend(Tests\TestCase::class)
-    ->use(Illuminate\Foundation\Testing\RefreshDatabase::class)
+pest()->extend(TestCase::class)
+    ->use(RefreshDatabase::class)
     ->in('Feature');
 
 /*
@@ -41,7 +46,21 @@ expect()->extend('toBeOne', function () {
 |
 */
 
-function something()
+/**
+ * Create a user granted exactly the given permission keys, via a direct
+ * person_permissions override — deliberately not dependent on
+ * PermissionsSeeder/role_permissions having been seeded, so each test's
+ * access needs are self-contained and explicit rather than inherited from
+ * default role grants that could drift.
+ */
+function userWithPermissions(string ...$keys): User
 {
-    // ..
+    $user = User::factory()->create();
+
+    foreach ($keys as $key) {
+        $permission = Permission::firstOrCreate(['key' => $key], ['name' => $key]);
+        $user->person_permissions()->attach($permission->id, ['granted' => true]);
+    }
+
+    return $user;
 }

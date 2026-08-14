@@ -1,15 +1,17 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPermissions;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Person extends Model
 {
-    use HasFactory;
+    use HasFactory, HasPermissions;
 
     /**
      * The table associated with the model.
@@ -62,7 +64,6 @@ class Person extends Model
         'state',
         'zip',
         'comments',
-        'role_bitpack',
     ];
 
     /**
@@ -84,27 +85,12 @@ class Person extends Model
     {
         return $this->hasMany(OrderDonation::class, 'person_id');
     }
-    
-    
-    /**
-     * Define the many-to-many relationship with roles.
-     */
-    public function roles()
-    {
-        return $this->belongsToMany(Role::class, 'people_roles', 'person_id', 'role_id')
-        ->withTimestamps();
-    }
-    
+
     public function county()
     {
         return $this->belongsTo(County::class, 'county_id');
     }
-    
-    public function people_roles()
-    {
-        return $this->hasMany(PeopleRoles::class, 'person_id');
-    }
-    
+
     /**
      * Assign a role to a person.
      *
@@ -123,7 +109,7 @@ class Person extends Model
             }
         }
     }
-    
+
     /**
      * Remove a role from a person.
      *
@@ -142,7 +128,7 @@ class Person extends Model
             }
         }
     }
-    
+
     /**
      * Check if the person has a specific role.
      *
@@ -153,11 +139,9 @@ class Person extends Model
     {
         return $this->roles()->where('name', $roleName)->exists();
     }
-    
+
     /**
      * Sync roles (remove old and add new roles).
-     *
-     * @param  array  $roles
      */
     public function syncRoles(array $roles)
     {

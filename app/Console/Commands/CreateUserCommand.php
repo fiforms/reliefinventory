@@ -7,10 +7,10 @@
 
 namespace App\Console\Commands;
 
+use App\Models\PeopleRoles;
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
-use App\Models\User;
-use App\Models\PeopleRoles;
 
 class CreateUserCommand extends Command
 {
@@ -41,12 +41,12 @@ class CreateUserCommand extends Command
         if ($firstname === null) {
             $firstname = $this->ask('Please enter your First Name.');
         }
-        
+
         $lastname = $this->option('lastname');
         if ($lastname === null) {
             $lastname = $this->ask('Please enter your Last Name.');
         }
-        
+
         // Enter email, if not present via command line option
         $email = $this->option('email');
         if ($email === null) {
@@ -57,32 +57,32 @@ class CreateUserCommand extends Command
         $password = $this->secret('Please enter a new password.');
         $password_confirmation = $this->secret('Please confirm the password');
 
-	if($password != $password_confirmation) {
-		$this->error('Passwords Do Not Match');
-		return;
-	}
+        if ($password != $password_confirmation) {
+            $this->error('Passwords Do Not Match');
+
+            return;
+        }
 
         try {
-	    $user = new User();
-	    $user->password = Hash::make($password);
-	    $user->email = $email;
-	    $user->first_name = $firstname;
-	    $user->last_name = $lastname;
-	    $user->email_verified_at = now();
-	    $user->role_bitpack = 32768;
-	    $user->save();
-	    $role = new PeopleRoles();
-	    $role->person_id = $user->id;
-	    $role->role_id = 15;
-	    $role->save();
-        }
-        catch (\Exception $e) {
+            $user = new User;
+            $user->password = Hash::make($password);
+            $user->email = $email;
+            $user->first_name = $firstname;
+            $user->last_name = $lastname;
+            $user->email_verified_at = now();
+            $user->save();
+            $role = new PeopleRoles;
+            $role->person_id = $user->id;
+            $role->role_id = 15;
+            $role->save();
+        } catch (\Exception $e) {
             $this->error($e->getMessage());
+
             return;
         }
 
         // Success message
         $this->info('User created successfully!');
-        $this->info('New user id: ' . $user->id);
+        $this->info('New user id: '.$user->id);
     }
 }

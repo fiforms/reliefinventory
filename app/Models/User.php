@@ -1,30 +1,30 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Models;
 
+use App\Models\Concerns\HasPermissions;
+use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
-use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\Casts\Attribute;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
-    /** @use HasFactory<\Database\Factories\UserFactory> */
-    use HasFactory, Notifiable;
+    /** @use HasFactory<UserFactory> */
+    use HasFactory, HasPermissions, Notifiable;
 
     /**
      * The attributes that are mass assignable.
      *
      * @var array<int, string>
      */
-    
     protected $table = 'people';
-    
-    
+
     protected $fillable = [
         'first_name',
         'last_name',
@@ -59,7 +59,7 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'password' => 'hashed',        ];
     }
-    
+
     /**
      * The "booted" method of the model.
      * This applies a global scope to filter out users where email is NULL.
@@ -70,5 +70,4 @@ class User extends Authenticatable implements MustVerifyEmail
             $builder->whereNotNull('email');
         });
     }
-    
 }

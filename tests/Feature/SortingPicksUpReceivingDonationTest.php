@@ -1,10 +1,9 @@
 <?php
 
 use App\Models\Transaction;
-use App\Models\User;
 
 test('starting a session with no donation_id still creates a fresh one (untagged/walk-in fallback)', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
 
     $record = $this->actingAs($user)->postJson('/json/sorting-sessions')
         ->assertCreated()->json('record');
@@ -13,7 +12,7 @@ test('starting a session with no donation_id still creates a fresh one (untagged
 });
 
 test('starting a session with a donation_id picks up the existing Receiving-created donation', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
     $donation = Transaction::create([
         'type' => 'donation', 'category' => 'donation',
         'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
@@ -28,7 +27,7 @@ test('starting a session with a donation_id picks up the existing Receiving-crea
 });
 
 test('received donations show up as receivable, not mixed into open or recent', function () {
-    $user = User::factory()->create(['role_bitpack' => 4]);
+    $user = userWithPermissions('manage-sorting');
     Transaction::create([
         'type' => 'donation', 'category' => 'donation',
         'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
