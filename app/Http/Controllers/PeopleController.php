@@ -23,6 +23,7 @@ class PeopleController extends Controller
         'city' => 'nullable|string|max:255',
         'state' => 'nullable|string|max:2',
         'zip' => 'nullable|string|max:10',
+        'county_id' => 'nullable|exists:counties,id',
         'comments' => 'nullable|string',
         'people_roles' => 'nullable|array',
         'people_roles.*.role_id' => 'required|exists:roles,id',

@@ -63,6 +63,7 @@ class Person extends Model
         'city',
         'state',
         'zip',
+        'county_id',
         'comments',
     ];
 

@@ -23,6 +23,15 @@ use Illuminate\Database\Seeder;
  * need). Administrator gets everything (matching role:32768 + role:4
  * today, since an admin always passed both). Customer/Donor get nothing
  * (they never corresponded to a route gate).
+ *
+ * view-dashboard is the first actual Volunteer/Team Leader split: the
+ * internal Warehouse Dashboard is meant for management, not general
+ * volunteer access, so it's granted to Team Leader (+ Administrator) on
+ * top of the shared volunteer tier rather than folded into it.
+ * view-sitrep (the external Situation Report) is intentionally granted to
+ * nobody but Administrator by default — it's meant for lightweight
+ * external stakeholder accounts (FEMA/state liaisons) granted individually
+ * via the existing per-person permission override, not a role bundle.
  */
 class PermissionsSeeder extends Seeder
 {
@@ -58,6 +67,8 @@ class PermissionsSeeder extends Seeder
         'manage-counties' => 'Create, update, and delete counties',
         'admin-system' => 'System administration: software updates, backups, and the backup schedule',
         'view-reports' => 'View inventory and operational reports',
+        'view-dashboard' => 'View the internal warehouse activity dashboard (full detail)',
+        'view-sitrep' => 'View and export the external Situation Report (restricted, no names/PII)',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -66,6 +77,10 @@ class PermissionsSeeder extends Seeder
         'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
         'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
         'manage-roles', 'manage-counties', 'view-reports',
+    ];
+
+    private const TEAM_LEADER_EXTRA_KEYS = [
+        'view-dashboard',
     ];
 
     public function run(): void
@@ -79,11 +94,13 @@ class PermissionsSeeder extends Seeder
         $administrator = Role::where('name', 'Administrator')->first();
 
         $volunteerTier = $permissions->only(self::VOLUNTEER_TIER_KEYS)->pluck('id');
+        $teamLeaderTier = $volunteerTier->merge($permissions->only(self::TEAM_LEADER_EXTRA_KEYS)->pluck('id'));
 
-        foreach ([$volunteer, $teamLeader] as $role) {
-            if ($role) {
-                $role->permissions()->syncWithoutDetaching($volunteerTier);
-            }
+        if ($volunteer) {
+            $volunteer->permissions()->syncWithoutDetaching($volunteerTier);
+        }
+        if ($teamLeader) {
+            $teamLeader->permissions()->syncWithoutDetaching($teamLeaderTier);
         }
 
         if ($administrator) {

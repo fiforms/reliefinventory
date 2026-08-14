@@ -104,6 +104,20 @@ Route::get('/reports/inventory', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/inventory')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+// Internal warehouse dashboard: full-detail view for management/admins.
+Route::get('/reports/dashboard', function () {
+    return Inertia::render('WarehouseDashboard',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/dashboard')]);
+})->middleware(['auth', 'permission:view-dashboard']);
+
+// External Situation Report: restricted subset of the same data, meant to
+// be shared outside the organization (FEMA/state liaisons) — see
+// SitrepController for what's deliberately left out.
+Route::get('/reports/sitrep', function () {
+    return Inertia::render('SituationReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/sitrep')]);
+})->middleware(['auth', 'permission:view-sitrep']);
+
 // Roadmap pages linked from the main menu but not yet built.
 // Renders a "coming soon" placeholder instead of 404ing.
 foreach ([
@@ -239,6 +253,21 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-it
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-reports']], function () {
     Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
 });
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-dashboard']], function () {
+    Route::get('/dashboard', [DashboardController::class, 'index']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-sitrep']], function () {
+    Route::get('/sitrep', [SitrepController::class, 'index']);
+});
+
+// PDF export of the Situation Report — separate route (not under /json)
+// since it returns a binary download, matching PalletReportController's
+// pattern for the other PDF endpoints in this app.
+Route::get('/report/sitrep.pdf', [SitrepController::class, 'pdf'])
+    ->name('report.sitrep')
+    ->middleware(['auth', 'permission:view-sitrep']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {
     Route::get('/packagetypes', [PackageTypeController::class, 'index']);
