@@ -1,23 +1,26 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use App\Models\Location;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class LocationController extends Controller
 {
+    // Only code, use, and status are required; the physical coordinates and
+    // pull sequence are optional detail.
     private const validation = [
-        'PullSequence' => 'required|integer',
-        'Route' => 'required|string|max:255',
-        'Block' => 'required|string|max:255',
-        'Aisle' => 'required|string|max:255',
-        'Lane' => 'required|string|max:255',
-        'Stack' => 'required|string|max:255',
-        'use_id' => 'nullable|exists:uses,id',
+        'PullSequence' => 'nullable|integer',
+        'Route' => 'nullable|string|max:255',
+        'Block' => 'nullable|string|max:255',
+        'Aisle' => 'nullable|string|max:255',
+        'Lane' => 'nullable|string|max:255',
+        'Stack' => 'nullable|string|max:255',
+        'use_id' => 'required|exists:uses,id',
         'code' => 'required|string|unique:locations,code',
         'status' => 'required|in:active,archived',
     ];
@@ -25,7 +28,7 @@ class LocationController extends Controller
     /**
      * Retrieve all locations.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index()
     {
@@ -41,20 +44,19 @@ class LocationController extends Controller
                 'use_id' => null,
                 'code' => '',
                 'status' => 'active',
-            ]
+            ],
         ];
 
         return response()->json([
             'records' => $locations,
-            'templates' => $templates
+            'templates' => $templates,
         ]);
     }
 
     /**
      * Store a new location.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -63,38 +65,37 @@ class LocationController extends Controller
 
         return response()->json([
             'message' => 'Location created successfully.',
-            'record' => $location
+            'record' => $location,
         ], 201);
     }
 
     /**
      * Update an existing location.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
         $location = Location::findOrFail($id);
 
         $data = $request->validate(self::validation + [
-            'code' => "required|string|unique:locations,code,$id"
+            'code' => "required|string|unique:locations,code,$id",
         ]);
 
         $location->update($data);
 
         return response()->json([
             'message' => 'Location updated successfully.',
-            'record' => $location
+            'record' => $location,
         ], 200);
     }
 
     /**
      * Delete an existing location.
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {
@@ -104,12 +105,12 @@ class LocationController extends Controller
 
             return response()->json([
                 'success' => true,
-                'message' => 'Location deleted successfully.'
+                'message' => 'Location deleted successfully.',
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting location: ' . $e->getMessage()
+                'message' => 'Error deleting location: '.$e->getMessage(),
             ], 500);
         }
     }

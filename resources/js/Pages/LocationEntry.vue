@@ -45,7 +45,7 @@ defineProps({
       <template #default="{ record, editing }">
         <div class="ri_formtable">
           <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Code:</div>
+            <div class="ri_fieldlabel">Code: *</div>
             <TextInput v-model="record.code" :enabled="editing" required />
           </div>
 
@@ -75,8 +75,8 @@ defineProps({
           </div>
 
           <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Use:</div>
-            <ComboBox 
+            <div class="ri_fieldlabel">Use: *</div>
+            <ComboBox
               v-model:keyValue="record.use_id"
               v-model:updates="record.use"
               optionsource="/json/uses"
@@ -92,7 +92,7 @@ defineProps({
 
 
           <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Status:</div>
+            <div class="ri_fieldlabel">Status: *</div>
             <ComboBox 
               v-model="record.status"
               :options="[{ id: 'active', name: 'Active' }, { id: 'archived', name: 'Archived' }]"
