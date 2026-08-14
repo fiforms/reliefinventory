@@ -20,10 +20,11 @@ use Illuminate\Support\Facades\DB;
 class ReceivingController extends Controller
 {
     /**
-     * Open donations (received or sorting) for the Receiving dashboard,
-     * plus daily close-out candidates: a donation down to exactly one
-     * non-empty pallet, and that pallet already in sorting — a state
-     * condition, not a timer.
+     * Open donations (received or sorting) for the Receiving dashboard.
+     * Each record carries is_close_out_candidate (a donation down to
+     * exactly one non-empty pallet, already in sorting — a state
+     * condition, not a timer) so the list/detail RIForm view can surface
+     * it without a second fetch.
      */
     public function index()
     {
@@ -33,15 +34,10 @@ class ReceivingController extends Controller
             ->orderBy('id', 'desc')
             ->get();
 
-        $closeOutCandidates = $open->filter(function (Transaction $donation) {
-            $notEmpty = $donation->pallets->where('status', '!=', 'empty');
-
-            return $notEmpty->count() === 1 && $notEmpty->first()->status === 'sorting';
-        })->values();
+        $open->each(fn (Transaction $donation) => $donation->is_close_out_candidate = $this->isCloseOutCandidate($donation));
 
         return response()->json([
             'records' => $open,
-            'close_out_candidates' => $closeOutCandidates,
             'templates' => [
                 '_default' => [
                     'type' => 'donation',
@@ -54,6 +50,13 @@ class ReceivingController extends Controller
                 ],
             ],
         ]);
+    }
+
+    private function isCloseOutCandidate(Transaction $donation): bool
+    {
+        $notEmpty = $donation->pallets->where('status', '!=', 'empty');
+
+        return $notEmpty->count() === 1 && $notEmpty->first()->status === 'sorting';
     }
 
     /**
@@ -82,6 +85,58 @@ class ReceivingController extends Controller
         ]));
 
         return response()->json(['record' => $donation->load(['person', 'status'])], 201);
+    }
+
+    /**
+     * Edit intake details after the fact (donor, counts, manifest text,
+     * etc). Category can't change once pallets exist — switching a
+     * donation-category record away from "donation" (or vice versa) after
+     * pallets are already tied to it would desync the record from the
+     * pipeline it's actually in.
+     */
+    public function update(Request $request, $id)
+    {
+        $donation = Transaction::where('type', 'donation')->with('pallets')->findOrFail($id);
+
+        $data = $request->validate([
+            'category' => 'required|in:donation,equipment,supplies,other',
+            'person_id' => 'nullable|exists:people,id',
+            'container_count' => 'nullable|integer|min:0',
+            'manifest' => 'nullable|string',
+            'manifest_weight_lbs' => 'nullable|numeric|min:0',
+            'comments' => 'nullable|string',
+        ]);
+
+        if ($data['category'] !== $donation->category && $donation->pallets->isNotEmpty()) {
+            return response()->json([
+                'message' => 'Category can\'t be changed once pallets have been created for this intake.',
+            ], 422);
+        }
+
+        $donation->update($data);
+
+        return response()->json(['record' => $donation->fresh(['person', 'status', 'pallets'])]);
+    }
+
+    /**
+     * Remove an intake record entered in error. Blocked once pallets exist
+     * — deleting would just null out their orderdonation_id (FK is
+     * nullOnDelete) and silently orphan them from their donation instead
+     * of actually cleaning anything up.
+     */
+    public function destroy($id)
+    {
+        $donation = Transaction::where('type', 'donation')->with('pallets')->findOrFail($id);
+
+        if ($donation->pallets->isNotEmpty()) {
+            return response()->json([
+                'message' => 'This intake already has pallets created for it and can\'t be deleted.',
+            ], 422);
+        }
+
+        $donation->delete();
+
+        return response()->json(['message' => 'Deleted.']);
     }
 
     /**
@@ -123,16 +178,18 @@ class ReceivingController extends Controller
     public function closeOut($id)
     {
         $donation = Transaction::where('type', 'donation')->with('pallets')->findOrFail($id);
-        $notEmpty = $donation->pallets->where('status', '!=', 'empty');
 
-        if ($notEmpty->count() !== 1 || $notEmpty->first()->status !== 'sorting') {
+        if (! $this->isCloseOutCandidate($donation)) {
             return response()->json([
                 'message' => 'This donation is not a close-out candidate (must have exactly one non-empty pallet, already in sorting).',
             ], 422);
         }
 
-        $notEmpty->first()->transitionTo('empty', null, 'Closed out via daily close-out review.');
+        $donation->pallets->where('status', '!=', 'empty')->first()->transitionTo('empty', null, 'Closed out via daily close-out review.');
 
-        return response()->json(['record' => $donation->fresh(['pallets', 'status'])]);
+        $fresh = $donation->fresh(['pallets', 'status']);
+        $fresh->is_close_out_candidate = $this->isCloseOutCandidate($fresh);
+
+        return response()->json(['record' => $fresh]);
     }
 }

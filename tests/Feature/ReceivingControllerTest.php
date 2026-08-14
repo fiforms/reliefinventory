@@ -75,7 +75,7 @@ test('close-out fires only when exactly one pallet remains, already in sorting',
         ->and($donation->fresh()->status->name)->toBe(Transaction::STATUS_COMPLETE);
 });
 
-test('the Receiving dashboard lists open donations and close-out candidates separately', function () {
+test('the Receiving dashboard flags close-out candidates on each record', function () {
     $user = userWithPermissions('manage-receiving');
     $donation = Transaction::create([
         'type' => 'donation', 'category' => 'donation',
@@ -87,7 +87,70 @@ test('the Receiving dashboard lists open donations and close-out candidates sepa
     $p1->transitionTo('sorting');
 
     $response = $this->actingAs($user)->getJson('/json/receiving')->assertOk();
+    $records = $response->json('records');
 
-    expect($response->json('records'))->toHaveCount(1)
-        ->and($response->json('close_out_candidates'))->toHaveCount(1);
+    expect($records)->toHaveCount(1)
+        ->and($records[0]['is_close_out_candidate'])->toBeTrue();
+});
+
+test('updating an intake edits its fields', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+        'manifest' => 'Original manifest text.',
+    ]);
+
+    $this->actingAs($user)->putJson('/json/receiving/'.$donation->id, [
+        'category' => 'donation',
+        'container_count' => 12,
+        'manifest' => 'Corrected: actually 12 pallets.',
+    ])->assertOk();
+
+    expect($donation->fresh()->manifest)->toBe('Corrected: actually 12 pallets.')
+        ->and($donation->fresh()->container_count)->toBe(12);
+});
+
+test('category cannot change once pallets exist for the intake', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+    Pallet::create(['kind' => 'R', 'status' => 'received', 'orderdonation_id' => $donation->id, 'datepacked' => now()->toDateString()]);
+
+    $this->actingAs($user)->putJson('/json/receiving/'.$donation->id, [
+        'category' => 'equipment',
+    ])->assertStatus(422);
+
+    expect($donation->fresh()->category)->toBe('donation');
+});
+
+test('an intake with no pallets can be deleted', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $this->actingAs($user)->deleteJson('/json/receiving/'.$donation->id)->assertOk();
+
+    expect(Transaction::find($donation->id))->toBeNull();
+});
+
+test('an intake with pallets already created cannot be deleted', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+    Pallet::create(['kind' => 'R', 'status' => 'received', 'orderdonation_id' => $donation->id, 'datepacked' => now()->toDateString()]);
+
+    $this->actingAs($user)->deleteJson('/json/receiving/'.$donation->id)->assertStatus(422);
+
+    expect(Transaction::find($donation->id))->not->toBeNull();
 });

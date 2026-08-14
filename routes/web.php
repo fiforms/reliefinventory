@@ -232,6 +232,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-so
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-receiving']], function () {
     Route::get('/receiving', [ReceivingController::class, 'index']);
     Route::post('/receiving', [ReceivingController::class, 'store']);
+    Route::put('/receiving/{id}', [ReceivingController::class, 'update']);
+    Route::delete('/receiving/{id}', [ReceivingController::class, 'destroy']);
     Route::post('/receiving/{id}/pallets', [ReceivingController::class, 'createPallets']);
     Route::post('/receiving/{id}/close-out', [ReceivingController::class, 'closeOut']);
 });
