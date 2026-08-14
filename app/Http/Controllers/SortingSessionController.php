@@ -195,7 +195,7 @@ class SortingSessionController extends Controller
     public function pallet(string $tag)
     {
         $id = self::palletIdFromTag($tag);
-        $pallet = $id ? Pallet::with('location')->find($id) : null;
+        $pallet = $id ? Pallet::with(['location', 'contentItem'])->find($id) : null;
 
         if (! $pallet) {
             return response()->json([

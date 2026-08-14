@@ -282,6 +282,14 @@ export default {
 			// server-side), so the R prefix is always correct here.
 			return 'R' + String(id).padStart(8, '0');
 		},
+		// Contents recorded at Receiving (item tag for single-item pallets,
+		// or a free-text description like "Mixed pallet").
+		palletContents(pallet) {
+			if (pallet.content_item) {
+				return pallet.content_item.name || pallet.content_item.description;
+			}
+			return pallet.content_description || null;
+		},
 
 		// ---------- line entry (autosaved per line) ----------
 		itemChosen() {
@@ -646,6 +654,7 @@ export default {
 					<span class="sort_pallet_label">
 						Sorting from pallet <strong>{{ palletTagStr(pallet.id) }}</strong>
 						(packed {{ pallet.datepacked }}<span v-if="pallet.location">, at {{ pallet.location.code }}</span>)
+						<span v-if="palletContents(pallet)" class="sort_pallet_contents">&mdash; {{ palletContents(pallet) }}</span>
 					</span>
 					<button @click="emptyingPallet = true" class="ri_defaultbutton">Pallet Empty</button>
 					<button @click="clearPallet" class="ri_formbutton">Change Pallet</button>
@@ -896,6 +905,10 @@ export default {
 .sort_pallet_hint {
 	font-size: 0.8rem;
 	color: #92400e;
+}
+.sort_pallet_contents {
+	font-weight: bold;
+	color: #14532d;
 }
 .sort_entry {
 	display: flex;

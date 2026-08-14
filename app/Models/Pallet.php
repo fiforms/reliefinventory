@@ -31,6 +31,8 @@ class Pallet extends Model
         'destination_person_id',
         'truck_id',
         'orderdonation_id',
+        'content_description',
+        'content_item_id',
         'location_id',
         'datepacked',
         'earliest_expiry',
@@ -55,6 +57,13 @@ class Pallet extends Model
     public function donor()
     {
         return $this->belongsTo(Person::class, 'donor_person_id');
+    }
+
+    // Single-item pallets: the one product this whole pallet consists of,
+    // tagged at Receiving (expedited-sorting prep).
+    public function contentItem()
+    {
+        return $this->belongsTo(Item::class, 'content_item_id');
     }
 
     public function destination()

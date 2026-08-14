@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pallet Report</title>
+    <title>Pallet Labels</title>
     <style>
         body {
             text-align: center;
@@ -28,9 +28,19 @@
             align-items: center;
             height: 180px;
         }
+        .label-page {
+            page-break-after: always;
+        }
+        .label-page:last-child {
+            page-break-after: auto;
+        }
     </style>
 </head>
 <body>
-    @include('reports.partials.pallet_label', ['label' => $label])
+@foreach ($labels as $label)
+    <div class="label-page">
+        @include('reports.partials.pallet_label', ['label' => $label])
+    </div>
+@endforeach
 </body>
 </html>

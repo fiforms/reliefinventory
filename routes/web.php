@@ -92,6 +92,13 @@ Route::get('/report/pallet/{id}',
     ->name('report.pallet')
     ->middleware(['auth', 'permission:manage-pallets']);
 
+// Batch label print for a whole donation, used from the Receiving page —
+// gated on manage-receiving to match the page that offers it.
+Route::get('/report/pallets/donation/{id}',
+    [PalletReportController::class, 'generateDonationLabels'])
+    ->name('report.pallets.donation')
+    ->middleware(['auth', 'permission:manage-receiving']);
+
 // Roadmap pages linked from the main menu but not yet built.
 // Renders a "coming soon" placeholder instead of 404ing.
 foreach ([

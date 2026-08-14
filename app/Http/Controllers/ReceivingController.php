@@ -30,14 +30,25 @@ class ReceivingController extends Controller
     {
         $open = Transaction::where('type', 'donation')
             ->whereHas('status', fn ($q) => $q->whereIn('name', [Transaction::STATUS_RECEIVED, Transaction::STATUS_SORTING]))
-            ->with(['person', 'enteredBy', 'status', 'pallets'])
+            ->with(['person', 'enteredBy', 'status', 'pallets.contentItem'])
             ->orderBy('id', 'desc')
             ->get();
 
-        $open->each(fn (Transaction $donation) => $donation->is_close_out_candidate = $this->isCloseOutCandidate($donation));
+        // Non-donation intakes (equipment/supplies/other, status Logged) used
+        // to vanish from this list the moment they were saved; keep the most
+        // recent ones visible so the record is findable and editable.
+        $logged = Transaction::where('type', 'donation')
+            ->whereHas('status', fn ($q) => $q->where('name', Transaction::STATUS_LOGGED))
+            ->with(['person', 'enteredBy', 'status', 'pallets.contentItem'])
+            ->orderBy('id', 'desc')
+            ->limit(25)
+            ->get();
+
+        $records = $open->concat($logged)->sortByDesc('id')->values();
+        $records->each(fn (Transaction $donation) => $donation->is_close_out_candidate = $this->isCloseOutCandidate($donation));
 
         return response()->json([
-            'records' => $open,
+            'records' => $records,
             'templates' => [
                 '_default' => [
                     'type' => 'donation',
@@ -113,9 +124,19 @@ class ReceivingController extends Controller
             ], 422);
         }
 
+        // Recategorizing (only possible pre-pallets, per the guard above)
+        // must also re-derive the lifecycle status — an "other" intake edited
+        // to "donation" has to enter the sorting pipeline as Received, and a
+        // "donation" edited away must leave it as Logged.
+        if ($data['category'] !== $donation->category) {
+            $data['status_id'] = Transaction::statusId(
+                $data['category'] === 'donation' ? Transaction::STATUS_RECEIVED : Transaction::STATUS_LOGGED
+            );
+        }
+
         $donation->update($data);
 
-        return response()->json(['record' => $donation->fresh(['person', 'status', 'pallets'])]);
+        return response()->json(['record' => $donation->fresh(['person', 'status', 'pallets.contentItem'])]);
     }
 
     /**
@@ -148,7 +169,15 @@ class ReceivingController extends Controller
     public function createPallets(Request $request, $id)
     {
         $donation = Transaction::where('type', 'donation')->findOrFail($id);
-        $data = $request->validate(['count' => 'required|integer|min:1|max:200']);
+        $data = $request->validate([
+            'count' => 'required|integer|min:1|max:200',
+            // Optional per-pallet contents: a description ("Mixed pallet")
+            // and/or, for single-item pallets, the item itself — tagging the
+            // item is what enables expedited sorting later (count and put
+            // away instead of line-by-line sorting).
+            'content_description' => 'nullable|string|max:255',
+            'content_item_id' => 'nullable|exists:items,id',
+        ]);
 
         $pallets = DB::transaction(function () use ($donation, $data) {
             $created = [];
@@ -159,10 +188,12 @@ class ReceivingController extends Controller
                     'container_type' => 'pallet',
                     'donor_person_id' => $donation->person_id,
                     'orderdonation_id' => $donation->id,
+                    'content_description' => $data['content_description'] ?? null,
+                    'content_item_id' => $data['content_item_id'] ?? null,
                     'datepacked' => now()->toDateString(),
                 ]);
                 $pallet->statuses()->create(['status' => 'received']);
-                $created[] = $pallet;
+                $created[] = $pallet->load('contentItem');
             }
 
             return $created;

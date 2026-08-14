@@ -50,7 +50,7 @@ test('marking a pallet empty transitions it and records the sorter observation a
     $pallet->refresh();
     expect($pallet->status)->toBe('empty')
         ->and($pallet->condition)->toBe('pending') // QC stays with a supervisor
-        ->and($pallet->statuses()->latest('id')->first()->notes)->toBe('Sorter: pallet looks OK');
+        ->and($pallet->statuses()->reorder('id', 'desc')->first()->notes)->toBe('Sorter: pallet looks OK');
 });
 
 test('a damaged observation is noted but condition still goes to pending, not condemned', function () {
@@ -62,7 +62,7 @@ test('a damaged observation is noted but condition still goes to pending, not co
 
     $pallet->refresh();
     expect($pallet->condition)->toBe('pending')
-        ->and($pallet->statuses()->latest('id')->first()->notes)->toBe('Sorter: set aside - possible damage');
+        ->and($pallet->statuses()->reorder('id', 'desc')->first()->notes)->toBe('Sorter: set aside - possible damage');
 });
 
 test('emptying the last pallet completes the donation via the rollup', function () {

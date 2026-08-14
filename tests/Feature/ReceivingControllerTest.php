@@ -1,7 +1,9 @@
 <?php
 
+use App\Models\Item;
 use App\Models\Pallet;
 use App\Models\Transaction;
+use Illuminate\Support\Facades\DB;
 
 test('recording a donation intake creates it in received status', function () {
     $user = userWithPermissions('manage-receiving');
@@ -153,4 +155,91 @@ test('an intake with pallets already created cannot be deleted', function () {
     $this->actingAs($user)->deleteJson('/json/receiving/'.$donation->id)->assertStatus(422);
 
     expect(Transaction::find($donation->id))->not->toBeNull();
+});
+
+test('pallet lines can carry a content description applied to each created pallet', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $records = $this->actingAs($user)
+        ->postJson('/json/receiving/'.$donation->id.'/pallets', [
+            'count' => 4,
+            'content_description' => 'Mixed pallet',
+        ])
+        ->assertCreated()->json('records');
+
+    expect($records)->toHaveCount(4)
+        ->and(collect($records)->pluck('content_description')->unique()->all())->toBe(['Mixed pallet'])
+        ->and(Pallet::where('orderdonation_id', $donation->id)->where('content_description', 'Mixed pallet')->count())->toBe(4);
+});
+
+test('single-item pallets can be tagged with their item at receiving (expedited-sorting prep)', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+    // packagetypes has no timestamp columns, so insert below Eloquent
+    $packageTypeId = DB::table('packagetypes')
+        ->insertGetId(['plural' => 'Cases', 'singular' => 'Case']);
+    $item = Item::create([
+        'packagetypes_id' => $packageTypeId,
+        'pluscode' => '0001',
+        'description' => 'Ketchup, 24ct case',
+        'active' => true,
+    ]);
+
+    $records = $this->actingAs($user)
+        ->postJson('/json/receiving/'.$donation->id.'/pallets', [
+            'count' => 2,
+            'content_item_id' => $item->id,
+        ])
+        ->assertCreated()->json('records');
+
+    expect(collect($records)->pluck('content_item_id')->unique()->all())->toBe([$item->id])
+        ->and($records[0]['content_item']['description'])->toBe('Ketchup, 24ct case');
+});
+
+test('recategorizing an intake re-derives its lifecycle status', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    // other -> donation must enter the sorting pipeline as Received
+    $logged = Transaction::create([
+        'type' => 'donation', 'category' => 'other',
+        'status_id' => Transaction::statusId(Transaction::STATUS_LOGGED),
+        'order_date' => now()->toDateString(),
+    ]);
+    $this->actingAs($user)
+        ->putJson('/json/receiving/'.$logged->id, ['category' => 'donation'])
+        ->assertOk();
+    expect($logged->fresh()->status->name)->toBe(Transaction::STATUS_RECEIVED);
+
+    // donation -> supplies must leave the pipeline as Logged
+    $received = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+    $this->actingAs($user)
+        ->putJson('/json/receiving/'.$received->id, ['category' => 'supplies'])
+        ->assertOk();
+    expect($received->fresh()->status->name)->toBe(Transaction::STATUS_LOGGED);
+});
+
+test('logged non-donation intakes stay visible in the receiving list', function () {
+    $user = userWithPermissions('manage-receiving');
+    Transaction::create([
+        'type' => 'donation', 'category' => 'equipment',
+        'status_id' => Transaction::statusId(Transaction::STATUS_LOGGED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $records = $this->actingAs($user)->getJson('/json/receiving')->assertOk()->json('records');
+
+    expect(collect($records)->pluck('category'))->toContain('equipment');
 });

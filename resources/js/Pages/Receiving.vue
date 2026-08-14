@@ -133,24 +133,62 @@ const categoryOptions = [
 
 				<template v-if="record.id && record.category === 'donation'">
 					<h3 class="recv_subhead">Pallets</h3>
-					<p>{{ (record.pallets || []).length }} pallet(s) created for this intake.</p>
-					<div class="ri_fieldset">
-						<div class="ri_fieldlabel">Create Pallets:</div>
+					<p class="recv_hint">
+						Describe each pallet on the load as it's tagged (optional but encouraged) —
+						e.g. quantity 4, "Mixed pallet". If a whole pallet is one product (a pallet of
+						ketchup), tag it with the item: single-item pallets can be expedited at sorting
+						(count the cases and put away) instead of sorted line by line.
+					</p>
+					<div class="recv_palletline">
 						<input
 							v-model.number="palletCount"
 							type="number"
 							min="1"
-							placeholder="# to create"
+							placeholder="Qty"
 							class="recv_pallet_count"
 						/>
+						<input
+							v-model="palletDescription"
+							class="ri_forminput recv_pallet_desc"
+							placeholder="What's on these pallets? (e.g. Mixed pallet)"
+						/>
+						<div class="recv_pallet_item">
+							<SearchSelect
+								ref="palletItemSelect"
+								v-model="palletItemId"
+								optionsource="/json/items"
+								display="name"
+								:searchfields="['name', 'upc', 'description']"
+								placeholder="All one item? Tag it (optional)..."
+							/>
+						</div>
 						<button @click="createPallets(record)" :disabled="palletSaving" class="ri_formbutton">
-							Create Pallets
-						</button>
-						<button v-if="(record.pallets || []).length" @click="printPalletLabels(record)" class="ri_formbutton">
-							Print Labels
+							Add Pallet(s)
 						</button>
 					</div>
 					<p v-if="palletError" class="ri_error">{{ palletError }}</p>
+
+					<template v-if="(record.pallets || []).length">
+						<div class="recv_tablewrap">
+							<table class="ri_datatable" border="1">
+								<thead>
+									<tr><th>Tag</th><th>Contents</th><th>Status</th><th></th></tr>
+								</thead>
+								<tbody>
+									<tr v-for="pallet in record.pallets" :key="pallet.id">
+										<td class="recv_mono">{{ pallet.tag }}</td>
+										<td>{{ palletContents(pallet) }}</td>
+										<td>{{ pallet.status }}</td>
+										<td><a :href="'/report/pallet/' + pallet.id" target="_blank">Label</a></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<button @click="printAllLabels(record)" class="ri_formbutton">
+							Print All Labels ({{ (record.pallets || []).length }})
+						</button>
+					</template>
+					<p v-else>No pallets created for this intake yet.</p>
 				</template>
 
 				<template v-if="record.id && record.is_close_out_candidate">
@@ -179,6 +217,8 @@ export default {
 			donorError: null,
 
 			palletCount: null,
+			palletDescription: '',
+			palletItemId: null,
 			palletSaving: false,
 			palletError: null,
 
@@ -224,14 +264,29 @@ export default {
 		},
 
 		// ---------- pallets for a donation ----------
+		palletContents(pallet) {
+			if (pallet.content_item) {
+				return pallet.content_item.name || pallet.content_item.description;
+			}
+			return pallet.content_description || '(not described)';
+		},
 		async createPallets(record) {
-			if (!this.palletCount || this.palletCount < 1) return;
+			if (!this.palletCount || this.palletCount < 1) {
+				this.palletError = 'Enter how many pallets to add.';
+				return;
+			}
 			this.palletSaving = true;
 			this.palletError = null;
 			try {
-				const response = await axios.post('/json/receiving/' + record.id + '/pallets', { count: this.palletCount });
+				const response = await axios.post('/json/receiving/' + record.id + '/pallets', {
+					count: this.palletCount,
+					content_description: this.palletDescription.trim() || null,
+					content_item_id: this.palletItemId,
+				});
 				record.pallets = [...(record.pallets || []), ...response.data.records];
 				this.palletCount = null;
+				this.palletDescription = '';
+				this.palletItemId = null;
 				this.$refs.riform?.fetchRecords();
 			} catch (error) {
 				this.palletError = error.response?.data?.message || 'Could not create pallets.';
@@ -239,10 +294,10 @@ export default {
 				this.palletSaving = false;
 			}
 		},
-		printPalletLabels(record) {
-			(record.pallets || []).forEach((pallet) => {
-				window.open('/report/pallet/' + pallet.id, '_blank');
-			});
+		printAllLabels(record) {
+			// One PDF with every label, instead of one browser tab per pallet
+			// (popup blockers allow only the first of a burst of window.opens).
+			window.open('/report/pallets/donation/' + record.id, '_blank');
 		},
 
 		// ---------- daily close-out ----------
@@ -270,7 +325,28 @@ export default {
 }
 .recv_pallet_count {
 	width: 5em;
-	margin-right: 0.5em;
+}
+.recv_palletline {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	flex-wrap: wrap;
+	margin: 0.5em 0;
+}
+.recv_pallet_desc {
+	flex: 1;
+	min-width: 14em;
+}
+.recv_pallet_item {
+	flex: 1;
+	min-width: 16em;
+}
+.recv_tablewrap {
+	overflow-x: auto;
+	margin: 0.5em 0;
+}
+.recv_mono {
+	font-family: monospace;
 }
 .recv_badge {
 	display: inline-block;
