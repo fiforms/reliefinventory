@@ -10,10 +10,12 @@ come in tagged to pallets, get sorted into a ledger of items, and are later pick
 distribution points, with full source (donor/pallet) traceability.
 
 `PROJECT_ANALYSIS.md` at the repo root is a detailed audit of known defects and a phased completion plan
-— read it before starting non-trivial work here, since it documents which "existing" features are
-actually broken or unwired (e.g. donation sorting not yet recording pallet provenance end-to-end,
-several dead menu links). Note that the item flagging "a role middleware that isn't a real bitmask
-check" has since been resolved — see the granular permissions model described below.
+— read it before starting non-trivial work here. Most of Phase 0/1's original defect list is now fixed
+(source traceability, stock-on-hand, the permission model, DB transactions, RIForm error/delete UX, a real
+test suite); what's still genuinely open is order filling/picking, BOL upload, the facility-network
+expansion (Part 5), and several report pages (`/reports/orders`, `/reports/flow`, `/reports/donors`,
+`/reports/customers` are still "Coming Soon" placeholders) — check the doc's own inline "Update" notes for
+the current state of any given item before assuming it's still broken.
 
 ## Commands
 
@@ -21,7 +23,13 @@ check" has since been resolved — see the granular permissions model described 
 composer install && npm install     # install PHP + JS deps
 php artisan migrate                 # run migrations
 php artisan db:seed                 # seed essential data (run after creating a user)
-php artisan db:seed --class=TestDataSeeder   # optional test data
+php artisan db:seed --class=WarehouseActivitySeeder   # optional realistic demo data (donations/pallets/
+                                     # orders across every lifecycle stage) — demo instances only, never
+                                     # run against an instance with real operational data. The old
+                                     # Test*Seeder classes (TestDataSeeder, TestItemTypesSeeder, etc.) are
+                                     # dead/broken — they predate the family/variant item numbering,
+                                     # permission model, and pallet-kind model, and reference a dropped
+                                     # itemtypes.number column.
 composer run dev                    # run server + queue listener + pail logs + vite, concurrently
 npm run dev                         # vite only
 npm run build                       # production asset build
@@ -53,19 +61,29 @@ and `User`) and `PermissionsSeeder` for the full key list and default role bundl
 
 When adding a route, match this pattern: page route with `->middleware(['auth', 'permission:<key>'])`
 rendering an Inertia component, plus `/json/...` endpoints for the data that component needs, gated on
-the same permission key (there are known historical auth-level mismatches between page routes and their
-JSON endpoints — see `PROJECT_ANALYSIS.md` item 9 — don't repeat that pattern).
+the same permission key (there was a historical auth-level mismatch between `/order-entry` and its JSON
+endpoints — fixed, but keep matching page-route and JSON-endpoint gates in sync when adding new pages).
 
 ### Data model core
 
 - `orderdonations` table / `Transaction` model — a single "transaction" row is either an order or a
   donation (`type` column), linked to a `Person` (the donor/recipient) and `person_id_user` (staff who
-  entered it — must be set server-side from `Auth::id()`, never trusted from the client).
+  entered it — must be set server-side from `Auth::id()`, never trusted from the client). Both sides carry
+  a stored, server-controlled status lifecycle (never a free-form dropdown) with `status_changed_at`
+  auto-tracked on every transition (see `Transaction::booted()`): donations go
+  `Received → Sorting → Complete` (or `Logged`, for non-donation intake categories); orders go
+  `New Order → Filling → Filled → Shipped`, and only `New Order` is intake-editable — order lines can't be
+  changed once filling has started (`OrderController::rejectIfLocked`). `donor_identification_pending`
+  (plain boolean, not a status) flags a donation whose source needs follow-up — unlike `sort_hold` on item
+  types, it never gates anything downstream (the goods are real/usable regardless), it's purely a
+  find-it-later reminder. A donation flagged this way stays visible in Receiving's list even past
+  `Complete`, or it would silently age out the moment enough other donations pass through.
 - `item_ledgers` — the append-only ledger of item movement (`qty_added`/`qty_subtracted` style), the
-  source of truth for inventory. Carries `pallet_id` for source traceability and (as of the July 2026
-  migration) a `disposition` field for scan-driven sorting (usable/trashed/diverted). **Nothing in the
-  app currently aggregates this ledger into a stock-on-hand figure** — that's a known gap, not an
-  oversight, if you're asked to build inventory reporting.
+  source of truth for inventory. Carries `pallet_id` for source traceability and a `disposition` field
+  (usable/outdated/trashed/diverted) from scan-driven sorting — only `usable` counts toward stock-on-hand;
+  the others feed donor-quality reporting. `WarehouseMetrics` (`app/Services`) and
+  `InventoryReportController` both aggregate this ledger (usable additions − subtractions) — that used to
+  be a known gap ("nothing computes stock-on-hand"); it isn't anymore.
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
   unit that donation sorting scans to establish provenance.
 - `people` / `roles` / `people_roles` — a single `Person` table replaced a dropped `users` table (see
@@ -74,7 +92,14 @@ JSON endpoints — see `PROJECT_ANALYSIS.md` item 9 — don't repeat that patter
   record; they share permission-resolution logic via the `HasPermissions` trait rather than a common
   class). `people_roles` links a person to zero or more `roles`; `permissions` / `role_permissions` /
   `person_permissions` implement the granular permission-key model described above. There is no
-  `role_bitpack` column — it was dropped when the permission-key model replaced it.
+  `role_bitpack` column — it was dropped when the permission-key model replaced it. Neither `first_name`
+  nor `last_name` is required — a disaster-response donation often arrives with only an organization known
+  (or, via the seeded `system_key = 'unknown-donor'` Person, not even that); `PeopleController` requires
+  at least one of first_name/last_name/organization via `required_without_all`, and
+  `Person::getFullNameAttribute()` falls back to organization when no personal name is set. A Person with
+  a non-null `system_key` is system-provided (currently just the one "Unknown Donor" placeholder) and
+  can't be deleted (`Person::isSystem()` guard in `PeopleController::destroy`) — `system_key` is
+  deliberately not in `$fillable`.
 - `MenuItem` — drives the main nav and supplies `getBreadcrumb($path)` used by page routes.
 
 ### Frontend: Inertia pages + a shared CRUD form framework
@@ -82,7 +107,7 @@ JSON endpoints — see `PROJECT_ANALYSIS.md` item 9 — don't repeat that patter
 `resources/js/Pages/*.vue` are Inertia page components (routed 1:1 from `routes/web.php`).
 `resources/js/Layouts/AuthenticatedLayout.vue` / `GuestLayout.vue` wrap them.
 
-Most CRUD-style admin pages (Items, Categories, Locations, People, Units, ...) are built on
+Most CRUD-style admin pages (Items, Categories, Locations, People, Units, Receiving, ...) are built on
 `resources/js/Components/RIForm.vue`, a generic list/detail form component bound to a `/json/...`
 datasource: it fetches `{records, templates}`, renders a list view via the `#thead`/`#tbody` slots and an
 edit view via the `#default` slot (scoped with `{record, editing, templates}`), and does
@@ -91,23 +116,44 @@ save/cancel/delete against the datasource URL using REST verbs inferred from whe
 Read the doc comment at the top of `RIForm.vue` before touching it — it documents the slot contracts.
 RIForm surfaces save/delete errors inline (`saveError`) and uses a two-step inline delete confirm (no
 `window.confirm`); its detail-view buttons sit in a `.ri_formactions` flex action bar styled in `app.css`.
+It also supports an optional `filter` prop (`(record) => boolean`) plus a `#listactions` slot for
+whatever filter UI a page wants above the list (search box, checkbox, ...) — `Receiving.vue` is the
+reference implementation (donor search + a "flagged for donor ID only" toggle). There's still no
+pagination for large lists (a known gap), and `selectRecord` selects by the record object itself, not
+list position, so it stays correct under filtering.
 
-**Donation sorting is the one exception to the RIForm pattern.** `DonationSorting.vue` +
-`SortingSessionController` implement a scan-driven, autosaving flow instead: a sorting session is created
-when scanning starts, and each sorted line is POSTed to the server individually
-(`POST /json/sorting-sessions/{id}/lines`) as it's entered, rather than batching everything into one save
-at the end. This is intentional — sorting sessions can run 45+ minutes and must survive a browser crash
-or network drop without losing entered work. Follow this per-line-autosave pattern (not RIForm's
-save-at-end model) for any other long-running, scan-driven workflow (e.g. future order filling/picking).
+**Donation sorting and order entry are both exceptions to the RIForm pattern.** `DonationSorting.vue` +
+`SortingSessionController`, and `OrderEntry.vue` + `OrderController`, implement a scan/keyboard-driven,
+autosaving flow instead: a session/order header is created the moment work starts (pallet scanned /
+customer confirmed), and each line is POSTed to the server individually as it's entered
+(`POST /json/sorting-sessions/{id}/lines`, `POST /json/orders/{id}/lines`) rather than batching everything
+into one save at the end. This is intentional — these are long-running, line-heavy entry sessions that
+must survive a browser crash or network drop without losing entered work. Follow this per-line-autosave
+pattern (not RIForm's save-at-end model) for any other long-running, high-line-count workflow (e.g. future
+order filling/picking). `OrderEntry.vue` also splits customer selection/confirmation into its own screen
+before line entry — deliberately, so the line-entry screen isn't crowded with contact-detail fields.
 
 `QrScanner.vue` wraps `html5-qrcode` for camera-based barcode/QR scanning; keyboard-wedge USB/Bluetooth
 scanners work via plain text input + Enter-to-submit and don't need this component.
 
 ### PDF / label generation
 
-Pallet labels and reports are generated via `spatie/laravel-pdf` (`PalletReportController`) and
+Pallet labels and reports are generated via `spatie/laravel-pdf` (`PalletReportController`,
+`InventoryReportController::pdf`, `SitrepController::pdf`, `OrderController::orderFormPdf`) and
 `milon/barcode` for barcode rendering. `UPCGenerator` (`app/Helpers`) derives a valid check-digit UPC-A
-from a 5-digit item number for printed item labels.
+from a 5-digit item number for printed item labels. Blade views for these live under
+`resources/views/reports/`.
+
+**Requires two one-time server provisioning steps beyond `composer install`**, or PDF generation fails
+even though the code is correct:
+1. `spatie/browsershot` (a *dependency of* `spatie/laravel-pdf`, but only a "suggest," never actually
+   pulled in) must be a real `composer.json` requirement — it wasn't, historically, so pallet label PDFs
+   silently never worked in production until this was fixed.
+2. Headless Chrome needs system shared libraries Ubuntu doesn't ship by default (`libatk1.0-0t64`,
+   `libnss3`, etc. — package names vary by Ubuntu release) and, on Ubuntu 23.10+, `LARAVEL_PDF_NO_SANDBOX=true`
+   in `.env` (AppArmor blocks Chromium's sandbox under an unprivileged user namespace otherwise — safe here
+   since the app never runs as root). Neither of these is part of the deploy script; a fresh box needs both
+   done manually once.
 
 ## Conventions to follow
 
