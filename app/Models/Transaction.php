@@ -46,6 +46,7 @@ class Transaction extends Model
         'category',    // donation | equipment | supplies | other — only "donation" enters the sorting pipeline
         'person_id_user', // Foreign key linking to people (the user who entered the transaction)
         'person_id',  // Foreign key linking to people
+        'donor_identification_pending', // flagged for donor follow-up — see the 2026_08_15 migration
         'status_id',  // Status ID associated with the order-donation relation
         'order_date', // Date of the transaction
         'comments',   // Additional notes
@@ -56,6 +57,7 @@ class Transaction extends Model
 
     protected $casts = [
         'manifest_weight_lbs' => 'decimal:2',
+        'donor_identification_pending' => 'boolean',
         'status_changed_at' => 'datetime',
     ];
 

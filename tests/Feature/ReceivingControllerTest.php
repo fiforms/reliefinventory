@@ -243,3 +243,56 @@ test('logged non-donation intakes stay visible in the receiving list', function 
 
     expect(collect($records)->pluck('category'))->toContain('equipment');
 });
+
+test('a donation can be flagged donor_identification_pending at intake and defaults to false', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $record = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'donor_identification_pending' => true,
+    ])->assertCreated()->json('record');
+    expect(Transaction::findOrFail($record['id'])->donor_identification_pending)->toBeTrue();
+
+    $unflagged = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+    ])->assertCreated()->json('record');
+    expect(Transaction::findOrFail($unflagged['id'])->donor_identification_pending)->toBeFalse();
+});
+
+test('a flagged donation stays visible in the receiving list even after it reaches Complete', function () {
+    $user = userWithPermissions('manage-receiving');
+    $flagged = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_COMPLETE),
+        'order_date' => now()->toDateString(),
+        'donor_identification_pending' => true,
+    ]);
+    $unflaggedComplete = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_COMPLETE),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $records = $this->actingAs($user)->getJson('/json/receiving')->assertOk()->json('records');
+    $ids = collect($records)->pluck('id');
+
+    expect($ids)->toContain($flagged->id)
+        ->not->toContain($unflaggedComplete->id);
+});
+
+test('the donor identification flag can be cleared once a donor is identified', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+        'donor_identification_pending' => true,
+    ]);
+
+    $this->actingAs($user)->putJson('/json/receiving/'.$donation->id, [
+        'category' => 'donation',
+        'donor_identification_pending' => false,
+    ])->assertOk();
+
+    expect($donation->fresh()->donor_identification_pending)->toBeFalse();
+});

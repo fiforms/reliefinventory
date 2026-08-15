@@ -55,7 +55,10 @@ const categoryOptions = [
 			</template>
 
 			<template #tbody="{ record, index }">
-				<td>{{ donorName(record) }}</td>
+				<td>
+					{{ donorName(record) }}
+					<span v-if="record.donor_identification_pending" class="recv_badge recv_badge_id">donor ID pending</span>
+				</td>
 				<td>{{ record.category }}</td>
 				<td>
 					{{ record.status ? record.status.name : '' }}
@@ -102,13 +105,25 @@ const categoryOptions = [
 							<input v-model="newDonor.last_name" class="ri_forminput" />
 						</div>
 						<div class="ri_fieldset">
-							<div class="ri_fieldlabel">Organization (optional):</div>
+							<div class="ri_fieldlabel">Organization:</div>
 							<input v-model="newDonor.organization" class="ri_forminput" />
 						</div>
+						<p class="ri_hint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
 						<button type="button" @click="saveNewDonor(record)" :disabled="donorSaving" class="ri_formbutton">
 							Save Donor
 						</button>
 					</template>
+
+					<div class="ri_fieldset">
+						<label class="recv_checkbox">
+							<input type="checkbox" v-model="record.donor_identification_pending" :disabled="!editing" />
+							Donor unidentified &mdash; flag for follow-up
+						</label>
+						<p class="ri_hint">
+							Use this when the donation arrived with little or no source information (no organization,
+							no contact) so it can be found later once the donor is known.
+						</p>
+					</div>
 
 					<div class="ri_fieldset">
 						<div class="ri_fieldlabel">Rough Container Count:</div>
@@ -360,5 +375,15 @@ export default {
 	background: #fef3c7;
 	color: #92400e;
 	border-radius: 3px;
+}
+.recv_badge_id {
+	background: #fee2e2;
+	color: #991b1b;
+}
+.recv_checkbox {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	font-weight: normal;
 }
 </style>

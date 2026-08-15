@@ -28,8 +28,15 @@ class ReceivingController extends Controller
      */
     public function index()
     {
+        // A donation flagged donor_identification_pending stays here even
+        // once it's Complete — that flag exists precisely so it can be
+        // found later, and it would otherwise silently age out of both this
+        // list and Sorting's once enough other donations pass through.
         $open = Transaction::where('type', 'donation')
-            ->whereHas('status', fn ($q) => $q->whereIn('name', [Transaction::STATUS_RECEIVED, Transaction::STATUS_SORTING]))
+            ->where(function ($q) {
+                $q->whereHas('status', fn ($q2) => $q2->whereIn('name', [Transaction::STATUS_RECEIVED, Transaction::STATUS_SORTING]))
+                    ->orWhere('donor_identification_pending', true);
+            })
             ->with(['person', 'enteredBy', 'status', 'pallets.contentItem'])
             ->orderBy('id', 'desc')
             ->get();
@@ -54,6 +61,7 @@ class ReceivingController extends Controller
                     'type' => 'donation',
                     'category' => 'donation',
                     'person_id' => null,
+                    'donor_identification_pending' => false,
                     'container_count' => null,
                     'manifest' => null,
                     'manifest_weight_lbs' => null,
@@ -80,6 +88,7 @@ class ReceivingController extends Controller
         $data = $request->validate([
             'category' => 'required|in:donation,equipment,supplies,other',
             'person_id' => 'nullable|exists:people,id',
+            'donor_identification_pending' => 'nullable|boolean',
             'container_count' => 'nullable|integer|min:0',
             'manifest' => 'nullable|string',
             'manifest_weight_lbs' => 'nullable|numeric|min:0',
@@ -112,6 +121,7 @@ class ReceivingController extends Controller
         $data = $request->validate([
             'category' => 'required|in:donation,equipment,supplies,other',
             'person_id' => 'nullable|exists:people,id',
+            'donor_identification_pending' => 'nullable|boolean',
             'container_count' => 'nullable|integer|min:0',
             'manifest' => 'nullable|string',
             'manifest_weight_lbs' => 'nullable|numeric|min:0',

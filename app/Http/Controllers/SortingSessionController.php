@@ -162,6 +162,7 @@ class SortingSessionController extends Controller
 
         $data = $request->validate([
             'person_id' => 'nullable|exists:people,id',
+            'donor_identification_pending' => 'nullable|boolean',
             'comments' => 'nullable|string',
             'completed' => 'nullable|boolean',
         ]);

@@ -210,6 +210,9 @@ export default {
 		commentsChanged() {
 			this.patchSession({ comments: this.session.comments });
 		},
+		donorIdPendingChanged() {
+			this.patchSession({ donor_identification_pending: this.session.donor_identification_pending });
+		},
 		async completeSession() {
 			// Two-step inline confirm when lines haven't reached the server.
 			if (this.pendingCount > 0 && !this.confirmingComplete) {
@@ -529,7 +532,10 @@ export default {
 							class="sort_rowlink" @click="resumeSession(record.id)">
 							<td>{{ record.order_date }}</td>
 							<td>{{ personLabel(record.entered_by) }}</td>
-							<td>{{ personLabel(record.person) }}</td>
+							<td>
+							{{ personLabel(record.person) }}
+							<span v-if="record.donor_identification_pending" class="sort_badge_id">donor ID pending</span>
+						</td>
 							<td>{{ sessionSummary(record).lines }}</td>
 							<td>{{ sessionSummary(record).total }}</td>
 						</tr>
@@ -547,7 +553,10 @@ export default {
 						<tr v-for="record in sessions.receivable" :key="record.id"
 							class="sort_rowlink" @click="startSession(record.id)">
 							<td>{{ record.order_date }}</td>
-							<td>{{ personLabel(record.person) }}</td>
+							<td>
+							{{ personLabel(record.person) }}
+							<span v-if="record.donor_identification_pending" class="sort_badge_id">donor ID pending</span>
+						</td>
 							<td>{{ record.manifest }}</td>
 						</tr>
 					</tbody>
@@ -566,7 +575,10 @@ export default {
 							class="sort_rowlink" @click="resumeSession(record.id)">
 							<td>{{ record.order_date }}</td>
 							<td>{{ personLabel(record.entered_by) }}</td>
-							<td>{{ personLabel(record.person) }}</td>
+							<td>
+							{{ personLabel(record.person) }}
+							<span v-if="record.donor_identification_pending" class="sort_badge_id">donor ID pending</span>
+						</td>
 							<td>{{ sessionSummary(record).lines }}</td>
 							<td>{{ sessionSummary(record).total }}</td>
 						</tr>
@@ -631,6 +643,17 @@ export default {
 				<div class="sort_field">
 					<label>Comments:</label>
 					<TextArea v-model="session.comments" :enabled="!readonly" @change="commentsChanged" />
+				</div>
+				<div class="sort_field">
+					<label class="sort_checkbox">
+						<input
+							type="checkbox"
+							v-model="session.donor_identification_pending"
+							:disabled="readonly"
+							@change="donorIdPendingChanged"
+						/>
+						Donor unidentified &mdash; flag for follow-up
+					</label>
 				</div>
 			</div>
 
@@ -1025,6 +1048,21 @@ export default {
 .sort_donor_src {
 	color: #888;
 	font-size: 0.85em;
+}
+.sort_checkbox {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+	font-weight: normal;
+}
+.sort_badge_id {
+	display: inline-block;
+	margin-left: 0.5em;
+	padding: 0.1em 0.5em;
+	font-size: 0.8em;
+	background: #fee2e2;
+	color: #991b1b;
+	border-radius: 3px;
 }
 .sort_confirm_delete {
 	background: #dc2626;
