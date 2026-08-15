@@ -273,6 +273,12 @@ Route::get('/report/inventory.pdf', [InventoryReportController::class, 'pdf'])
     ->name('report.inventory')
     ->middleware(['auth', 'permission:view-reports']);
 
+// Offline order form (in-stock item types only, no quantities) — printed or
+// emailed to a POD/customer, then hand-keyed back in as an order.
+Route::get('/report/order-form.pdf', [OrderController::class, 'orderFormPdf'])
+    ->name('report.order-form')
+    ->middleware(['auth', 'permission:manage-orders']);
+
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {
     Route::get('/packagetypes', [PackageTypeController::class, 'index']);
 });

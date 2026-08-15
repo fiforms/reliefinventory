@@ -5,10 +5,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ItemType;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Spatie\LaravelPdf\Facades\Pdf;
 
 /**
  * Order intake sessions.
@@ -219,5 +221,51 @@ class OrderController extends Controller
         $order->orderLines()->findOrFail($lineId)->delete();
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * Offline order form: printed or emailed to a POD/customer who fills in
+     * quantities by hand and returns it, to be hand-keyed in as a
+     * volunteer-transcription order (same intake channel as a phone order —
+     * see the order-intake design notes). Deliberately never prints an
+     * actual stock number: presence in this list ("we have some") is a
+     * request-eligible signal, not a promise, and that boundary lives in
+     * the query itself (on_hand > 0), never rendered.
+     *
+     * sort_hold item types are excluded — they're valid at the sorting
+     * table but not yet supervisor-reviewed into a real orderable number.
+     */
+    public function orderFormPdf()
+    {
+        return Pdf::view('reports.order-form', ['categories' => $this->buildOrderFormRecords(), 'generatedAt' => now()])
+            ->format('letter')
+            ->name('order-form-'.now()->format('Y-m-d').'.pdf');
+    }
+
+    public function buildOrderFormRecords()
+    {
+        $rows = DB::table('itemtypes')
+            ->join('items', 'items.itemtype_id', '=', 'itemtypes.id')
+            ->leftJoin('item_ledgers', 'item_ledgers.item_id', '=', 'items.id')
+            ->leftJoin('categories', 'categories.id', '=', 'itemtypes.category_id')
+            ->leftJoin('units', 'units.id', '=', 'itemtypes.unit_id')
+            ->where('itemtypes.status', 'orderable')
+            ->groupBy('itemtypes.id', 'itemtypes.family', 'itemtypes.variant', 'itemtypes.name', 'categories.name', 'units.abbreviation', 'units.name')
+            ->havingRaw("
+                SUM(CASE WHEN COALESCE(item_ledgers.disposition, 'usable') = 'usable'
+                    THEN COALESCE(item_ledgers.qty_added, 0) ELSE 0 END)
+                - SUM(COALESCE(item_ledgers.qty_subtracted, 0)) > 0
+            ")
+            ->selectRaw('itemtypes.id, itemtypes.family, itemtypes.variant, itemtypes.name, categories.name as category, COALESCE(units.abbreviation, units.name) as unit')
+            ->get();
+
+        $records = $rows->map(fn ($row) => [
+            'display_number' => (new ItemType(['family' => $row->family, 'variant' => $row->variant]))->display_number,
+            'name' => $row->name,
+            'category' => $row->category,
+            'unit' => $row->unit,
+        ])->sortBy([['category', 'asc'], ['display_number', 'asc']])->values();
+
+        return $records->groupBy('category');
     }
 }

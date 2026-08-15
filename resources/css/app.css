@@ -68,38 +68,41 @@ table.ri_datatable tr:hover {
 }
 
 
-/* Button Styling */
-button.ri_formbutton {
+/* Button Styling — also covers <a> "buttons" (e.g. PDF download links that
+   open in a new tab rather than triggering a click handler), so those
+   don't fall back to unstyled browser link defaults. */
+button.ri_formbutton, a.ri_formbutton {
   background-color: #888888;
 }
 
-button.ri_formbutton:hover {
+button.ri_formbutton:hover, a.ri_formbutton:hover {
   background-color: #6b7280;
 }
 
 
-button.ri_defaultbutton {
+button.ri_defaultbutton, a.ri_defaultbutton {
   background-color: #007bff;
 }
 
-button.ri_defaultbutton:hover {
+button.ri_defaultbutton:hover, a.ri_defaultbutton:hover {
   background-color: #0056b3;
 }
 
-button.ri_deletebutton {
+button.ri_deletebutton, a.ri_deletebutton {
   background-color: #dc2626;
 }
 
-button.ri_deletebutton:hover,
-button.ri_deletebutton.ri_confirming {
+button.ri_deletebutton:hover, a.ri_deletebutton:hover,
+button.ri_deletebutton.ri_confirming, a.ri_deletebutton.ri_confirming {
   background-color: #b91c1c;
 }
 
-button.ri_floating {
+button.ri_floating, a.ri_floating {
 	  float: right;
 }
 
-button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton {
+button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton,
+a.ri_defaultbutton, a.ri_formbutton, a.ri_deletebutton {
   display: inline-block;
   padding: 10px 20px;
   color: white;
@@ -107,6 +110,7 @@ button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton {
   border-radius: 5px;
   font-size: 1rem;
   cursor: pointer;
+  text-decoration: none;
   transition: background-color 0.3s ease;
 }
 
@@ -277,7 +281,8 @@ h2.text-xl {
 	    padding: 8px 10px;
 	  }
 	
-	  button.ri_formbutton, button.ri_defaultbutton, button.ri_deletebutton {
+	  button.ri_formbutton, button.ri_defaultbutton, button.ri_deletebutton,
+	  a.ri_formbutton, a.ri_defaultbutton, a.ri_deletebutton {
 	    font-size: 0.9rem;
 	    padding: 8px 15px;
 	  }

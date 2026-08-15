@@ -460,7 +460,10 @@ export default {
 		<div v-if="view === 'list'" class="oe_container">
 			<h2 class="ri_datatable_head">
 				Order Entry
-				<button @click="startNewOrder" class="ri_defaultbutton ri_floating">New Order</button>
+				<span class="oe_headeractions">
+					<a href="/report/order-form.pdf" class="ri_formbutton" target="_blank">Offline Order Form</a>
+					<button @click="startNewOrder" class="ri_defaultbutton">New Order</button>
+				</span>
 			</h2>
 
 			<p v-if="listError" class="oe_error">{{ listError }}</p>
@@ -748,6 +751,11 @@ export default {
 }
 .oe_customer {
 	max-width: 720px;
+}
+.oe_headeractions {
+	float: right;
+	display: flex;
+	gap: 8px;
 }
 .oe_section {
 	margin-top: 1.5em;
