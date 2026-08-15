@@ -196,8 +196,12 @@ export default {
 		},
 		async saveNewCustomer() {
 			this.customerError = null;
-			if (!this.newCustomer.first_name.trim() || !this.newCustomer.last_name.trim()) {
-				this.customerError = 'First and last name are required (use the organization name for both if this is an organization-only customer).';
+			const hasName = this.newCustomer.first_name.trim() && this.newCustomer.last_name.trim();
+			const hasOrg = (this.newCustomer.organization || '').trim();
+			if (!hasName && !hasOrg) {
+				// An order/customer contact may only have an organization known
+				// (no specific person) — that's fine.
+				this.customerError = 'Enter a name (first and last) or an organization.';
 				return;
 			}
 			this.customerSaving = true;

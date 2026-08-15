@@ -244,8 +244,12 @@ export default {
 		},
 		async saveNewDonor(record) {
 			this.donorError = null;
-			if (!this.newDonor.first_name.trim() || !this.newDonor.last_name.trim()) {
-				this.donorError = 'First and last name are required (use the organization name for both if this is a business-only donor).';
+			const hasName = this.newDonor.first_name.trim() && this.newDonor.last_name.trim();
+			const hasOrg = (this.newDonor.organization || '').trim();
+			if (!hasName && !hasOrg) {
+				// A donation often arrives with less than a full contact — an
+				// organization alone (no known contact person) is fine.
+				this.donorError = 'Enter a name (first and last) or an organization.';
 				return;
 			}
 			this.donorSaving = true;

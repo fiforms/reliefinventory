@@ -74,18 +74,16 @@ function setOverrideState(record, permissionId, state) {
             <div class="ri_fieldlabel">First Name:</div>
             <TextInput
               v-model="record.first_name"
-              required
               :enabled="editing"
-            /> 
+            />
           </div>
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Last Name:</div>
             <TextInput
               v-model="record.last_name"
-              required
               :enabled="editing"
-            /> 
+            />
           </div>
 
           <div class="ri_fieldset">
@@ -93,8 +91,9 @@ function setOverrideState(record, permissionId, state) {
             <TextInput
               v-model="record.organization"
               :enabled="editing"
-            /> 
+            />
           </div>
+          <p class="ri_hint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Phone:</div>

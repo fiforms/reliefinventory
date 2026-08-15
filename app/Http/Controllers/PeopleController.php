@@ -13,9 +13,16 @@ use Illuminate\Support\Facades\Auth;
 class PeopleController extends Controller
 {
     // Validation rules for people
+    //
+    // A disaster-response donation often arrives with less than a full
+    // contact: sometimes only an organization name is known ("came from
+    // Walmart, no contact given"), sometimes not even that. Neither name
+    // field is unconditionally required — but at least one of first_name,
+    // last_name, or organization must be given, so a person record always
+    // carries *some* identifying information.
     private const VALIDATION_RULES = [
-        'first_name' => 'required|string|max:255',
-        'last_name' => 'required|string|max:255',
+        'first_name' => 'nullable|required_without_all:last_name,organization|string|max:255',
+        'last_name' => 'nullable|required_without_all:first_name,organization|string|max:255',
         'organization' => 'nullable|string|max:255',
         'phone' => 'nullable|string|max:255',
         'email' => 'nullable|email|max:255|unique:people,email',
