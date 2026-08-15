@@ -45,7 +45,21 @@ const categoryOptions = [
 			title="Receiving"
 			datasource="/json/receiving"
 			newrecordcaption="Record an Intake"
+			:filter="receivingFilter"
 		>
+			<template #listactions>
+				<input
+					type="text"
+					v-model="donorSearch"
+					class="ri_forminput recv_search"
+					placeholder="Search by donor name or organization..."
+				/>
+				<label class="recv_checkbox">
+					<input type="checkbox" v-model="flaggedOnly" />
+					Flagged for donor ID only
+				</label>
+			</template>
+
 			<template #thead>
 				<th>Donor</th>
 				<th>Category</th>
@@ -238,7 +252,22 @@ export default {
 			palletError: null,
 
 			closeOutError: null,
+
+			donorSearch: '',
+			flaggedOnly: false,
 		};
+	},
+	computed: {
+		receivingFilter() {
+			const query = this.donorSearch.trim().toLowerCase();
+			const flaggedOnly = this.flaggedOnly;
+			const donorName = this.donorName;
+			return (record) => {
+				if (flaggedOnly && !record.donor_identification_pending) return false;
+				if (query && !donorName(record).toLowerCase().includes(query)) return false;
+				return true;
+			};
+		},
 	},
 	methods: {
 		donorName(record) {
@@ -385,5 +414,8 @@ export default {
 	align-items: center;
 	gap: 0.4em;
 	font-weight: normal;
+}
+.recv_search {
+	min-width: 220px;
 }
 </style>

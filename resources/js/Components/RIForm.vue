@@ -8,7 +8,24 @@
 
   This component expects attributes for "title" and the "datasource" JSON API url
 
-  It has three slots: #thead, #tbody, and #default, with bindings as described below:
+  It has four slots: #thead, #tbody, #default, and #listactions, with bindings as
+  described below:
+
+  #listactions is optional and rendered between the title bar and the table — the
+      place for a page to add its own search box, toggle, or dropdown filter. RIForm
+      itself has no opinion on what the filter UI looks like; pair it with the
+      `filter` prop (a `(record) => boolean` predicate) to actually narrow the list:
+
+      <RIForm ... :filter="(r) => !onlyFlagged || r.flagged">
+        <template #listactions>
+          <label><input type="checkbox" v-model="onlyFlagged" /> Flagged only</label>
+        </template>
+        ...
+      </RIForm>
+
+      `filter` is re-evaluated reactively whenever the reactive state it closes over
+      changes (Vue tracks dependencies through the computed property that calls it),
+      so no manual refresh wiring is needed.
 
   #thead is nested inside a <tr></tr> element at the top of the data table, and should
       contain multiple <th> headings corresponding to the columns desires to be
@@ -65,6 +82,9 @@
       <h2 class="ri_datatable_head">{{ title }}
         <button @click="newRecord()" class="ri_defaultbutton ri_floating">{{ newrecordcaption }}</button>
       </h2>
+      <div v-if="$slots.listactions" class="ri_listactions">
+        <slot name="listactions"></slot>
+      </div>
       <p v-if="successMessage" class="ri_success">{{ successMessage }}</p>
       <table border="1" class="ri_datatable">
         <thead>
@@ -73,7 +93,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(record, index) in records" :key="record.id" @click="selectRecord(index)">
+          <tr v-for="(record, index) in filteredRecords" :key="record.id" @click="selectRecord(record)">
             <slot name="tbody" :record="record" :index="index"></slot>
           </tr>
         </tbody>
@@ -120,6 +140,13 @@ export default {
       type: String,
       default: "New Record",
     },
+    // Optional (record) => boolean predicate narrowing the list view. Pair
+    // with the #listactions slot for the filter UI itself — see the doc
+    // comment at the top of this file.
+    filter: {
+      type: Function,
+      default: null,
+    },
   },
   data() {
     return {
@@ -131,6 +158,11 @@ export default {
       successMessage: null,
       confirmingDelete: false,
     };
+  },
+  computed: {
+    filteredRecords() {
+      return this.filter ? this.records.filter(this.filter) : this.records;
+    },
   },
   methods: {
     describeSaveError(error) {
@@ -151,9 +183,9 @@ export default {
           console.error("Error fetching records:", error);
         });
     },
-    selectRecord(recordIndex) {
+    selectRecord(record) {
       this.successMessage = null;
-      this.record = JSON.parse(JSON.stringify(this.records[recordIndex]));
+      this.record = JSON.parse(JSON.stringify(record));
     },
     saveRecord() {
       this.saveError = null;

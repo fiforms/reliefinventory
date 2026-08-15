@@ -222,6 +222,13 @@ class PeopleController extends Controller
     public function destroy($id)
     {
         $person = Person::findOrFail($id);
+
+        if ($person->isSystem()) {
+            return response()->json([
+                'message' => 'This is a system-provided record and cannot be deleted.',
+            ], 422);
+        }
+
         $person->delete();
 
         return response()->json([

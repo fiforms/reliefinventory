@@ -35,6 +35,15 @@
   color: #333;
 }
 
+.ri_listactions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
 /* Table Styling */
 table.ri_datatable, table.ri_formtable {
   width: 100%;

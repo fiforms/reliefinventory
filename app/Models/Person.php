@@ -92,6 +92,17 @@ class Person extends Model
     }
 
     /**
+     * system_key marks a record as system-provided (e.g. the canonical
+     * "Unknown Donor" placeholder) — deliberately not in $fillable, so it
+     * can only ever be set directly by a migration, never through the
+     * People form/API.
+     */
+    public function isSystem(): bool
+    {
+        return ! is_null($this->system_key);
+    }
+
+    /**
      * Define relationships to other models (if applicable).
      */
 
