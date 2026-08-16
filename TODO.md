@@ -4,6 +4,8 @@ Issues identified August 16, 2026
  - Create new users who will receive an email to set up their password
  - Promote or change permissions on users who've registered online
  - Deactivate users
+ - "People" form in main application shouldn't show permissions, there needs to be a separate UI in the administrative side. "Roles" visible in the main application should be only "Customer/Donor/Volunteer"
+ - Administrative page should have roles like "Administrator" (everything), Sorting and Inventory Staff, Customer/Client (Ordering Only), Office Staff (everything except admin/setup roles)
 
 2. Troubleshoot page breaks on PDF reports
  - Inventory Report PDF (/report/inventory.pdf) breaks pages in the middle of a table.
@@ -27,4 +29,5 @@ Issues identified August 16, 2026
   - Create a user interface to add and manage default ordering units
 
 
-    
+ 6.  Under "Receiving" and "Donation Sorting" there should be an option (perhaps a lightbox) that would allow quickly adding a donor without navigating away from the page. 
+  - Also in the dropdown, a number of entries are showing blank lines. It's showing the organization field, but not the name, so individual's names are appearing blank
