@@ -13,6 +13,7 @@ Issues identified August 16, 2026
 
 4. Order Entry
  - There's a bug in the search box: when I type an item number or name, it shows only numbers in the search results.
+   - It should match the dropdown already implemented in receiving
    It should show a wider dropdown with both the number and name
 
  - There is no place to enter a UNIT in conjunction with a 
@@ -25,5 +26,5 @@ Issues identified August 16, 2026
     - Jug
   - Create a user interface to add and manage default ordering units
 
-  
+
     
