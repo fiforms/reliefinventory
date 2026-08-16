@@ -32,6 +32,15 @@ use Illuminate\Database\Seeder;
  * nobody but Administrator by default — it's meant for lightweight
  * external stakeholder accounts (FEMA/state liaisons) granted individually
  * via the existing per-person permission override, not a role bundle.
+ *
+ * manage-trusted-devices follows the same not-in-any-role-bundle pattern
+ * as view-sitrep: approving a device for PIN unlock is meant to be
+ * delegable to a specific trusted person without handing them full
+ * admin-system access, via a per-person override — not something every
+ * Administrator-tier bundle should carry by default just because it's
+ * security-adjacent. The PIN-login feature's global on/off/trust-mode
+ * settings stay gated on the existing admin-system key instead — that's
+ * genuinely system-wide configuration, not a per-device decision.
  */
 class PermissionsSeeder extends Seeder
 {
@@ -69,6 +78,7 @@ class PermissionsSeeder extends Seeder
         'view-reports' => 'View inventory and operational reports',
         'view-dashboard' => 'View the internal warehouse activity dashboard (full detail)',
         'view-sitrep' => 'View and export the external Situation Report (restricted, no names/PII)',
+        'manage-trusted-devices' => 'Approve, label, and revoke devices allowed to use PIN unlock',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [

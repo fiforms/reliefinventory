@@ -7,7 +7,9 @@ use App\Http\Controllers\Auth\EmailVerificationPromptController;
 use App\Http\Controllers\Auth\NewPasswordController;
 use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
+use App\Http\Controllers\Auth\PinController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\UnlockController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
 
@@ -21,6 +23,18 @@ Route::middleware('guest')->group(function () {
         ->name('login');
 
     Route::post('login', [AuthenticatedSessionController::class, 'store']);
+
+    // Shared-terminal PIN unlock — a faster re-auth for someone who
+    // already did a real login on this specific, admin-approved device.
+    // Throttled at the route level too, on top of UnlockController's own
+    // per-person-per-device RateLimiter check (defense in depth: this
+    // guards against hammering across many different person_ids from one
+    // device, which the per-person key alone wouldn't catch).
+    Route::get('unlock', [UnlockController::class, 'show'])->name('unlock');
+    Route::post('unlock/badge', [UnlockController::class, 'scanBadge'])
+        ->middleware('throttle:20,1')->name('unlock.badge');
+    Route::post('unlock/pin', [UnlockController::class, 'attemptPin'])
+        ->middleware('throttle:20,1')->name('unlock.pin');
 
     Route::get('forgot-password', [PasswordResetLinkController::class, 'create'])
         ->name('password.request');
@@ -53,6 +67,9 @@ Route::middleware('auth')->group(function () {
     Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
 
     Route::put('password', [PasswordController::class, 'update'])->name('password.update');
+
+    Route::put('pin', [PinController::class, 'update'])->name('pin.update');
+    Route::delete('pin', [PinController::class, 'destroy'])->name('pin.destroy');
 
     Route::post('logout', [AuthenticatedSessionController::class, 'destroy'])
         ->name('logout');

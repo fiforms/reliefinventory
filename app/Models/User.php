@@ -6,6 +6,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPermissions;
+use App\Models\Concerns\HasPinLogin;
 use Database\Factories\UserFactory;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Builder;
@@ -16,7 +17,7 @@ use Illuminate\Notifications\Notifiable;
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasPermissions, Notifiable;
+    use HasFactory, HasPermissions, HasPinLogin, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -45,6 +46,7 @@ class User extends Authenticatable implements MustVerifyEmail
      */
     protected $hidden = [
         'password',
+        'pin_hash',
         'remember_token',
     ];
 

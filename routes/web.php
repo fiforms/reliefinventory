@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MenuItem;
 use Illuminate\Foundation\Application;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -81,6 +82,23 @@ Route::get('/setup/system', function () {
     return Inertia::render('SystemAdmin',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/system')]);
 })->middleware(['auth', 'permission:admin-system']);
+
+// Gated loosely at the route level (general-access — the page itself
+// conditionally shows the Settings section for admin-system holders and
+// the Trusted Devices section for manage-trusted-devices holders, since
+// those are two independently delegable permissions with no OR-gate
+// primitive in CheckPermission to express "either one"). Each underlying
+// /json endpoint stays strictly gated on its own permission regardless —
+// this route-level looseness only controls whether the page loads at all.
+Route::get('/setup/pin-login', function () {
+    $user = Auth::user();
+
+    return Inertia::render('PinLoginSettings', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/pin-login'),
+        'canManageSettings' => $user->hasPermission('admin-system'),
+        'canManageDevices' => $user->hasPermission('manage-trusted-devices'),
+    ]);
+})->middleware(['auth', 'permission:general-access']);
 
 Route::get('/reports/labels', function () {
     return Inertia::render('PrintLabels',
@@ -405,6 +423,22 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-str
     Route::post('/streams', [StreamController::class, 'store']);
     Route::put('/streams/{id}', [StreamController::class, 'update']);
     Route::delete('/streams/{id}', [StreamController::class, 'destroy']);
+});
+
+// PIN-login global settings (on/off, trust mode) — system-wide config,
+// same gate as every other system-wide toggle.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
+    Route::get('/pin-login-settings', [PinLoginSettingsController::class, 'show']);
+    Route::put('/pin-login-settings', [PinLoginSettingsController::class, 'update']);
+});
+
+// Which specific devices may use PIN unlock — deliberately a narrower,
+// separately-delegable permission from admin-system (see PermissionsSeeder).
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trusted-devices']], function () {
+    Route::get('/trusted-devices', [TrustedDeviceController::class, 'index']);
+    Route::post('/trusted-devices/{id}/approve', [TrustedDeviceController::class, 'approve']);
+    Route::post('/trusted-devices/{id}/revoke', [TrustedDeviceController::class, 'revoke']);
+    Route::put('/trusted-devices/{id}', [TrustedDeviceController::class, 'relabel']);
 });
 
 require __DIR__.'/auth.php';

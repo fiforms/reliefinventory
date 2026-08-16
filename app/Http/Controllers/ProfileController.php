@@ -1,4 +1,5 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -23,6 +24,7 @@ class ProfileController extends Controller
         return Inertia::render('Profile/Edit', [
             'mustVerifyEmail' => $request->user() instanceof MustVerifyEmail,
             'status' => session('status'),
+            'hasPin' => $request->user()->hasPin(),
         ]);
     }
 
@@ -31,9 +33,8 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        
+
         $request->user()->fill($request->validated());
-        
 
         if ($request->user()->isDirty('email')) {
             $request->user()->email_verified_at = null;
@@ -54,10 +55,10 @@ class ProfileController extends Controller
         ]);
 
         $user = $request->user();
-        
+
         $user->email_verified_at = null;
         $user->password = null;
-        
+
         Auth::logout();
 
         $user->save();
@@ -67,5 +68,4 @@ class ProfileController extends Controller
 
         return Redirect::to('/');
     }
-    
 }

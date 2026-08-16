@@ -32,6 +32,9 @@ class PeopleController extends Controller
         'zip' => 'nullable|string|max:10',
         'county_id' => 'nullable|exists:counties,id',
         'comments' => 'nullable|string',
+        // Admin-assigned physical badge identifier for PIN-unlock badge
+        // scanning — see HasPinLogin / UnlockController.
+        'badge_code' => 'nullable|string|max:255|unique:people,badge_code',
         'people_roles' => 'nullable|array',
         'people_roles.*.role_id' => 'required|exists:roles,id',
         'person_permissions' => 'nullable|array',
@@ -72,6 +75,7 @@ class PeopleController extends Controller
                     'zip' => '',
                     'county_id' => null,
                     'comments' => '',
+                    'badge_code' => '',
                     'people_roles' => [],
                     'person_permissions' => [],
                 ],
@@ -196,6 +200,7 @@ class PeopleController extends Controller
 
         $rules = self::VALIDATION_RULES;
         $rules['email'] = 'nullable|email|max:255|unique:people,email,'.$id;
+        $rules['badge_code'] = 'nullable|string|max:255|unique:people,badge_code,'.$id;
 
         $data = $request->validate($rules);
         $roleData = $data['people_roles'] ?? [];

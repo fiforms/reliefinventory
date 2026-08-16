@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\BannedEmail;
 use App\Models\User;
+use App\Services\PinLoginService;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -14,8 +16,6 @@ use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
-use App\Models\BannedEmail;
-use Illuminate\Support\Str;
 
 class RegisteredUserController extends Controller
 {
@@ -40,9 +40,9 @@ class RegisteredUserController extends Controller
     /**
      * Handle an incoming registration request.
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, PinLoginService $pinLogin): RedirectResponse
     {
         $turnstileEnabled = config('services.turnstile.enabled');
 
@@ -63,7 +63,7 @@ class RegisteredUserController extends Controller
             ])->json();
 
             // If Turnstile verification fails
-            if (!$response['success']) {
+            if (! $response['success']) {
                 throw ValidationException::withMessages([
                     'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
                 ]);
@@ -73,7 +73,7 @@ class RegisteredUserController extends Controller
         if (BannedEmail::isBanned($request->email)) {
             throw ValidationException::withMessages(['email' => 'Registration with this email is not allowed.']);
         }
-        
+
         $user = User::create([
             'first_name' => $request->first_name,
             'last_name' => $request->last_name,
@@ -85,7 +85,10 @@ class RegisteredUserController extends Controller
 
         Auth::login($user);
 
+        // Same reasoning as AuthenticatedSessionController::store() — a
+        // real login (registration counts) earns device trust.
+        $pinLogin->grantTrust($pinLogin->resolveDevice($request), $user->id);
+
         return redirect(route('dashboard', absolute: false));
     }
-    
 }

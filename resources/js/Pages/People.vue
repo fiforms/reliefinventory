@@ -96,6 +96,15 @@ function setOverrideState(record, permissionId, state) {
           <p class="ri_hint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
 
           <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Badge Code:</div>
+            <TextInput
+              v-model="record.badge_code"
+              :enabled="editing"
+            />
+          </div>
+          <p class="ri_hint">Scan or type the code from this person's physical badge, if issued &mdash; used for PIN-unlock badge scanning.</p>
+
+          <div class="ri_fieldset">
             <div class="ri_fieldlabel">Phone:</div>
             <TextInput
               v-model="record.phone"

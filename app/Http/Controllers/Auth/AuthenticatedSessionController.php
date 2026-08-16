@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Services\PinLoginService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -14,10 +15,17 @@ use Inertia\Response;
 class AuthenticatedSessionController extends Controller
 {
     /**
-     * Display the login view.
+     * Display the login view — deferring to the PIN-unlock screen when
+     * that feature is on, unless the caller explicitly wants the email
+     * form (the unlock screen's own "Log in with email" link sets
+     * ?email=1 to avoid redirecting straight back to itself).
      */
-    public function create(): Response
+    public function create(Request $request, PinLoginService $pinLogin): Response|RedirectResponse
     {
+        if ($pinLogin->settings()->enabled && ! $request->boolean('email')) {
+            return redirect()->route('unlock');
+        }
+
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request'),
             'status' => session('status'),
@@ -27,24 +35,30 @@ class AuthenticatedSessionController extends Controller
     /**
      * Handle an incoming authentication request.
      */
-    public function store(LoginRequest $request): RedirectResponse
+    public function store(LoginRequest $request, PinLoginService $pinLogin): RedirectResponse
     {
         $request->authenticate();
-        
+
         // Get the authenticated user
         $user = $request->user();
-        //print_r($user); die();
-        
+        // print_r($user); die();
+
         // If the user implements MustVerifyEmail and has not verified their email,
         // log them out and redirect to a verification notice page with an error.
         if ($user instanceof MustVerifyEmail && ! $user->hasVerifiedEmail()) {
             Auth::logout();
+
             return redirect()->route('verification.notice')
-            ->withErrors(['email' => 'You need to verify your email address before logging in.']);
+                ->withErrors(['email' => 'You need to verify your email address before logging in.']);
         }
-        
+
         $request->session()->regenerate();
-        
+
+        // A real password login is what earns a device its PIN-unlock
+        // trust for this person — see PinLoginService for the two-gate
+        // reasoning (device approval + per-person grant).
+        $pinLogin->grantTrust($pinLogin->resolveDevice($request), $user->id);
+
         return redirect()->intended(route('dashboard', absolute: false));
     }
 

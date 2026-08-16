@@ -6,12 +6,13 @@
 namespace App\Models;
 
 use App\Models\Concerns\HasPermissions;
+use App\Models\Concerns\HasPinLogin;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Person extends Model
 {
-    use HasFactory, HasPermissions;
+    use HasFactory, HasPermissions, HasPinLogin;
 
     /**
      * The table associated with the model.
@@ -65,6 +66,11 @@ class Person extends Model
         'zip',
         'county_id',
         'comments',
+        // Admin-assigned (the physical badge is issued by staff), unlike
+        // pin_hash below which is deliberately NOT fillable — a PIN is
+        // self-service and must only ever be written by PinController,
+        // never by a raw mass-assignment payload through PeopleController.
+        'badge_code',
     ];
 
     /**
@@ -75,6 +81,21 @@ class Person extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+    ];
+
+    /**
+     * Person had no $hidden at all until this was found (2026-08-16) while
+     * checking whether the new pin_hash column would leak the same way —
+     * it would have, and password already was: PeopleController::index()
+     * serializes full Person models with no column restriction, so every
+     * bcrypt password hash was reaching the browser for anyone holding
+     * manage-people (the whole volunteer tier, by default). Matches what
+     * User::$hidden already correctly did for the same table.
+     */
+    protected $hidden = [
+        'password',
+        'pin_hash',
+        'remember_token',
     ];
 
     /**
