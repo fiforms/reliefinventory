@@ -75,4 +75,23 @@ class AuthenticatedSessionController extends Controller
 
         return redirect('/');
     }
+
+    /**
+     * "Switch User" on a shared terminal: end the current session, same as
+     * a real logout, but land back on the login route rather than '/' —
+     * create() above already sends that straight to the PIN-unlock tiles
+     * when the feature is enabled, so this doesn't need its own
+     * eligibility check duplicated here. The device's trust grants are
+     * untouched, so whoever's tapped next just needs their PIN.
+     */
+    public function switchUser(Request $request): RedirectResponse
+    {
+        Auth::guard('web')->logout();
+
+        $request->session()->invalidate();
+
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login');
+    }
 }

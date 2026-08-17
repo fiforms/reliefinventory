@@ -82,6 +82,14 @@ const showingNavigationDropdown = ref(false);
                                             Profile
                                         </DropdownLink>
                                         <DropdownLink
+                                            v-if="$page.props.pinLogin.switchUserAvailable"
+                                            :href="route('switch-user')"
+                                            method="post"
+                                            as="button"
+                                        >
+                                            Switch User
+                                        </DropdownLink>
+                                        <DropdownLink
                                             :href="route('logout')"
                                             method="post"
                                             as="button"
@@ -171,6 +179,14 @@ const showingNavigationDropdown = ref(false);
                         <div class="mt-3 space-y-1">
                             <ResponsiveNavLink :href="route('profile.edit')">
                                 Profile
+                            </ResponsiveNavLink>
+                            <ResponsiveNavLink
+                                v-if="$page.props.pinLogin.switchUserAvailable"
+                                :href="route('switch-user')"
+                                method="post"
+                                as="button"
+                            >
+                                Switch User
                             </ResponsiveNavLink>
                             <ResponsiveNavLink
                                 :href="route('logout')"

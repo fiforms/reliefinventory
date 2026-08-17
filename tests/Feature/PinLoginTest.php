@@ -318,3 +318,78 @@ test('an expired grant no longer permits pin unlock', function () {
     $response->assertStatus(401);
     $this->assertGuest();
 });
+
+// ------------------------------------------------------------- switch user
+
+test('switchUserAvailable is false when the feature is disabled, even on an approved device', function () {
+    $device = approvedDevice();
+    $user = User::factory()->create();
+
+    $response = withDeviceCookie($device)->actingAs($user)->get('/dashboard');
+
+    $response->assertInertia(fn ($page) => $page->where('pinLogin.switchUserAvailable', false));
+});
+
+test('switchUserAvailable is false when the device has no cookie yet', function () {
+    enablePinLogin();
+    $user = User::factory()->create();
+
+    $response = $this->actingAs($user)->get('/dashboard');
+
+    $response->assertInertia(fn ($page) => $page->where('pinLogin.switchUserAvailable', false));
+});
+
+test('switchUserAvailable is false when the device is only pending', function () {
+    enablePinLogin();
+    $device = TrustedDevice::create(['device_token' => 'pending', 'status' => 'pending', 'requested_at' => now()]);
+    $user = User::factory()->create();
+
+    $response = withDeviceCookie($device)->actingAs($user)->get('/dashboard');
+
+    $response->assertInertia(fn ($page) => $page->where('pinLogin.switchUserAvailable', false));
+});
+
+test('switchUserAvailable is true when the feature is enabled and the device is approved', function () {
+    enablePinLogin();
+    $device = approvedDevice();
+    $user = User::factory()->create();
+
+    $response = withDeviceCookie($device)->actingAs($user)->get('/dashboard');
+
+    $response->assertInertia(fn ($page) => $page->where('pinLogin.switchUserAvailable', true));
+});
+
+test('switching users logs out the current person and lands on the unlock screen', function () {
+    enablePinLogin();
+    $device = approvedDevice();
+    $user = User::factory()->create();
+    DeviceTrustGrant::create(['trusted_device_id' => $device->id, 'person_id' => $user->id, 'granted_at' => now()]);
+
+    $response = withDeviceCookie($device)->actingAs($user)->post('/switch-user');
+
+    $response->assertRedirect(route('login'));
+    $this->assertGuest();
+
+    // The grant survives the switch — the next real login or PIN unlock on
+    // this device isn't affected by someone else having switched away.
+    expect(DeviceTrustGrant::where('person_id', $user->id)->exists())->toBeTrue();
+
+    $unlock = withDeviceCookie($device)->get('/unlock');
+    $unlock->assertInertia(fn ($page) => $page
+        ->where('deviceApproved', true)
+        ->where('people.0.id', $user->id));
+});
+
+test('switching users still logs the person out even if the feature has since been disabled', function () {
+    enablePinLogin();
+    $device = approvedDevice();
+    $user = User::factory()->create();
+
+    withDeviceCookie($device)->actingAs($user);
+    PinLoginSetting::current()->update(['enabled' => false]);
+
+    $response = withDeviceCookie($device)->actingAs($user)->post('/switch-user');
+
+    $response->assertRedirect(route('login'));
+    $this->assertGuest();
+});

@@ -1,9 +1,11 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Middleware;
 
+use App\Services\PinLoginService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -35,6 +37,11 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+            ],
+            'pinLogin' => [
+                'switchUserAvailable' => $request->user()
+                    ? app(PinLoginService::class)->switchUserAvailable($request)
+                    : false,
             ],
         ];
     }

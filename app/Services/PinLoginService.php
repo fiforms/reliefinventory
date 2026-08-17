@@ -89,6 +89,29 @@ class PinLoginService
         );
     }
 
+    /**
+     * Whether "Switch User" should be offered on the current request's
+     * device — feature on, and this device already approved for PIN
+     * unlock. Deliberately read-only (unlike resolveDevice()): this runs
+     * on every authenticated page load via HandleInertiaRequests, so it
+     * must never create a TrustedDevice row or queue a cookie as a side
+     * effect of just rendering a page. No device cookie yet simply means
+     * no switch-user shortcut yet, same as a first-ever visit.
+     */
+    public function switchUserAvailable(Request $request): bool
+    {
+        if (! $this->settings()->enabled) {
+            return false;
+        }
+
+        $token = $request->cookie(self::COOKIE_NAME);
+        if (! $token) {
+            return false;
+        }
+
+        return (bool) TrustedDevice::where('device_token', $token)->first()?->isApproved();
+    }
+
     public function activeGrant(TrustedDevice $device, int $personId): ?DeviceTrustGrant
     {
         return DeviceTrustGrant::active()
