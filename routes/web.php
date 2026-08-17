@@ -83,6 +83,11 @@ Route::get('/setup/system', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/system')]);
 })->middleware(['auth', 'permission:admin-system']);
 
+Route::get('/setup/active-sessions', function () {
+    return Inertia::render('ActiveSessions',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/active-sessions')]);
+})->middleware(['auth', 'permission:admin-system']);
+
 // Gated loosely at the route level (general-access — the page itself
 // conditionally shows the Settings section for admin-system holders and
 // the Trusted Devices section for manage-trusted-devices holders, since
@@ -436,6 +441,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::post('/system/update', [SystemController::class, 'update']);
     Route::post('/system/backup', [SystemController::class, 'backupNow']);
     Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
+
+    Route::get('/active-sessions', [ActiveSessionController::class, 'index']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-streams']], function () {
