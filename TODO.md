@@ -42,3 +42,13 @@ Issues identified August 17, 2026
  - A future install/provisioning script should do this automatically for any new instance:
    create app DB + paired test DB, grant the app user on both, and set phpunit.xml's DB_DATABASE
    to match — so a fresh instance is protected from day one instead of needing this fix repeated.
+
+8. Set FEEDBACK_NOTIFY_EMAIL in .env on demo and wa26 (feedback reporting feature, deployed
+   2026-08-17, commit 27491de)
+ - Reports submitted via "Report an Issue" save fine either way, but the developer notification
+   email (FeedbackReportController@notifyDevelopers) is silently skipped whenever this is unset —
+   nobody currently gets emailed when a report comes in on either live instance.
+ - Comma-separated developer addresses, added directly to each instance's .env (untracked, not
+   part of any deploy step — see .env.example for the format/comment). Do this by hand on
+   /var/www/reliefinventory-demo/.env and /var/www/reliefinventory-wa26/.env, then
+   `php artisan config:cache` (as www-data) on each so the new value actually takes effect.
