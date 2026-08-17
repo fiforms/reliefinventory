@@ -23,8 +23,16 @@
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="CLOUDFLARE_TURNSTILE_ENABLED" value="false"/>
-        <!-- <env name="DB_CONNECTION" value="sqlite"/> -->
-        <!-- <env name="DB_DATABASE" value=":memory:"/> -->
+        <!-- Real MariaDB, not sqlite: this app has MySQL-specific migration/query
+             behavior (see the 2025_01_24_013228 dropForeign-by-name fix), and
+             testing against a different engine than production risks tests
+             passing on behavior that's actually broken on the real database.
+             test_reliefinventory is a separate, disposable database (covered
+             by MariaDB's default `test\_%` grant, so no extra privileges are
+             needed) — RefreshDatabase can freely wipe it without ever
+             touching the real reliefinventory database. -->
+        <env name="DB_CONNECTION" value="mariadb"/>
+        <env name="DB_DATABASE" value="test_reliefinventory"/>
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="QUEUE_CONNECTION" value="sync"/>

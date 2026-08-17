@@ -3,18 +3,23 @@
 
 <script setup>
 import { ref } from 'vue';
+import Banner from '@/Components/Banner.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
+import FeedbackReportModal from '@/Components/FeedbackReportModal.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
+const showingFeedbackModal = ref(false);
 </script>
 
 <template>
     <div>
         <div class="min-h-screen bg-gray-100">
+            <Banner @open-feedback="showingFeedbackModal = true" />
+
             <nav
                 class="border-b border-gray-100 bg-white"
             >
@@ -81,6 +86,13 @@ const showingNavigationDropdown = ref(false);
                                         >
                                             Profile
                                         </DropdownLink>
+                                        <button
+                                            type="button"
+                                            class="block w-full px-4 py-2 text-start text-sm leading-5 text-gray-700 transition duration-150 ease-in-out hover:bg-gray-100 focus:bg-gray-100 focus:outline-none"
+                                            @click="showingFeedbackModal = true"
+                                        >
+                                            Report an Issue
+                                        </button>
                                         <DropdownLink
                                             v-if="$page.props.pinLogin.switchUserAvailable"
                                             :href="route('switch-user')"
@@ -180,6 +192,13 @@ const showingNavigationDropdown = ref(false);
                             <ResponsiveNavLink :href="route('profile.edit')">
                                 Profile
                             </ResponsiveNavLink>
+                            <button
+                                type="button"
+                                class="block w-full ps-3 pe-4 py-2 text-start text-base font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-800 focus:outline-none"
+                                @click="showingFeedbackModal = true"
+                            >
+                                Report an Issue
+                            </button>
                             <ResponsiveNavLink
                                 v-if="$page.props.pinLogin.switchUserAvailable"
                                 :href="route('switch-user')"
@@ -199,6 +218,8 @@ const showingNavigationDropdown = ref(false);
                     </div>
                 </div>
             </nav>
+
+            <FeedbackReportModal :show="showingFeedbackModal" @close="showingFeedbackModal = false" />
 
             <!-- Page Heading -->
             <header

@@ -5,6 +5,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\BannerService;
 use App\Services\PinLoginService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -43,6 +44,9 @@ class HandleInertiaRequests extends Middleware
                     ? app(PinLoginService::class)->switchUserAvailable($request)
                     : false,
             ],
+            'banner' => $request->user()
+                ? app(BannerService::class)->propsFor($request->user()->id)
+                : ['active' => false],
         ];
     }
 }

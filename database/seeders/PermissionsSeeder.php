@@ -79,6 +79,7 @@ class PermissionsSeeder extends Seeder
         'view-dashboard' => 'View the internal warehouse activity dashboard (full detail)',
         'view-sitrep' => 'View and export the external Situation Report (restricted, no names/PII)',
         'manage-trusted-devices' => 'Approve, label, and revoke devices allowed to use PIN unlock',
+        'manage-feedback' => 'View and manage in-app bug/feature reports, and configure the site banner',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [

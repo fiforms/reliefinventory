@@ -100,6 +100,11 @@ Route::get('/setup/pin-login', function () {
     ]);
 })->middleware(['auth', 'permission:general-access']);
 
+Route::get('/setup/feedback', function () {
+    return Inertia::render('FeedbackReports',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback')]);
+})->middleware(['auth', 'permission:manage-feedback']);
+
 Route::get('/reports/labels', function () {
     return Inertia::render('PrintLabels',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/labels')]);
@@ -350,6 +355,20 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-co
     Route::post('/counties', [CountyController::class, 'store']);
     Route::put('/counties/{id}', [CountyController::class, 'update']);
     Route::delete('/counties/{id}', [CountyController::class, 'destroy']);
+});
+
+// Any logged-in user can submit a report or dismiss the current banner —
+// this isn't tied to any specific resource.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:general-access']], function () {
+    Route::post('/feedback-reports', [FeedbackReportController::class, 'store']);
+    Route::post('/banner-dismiss', [BannerSettingController::class, 'dismiss']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-feedback']], function () {
+    Route::get('/feedback-reports', [FeedbackReportController::class, 'index']);
+    Route::get('/feedback-reports/{feedbackReport}/screenshot', [FeedbackReportController::class, 'screenshot']);
+    Route::patch('/feedback-reports/{feedbackReport}', [FeedbackReportController::class, 'update']);
+    Route::put('/banner-settings', [BannerSettingController::class, 'update']);
 });
 
 // Destructive/structural ops — previously role:32768 (Administrator).

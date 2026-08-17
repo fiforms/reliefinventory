@@ -31,3 +31,14 @@ Issues identified August 16, 2026
 
  6.  Under "Receiving" and "Donation Sorting" there should be an option (perhaps a lightbox) that would allow quickly adding a donor without navigating away from the page. 
   - Also in the dropdown, a number of entries are showing blank lines. It's showing the organization field, but not the name, so individual's names are appearing blank
+
+Issues identified August 17, 2026
+
+7. Provisioning/install script for new instances (scoped for later — see scripts/TESTING.md)
+ - Standing up a new instance currently requires manually creating both the app database and a
+   separate disposable test database (with the app's DB user granted on both), then pointing
+   phpunit.xml at the test one — done by hand for demo/wa26 on 2026-08-17 after discovering the
+   test suite had been wiping real data (it fell through to the real DB when no override existed).
+ - A future install/provisioning script should do this automatically for any new instance:
+   create app DB + paired test DB, grant the app user on both, and set phpunit.xml's DB_DATABASE
+   to match — so a fresh instance is protected from day one instead of needing this fix repeated.

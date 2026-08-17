@@ -34,7 +34,13 @@ composer run dev                    # run server + queue listener + pail logs + 
 npm run dev                         # vite only
 npm run build                       # production asset build
 
-vendor/bin/pest                     # run full test suite (Pest, Feature + Unit)
+vendor/bin/pest                     # run full test suite (Pest, Feature + Unit) — phpunit.xml points
+                                     # this at a separate, disposable database (never the real app
+                                     # database — RefreshDatabase truncates whatever it's pointed at).
+                                     # See scripts/TESTING.md before touching that config, and before
+                                     # setting up a new instance (a fresh box needs the same disposable
+                                     # test database + grant created manually until a provisioning
+                                     # script exists — see TODO.md item 7).
 vendor/bin/pest tests/Feature/ProfileTest.php   # run a single test file
 vendor/bin/pest --filter="test name"            # run a single test by name
 vendor/bin/pint                     # PHP code style (Laravel Pint)
@@ -135,6 +141,37 @@ before line entry — deliberately, so the line-entry screen isn't crowded with 
 
 `QrScanner.vue` wraps `html5-qrcode` for camera-based barcode/QR scanning; keyboard-wedge USB/Bluetooth
 scanners work via plain text input + Enter-to-submit and don't need this component.
+
+### In-app feedback reporting & the site banner
+
+Any logged-in user can report a bug or feature idea from the profile menu ("Report an Issue" —
+`FeedbackReportModal.vue`), which captures page context automatically (full URL including host, so
+a report shows which instance it came from; page title; browser info; server-verified git commit
+via `GitVersionService`, never trusted from the client) and, opt-in via a checkbox, a client-side
+DOM screenshot (`html2canvas`, captured *before* the modal opens — capturing after would just
+photograph the modal's own backdrop). `FeedbackReportController@store` (permission: `general-access`)
+saves it and emails a developer address list (`config('feedback.notify_emails')`, sourced from
+`FEEDBACK_NOTIFY_EMAIL` — deliberately not tied to any permission, since recipients are developers,
+not necessarily `admin-system` holders). Triage lives at `/setup/feedback` (permission:
+`manage-feedback`, Administrator-only by default): status lifecycle is
+`new → seen → in_development → resolved` (no "won't fix" — a decision not to act is still
+`resolved`, with a comment explaining why), and every transition *or* same-status note
+(`FeedbackReportController@update` accepts a `status` equal to the report's current status,
+specifically to support adding a comment without advancing) creates an immutable
+`FeedbackReportStatusLog` row and emails the reporter. The triage page renders full history —
+every log entry, always visible, not behind a click — distinguishing "moved to X" from "note while
+at X" purely by comparing each entry's status to the one before it, no extra column needed.
+
+The **site banner** (`Banner.vue`, mounted once in `AuthenticatedLayout.vue` above the nav) is a
+reusable single slot: `BannerSetting` is a singleton row (same pattern as `PinLoginSetting`) with a
+`type` (`feedback`/`maintenance`/`message`, or null for none) and a `version` that's bumped on any
+content change — `banner_dismissals` rows are keyed to `(person_id, version)`, so editing the
+banner's text automatically re-shows it to everyone who'd already dismissed the old version. Only
+one banner is ever active by construction (one settings row). Config + per-user dismissed state
+ride along as a shared Inertia prop (`BannerService`/`HandleInertiaRequests`), not a separate
+request. The maintenance banner's message is auto-generated from admin-entered start/stop
+date-times (client-side text generation in `FeedbackReports.vue`, still hand-editable after) —
+these times aren't persisted separately, only the composed message string is.
 
 ### PDF / label generation
 
