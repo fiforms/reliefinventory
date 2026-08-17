@@ -25,11 +25,22 @@
             border-bottom: 2px solid #1e3a8a;
             padding-bottom: 4px;
             margin: 22px 0 8px 0;
+            break-after: avoid;
+            page-break-after: avoid;
         }
         table {
             width: 100%;
             border-collapse: collapse;
             font-size: 11.5px;
+            break-before: avoid;
+            page-break-before: avoid;
+        }
+        thead {
+            display: table-header-group;
+        }
+        tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
         }
         th, td {
             text-align: left;
