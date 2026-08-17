@@ -6,6 +6,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Rules\SecurePin;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
@@ -23,7 +24,7 @@ class PinController extends Controller
     {
         $validated = $request->validate([
             'current_password' => ['required', 'current_password'],
-            'pin' => ['required', 'digits:5', 'confirmed'],
+            'pin' => ['required', 'digits:5', 'confirmed', new SecurePin],
         ]);
 
         // pin_hash is deliberately not in Person::$fillable — set directly.

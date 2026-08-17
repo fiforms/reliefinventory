@@ -177,6 +177,21 @@ test('pin unlock fails when there is no active grant for that person on this dev
     $this->assertGuest();
 });
 
+test('pin unlock with a nonexistent person_id fails the same generic way as no grant, not a validation error', function () {
+    enablePinLogin();
+    $device = approvedDevice();
+
+    $response = withDeviceCookie($device)->postJson('/unlock/pin', [
+        'person_id' => 999999, 'pin' => '24680',
+    ]);
+
+    // Must not be a 422 validation error — that would let an unauthenticated
+    // caller distinguish real from fake person IDs before the device-approval
+    // gate even applies.
+    $response->assertStatus(401);
+    $this->assertGuest();
+});
+
 test('pin unlock fails when the device is not approved even with a correct pin', function () {
     enablePinLogin();
     $device = TrustedDevice::create(['device_token' => 'pending', 'status' => 'pending', 'requested_at' => now()]);

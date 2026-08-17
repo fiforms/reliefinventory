@@ -66,7 +66,8 @@ const removePin = () => {
 			<p class="mt-1 text-sm text-gray-600">
 				A 5-digit PIN for faster re-login on a shared warehouse terminal your administrator has
 				approved for PIN unlock. It never works on a device that hasn't been approved, and never
-				replaces your real password anywhere else.
+				replaces your real password anywhere else. It can't repeat the same digit more than
+				twice in a row, or contain more than 3 sequential digits in a row (like 1234 or 4321).
 			</p>
 		</header>
 

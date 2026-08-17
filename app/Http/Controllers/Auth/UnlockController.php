@@ -82,8 +82,14 @@ class UnlockController extends Controller
 
     public function attemptPin(Request $request, PinLoginService $pinLogin)
     {
+        // person_id is deliberately NOT validated with `exists:people,id` here —
+        // this is a guest-accessible endpoint, and an `exists` failure would let
+        // an unauthenticated caller enumerate valid person IDs before the
+        // device-approval check below even runs. An invalid ID instead just
+        // fails the activeGrant() check further down with the same generic
+        // "session expired" message as any other invalid grant.
         $data = $request->validate([
-            'person_id' => 'required|integer|exists:people,id',
+            'person_id' => 'required|integer',
             'pin' => 'required|digits:5',
         ]);
 
