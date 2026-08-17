@@ -262,7 +262,7 @@ async function saveBanner() {
 							<div class="flex-1">
 								<div class="flex items-center gap-2 text-sm flex-wrap">
 									<span class="font-semibold">{{ report.type === 'bug' ? 'Bug' : 'Feature' }}</span>
-									<span v-if="report.urgent" class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
+									<span v-if="report.urgent && report.status !== 'resolved'" class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
 										URGENT
 									</span>
 									<span class="px-2 py-0.5 rounded text-xs font-medium" :class="statusClasses[report.status]">
@@ -290,7 +290,7 @@ async function saveBanner() {
 						<!-- History: always visible, indented cards — submission first, then every log entry -->
 						<div class="mt-3 pl-4 border-l-2 border-gray-200 space-y-2">
 							<div class="rounded border bg-gray-50 px-3 py-2 text-xs">
-								<span class="font-semibold">Submitted</span>
+								<span class="font-semibold">Submitted<template v-if="report.urgent"> - URGENT</template></span>
 								by {{ report.person?.full_name }}
 								<span class="text-gray-400">— {{ formatDateTime(report.created_at) }}</span>
 							</div>
