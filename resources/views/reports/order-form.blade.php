@@ -8,7 +8,7 @@
             font-family: Arial, sans-serif;
             color: #222;
             margin: 0;
-            padding: 36px 42px;
+            padding: 0 42px;
         }
         h1 {
             font-size: 22px;
@@ -47,21 +47,11 @@
             border-bottom: 1px solid #999;
             height: 18px;
         }
-        h2.category {
-            font-size: 13px;
-            color: #1e3a8a;
-            border-bottom: 2px solid #1e3a8a;
-            padding-bottom: 4px;
-            margin: 18px 0 6px 0;
-            break-after: avoid;
-            page-break-after: avoid;
-        }
         table {
             width: 100%;
             border-collapse: collapse;
             font-size: 11px;
-            break-before: avoid;
-            page-break-before: avoid;
+            margin-top: 18px;
         }
         thead {
             display: table-header-group;
@@ -69,6 +59,13 @@
         tr {
             break-inside: avoid;
             page-break-inside: avoid;
+        }
+        th.category-heading {
+            font-size: 13px;
+            color: #1e3a8a;
+            border-bottom: 2px solid #1e3a8a;
+            padding: 0 6px 4px 6px;
+            font-weight: bold;
         }
         th, td {
             text-align: left;
@@ -138,9 +135,11 @@
     </div>
 
     @forelse($categories as $category => $items)
-        <h2 class="category">{{ $category ?? 'Uncategorized' }}</h2>
         <table>
             <thead>
+                <tr>
+                    <th class="category-heading" colspan="4">{{ $category ?? 'Uncategorized' }}</th>
+                </tr>
                 <tr>
                     <th>Item #</th>
                     <th>Name</th>

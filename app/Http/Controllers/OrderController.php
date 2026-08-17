@@ -237,9 +237,13 @@ class OrderController extends Controller
      */
     public function orderFormPdf()
     {
-        return Pdf::view('reports.order-form', ['categories' => $this->buildOrderFormRecords(), 'generatedAt' => now()])
+        $generatedAt = now();
+
+        return Pdf::view('reports.order-form', ['categories' => $this->buildOrderFormRecords(), 'generatedAt' => $generatedAt])
+            ->headerView('reports.partials.pdf-header', ['title' => 'Order Request Form', 'generatedAt' => $generatedAt])
+            ->margins(top: 0.75, right: 0, bottom: 1, left: 0, unit: 'in')
             ->format('letter')
-            ->name('order-form-'.now()->format('Y-m-d').'.pdf');
+            ->name('order-form-'.$generatedAt->format('Y-m-d').'.pdf');
     }
 
     public function buildOrderFormRecords()

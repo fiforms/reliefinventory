@@ -41,9 +41,13 @@ class InventoryReportController extends Controller
             fn ($r) => $r['on_hand'] !== 0 || $r['outdated'] !== 0 || $r['trashed'] !== 0 || $r['diverted'] !== 0
         )->values();
 
-        return Pdf::view('reports.inventory', ['records' => $records, 'generatedAt' => now()])
+        $generatedAt = now();
+
+        return Pdf::view('reports.inventory', ['records' => $records, 'generatedAt' => $generatedAt])
+            ->headerView('reports.partials.pdf-header', ['title' => 'Inventory Report', 'generatedAt' => $generatedAt])
+            ->margins(top: 0.75, right: 0, bottom: 1, left: 0, unit: 'in')
             ->format('letter')
-            ->name('inventory-report-'.now()->format('Y-m-d').'.pdf');
+            ->name('inventory-report-'.$generatedAt->format('Y-m-d').'.pdf');
     }
 
     private function buildRecords()

@@ -8,7 +8,7 @@
             font-family: Arial, sans-serif;
             color: #222;
             margin: 0;
-            padding: 36px 42px;
+            padding: 0 42px;
         }
         h1 {
             font-size: 24px;
@@ -19,21 +19,11 @@
             font-size: 13px;
             margin-bottom: 20px;
         }
-        h2.category {
-            font-size: 14px;
-            color: #1e3a8a;
-            border-bottom: 2px solid #1e3a8a;
-            padding-bottom: 4px;
-            margin: 22px 0 8px 0;
-            break-after: avoid;
-            page-break-after: avoid;
-        }
         table {
             width: 100%;
             border-collapse: collapse;
             font-size: 11.5px;
-            break-before: avoid;
-            page-break-before: avoid;
+            margin-top: 22px;
         }
         thead {
             display: table-header-group;
@@ -41,6 +31,13 @@
         tr {
             break-inside: avoid;
             page-break-inside: avoid;
+        }
+        th.category-heading {
+            font-size: 14px;
+            color: #1e3a8a;
+            border-bottom: 2px solid #1e3a8a;
+            padding: 0 8px 6px 8px;
+            font-weight: bold;
         }
         th, td {
             text-align: left;
@@ -84,9 +81,11 @@
     </div>
 
     @foreach($records->groupBy('category') as $category => $rows)
-        <h2 class="category">{{ $category ?? 'Uncategorized' }}</h2>
         <table>
             <thead>
+                <tr>
+                    <th class="category-heading" colspan="7">{{ $category ?? 'Uncategorized' }}</th>
+                </tr>
                 <tr>
                     <th>Item #</th>
                     <th>Name</th>
