@@ -118,3 +118,30 @@ Issues identified August 17, 2026
    headless-Chrome library requirement. Not part of `scripts/update.sh`; needs doing manually
    once per server. Pallet labels and the SITREP are unaffected — they stay on the existing
    Chrome-based driver.
+
+10. ~~System Admin "Install Update" silently triggered the wrong instance's systemd unit on wa26~~
+    — fixed 2026-08-18
+ - Incident: clicking "Install Update" on wa26's `/setup/system` panel wrote wa26's own
+   "Update requested…" status file, but then told `sudo systemctl start` to fire
+   `reliefinventory-update.service` (demo's unit) instead of
+   `reliefinventory-wa26-update.service` — because wa26's `.env` never set
+   `SYSTEM_UPDATE_UNIT`/`SYSTEM_BACKUP_NOW_UNIT`, so `config('system.update_unit')` silently
+   fell back to the literal default value, which happens to be demo's unit name. Demo only
+   "worked" by coincidence (its unit name matches the default). `journalctl -u
+   reliefinventory-wa26-update.service` showed zero activity ever; `reliefinventory-update.service`
+   (demo's) fired at the same instant instead, ran a harmless no-op against demo, and never
+   touched wa26's status file — leaving the wa26 panel stuck on "waiting for the updater to
+   start" forever, and (worse) permanently 409-refusing any retry since the backend blocks a
+   new update whenever `state === 'running'`, with no timeout anywhere.
+ - Fixed both instance-specific gap and the underlying design gap:
+   - Added the missing `SYSTEM_UPDATE_UNIT=reliefinventory-wa26-update.service` /
+     `SYSTEM_BACKUP_NOW_UNIT=reliefinventory-wa26-backup-now.service` to wa26's `.env` (and made
+     demo's explicit too, instead of relying on the default matching by coincidence).
+   - `SystemController::readUpdateStatus()` now treats a `running` status whose `updated_at` is
+     more than 5 minutes stale as `stalled` (computed on read, nothing written back — a real
+     update that does start simply supersedes it on the next write). `update()`'s "already
+     running" 409 guard naturally stops blocking once a status is stale. The panel
+     (`SystemAdmin.vue`) now shows a clear "Update stalled: …" error instead of polling a dead
+     status forever.
+ - **Any future new instance's `.env` must set these two vars explicitly** — there's no
+   provisioning script yet (see item 7) to catch this automatically.

@@ -27,6 +27,21 @@ use Illuminate\Support\Facades\Process;
  */
 class SystemController extends Controller
 {
+    /**
+     * How long a "running" update status can go without a fresh
+     * updated_at before we stop trusting it. update.sh writes a status
+     * update within a few seconds of the unit actually starting, and
+     * again at completion — a "running" status older than this almost
+     * always means the systemd unit never started at all (misconfigured
+     * SYSTEM_UPDATE_UNIT, missing sudoers rule, etc.), not a slow build.
+     * Without this, a failed hand-off leaves the panel polling "running"
+     * forever with no error and, worse, permanently 409-refusing any
+     * retry — indistinguishable from a real in-progress update to
+     * whoever's looking at it. See TODO.md's system-controller-staleness
+     * note for the incident that surfaced this.
+     */
+    private const RUNNING_STALE_AFTER_SECONDS = 300;
+
     private const SETTINGS_DEFAULTS = [
         'frequency' => 'daily',
         'hour' => 2,
@@ -211,7 +226,23 @@ class SystemController extends Controller
             return null;
         }
         $decoded = json_decode((string) file_get_contents($path), true);
+        if (! is_array($decoded)) {
+            return null;
+        }
 
-        return is_array($decoded) ? $decoded : null;
+        if (($decoded['state'] ?? null) === 'running' && ! empty($decoded['updated_at'])) {
+            $secondsSinceUpdate = abs(now()->diffInSeconds(\Illuminate\Support\Carbon::parse($decoded['updated_at'])));
+            if ($secondsSinceUpdate > self::RUNNING_STALE_AFTER_SECONDS) {
+                // Computed on read, never written back — a later real
+                // status write (from an update that does start) simply
+                // supersedes this the next time the file is read.
+                $decoded['state'] = 'stalled';
+                $decoded['message'] = 'No progress in over '.intdiv(self::RUNNING_STALE_AFTER_SECONDS, 60)
+                    .' minutes (last status: "'.$decoded['message'].'"). The update most likely never '
+                    .'started — check SYSTEM_UPDATE_UNIT in .env and the sudoers rule on the server, then try again.';
+            }
+        }
+
+        return $decoded;
     }
 }

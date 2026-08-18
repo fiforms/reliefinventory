@@ -63,6 +63,8 @@ async function fetchStatus(applySettings = true) {
 	if (response.data.update_status?.state === 'running' && !updating.value) {
 		updating.value = true;
 		startPolling();
+	} else if (response.data.update_status?.state === 'stalled') {
+		error.value = `Update stalled: ${response.data.update_status.message}`;
 	}
 	return response.data;
 }
@@ -109,11 +111,13 @@ function startPolling() {
 			const data = await fetchStatus(false);
 			inMaintenance.value = false;
 			const state = data.update_status?.state;
-			if (state === 'success' || state === 'failed') {
+			if (state === 'success' || state === 'failed' || state === 'stalled') {
 				stopPolling();
 				updating.value = false;
 				if (state === 'success') {
 					notice.value = 'Update finished successfully.';
+				} else if (state === 'stalled') {
+					error.value = `Update stalled: ${data.update_status.message}`;
 				} else {
 					error.value = `Update failed: ${data.update_status.message} The site may be in maintenance mode — check the server.`;
 				}

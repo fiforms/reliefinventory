@@ -75,6 +75,51 @@ test('backup settings round-trip through the conf file', function () {
     @unlink(config('system.settings_file'));
 });
 
+test('a stale running status is surfaced as stalled instead of blocking retry forever', function () {
+    $statusFile = sys_get_temp_dir().'/ri-test-update-status.json';
+    config(['system.update_status_file' => $statusFile]);
+
+    // Simulate the exact failure mode this guards against: the panel wrote
+    // "requested" but the systemd unit never actually started (e.g. a
+    // misconfigured SYSTEM_UPDATE_UNIT), so update.sh never got a chance
+    // to overwrite this with real progress.
+    file_put_contents($statusFile, json_encode([
+        'state' => 'running',
+        'message' => 'Update requested; waiting for the updater to start',
+        'updated_at' => now()->subMinutes(10)->toIso8601String(),
+    ]));
+
+    $admin = userWithPermissions('admin-system');
+
+    $status = $this->actingAs($admin)->getJson('/json/system/status');
+    $status->assertOk()->assertJsonPath('update_status.state', 'stalled');
+    expect($status->json('update_status.message'))->toContain('never started');
+
+    // And a retry is no longer blocked by the false "already running" 409
+    // (whether the actual systemctl call succeeds depends on the sandbox
+    // having sudo/systemd available, which isn't the point of this test).
+    expect($this->actingAs($admin)->postJson('/json/system/update')->status())->not->toBe(409);
+
+    @unlink($statusFile);
+});
+
+test('a genuinely recent running status still blocks a new update request', function () {
+    $statusFile = sys_get_temp_dir().'/ri-test-update-status-2.json';
+    config(['system.update_status_file' => $statusFile]);
+
+    file_put_contents($statusFile, json_encode([
+        'state' => 'running',
+        'message' => 'Update running (started just now)',
+        'updated_at' => now()->toIso8601String(),
+    ]));
+
+    $this->actingAs(userWithPermissions('admin-system'))
+        ->postJson('/json/system/update')
+        ->assertStatus(409);
+
+    @unlink($statusFile);
+});
+
 test('invalid backup settings are rejected', function () {
     config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings.conf']);
 
