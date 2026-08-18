@@ -7,9 +7,14 @@ Issues identified August 16, 2026
  - "People" form in main application shouldn't show permissions, there needs to be a separate UI in the administrative side. "Roles" visible in the main application should be only "Customer/Donor/Volunteer"
  - Administrative page should have roles like "Administrator" (everything), Sorting and Inventory Staff, Customer/Client (Ordering Only), Office Staff (everything except admin/setup roles)
 
-2. Troubleshoot page breaks on PDF reports
+2. ~~Troubleshoot page breaks on PDF reports~~ — done 2026-08-17
  - Inventory Report PDF (/report/inventory.pdf) breaks pages in the middle of a table.
  - Same issue on Order Entry Offline Order Form (/report/order-form.pdf)
+ - Fixed, then reworked further: both reports now render via a WeasyPrint driver (real CSS
+   Paged Media — `@page`, `@page :first`, margin-box running header/page-numbers) instead of
+   headless Chrome, giving correct per-page margins, a running header absent on page 1, and
+   category headings that repeat on continuation pages. See CLAUDE.md's PDF/label generation
+   section for the technical detail.
 
 3. Important PDF Reports such as the inventory should also be available as a CVS (or XLSX) Spreadsheet Download
 
@@ -45,3 +50,12 @@ Issues identified August 17, 2026
 
 8. ~~Set FEEDBACK_NOTIFY_EMAIL in .env on demo and wa26~~ — done 2026-08-17
    (daniel@pastordaniel.net, hellopastormark@gmail.com on both instances).
+
+9. Deploy step: install the `weasyprint` binary on any server this app runs on
+ - The Inventory Report and Order Form PDFs (see item 2 above) now render via a `weasyprint`
+   driver instead of headless Chrome. This needs the `weasyprint` Python package (with its
+   native Pango/Cairo deps) provisioned on the box — `apt install weasyprint` or
+   `pip install weasyprint` depending on distro — same one-time-setup category as the earlier
+   headless-Chrome library requirement. Not part of `scripts/update.sh`; needs doing manually
+   once per server. Pallet labels and the SITREP are unaffected — they stay on the existing
+   Chrome-based driver.
