@@ -6,7 +6,7 @@
     <style>
         @page {
             size: letter;
-            margin: 0.75in 0.5in 1in 0.5in;
+            margin: 0.75in 0.5in 0.5in 0.5in;
             @top-left {
                 content: "Order Request Form — generated {{ $generatedAt->format('F j, Y') }}";
                 font-family: Arial, sans-serif;

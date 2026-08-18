@@ -6,7 +6,7 @@
     <style>
         @page {
             size: letter;
-            margin: 0.75in 0.5in 1in 0.5in;
+            margin: 0.75in 0.5in 0.5in 0.5in;
             @top-left {
                 content: "Inventory Report — generated {{ $generatedAt->format('F j, Y \a\t g:i A T') }}";
                 font-family: Arial, sans-serif;
