@@ -68,6 +68,14 @@ Route::get('/setup/people', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/people')]);
 })->middleware(['auth', 'permission:manage-people']);
 
+// User Administration (TODO.md item 1) — create/promote/deactivate
+// login-capable accounts. Distinct from /setup/people: that page manages
+// party-tracking roles only, no permission overrides.
+Route::get('/setup/users', function () {
+    return Inertia::render('Users',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/users')]);
+})->middleware(['auth', 'permission:manage-users']);
+
 Route::get('/setup/categories', function () {
     return Inertia::render('CategoryEntry',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/categories')]);
@@ -154,7 +162,6 @@ foreach ([
     '/reports/flow' => 'Inventory Flow Report',
     '/reports/donors' => 'Donor Report',
     '/reports/customers' => 'Customer Report',
-    '/setup/users' => 'User Management',
 ] as $path => $feature) {
     Route::get($path, function () use ($path, $feature) {
         return Inertia::render('ComingSoon', [
@@ -196,6 +203,15 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pe
     // Read-only listing so the People edit form can offer per-person
     // permission overrides.
     Route::get('/permissions', [PermissionController::class, 'index']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-users']], function () {
+    Route::get('/users', [UserAdminController::class, 'index']);
+    Route::post('/users', [UserAdminController::class, 'store']);
+    Route::put('/users/{id}', [UserAdminController::class, 'update']);
+    Route::post('/users/{id}/deactivate', [UserAdminController::class, 'deactivate']);
+    Route::post('/users/{id}/reactivate', [UserAdminController::class, 'reactivate']);
+    Route::post('/users/{id}/resend-invite', [UserAdminController::class, 'resendInvite']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {

@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasLoginGate;
 use App\Models\Concerns\HasPermissions;
 use App\Models\Concerns\HasPinLogin;
 use Database\Factories\UserFactory;
@@ -17,7 +18,7 @@ use Illuminate\Notifications\Notifiable;
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasPermissions, HasPinLogin, Notifiable;
+    use HasFactory, HasLoginGate, HasPermissions, HasPinLogin, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -59,6 +60,7 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'email_verified_at' => 'datetime',
+            'disabled_at' => 'datetime',
             'password' => 'hashed',        ];
     }
 

@@ -1,43 +1,18 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
-import { ref, onMounted } from 'vue';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import MultiSelect from '@/Components/MultiSelect.vue';
+import Checkbox from '@/Components/Checkbox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import TextArea from '@/Components/TextArea.vue';
-import axios from 'axios';
 
 defineProps({
     breadcrumb: {
         type: Array,
     },
 });
-
-// Every permission key, for the per-person override table. Loaded once —
-// the same list is offered on every record being edited.
-const allPermissions = ref([]);
-onMounted(() => {
-	axios.get('/json/permissions').then((response) => {
-		allPermissions.value = response.data.records || [];
-	});
-});
-
-// A person's effective access is their roles' default grants, with these
-// per-person overrides layered on top in either direction — see
-// granular-permissions-model.md. "default" means no override row at all.
-function overrideState(record, permissionId) {
-	const existing = (record.person_permissions || []).find((o) => o.permission_id === permissionId);
-	if (!existing) return 'default';
-	return existing.granted ? 'grant' : 'revoke';
-}
-function setOverrideState(record, permissionId, state) {
-	const overrides = (record.person_permissions || []).filter((o) => o.permission_id !== permissionId);
-	if (state === 'grant') overrides.push({ permission_id: permissionId, granted: true });
-	if (state === 'revoke') overrides.push({ permission_id: permissionId, granted: false });
-	record.person_permissions = overrides;
-}
 </script>
 
 <template>
@@ -57,15 +32,17 @@ function setOverrideState(record, permissionId, state) {
         <th>Phone</th>
         <th>Email</th>
         <th>Roles</th>
+        <th>Volunteer</th>
       </template>
 
-      <template #tbody="{ record }"> 
+      <template #tbody="{ record }">
         <td>{{ record.first_name }}</td>
         <td>{{ record.last_name }}</td>
         <td>{{ record.organization || 'N/A' }}</td>
         <td>{{ record.phone || 'N/A' }}</td>
         <td>{{ record.email || 'N/A' }}</td>
         <td class="comma-separated"><span v-for="sub in record.roles" > {{ sub.name }} </span></td>
+        <td>{{ record.is_volunteer ? 'Yes' : '' }}</td>
       </template>
 
       <template #default="{ record, editing, templates }">
@@ -171,13 +148,29 @@ function setOverrideState(record, permissionId, state) {
             <div class="ri_fieldlabel">Roles:</div>
             <MultiSelect
 				v-model:records="record.people_roles"
-				:template="templates.people_roles" 
-				optionsource="/json/roles"
+				:template="templates.people_roles"
+				optionsource="/json/roles?context=people"
                 :enabled="editing"
 				fk_field="role_id"
 				display="name"
             />
           </div>
+          <p class="ri_hint">
+            Staff/login access (Administrator, Office, etc.) and permission overrides are
+            managed from Setup &rarr; User Administration, not here.
+          </p>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Volunteer:</div>
+            <Checkbox
+              v-model="record.is_volunteer"
+              :enabled="editing"
+            />
+          </div>
+          <p class="ri_hint">
+            Whether this person is a volunteer is separate from their role &mdash; a volunteer
+            can be an office manager or an administrator too. Feeds volunteer hours tracking.
+          </p>
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Comments:</div>
@@ -185,33 +178,6 @@ function setOverrideState(record, permissionId, state) {
               v-model="record.comments"
               :enabled="editing"
             />
-          </div>
-
-          <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Permission Overrides:</div>
-            <p class="ri_hint">
-                Only set these to give this specific person a capability their roles don't already
-                grant, or to take one away without changing their role. Leave "Default" otherwise.
-            </p>
-            <table class="ri_datatable" border="1">
-              <thead>
-                <tr><th>Permission</th><th>Default (role)</th><th>Always Grant</th><th>Always Revoke</th></tr>
-              </thead>
-              <tbody>
-                <tr v-for="permission in allPermissions" :key="permission.id">
-                  <td>{{ permission.key }}</td>
-                  <td v-for="state in ['default', 'grant', 'revoke']" :key="state" style="text-align:center;">
-                    <input
-                      type="radio"
-                      :name="'perm-' + record.id + '-' + permission.id"
-                      :checked="overrideState(record, permission.id) === state"
-                      :disabled="!editing"
-                      @change="setOverrideState(record, permission.id, state)"
-                    />
-                  </td>
-                </tr>
-              </tbody>
-            </table>
           </div>
         </div>
       </template>

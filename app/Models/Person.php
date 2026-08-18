@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasLoginGate;
 use App\Models\Concerns\HasPermissions;
 use App\Models\Concerns\HasPinLogin;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
@@ -12,7 +13,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Person extends Model
 {
-    use HasFactory, HasPermissions, HasPinLogin;
+    use HasFactory, HasLoginGate, HasPermissions, HasPinLogin;
 
     /**
      * The table associated with the model.
@@ -66,11 +67,22 @@ class Person extends Model
         'zip',
         'county_id',
         'comments',
+        // Whether this person is a volunteer (unpaid) — a fact about the
+        // person, independent of whatever permission role they hold (a
+        // volunteer can be the office manager or an administrator). Feeds
+        // future volunteer-hours/FEMA-reporting tracking; editable from
+        // both PeopleController and UserAdminController.
+        'is_volunteer',
         // Admin-assigned (the physical badge is issued by staff), unlike
         // pin_hash below which is deliberately NOT fillable — a PIN is
         // self-service and must only ever be written by PinController,
         // never by a raw mass-assignment payload through PeopleController.
         'badge_code',
+        // Both set only by UserAdminController (User Administration page),
+        // never accepted from client-submitted validation rules elsewhere
+        // — see PeopleController/UserAdminController's VALIDATION_RULES.
+        'email_verified_at',
+        'disabled_at',
     ];
 
     /**
@@ -81,6 +93,9 @@ class Person extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+        'email_verified_at' => 'datetime',
+        'disabled_at' => 'datetime',
+        'is_volunteer' => 'boolean',
     ];
 
     /**

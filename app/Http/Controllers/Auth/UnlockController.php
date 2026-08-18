@@ -122,6 +122,10 @@ class UnlockController extends Controller
             return response()->json(['message' => 'Incorrect PIN.'], 401);
         }
 
+        if ($person->isLoginDisabled()) {
+            return response()->json(['message' => 'This account has been deactivated.'], 403);
+        }
+
         RateLimiter::clear($rateLimitKey);
         $request->session()->forget(['pin_badge_verified_person_id', 'pin_badge_verified_at']);
 

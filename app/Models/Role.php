@@ -14,6 +14,11 @@ class Role extends Model
 
     protected $fillable = ['name', 'description'];
 
+    protected $casts = [
+        'visible_in_people_form' => 'boolean',
+        'visible_in_user_admin' => 'boolean',
+    ];
+
     /**
      * Define the many-to-many relationship with people.
      */

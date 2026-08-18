@@ -80,6 +80,7 @@ class PermissionsSeeder extends Seeder
         'view-sitrep' => 'View and export the external Situation Report (restricted, no names/PII)',
         'manage-trusted-devices' => 'Approve, label, and revoke devices allowed to use PIN unlock',
         'manage-feedback' => 'View and manage in-app bug/feature reports, and configure the site banner',
+        'manage-users' => 'Create, promote, and deactivate login-capable accounts (User Administration)',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -94,6 +95,36 @@ class PermissionsSeeder extends Seeder
         'view-dashboard',
     ];
 
+    /**
+     * Office (TODO.md item 1 — "everything except admin/setup roles"):
+     * same effective bundle as today's Volunteer + Team Leader tiers,
+     * just under a name that reflects what it actually grants rather than
+     * the legacy role_bitpack-era naming. Deliberately not called "Office
+     * Staff" — see the 2026-08-18 rename migration's doc comment: "staff"
+     * implies paid employment, out of scope for this app. Whether someone
+     * is a volunteer is tracked separately on the person record
+     * (people.is_volunteer), independent of which permission role they
+     * hold — a volunteer can be the office manager or an administrator.
+     */
+    private const OFFICE_KEYS = [
+        ...self::VOLUNTEER_TIER_KEYS,
+        ...self::TEAM_LEADER_EXTRA_KEYS,
+    ];
+
+    /**
+     * Sorting and Inventory (TODO.md item 1): warehouse-side work only —
+     * receiving, sorting, pallets, the item/location catalog, and donor
+     * lookup (manage-people) for intake. No manage-orders (ordering isn't
+     * this role's job) and no manage-roles.
+     */
+    private const SORTING_INVENTORY_KEYS = [
+        'general-access', 'manage-people', 'manage-items', 'manage-units',
+        'manage-categories', 'manage-locations', 'manage-warehouses', 'manage-uses',
+        'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
+        'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
+        'manage-counties', 'view-reports',
+    ];
+
     public function run(): void
     {
         $permissions = collect(self::PERMISSIONS)->map(
@@ -103,6 +134,8 @@ class PermissionsSeeder extends Seeder
         $volunteer = Role::where('name', 'Volunteer')->first();
         $teamLeader = Role::where('name', 'Team Leader')->first();
         $administrator = Role::where('name', 'Administrator')->first();
+        $office = Role::where('name', 'Office')->first();
+        $sortingInventory = Role::where('name', 'Sorting and Inventory')->first();
 
         $volunteerTier = $permissions->only(self::VOLUNTEER_TIER_KEYS)->pluck('id');
         $teamLeaderTier = $volunteerTier->merge($permissions->only(self::TEAM_LEADER_EXTRA_KEYS)->pluck('id'));
@@ -112,6 +145,13 @@ class PermissionsSeeder extends Seeder
         }
         if ($teamLeader) {
             $teamLeader->permissions()->syncWithoutDetaching($teamLeaderTier);
+        }
+
+        if ($office) {
+            $office->permissions()->syncWithoutDetaching($permissions->only(self::OFFICE_KEYS)->pluck('id'));
+        }
+        if ($sortingInventory) {
+            $sortingInventory->permissions()->syncWithoutDetaching($permissions->only(self::SORTING_INVENTORY_KEYS)->pluck('id'));
         }
 
         if ($administrator) {

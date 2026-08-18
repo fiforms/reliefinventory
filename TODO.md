@@ -1,11 +1,53 @@
 Issues identified August 16, 2026
 
-1. Implement user management and persmissions setup for administrators under the Setup Menu -> User Administration. Have the ability to
- - Create new users who will receive an email to set up their password
- - Promote or change permissions on users who've registered online
- - Deactivate users
- - "People" form in main application shouldn't show permissions, there needs to be a separate UI in the administrative side. "Roles" visible in the main application should be only "Customer/Donor/Volunteer"
- - Administrative page should have roles like "Administrator" (everything), Sorting and Inventory Staff, Customer/Client (Ordering Only), Office Staff (everything except admin/setup roles)
+1. ~~Implement user management and permissions setup for administrators under the Setup Menu -> User Administration~~ — done 2026-08-18
+ - Built `/setup/users` (permission: `manage-users`, Administrator-only by default): create a
+   login-capable account (sends Laravel's stock password-reset email so the person sets their
+   own password — no separate invite-token system), promote/change roles and per-person
+   permission overrides, deactivate/reactivate (new `disabled_at` column on `people`, checked
+   in both real login and PIN-unlock login paths), resend the setup email. A
+   Warehouse Users/Customers toggle filters the same list by role bucket.
+ - Two new roles added: "Sorting and Inventory" (warehouse-only bundle) and "Office"
+   (everything `Volunteer`/`Team Leader` already granted, i.e. "everything except
+   admin/setup", just under an honestly-named role — renamed from "...Staff" 2026-08-18,
+   since "staff" implies paid employment and this app doesn't track that). `Customer` role is
+   reused as the login-capable "Customer/Client (Ordering Only)" role rather than adding a
+   separate one.
+ - `/setup/people` no longer shows permission-override checkboxes at all, and its Roles picker
+   is now filtered to Customer/Donor only (`/json/roles?context=people`) — staff roles are
+   assigned exclusively from the new page. `Role` gained two visibility flags
+   (`visible_in_people_form`/`visible_in_user_admin`) driving both pickers.
+ - On `/setup/users`, roles are one-tap, mutually-exclusive presets over a flat permission
+   checklist (Grant All/Revoke All also available) rather than a role multi-select + separate
+   3-way override table — tapping a role fully replaces the checklist with exactly that role's
+   bundle (switching Admin -> Customer clears everything, doesn't union), then individual
+   permissions can be hand-adjusted. `RoleController::index` now always eager-loads each role's
+   permission keys so the page can preview/apply them. Backend role-default + per-person-override
+   semantics are unchanged — this is a UI reinterpretation only.
+ - "Volunteer" is no longer a role at all — it's `people.is_volunteer` (a fact about the person,
+   independent of their permission role or party role; an administrator or office role-holder
+   can still be a volunteer). Editable from both `/setup/people` and `/setup/users`. Feeds the
+   not-yet-built volunteer-hours/FEMA-reporting tracking in `PROJECT_ANALYSIS.md` Part 5. The
+   `Volunteer` role row still exists in the database (not deleted, for historical/FK safety) but
+   is hidden from both pickers (`visible_in_people_form`/`visible_in_user_admin` both false);
+   anyone who held it got `is_volunteer` backfilled to true by the migration.
+ - **Known gap, deliberate**: the Customer/Client role currently carries no `manage-orders`
+   grant — that permission is resource-level (all orders), not row-level, so granting it today
+   would let one customer see/edit every other customer's orders. A Customer-role account can
+   log in but can't do anything yet, until order-ownership scoping is built (see the note
+   below).
+ - **Deferred, not built**: a much bigger idea surfaced while scoping this — full self-service
+   customer registration with an approval funnel (pending → approved, blocking order access
+   until approved), plus "customers see/edit only their own orders." `PROJECT_ANALYSIS.md`
+   Part 5 (Facility Network) already designs a general approval-workflow mechanism
+   (`facility_assignments`, `approval_status`/`active_status`) that's the right home for this
+   rather than a one-off field bolted onto `Person`. Needs its own design/build pass — row-level
+   order ownership in `OrderController` especially, since nothing in the permission model
+   today expresses "this resource, but only rows you own."
+ - Found and fixed a real latent bug while touching `AuthenticatedSessionController`: the
+   `MustVerifyEmail` unverified-email check referenced the class with no `use` import — any
+   login attempt that actually hit that branch would have fatal-errored instead of showing the
+   verification-required message. Never previously exercised by a test.
 
 2. ~~Troubleshoot page breaks on PDF reports~~ — done 2026-08-17
  - Inventory Report PDF (/report/inventory.pdf) breaks pages in the middle of a table.

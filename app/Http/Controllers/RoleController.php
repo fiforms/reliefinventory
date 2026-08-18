@@ -16,13 +16,30 @@ class RoleController extends Controller
     ];
 
     /**
-     * Retrieve all roles.
+     * Retrieve roles. ?context=people restricts to the party-tracking
+     * roles shown on the main People form (Customer/Donor/Volunteer);
+     * ?context=users restricts to the login-capable roles offered on the
+     * User Administration page (Administrator, Customer, and the other
+     * staff roles) — see the visible_in_people_form/visible_in_user_admin
+     * columns. No context param returns every role, unchanged.
+     *
+     * Always eager-loads `permissions` (id, key only) — a role is just a
+     * named preset of permissions (TODO.md item 1 follow-up), so the User
+     * Administration page needs to know what each role actually grants in
+     * order to show/apply it as a one-tap preset over the flat permission
+     * checklist, rather than treating role membership as its own opaque
+     * grant.
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function index()
+    public function index(Request $request)
     {
-        $roles = Role::all();
+        $roles = match ($request->query('context')) {
+            'people' => Role::where('visible_in_people_form', true),
+            'users' => Role::where('visible_in_user_admin', true),
+            default => Role::query(),
+        };
+        $roles = $roles->with('permissions:id,key')->get();
         $templates = [
             '_default' => [
                 'name' => '',

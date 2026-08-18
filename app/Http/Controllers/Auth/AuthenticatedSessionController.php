@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Services\PinLoginService;
+use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -50,6 +51,16 @@ class AuthenticatedSessionController extends Controller
 
             return redirect()->route('verification.notice')
                 ->withErrors(['email' => 'You need to verify your email address before logging in.']);
+        }
+
+        // Admin-deactivated account (User Administration page) — blocked
+        // after Auth::attempt() succeeds, same shape as the MustVerifyEmail
+        // check above, since Auth::attempt() itself has no concept of this.
+        if ($user->isLoginDisabled()) {
+            Auth::logout();
+
+            return redirect()->route('login')
+                ->withErrors(['email' => 'This account has been deactivated.']);
         }
 
         $request->session()->regenerate();
