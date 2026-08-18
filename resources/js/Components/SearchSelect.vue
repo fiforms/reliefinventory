@@ -26,7 +26,19 @@
 	  options      - static array of option objects (alternative to optionsource)
 	  optionsource - JSON url returning { records: [...] }
 	  display      - field shown in the input and dropdown (default "name")
+	  secondary    - optional second field shown alongside `display` in each
+	                 dropdown row only (e.g. display="display_number"
+	                 secondary="name" for an item-number-first search that
+	                 still shows the item's name) — widens the dropdown so
+	                 both fit. The input itself always shows just `display`.
 	  searchfields - array of fields to match while typing (default [display])
+	  openOnFocus  - open the full dropdown as soon as the field is focused
+	                 (default true — click-to-browse). Set false for a
+	                 rapid/scan-driven field that should just wait for input
+	                 and then open filtered to what's been typed, rather than
+	                 popping the whole list open with the first row
+	                 pre-highlighted (which risks an accidental Enter picking
+	                 the wrong item before anything's been typed).
 	  placeholder, enabled, allowcreate, autofocus
 
 	Events: update:modelValue, selected(object|null), create(searchText)
@@ -65,11 +77,13 @@ export default {
 		options: { type: Array, default: null },
 		optionsource: { type: String, default: null },
 		display: { type: String, default: "name" },
+		secondary: { type: String, default: null },
 		searchfields: { type: Array, default: null },
 		placeholder: { type: String, default: "Search..." },
 		enabled: { type: Boolean, default: true },
 		allowcreate: { type: Boolean, default: false },
 		autofocus: { type: Boolean, default: false },
+		openOnFocus: { type: Boolean, default: true },
 	},
 	emits: ["update:modelValue", "selected", "create"],
 	data() {
@@ -166,6 +180,9 @@ export default {
 			this.highlighted = 0;
 			this.$refs.input?.select();
 		},
+		onFocus() {
+			if (this.openOnFocus) this.open();
+		},
 		close() {
 			this.isOpen = false;
 			this.syncDisplay();
@@ -235,7 +252,7 @@ export default {
 				ref="input"
 				type="text"
 				v-model="search"
-				@focus="open"
+				@focus="onFocus"
 				@blur="onBlur"
 				@input="onInput"
 				@keydown.enter.prevent="onEnter"
@@ -246,7 +263,8 @@ export default {
 				:placeholder="placeholder"
 				autocomplete="off"
 			/>
-			<ul v-if="isOpen && (filteredOptions.length > 0 || showCreateRow)" class="ss_dropdown">
+			<ul v-if="isOpen && (filteredOptions.length > 0 || showCreateRow)"
+				class="ss_dropdown" :class="{ ss_dropdown_wide: secondary }">
 				<li
 					v-for="(option, index) in filteredOptions"
 					:key="option.id"
@@ -254,7 +272,8 @@ export default {
 					class="ss_option"
 					:class="{ ss_highlighted: index === highlighted }"
 				>
-					{{ option[display] }}
+					<span class="ss_primary">{{ option[display] }}</span>
+					<span v-if="secondary" class="ss_secondary">{{ option[secondary] }}</span>
 				</li>
 				<li
 					v-if="showCreateRow"
@@ -296,9 +315,24 @@ export default {
 	border-radius: 0 0 6px 6px;
 	box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
 }
+.ss_dropdown_wide {
+	width: max-content;
+	min-width: 100%;
+	max-width: 26rem;
+}
 .ss_option {
 	padding: 0.45em 0.6em;
 	cursor: pointer;
+	display: flex;
+	gap: 0.6em;
+	align-items: baseline;
+	white-space: nowrap;
+}
+.ss_secondary {
+	color: #666;
+	font-size: 0.9em;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 .ss_option:hover,
 .ss_highlighted {

@@ -207,6 +207,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::post('/orders', [OrderController::class, 'store']);
     Route::get('/orders/{id}', [OrderController::class, 'show']);
     Route::patch('/orders/{id}', [OrderController::class, 'update']);
+    Route::patch('/orders/{id}/complete', [OrderController::class, 'complete']);
     Route::delete('/orders/{id}', [OrderController::class, 'destroy']);
     Route::post('/orders/{id}/lines', [OrderController::class, 'storeLine']);
     Route::put('/orders/{id}/lines/{lineId}', [OrderController::class, 'updateLine']);

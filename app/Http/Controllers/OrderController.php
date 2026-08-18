@@ -42,6 +42,19 @@ class OrderController extends Controller
         'comments' => 'nullable|string',
     ];
 
+    private const COMPLETE_VALIDATION = [
+        'comments' => 'nullable|string',
+        'fulfillment_method' => 'required|in:delivery,pickup',
+        'needed_by_date' => 'nullable|date',
+        // delivery_days/preferred_time are delivery-only — see complete().
+        'delivery_days' => 'nullable|array',
+        'delivery_days.*' => 'in:Sun,Mon,Tue,Wed,Thu,Fri,Sat',
+        'preferred_time' => 'nullable|string|max:100',
+        'contact_name' => 'nullable|string|max:191',
+        'contact_phone' => 'nullable|string|max:50',
+        'other_needs' => 'nullable|string',
+    ];
+
     /**
      * Intake edits are only allowed while the order is still "New Order" —
      * once filling has begun, changing the requested lines would silently
@@ -70,6 +83,7 @@ class OrderController extends Controller
     {
         $openStatuses = [
             Transaction::statusId(Transaction::STATUS_NEW_ORDER),
+            Transaction::statusId(Transaction::STATUS_READY_TO_FILL),
             Transaction::statusId(Transaction::STATUS_FILLING),
             Transaction::statusId(Transaction::STATUS_FILLED),
         ];
@@ -154,6 +168,38 @@ class OrderController extends Controller
             'order_date' => 'sometimes|required|date',
             'comments' => 'nullable|string',
         ]);
+
+        $order->fill($data)->save();
+
+        return response()->json([
+            'record' => $order->load(self::WITH_RELATIONS),
+        ]);
+    }
+
+    /**
+     * Finalize intake from the Review & Confirm screen: save the
+     * completion fields (comments, delivery/pickup + timing, contact,
+     * other-needs) and move the order out of New Order into Ready to Fill
+     * — which locks it against further intake edits, same as any other
+     * non-New-Order status (see rejectIfLocked). This is the hook a future
+     * fill/pick workflow queries against (status = Ready to Fill) to know
+     * what's ready to work.
+     */
+    public function complete(Request $request, $id)
+    {
+        $order = Transaction::where('type', 'order')->findOrFail($id);
+        $this->rejectIfLocked($order);
+
+        $data = $request->validate(self::COMPLETE_VALIDATION);
+        $data['status_id'] = Transaction::statusId(Transaction::STATUS_READY_TO_FILL);
+
+        // The warehouse controls pickup days/times, not the customer — force
+        // these clear on pickup regardless of what the client sent (e.g. a
+        // leftover selection from switching the radio before submitting).
+        if ($data['fulfillment_method'] === 'pickup') {
+            $data['delivery_days'] = null;
+            $data['preferred_time'] = null;
+        }
 
         $order->fill($data)->save();
 

@@ -116,14 +116,78 @@ test('the order list splits open orders from completed ones', function () {
         'order_date' => now()->toDateString(),
     ]);
     $open = $make(Transaction::STATUS_NEW_ORDER);
+    $readyToFill = $make(Transaction::STATUS_READY_TO_FILL);
     $filling = $make(Transaction::STATUS_FILLING);
     $shipped = $make(Transaction::STATUS_SHIPPED);
 
     $response = $this->actingAs($user)->getJson('/json/orders')->assertOk()->json();
 
-    expect(collect($response['open'])->pluck('id'))->toContain($open->id, $filling->id)
+    expect(collect($response['open'])->pluck('id'))->toContain($open->id, $readyToFill->id, $filling->id)
         ->not->toContain($shipped->id)
         ->and(collect($response['recent'])->pluck('id'))->toContain($shipped->id);
+});
+
+test('completing an order requires a fulfillment method and moves it to Ready to Fill, locking further edits', function () {
+    $user = userWithPermissions('manage-orders');
+    $itemtype = orderItemtype();
+    $customer = orderCustomer();
+    $order = $this->actingAs($user)
+        ->postJson('/json/orders', ['person_id' => $customer->id])
+        ->json('record');
+
+    $this->actingAs($user)->postJson('/json/orders/'.$order['id'].'/lines', [
+        'itemtype_id' => $itemtype->id,
+        'qty_requested' => 3,
+    ])->assertCreated();
+
+    // fulfillment_method is the one required field on the review screen
+    $this->actingAs($user)->patchJson('/json/orders/'.$order['id'].'/complete', [])
+        ->assertStatus(422);
+
+    $response = $this->actingAs($user)->patchJson('/json/orders/'.$order['id'].'/complete', [
+        'comments' => 'leave at the loading dock',
+        'fulfillment_method' => 'delivery',
+        'needed_by_date' => now()->addDays(3)->toDateString(),
+        'delivery_days' => ['Mon', 'Wed', 'Fri'],
+        'preferred_time' => '10am - 2pm',
+        'contact_name' => 'Pat Rivera',
+        'contact_phone' => '555-0100',
+        'other_needs' => 'tarps, not in catalog',
+    ])->assertOk()->json('record');
+
+    expect($response['status']['name'])->toBe('Ready to Fill')
+        ->and($response['fulfillment_method'])->toBe('delivery')
+        ->and($response['delivery_days'])->toBe(['Mon', 'Wed', 'Fri'])
+        ->and($response['preferred_time'])->toBe('10am - 2pm')
+        ->and($response['other_needs'])->toBe('tarps, not in catalog');
+
+    // now locked, same as any other non-New-Order status
+    $this->actingAs($user)->postJson('/json/orders/'.$order['id'].'/lines', [
+        'itemtype_id' => $itemtype->id,
+        'qty_requested' => 1,
+    ])->assertStatus(409);
+    $this->actingAs($user)->patchJson('/json/orders/'.$order['id'].'/complete', [
+        'fulfillment_method' => 'delivery',
+    ])->assertStatus(409);
+});
+
+test('completing as pickup clears delivery_days and preferred_time even if submitted, since the warehouse controls those', function () {
+    $user = userWithPermissions('manage-orders');
+    $order = $this->actingAs($user)
+        ->postJson('/json/orders', ['person_id' => orderCustomer()->id])
+        ->json('record');
+
+    $response = $this->actingAs($user)->patchJson('/json/orders/'.$order['id'].'/complete', [
+        'fulfillment_method' => 'pickup',
+        'needed_by_date' => now()->addDays(2)->toDateString(),
+        'delivery_days' => ['Tue'],
+        'preferred_time' => 'noon',
+    ])->assertOk()->json('record');
+
+    expect($response['fulfillment_method'])->toBe('pickup')
+        ->and($response['delivery_days'])->toBeNull()
+        ->and($response['preferred_time'])->toBeNull()
+        ->and($response['needed_by_date'])->not->toBeNull();
 });
 
 test('stock hints aggregate usable ledger quantity per itemtype and are staff-gated', function () {

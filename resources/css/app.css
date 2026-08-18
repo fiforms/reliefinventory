@@ -123,6 +123,19 @@ a.ri_defaultbutton, a.ri_formbutton, a.ri_deletebutton {
   transition: background-color 0.3s ease;
 }
 
+/* Solid-color buttons have no border, so the browser's default focus
+   ring can be nearly invisible on them — tabbing to one gives no clue
+   where focus landed. Plain :focus (not :focus-visible) because focus
+   moved by a scripted .focus() call — e.g. the duplicate-item modal's
+   Tab-cycling — doesn't reliably trigger :focus-visible in Chromium even
+   though it originated from a real keydown; :focus always fires. */
+button.ri_defaultbutton:focus, a.ri_defaultbutton:focus,
+button.ri_formbutton:focus, a.ri_formbutton:focus,
+button.ri_deletebutton:focus, a.ri_deletebutton:focus {
+  outline: 3px solid #2684ff;
+  outline-offset: 2px;
+}
+
 /* Action bar at the bottom of the RIForm detail view: evenly spaced
    buttons, separated from the form fields, with Delete pushed to the
    far edge so it can't be hit by accident. */

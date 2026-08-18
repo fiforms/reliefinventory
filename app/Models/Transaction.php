@@ -25,10 +25,17 @@ class Transaction extends Model
     // the donation lifecycle — this is their terminal status instead.
     public const STATUS_LOGGED = 'Logged';
 
-    // Order lifecycle (New Order -> Filling -> Filled -> Shipped). Only
-    // "New Order" is intake-editable; the rest progress from filling
-    // actions, never from the entry form.
+    // Order lifecycle (New Order -> Ready to Fill -> Filling -> Filled ->
+    // Shipped). Only "New Order" is intake-editable — completing the
+    // Review & Confirm screen (OrderController::complete) moves it to
+    // "Ready to Fill", which locks it the same as any other non-New-Order
+    // status. The rest progress from filling actions, never from the entry
+    // form. See the order-fulfillment-lifecycle-design memory for the
+    // larger (not yet built) picture this sits inside — location tracking,
+    // a Ready to Ship status, and a pickup-vs-ship terminus.
     public const STATUS_NEW_ORDER = 'New Order';
+
+    public const STATUS_READY_TO_FILL = 'Ready to Fill';
 
     public const STATUS_FILLING = 'Filling';
 
@@ -53,12 +60,25 @@ class Transaction extends Model
         'container_count',
         'manifest',
         'manifest_weight_lbs',
+        // Order Review & Confirm fields (type=order only) — see the
+        // 2026_08_18 migrations. delivery_days/preferred_time only apply to
+        // fulfillment_method=delivery — OrderController::complete() force-
+        // clears both when it's pickup (the warehouse sets pickup days/
+        // times, not the customer); needed_by_date is shared by both.
+        'fulfillment_method',
+        'needed_by_date',
+        'delivery_days', // array of Sun..Sat; the UI defaults/represents "Any Day" as all 7 selected
+        'preferred_time',
+        'contact_name',
+        'contact_phone',
+        'other_needs',
     ];
 
     protected $casts = [
         'manifest_weight_lbs' => 'decimal:2',
         'donor_identification_pending' => 'boolean',
         'status_changed_at' => 'datetime',
+        'delivery_days' => 'array',
     ];
 
     /**

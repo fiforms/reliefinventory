@@ -19,11 +19,19 @@ Issues identified August 16, 2026
 3. Important PDF Reports such as the inventory should also be available as a CVS (or XLSX) Spreadsheet Download
 
 4. Order Entry
- - There's a bug in the search box: when I type an item number or name, it shows only numbers in the search results.
-   - It should match the dropdown already implemented in receiving
-   It should show a wider dropdown with both the number and name
+ - ~~There's a bug in the search box: when I type an item number or name, it shows only numbers in the search results.~~ — done 2026-08-18
+   - Added a reusable `secondary` prop to `SearchSelect.vue` (any page searching item types, not
+     just this one, can now show a primary + secondary field with a wider dropdown) and used it
+     for the item # search here. Also fixed the item # field not clearing after adding a line
+     (a focus-timing race), the dropdown popping open with the top row pre-selected on refocus,
+     and reworked the duplicate-item flow into a proper modal with a Tab focus trap — see git
+     history 2026-08-18 for the full set of order-entry UX fixes from this session.
 
- - There is no place to enter a UNIT in conjunction with a 
+ - ~~There is no place to enter a UNIT in conjunction with a quantity~~ — not a bug: an item type
+   is only ever orderable in the single unit set for it elsewhere (Master Item List), so there's
+   nothing to pick per line on the order sheet itself. That unit still shows on every order
+   line (`OrderController` loads `itemtype.unit`). Item 5 below (expanding/managing that unit
+   list) is the real remaining work in this area, not a per-line picker here.
 
  5. Master Item List
   - Unit (Measured By) should be labeled "Default Ordering Unit."  This list should be configurable per instance (separate table) and should be expanded to include at least the following:

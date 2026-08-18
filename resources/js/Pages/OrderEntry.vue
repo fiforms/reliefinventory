@@ -14,13 +14,23 @@
 	    item-number-first entry — item # or name search, quantity, Enter,
 	    next line. Each line saves the moment it is entered; a crash never
 	    loses more than the line being typed.
-	  - Entering the same item twice offers Combine / separate-line.
+	  - Entering the same item twice pops a Combine-or-Cancel modal instead
+	    of silently adding a second line — almost always a re-scan/typo.
 	  - An advisory "~N usable on hand" hint shows for the selected item.
 	    This is a staff-facing page; customer-facing surfaces must never
 	    show actual stock numbers (three-state availability at most).
-	  - Orders lock once filling starts (server-enforced); they open here
-	    read-only. Phone orders and hand-entered PDF order forms are the
-	    same activity and both use this screen.
+	  - Step 3 is Review & Confirm (Complete Order): comments, needed-but-
+	    not-in-catalog items, delivery-vs-pickup with a preferred date/time
+	    window, and a contact person (defaulted from the customer record,
+	    editable) — mirrors the fields on the offline order form PDF.
+	    Confirming here moves the order from New Order to Ready to Fill,
+	    which locks it against further intake edits (existing New-Order-only
+	    edit rule) and is the hook a future fill/pick workflow queries
+	    against. See the order-fulfillment-lifecycle-design memory for the
+	    larger (not yet built) picture this sits inside.
+	  - Orders lock once they leave New Order (server-enforced); they open
+	    here read-only. Phone orders and hand-entered PDF order forms are
+	    the same activity and both use this screen.
 -->
 
 <script>
@@ -31,6 +41,7 @@ import TextArea from '@/Components/TextArea.vue';
 import axios from 'axios';
 
 const CONTACT_FIELDS = ['first_name', 'last_name', 'organization', 'phone', 'email', 'address', 'city', 'state', 'zip'];
+const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default {
 	components: { AuthenticatedLayout, Head, SearchSelect, TextArea },
@@ -40,7 +51,7 @@ export default {
 	data() {
 		return {
 			// list view
-			view: 'list', // 'list' | 'customer' | 'order'
+			view: 'list', // 'list' | 'customer' | 'order' | 'review'
 			orders: { open: [], recent: [] },
 			listLoading: false,
 			listError: null,
@@ -61,7 +72,13 @@ export default {
 			lines: [],
 			headerSaving: false,
 			headerError: null,
-			confirmingDeleteOrder: false,
+
+			// review & confirm screen (completing intake) — single-shot form,
+			// not autosaved like the line-entry screen; only ever persisted
+			// once, via Complete Order.
+			review: null,
+			reviewError: null,
+			weekDays: WEEK_DAYS,
 
 			// line entry
 			entry: { itemtype_id: null, itemtype: null, qty: null, comments: '' },
@@ -111,6 +128,9 @@ export default {
 			const onHand = Number(this.stockHints[this.entry.itemtype_id] ?? 0);
 			return onHand > 0 ? '~' + onHand + ' usable on hand' : 'none on hand';
 		},
+		duplicateQty() {
+			return parseInt(this.entry.qty, 10) || 0;
+		},
 	},
 	methods: {
 		// ---------- order list ----------
@@ -139,6 +159,14 @@ export default {
 			if (!person) return '(no customer)';
 			const name = [person.first_name, person.last_name].filter(Boolean).join(' ');
 			return person.organization ? person.organization + (name ? ' - ' + name : '') : name || '(unnamed)';
+		},
+		// Just the person's name, unlike personLabel — for defaulting the
+		// Review screen's delivery/pickup contact, which shouldn't carry the
+		// organization prefix.
+		contactNameDefault(person) {
+			if (!person) return '';
+			const name = [person.first_name, person.last_name].filter(Boolean).join(' ');
+			return name || person.organization || '';
 		},
 		orderSummary(record) {
 			const lines = record.order_lines || [];
@@ -267,7 +295,8 @@ export default {
 			this.headerError = null;
 			this.duplicateOf = null;
 			this.confirmingLineKey = null;
-			this.confirmingDeleteOrder = false;
+			this.review = null;
+			this.reviewError = null;
 			this.view = 'order';
 			this.fetchStockHints();
 			this.$nextTick(() => this.$refs.itemSelect?.focus());
@@ -285,44 +314,71 @@ export default {
 				this.stockHints = {}; // advisory only — never block entry on it
 			}
 		},
-		async patchOrder(fields) {
+		// ---------- review & confirm (completing intake) ----------
+		openReview() {
+			this.reviewError = null;
+			this.review = {
+				comments: this.order.comments || '',
+				fulfillment_method: this.order.fulfillment_method || 'delivery',
+				needed_by_date: this.order.needed_by_date || '',
+				// Any Day is the default — represented as all days selected,
+				// not an empty array, so the "Any Day" chip starts active.
+				delivery_days: this.order.delivery_days || [...this.weekDays],
+				preferred_time: this.order.preferred_time || '',
+				contact_name: this.order.contact_name || this.contactNameDefault(this.order.person),
+				contact_phone: this.order.contact_phone || this.order.person?.phone || '',
+				other_needs: this.order.other_needs || '',
+			};
+			this.view = 'review';
+		},
+		backFromReview() {
+			this.view = 'order';
+		},
+		toggleDeliveryDay(day) {
+			const days = this.review.delivery_days;
+			const idx = days.indexOf(day);
+			if (idx === -1) days.push(day);
+			else days.splice(idx, 1);
+		},
+		selectAllDays() {
+			this.review.delivery_days = [...this.weekDays];
+		},
+		async completeOrder() {
+			this.reviewError = null;
 			this.headerSaving = true;
-			this.headerError = null;
 			try {
-				const response = await axios.patch('/json/orders/' + this.order.id, fields);
+				const response = await axios.patch('/json/orders/' + this.order.id + '/complete', this.review);
 				this.order = { ...response.data.record, order_lines: undefined };
+				await this.closeOrder();
 			} catch (error) {
-				this.headerError = error.response?.data?.message || 'Could not save order details.';
+				this.reviewError = error.response?.data?.message
+					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
+					|| 'Could not complete the order.';
 			} finally {
 				this.headerSaving = false;
 			}
 		},
-		orderDateChanged() {
-			this.patchOrder({ order_date: this.order.order_date });
-		},
-		commentsChanged() {
-			this.patchOrder({ comments: this.order.comments });
-		},
-		async deleteOrder() {
-			// Two-step inline confirm, same convention as line delete.
-			if (!this.confirmingDeleteOrder) {
-				this.confirmingDeleteOrder = true;
-				return;
-			}
-			try {
-				await axios.delete('/json/orders/' + this.order.id);
-				await this.closeOrder();
-			} catch (error) {
-				this.confirmingDeleteOrder = false;
-				this.headerError = error.response?.data?.message || 'Could not delete the order.';
-			}
-		},
-
 		// ---------- line entry (autosaved per line) ----------
 		itemChosen(itemtype) {
 			this.entry.itemtype = itemtype;
 			this.duplicateOf = null;
-			if (itemtype) this.$refs.qtyInput?.focus();
+			if (!itemtype) return;
+
+			// Same item already on the order? Flag it the moment it's picked,
+			// before a qty's even been typed — almost always a re-scan/typo of
+			// the item #, not an intentional split. Only way past this is
+			// Combine (typed right there in the modal) or Cancel (see the
+			// duplicate-item modal).
+			const existing = this.lines.find(
+				(line) => line.itemtype_id === this.entry.itemtype_id && line.status === 'saved'
+			);
+			if (existing) {
+				this.duplicateOf = existing;
+				this.entry.qty = null;
+				this.$nextTick(() => this.$refs.duplicateQtyInput?.focus());
+				return;
+			}
+			this.$refs.qtyInput?.focus();
 		},
 		addLine() {
 			this.lineError = null;
@@ -337,19 +393,6 @@ export default {
 				return;
 			}
 
-			// Same item already on the order? Offer Combine before adding a
-			// duplicate line (easy to do transcribing a long paper form).
-			if (!this.duplicateOf) {
-				const existing = this.lines.find(
-					(line) => line.itemtype_id === this.entry.itemtype_id && line.status === 'saved'
-				);
-				if (existing) {
-					this.duplicateOf = existing;
-					return;
-				}
-			}
-			this.duplicateOf = null;
-
 			const line = {
 				tempId: this.nextTempId--,
 				itemtype_id: this.entry.itemtype_id,
@@ -363,8 +406,9 @@ export default {
 			this.resetEntry();
 		},
 		async combineDuplicate() {
+			if (!this.duplicateQty) return;
 			const target = this.duplicateOf;
-			const qty = parseInt(this.entry.qty, 10) || 0;
+			const qty = this.duplicateQty;
 			this.duplicateOf = null;
 			try {
 				const response = await axios.put(
@@ -378,9 +422,32 @@ export default {
 				this.lineError = 'Could not combine with the existing line.';
 			}
 		},
+		cancelDuplicate() {
+			this.duplicateOf = null;
+			this.resetEntry();
+		},
+		onDuplicateKeydown(event) {
+			if (event.key === 'Escape') this.cancelDuplicate();
+		},
+		// Trap Tab inside the modal — the page behind it is still full of
+		// tabbable fields, so without this Tab escapes to the main form.
+		onDuplicateTab(event) {
+			const focusables = [this.$refs.duplicateQtyInput, this.$refs.cancelDuplicateBtn, this.$refs.combineDuplicateBtn]
+				.filter((el) => el && !el.disabled);
+			if (!focusables.length) return;
+			event.preventDefault();
+			const current = focusables.indexOf(document.activeElement);
+			const next = focusables[(current + (event.shiftKey ? -1 : 1) + focusables.length) % focusables.length];
+			next.focus();
+		},
 		resetEntry() {
 			this.entry = { itemtype_id: null, itemtype: null, qty: null, comments: '' };
-			this.$refs.itemSelect?.focus();
+			// Wait for the reactivity flush (which clears SearchSelect's search
+			// text via its modelValue watcher) before focusing — focusing first
+			// fires SearchSelect's own @focus="open" handler, which sets isOpen
+			// early and makes the watcher's "don't clobber active typing" guard
+			// skip the clear, leaving the just-entered item # stuck on screen.
+			this.$nextTick(() => this.$refs.itemSelect?.focus());
 		},
 		findLineIndex(line) {
 			return this.lines.findIndex((entry) =>
@@ -441,6 +508,17 @@ export default {
 			}
 		},
 	},
+	watch: {
+		// Esc closes the duplicate-item modal — listen globally only while
+		// it's actually open, since the backdrop div itself can't hold focus.
+		duplicateOf(value) {
+			if (value) {
+				window.addEventListener('keydown', this.onDuplicateKeydown);
+			} else {
+				window.removeEventListener('keydown', this.onDuplicateKeydown);
+			}
+		},
+	},
 	created() {
 		this.fetchOrders();
 	},
@@ -450,6 +528,7 @@ export default {
 	},
 	unmounted() {
 		window.removeEventListener('online', this.autoRetry);
+		window.removeEventListener('keydown', this.onDuplicateKeydown);
 		clearInterval(this.retryTimer);
 	},
 };
@@ -607,12 +686,99 @@ export default {
 			</div>
 		</div>
 
+		<!-- ======================= REVIEW & CONFIRM ======================= -->
+		<div v-else-if="view === 'review' && order && review" class="oe_container oe_customer">
+			<div class="oe_topbar">
+				<button @click="backFromReview" class="ri_formbutton">&larr; Back</button>
+				<span class="oe_title">Review &amp; Confirm — Order #{{ order.id }}</span>
+			</div>
+			<p v-if="reviewError" class="oe_error">{{ reviewError }}</p>
+			<p v-if="headerError" class="oe_error">{{ headerError }}</p>
+
+			<div class="oe_card">
+				<h3>Order Summary</h3>
+				<p class="oe_hint">
+					{{ personLabel(order.person) }} &mdash; {{ totals.lines }} line(s), {{ totals.qty }} item(s) total.
+				</p>
+			</div>
+
+			<div class="oe_card">
+				<h3>Comments</h3>
+				<TextArea v-model="review.comments" placeholder="Anything the warehouse should know about this order..." />
+			</div>
+
+			<div class="oe_card">
+				<h3>Needed But Not in Catalog</h3>
+				<p class="oe_hint">Anything this customer needs that isn't listed in our items — same as "Other Needs" on the offline order form.</p>
+				<TextArea v-model="review.other_needs" placeholder="Items not available to order..." />
+			</div>
+
+			<div class="oe_card">
+				<h3>Delivery or Pickup</h3>
+				<div class="oe_radiogroup">
+					<label><input type="radio" value="delivery" v-model="review.fulfillment_method" /> Delivery</label>
+					<label><input type="radio" value="pickup" v-model="review.fulfillment_method" /> Pickup</label>
+				</div>
+
+				<div class="oe_field">
+					<label>Needed By Date:</label>
+					<input type="date" v-model="review.needed_by_date" class="ri_forminput" />
+				</div>
+
+				<template v-if="review.fulfillment_method === 'delivery'">
+					<div class="oe_field oe_daysfield">
+						<label>Can Accept Delivery:</label>
+						<div class="oe_daypicker">
+							<button
+								type="button"
+								class="oe_daychip"
+								:class="{ oe_daychip_active: review.delivery_days.length === weekDays.length }"
+								@click="selectAllDays"
+							>Any Day</button>
+							<button
+								v-for="day in weekDays" :key="day"
+								type="button"
+								class="oe_daychip"
+								:class="{ oe_daychip_active: review.delivery_days.includes(day) }"
+								@click="toggleDeliveryDay(day)"
+							>{{ day }}</button>
+						</div>
+					</div>
+					<p class="oe_hint">
+						{{ review.delivery_days.length ? 'Available: ' + review.delivery_days.join(', ') : 'No days selected' }}
+					</p>
+					<div class="oe_field">
+						<label>Preferred Time:</label>
+						<input type="text" v-model="review.preferred_time" class="ri_forminput" placeholder="e.g. 10am - 2pm" />
+					</div>
+				</template>
+				<p v-else class="oe_hint">Pickup days and times are set by the warehouse.</p>
+			</div>
+
+			<div class="oe_card">
+				<h3>{{ review.fulfillment_method === 'pickup' ? 'Pickup' : 'Delivery' }} Contact</h3>
+				<p class="oe_hint">Defaults to the customer on file — change it if someone else is receiving this order.</p>
+				<div class="oe_contactgrid">
+					<div class="oe_field"><label>Contact Name:</label>
+						<input type="text" v-model="review.contact_name" class="ri_forminput" /></div>
+					<div class="oe_field"><label>Contact Phone:</label>
+						<input type="text" v-model="review.contact_phone" class="ri_forminput" /></div>
+				</div>
+			</div>
+
+			<div class="oe_actions">
+				<button @click="completeOrder" class="ri_defaultbutton" :disabled="headerSaving">
+					{{ headerSaving ? 'Saving...' : 'Submit Order' }}
+				</button>
+			</div>
+		</div>
+
 		<!-- ======================= LINE ENTRY ======================= -->
 		<div v-else-if="order" class="oe_container">
 			<div class="oe_topbar">
 				<button @click="closeOrder" class="ri_formbutton">&larr; All Orders</button>
 				<span class="oe_title">
-					Order #{{ order.id }}
+					Order #{{ order.id }}<span v-if="order.order_date" class="oe_title_date"> &middot; {{ order.order_date }}</span>
 					<span v-if="readonly" class="oe_status_badge">{{ order.status ? order.status.name : '' }}</span>
 				</span>
 				<span class="oe_savestate" v-if="!readonly">
@@ -623,12 +789,7 @@ export default {
 					<span v-else-if="headerSaving || pendingCount > 0">Saving...</span>
 					<span v-else class="oe_saved">All changes saved</span>
 				</span>
-				<template v-if="!readonly">
-					<button v-if="confirmingDeleteOrder" @click="confirmingDeleteOrder = false" class="ri_linkbutton">Keep Order</button>
-					<button @click="deleteOrder" :class="confirmingDeleteOrder ? 'ri_deletebutton' : 'ri_formbutton'">
-						{{ confirmingDeleteOrder ? 'Delete this entire order?' : 'Delete Order' }}
-					</button>
-				</template>
+				<button v-if="!readonly" @click="openReview" class="ri_defaultbutton">Complete Order</button>
 			</div>
 			<p v-if="headerError" class="oe_error">{{ headerError }}</p>
 
@@ -642,83 +803,77 @@ export default {
 				<button v-if="!readonly" @click="changeCustomer" class="ri_linkbutton">Change</button>
 			</div>
 
-			<div class="oe_header">
-				<div class="oe_field">
-					<label>Order Date:</label>
-					<input type="date" v-model="order.order_date" class="ri_forminput"
-						:disabled="readonly" @change="orderDateChanged" />
-				</div>
-				<div class="oe_field oe_comments">
-					<label>Comments:</label>
-					<TextArea v-model="order.comments" :enabled="!readonly" @change="commentsChanged" />
-				</div>
-			</div>
-
-			<!-- rapid entry: item # (or name search), qty, Enter, next line -->
-			<div v-if="!readonly && !duplicateOf" class="oe_entry">
-				<div class="oe_entry_item">
-					<SearchSelect
-						ref="itemSelect"
-						v-model="entry.itemtype_id"
-						optionsource="/json/itemtypes/noitems"
-						display="display_number"
-						:searchfields="['display_number', 'name']"
-						placeholder="Item # or name..."
-						@selected="itemChosen"
-					/>
-				</div>
-				<span v-if="entry.itemtype" class="oe_entry_name">
-					{{ entry.itemtype.name }}
-					<span v-if="entry.itemtype.unit" class="oe_entry_unit">({{ entry.itemtype.unit.name }})</span>
-					<span v-if="entryHint" class="oe_entry_hint">&mdash; {{ entryHint }}</span>
-				</span>
-				<input
-					ref="qtyInput"
-					type="number"
-					min="1"
-					v-model="entry.qty"
-					class="ri_forminput oe_qty"
-					placeholder="Qty"
-					@keydown.enter.prevent="addLine"
-				/>
-				<input
-					type="text"
-					v-model="entry.comments"
-					class="ri_forminput oe_entry_comment"
-					placeholder="Line comment (optional)"
-					@keydown.enter.prevent="addLine"
-				/>
-				<button @click="addLine" class="ri_defaultbutton">Add</button>
-			</div>
-
-			<!-- duplicate item: combine or keep separate -->
-			<div v-if="duplicateOf" class="oe_entry oe_duplicate">
-				<span>
-					<strong>{{ duplicateOf.itemtype ? duplicateOf.itemtype.name : 'This item' }}</strong>
-					is already on this order (qty {{ duplicateOf.qty_requested }}).
-				</span>
-				<button @click="combineDuplicate" class="ri_defaultbutton">
-					Combine &rarr; {{ Number(duplicateOf.qty_requested) + (parseInt(entry.qty, 10) || 0) }}
-				</button>
-				<button @click="addLine" class="ri_formbutton">Add as separate line</button>
-				<button @click="duplicateOf = null; resetEntry()" class="ri_linkbutton">Cancel</button>
-			</div>
 			<p v-if="lineError" class="oe_error">{{ lineError }}</p>
 
-			<!-- entered lines -->
+			<!-- entry row shares the table's columns with the entered lines below
+			     it, so item #/qty/item/unit/comments never shift around as an
+			     item is chosen — same grid, top row just happens to be editable. -->
 			<div class="oe_tablewrap"><table class="ri_datatable oe_lines" border="1">
+				<colgroup>
+					<col class="oe_col_itemnum" />
+					<col class="oe_col_qty" />
+					<col class="oe_col_item" />
+					<col class="oe_col_unit" />
+					<col class="oe_col_comments" />
+					<col class="oe_col_actions" />
+				</colgroup>
 				<thead>
 					<tr>
-						<th>Item #</th><th>Item</th><th>Unit</th><th>Qty</th><th>Comments</th><th></th>
+						<th>Item #</th><th>Qty</th><th>Item</th><th>Unit</th><th>Comments</th><th></th>
 					</tr>
 				</thead>
 				<tbody>
+					<!-- rapid entry: item # (or name search), qty, Enter, next line -->
+					<tr v-if="!readonly && !duplicateOf" class="oe_entry_row">
+						<td>
+							<SearchSelect
+								ref="itemSelect"
+								v-model="entry.itemtype_id"
+								optionsource="/json/itemtypes/noitems"
+								display="display_number"
+								secondary="name"
+								:searchfields="['display_number', 'name']"
+								placeholder="Item #..."
+								:openOnFocus="false"
+								@selected="itemChosen"
+							/>
+						</td>
+						<td>
+							<input
+								ref="qtyInput"
+								type="number"
+								min="1"
+								v-model="entry.qty"
+								class="ri_forminput oe_qty"
+								placeholder="Qty"
+								@keydown.enter.prevent="addLine"
+							/>
+						</td>
+						<td class="oe_entry_name">
+							{{ entry.itemtype ? entry.itemtype.name : '' }}
+							<span v-if="entryHint" class="oe_entry_hint">&mdash; {{ entryHint }}</span>
+						</td>
+						<td class="oe_entry_unit">
+							{{ entry.itemtype && entry.itemtype.unit ? entry.itemtype.unit.name : '' }}
+						</td>
+						<td>
+							<input
+								type="text"
+								v-model="entry.comments"
+								class="ri_forminput oe_entry_comment"
+								placeholder="Line comment (optional)"
+								@keydown.enter.prevent="addLine"
+							/>
+						</td>
+						<td><button @click="addLine" class="ri_defaultbutton">Add</button></td>
+					</tr>
+
 					<tr v-for="line in sortedLines" :key="lineKey(line)"
 						:class="{ oe_line_failed: line.status === 'failed' }">
 						<td>{{ line.itemtype ? line.itemtype.display_number : '' }}</td>
+						<td>{{ line.qty_requested }}</td>
 						<td>{{ line.itemtype ? line.itemtype.name : '(item type #' + line.itemtype_id + ')' }}</td>
 						<td>{{ line.itemtype && line.itemtype.unit ? line.itemtype.unit.name : '' }}</td>
-						<td>{{ line.qty_requested }}</td>
 						<td>{{ line.comments }}</td>
 						<td class="oe_line_actions">
 							<span v-if="line.status === 'saving'">saving...</span>
@@ -733,8 +888,8 @@ export default {
 							<img v-else-if="!readonly" src="/img/delete-icon.webp" class="oe_delete" @click="deleteLine(line)" />
 						</td>
 					</tr>
-					<tr v-if="!lines.length">
-						<td colspan="6" class="oe_empty">No items yet - enter an item number to begin.</td>
+					<tr v-if="!lines.length && readonly">
+						<td colspan="6" class="oe_empty">No items on this order.</td>
 					</tr>
 				</tbody>
 			</table></div>
@@ -742,6 +897,45 @@ export default {
 			<div class="oe_totals" v-if="lines.length">
 				<span>Lines: <strong>{{ totals.lines }}</strong></span>
 				<span>Total items: <strong>{{ totals.qty }}</strong></span>
+			</div>
+
+			<!-- duplicate item: almost always a re-scan/typo, not an intentional
+			     split order line — the only ways out are Combine or Cancel. -->
+			<div v-if="duplicateOf" class="oe_modal_backdrop" @click.self="cancelDuplicate" @keydown.tab="onDuplicateTab">
+				<div class="oe_modal">
+					<h3>Oops</h3>
+					<p>You already entered this item - here's what you requested:</p>
+					<table class="oe_modal_table">
+						<thead>
+							<tr><th>Qty</th><th>Item #</th><th>Item</th><th>Unit</th></tr>
+						</thead>
+						<tbody>
+							<tr>
+								<td>{{ duplicateOf.qty_requested }}</td>
+								<td>{{ duplicateOf.itemtype ? duplicateOf.itemtype.display_number : '' }}</td>
+								<td>{{ duplicateOf.itemtype ? duplicateOf.itemtype.name : 'This item' }}</td>
+								<td>{{ duplicateOf.itemtype && duplicateOf.itemtype.unit ? duplicateOf.itemtype.unit.name : '' }}</td>
+							</tr>
+						</tbody>
+					</table>
+					<div class="oe_modal_qty">
+						<label>Additional qty:</label>
+						<input
+							ref="duplicateQtyInput"
+							type="number"
+							min="1"
+							v-model="entry.qty"
+							class="ri_forminput oe_qty"
+							@keydown.enter.prevent="combineDuplicate"
+						/>
+					</div>
+					<div class="oe_modal_actions">
+						<button ref="cancelDuplicateBtn" @click="cancelDuplicate" class="ri_defaultbutton">Cancel</button>
+						<button ref="combineDuplicateBtn" @click="combineDuplicate" class="ri_formbutton" :disabled="!duplicateQty">
+							Combine &rarr; {{ Number(duplicateOf.qty_requested) + duplicateQty }}
+						</button>
+					</div>
+				</div>
 			</div>
 		</div>
 	</AuthenticatedLayout>
@@ -781,6 +975,50 @@ export default {
 	font-weight: bold;
 	font-size: 1.15rem;
 	flex: 1;
+}
+.oe_title_date {
+	font-weight: normal;
+	color: #666;
+	font-size: 1rem;
+}
+.oe_radiogroup {
+	display: flex;
+	gap: 20px;
+	margin-bottom: 10px;
+}
+.oe_radiogroup label {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-weight: bold;
+}
+.oe_daysfield {
+	align-items: flex-start;
+}
+.oe_daypicker {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+}
+.oe_daychip {
+	padding: 6px 12px;
+	border: 1px solid #ccc;
+	border-radius: 999px;
+	background: white;
+	cursor: pointer;
+	font-size: 0.9rem;
+}
+.oe_daychip:hover {
+	background: #f3f4f6;
+}
+.oe_daychip_active {
+	background: #007bff;
+	border-color: #007bff;
+	color: white;
+}
+.oe_daychip_active:hover {
+	background: #0056b3;
+	border-color: #0056b3;
 }
 .oe_savestate {
 	font-size: 0.85rem;
@@ -854,55 +1092,117 @@ export default {
 .oe_customer_where {
 	color: #555;
 }
-.oe_header {
-	display: flex;
-	gap: 16px;
-	flex-wrap: wrap;
-	margin-bottom: 12px;
+.oe_lines {
+	width: 100%;
+	table-layout: fixed;
 }
-.oe_comments {
-	flex: 1;
-	min-width: 260px;
+.oe_col_itemnum {
+	width: 13%;
 }
-.oe_entry {
-	display: flex;
-	align-items: center;
-	gap: 10px;
-	flex-wrap: wrap;
-	padding: 10px;
-	border: 1px solid #ddd;
-	border-radius: 8px;
+.oe_col_qty {
+	width: 8%;
+}
+.oe_col_item {
+	width: 32%;
+}
+.oe_col_unit {
+	width: 10%;
+}
+.oe_col_comments {
+	width: 27%;
+}
+.oe_col_actions {
+	width: 10%;
+}
+.oe_entry_row td {
 	background: #f9f9f9;
-	margin-bottom: 12px;
+	vertical-align: middle;
 }
-.oe_entry_item {
-	min-width: 180px;
+.oe_entry_row .ri_forminput,
+.oe_entry_row .ri_formcontrol {
+	width: 100%;
+	box-sizing: border-box;
 }
 .oe_entry_name {
 	font-weight: bold;
+	overflow-wrap: break-word;
 }
 .oe_entry_unit {
 	color: #555;
-	font-weight: normal;
 }
 .oe_entry_hint {
+	display: block;
 	color: #92400e;
 	font-weight: normal;
 	font-size: 0.85rem;
 }
-.oe_entry_comment {
-	flex: 1;
-	min-width: 140px;
+.oe_modal_backdrop {
+	position: fixed;
+	inset: 0;
+	z-index: 50;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 16px;
+	background: rgba(17, 24, 39, 0.35);
+	backdrop-filter: blur(2px);
 }
-.oe_qty {
+.oe_modal {
+	width: 100%;
+	max-width: 30rem;
+	background: #fffbeb;
+	border: 1px solid #f59e0b;
+	border-radius: 10px;
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
+	padding: 18px 20px;
+}
+.oe_modal h3 {
+	font-weight: bold;
+	font-size: 1.05rem;
+	margin-bottom: 8px;
+	color: #92400e;
+}
+.oe_modal_table {
+	width: 100%;
+	margin-top: 10px;
+	border-collapse: collapse;
+	background: white;
+	border: 1px solid #eee;
+	border-radius: 6px;
+	overflow: hidden;
+}
+.oe_modal_table th, .oe_modal_table td {
+	padding: 6px 10px;
+	text-align: left;
+	border-bottom: 1px solid #eee;
+}
+.oe_modal_table th {
+	background: #f9f9f9;
+	font-size: 0.8rem;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #666;
+}
+.oe_modal_table tbody tr:last-child td {
+	border-bottom: none;
+}
+.oe_modal_qty {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	margin-top: 14px;
+}
+.oe_modal_qty label {
+	font-weight: bold;
+}
+.oe_modal_qty .oe_qty {
 	width: 6em;
 }
-.oe_duplicate {
-	border: 2px dashed #f59e0b;
-	background: #fffbeb;
-}
-.oe_lines {
-	width: 100%;
+.oe_modal_actions {
+	display: flex;
+	gap: 10px;
+	flex-wrap: wrap;
+	margin-top: 14px;
 }
 .oe_line_failed {
 	background: #fef2f2;
