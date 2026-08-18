@@ -47,6 +47,15 @@ Issues identified August 17, 2026
  - A future install/provisioning script should do this automatically for any new instance:
    create app DB + paired test DB, grant the app user on both, and set phpunit.xml's DB_DATABASE
    to match — so a fresh instance is protected from day one instead of needing this fix repeated.
+ - Also needs to create that instance's systemd units (`<name>-update.service`, `<name>-backup.service`,
+   `<name>-backup.timer`, `<name>-queue.service`), following the pattern the wa26 units already show —
+   `Environment=APP_DIR=/var/www/reliefinventory-<name>`, `BACKUP_DIR=/var/backups/reliefinventory-<name>`,
+   `QUEUE_SERVICE=reliefinventory-<name>-queue` — each pointing at that instance's own directory. Without
+   these, only a manual `cd <instance-dir> && sudo bash scripts/update.sh` works for that instance (fixed
+   2026-08-18 to correctly default to whichever instance dir it's run from — see git history on
+   scripts/update.sh); there's no admin-panel "update now" button or scheduled backup until the units
+   exist. The app directory must be named `reliefinventory-<name>` for `update.sh`'s defaults
+   (`QUEUE_SERVICE`, `BACKUP_DIR`) to resolve correctly without explicit overrides.
 
 8. ~~Set FEEDBACK_NOTIFY_EMAIL in .env on demo and wa26~~ — done 2026-08-17
    (daniel@pastordaniel.net, hellopastormark@gmail.com on both instances).
