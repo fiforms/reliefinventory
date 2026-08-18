@@ -240,8 +240,7 @@ class OrderController extends Controller
         $generatedAt = now();
 
         return Pdf::view('reports.order-form', ['categories' => $this->buildOrderFormRecords(), 'generatedAt' => $generatedAt])
-            ->headerView('reports.partials.pdf-header', ['title' => 'Order Request Form', 'generatedAt' => $generatedAt])
-            ->margins(top: 0.75, right: 0, bottom: 1, left: 0, unit: 'in')
+            ->driver('weasyprint')
             ->format('letter')
             ->name('order-form-'.$generatedAt->format('Y-m-d').'.pdf');
     }

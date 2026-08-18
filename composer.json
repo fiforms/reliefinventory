@@ -13,6 +13,7 @@
         "laravel/tinker": "^3.0",
         "league/csv": "^9.21",
         "milon/barcode": "^13.1",
+        "pontedilana/php-weasyprint": "^2.4",
         "resend/resend-php": "^1.8",
         "spatie/browsershot": "^5.4",
         "spatie/laravel-pdf": "^2.12",

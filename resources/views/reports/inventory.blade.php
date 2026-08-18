@@ -4,11 +4,32 @@
     <meta charset="UTF-8">
     <title>Inventory Report</title>
     <style>
+        @page {
+            size: letter;
+            margin: 0.75in 0.5in 1in 0.5in;
+            @top-left {
+                content: "Inventory Report — generated {{ $generatedAt->format('F j, Y \a\t g:i A T') }}";
+                font-family: Arial, sans-serif;
+                font-size: 9px;
+                color: #888;
+            }
+            @top-right {
+                content: "Page " counter(page) " of " counter(pages);
+                font-family: Arial, sans-serif;
+                font-size: 9px;
+                color: #888;
+            }
+        }
+        @page :first {
+            margin-top: 0.5in;
+            @top-left { content: none; }
+            @top-right { content: none; }
+        }
         body {
             font-family: Arial, sans-serif;
             color: #222;
             margin: 0;
-            padding: 0 42px;
+            padding: 0;
         }
         h1 {
             font-size: 24px;

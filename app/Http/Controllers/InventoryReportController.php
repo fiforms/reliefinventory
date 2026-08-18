@@ -44,8 +44,7 @@ class InventoryReportController extends Controller
         $generatedAt = now();
 
         return Pdf::view('reports.inventory', ['records' => $records, 'generatedAt' => $generatedAt])
-            ->headerView('reports.partials.pdf-header', ['title' => 'Inventory Report', 'generatedAt' => $generatedAt])
-            ->margins(top: 0.75, right: 0, bottom: 1, left: 0, unit: 'in')
+            ->driver('weasyprint')
             ->format('letter')
             ->name('inventory-report-'.$generatedAt->format('Y-m-d').'.pdf');
     }

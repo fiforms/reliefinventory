@@ -192,6 +192,19 @@ even though the code is correct:
    since the app never runs as root). Neither of these is part of the deploy script; a fresh box needs both
    done manually once.
 
+`InventoryReportController::pdf` and `OrderController::orderFormPdf` specifically (not the pallet
+labels/sitrep, which stay on browsershot) render via a separate `weasyprint` driver instead
+(`->driver('weasyprint')`), chosen for real CSS Paged Media support — `@page`, `@page :first`, and
+per-page margin boxes for a running header/page-number that's cleanly absent on page 1 and correct page
+margins on every page, none of which headless Chrome's print engine supports reliably (Chromium's
+Puppeteer-driven header/footer template applies uniformly to every page including the first, with no
+page-aware conditional). This needs its own one-time provisioning step, independent of the Chrome-based
+setup above: the `weasyprint` binary (Python, with native Pango/Cairo deps — `apt install weasyprint` or
+`pip install weasyprint` depending on distro) must be on `PATH`, or set `LARAVEL_PDF_WEASYPRINT_BINARY` in
+`.env` to its path. `pontedilana/php-weasyprint` is a real `composer.json` requirement (added
+2026-08-17) — same historical trap as browsershot above, where a package sits as a driver's "suggest"
+and silently never gets pulled in.
+
 ## Conventions to follow
 
 - Set audit/actor fields (`person_id_user`, etc.) from `Auth::id()` server-side in controllers — never
