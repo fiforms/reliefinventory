@@ -33,10 +33,17 @@ set -Eeuo pipefail
 # Re-exec from a temp copy: 'git reset --hard' below may replace this very file
 # mid-run, and bash reads scripts lazily, so running from the checkout directly
 # could execute a corrupted mix of old and new script. The copy is immune.
+#
+# Capture the real script location *before* the copy/exec below, since the temp
+# copy's BASH_SOURCE would otherwise point into /tmp — that location is how
+# APP_DIR defaults to "whichever instance this script actually lives in"
+# further down, instead of a hardcoded path.
 if [ -z "${RI_UPDATE_REEXEC:-}" ]; then
     _self_copy="$(mktemp /tmp/ri-update.XXXXXX.sh)"
     cp "${BASH_SOURCE[0]}" "$_self_copy"
-    RI_UPDATE_REEXEC=1 exec bash "$_self_copy" "$@"
+    RI_UPDATE_REEXEC=1 \
+    RI_UPDATE_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)" \
+    exec bash "$_self_copy" "$@"
 fi
 COOKIE_JAR=""
 cleanup() {
@@ -46,14 +53,27 @@ cleanup() {
 trap cleanup EXIT
 
 # ---------------------------------------------------------------- configuration
-APP_DIR="${APP_DIR:-/var/www/reliefinventory-demo}"
+# Defaults to the instance this script physically lives in (its parent dir),
+# so 'cd /var/www/reliefinventory-wa26 && bash scripts/update.sh' targets wa26
+# rather than silently redeploying demo. Explicit APP_DIR (set by the systemd
+# units below) always wins; the hardcoded fallback only matters if this script
+# is ever invoked via a path bash can't resolve back to a directory.
+APP_DIR="${APP_DIR:-$(dirname "${RI_UPDATE_SCRIPT_DIR:-/var/www/reliefinventory-demo/scripts}")}"
 APP_USER="${APP_USER:-www-data}"
 APP_USER_HOME="${APP_USER_HOME:-/var/www}"
-BACKUP_DIR="${BACKUP_DIR:-/var/backups/reliefinventory}"
+# Mirrors the systemd units' explicit overrides (BACKUP_DIR=.../reliefinventory
+# for demo, .../reliefinventory-wa26 for wa26) so a manual run without an
+# explicit override doesn't comingle backups from two instances in one folder.
+_instance_suffix="$(basename "$APP_DIR" | sed 's/^reliefinventory-//')"
+if [ "$_instance_suffix" = "demo" ]; then
+    BACKUP_DIR="${BACKUP_DIR:-/var/backups/reliefinventory}"
+else
+    BACKUP_DIR="${BACKUP_DIR:-/var/backups/reliefinventory-$_instance_suffix}"
+fi
 LOG_DIR="${LOG_DIR:-/var/log/reliefinventory}"
 PHP="${PHP:-php8.4}"
 BRANCH="${BRANCH:-master}"
-QUEUE_SERVICE="${QUEUE_SERVICE:-reliefinventory-demo-queue}"
+QUEUE_SERVICE="${QUEUE_SERVICE:-$(basename "$APP_DIR")-queue}"
 FPM_SERVICE="${FPM_SERVICE:-php8.4-fpm}"
 # Health checks default to APP_URL from .env; override if that isn't reachable
 # from the box itself: HEALTH_URL=http://127.0.0.1 bash scripts/update.sh
