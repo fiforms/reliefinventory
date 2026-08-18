@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Routing\Exceptions\InvalidSignatureException;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -29,5 +30,14 @@ return Application::configure(basePath: dirname(__DIR__))
 
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Someone re-opening an old email-verification link from Mail hours
+        // later hits Laravel's raw "403 Invalid signature." page, which
+        // looks broken even though it's just an expired signed URL — see
+        // routes/auth.php's `verification.verify` route. Swap in a friendly
+        // page pointing back to login instead of the framework default.
+        $exceptions->render(function (InvalidSignatureException $e, $request) {
+            if ($request->routeIs('verification.verify')) {
+                return response()->view('errors.expired-verification-link', [], 403);
+            }
+        });
     })->create();
