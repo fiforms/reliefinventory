@@ -118,6 +118,19 @@ Route::get('/setup/feedback', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback')]);
 })->middleware(['auth', 'permission:manage-feedback']);
 
+// Help pages: static how-to guides, one per warehouse stage. Visible to
+// anyone authenticated (no permission gate) — the menu item that links here
+// has no permission_key either, see 2026_08_18_170000_add_help_menu.php.
+Route::get('/help/receiving', function () {
+    return Inertia::render('Help/Receiving',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/help/receiving')]);
+})->middleware(['auth']);
+
+Route::get('/help/sorting', function () {
+    return Inertia::render('Help/Sorting',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/help/sorting')]);
+})->middleware(['auth']);
+
 Route::get('/reports/labels', function () {
     return Inertia::render('PrintLabels',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/labels')]);
