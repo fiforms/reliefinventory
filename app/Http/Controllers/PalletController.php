@@ -58,7 +58,7 @@ class PalletController extends Controller
     {
         $data = $request->validate([
             'kind' => ['required', Rule::in(array_keys(PalletKind::LIFECYCLES))],
-            'container_type' => ['nullable', Rule::in(['pallet', 'gaylord'])],
+            'container_type' => ['nullable', Rule::in(['pallet', 'gaylord', 'box', 'bag'])],
             'location_id' => 'nullable|exists:locations,id',
             'donor_person_id' => 'nullable|exists:people,id',
             'destination_person_id' => 'nullable|exists:people,id',
@@ -96,7 +96,7 @@ class PalletController extends Controller
         $data = $request->validate([
             'status' => 'nullable|string',
             'location_id' => 'nullable|exists:locations,id',
-            'container_type' => ['nullable', Rule::in(['pallet', 'gaylord'])],
+            'container_type' => ['nullable', Rule::in(['pallet', 'gaylord', 'box', 'bag'])],
             'donor_person_id' => 'nullable|exists:people,id',
             'destination_person_id' => 'nullable|exists:people,id',
             'truck_id' => 'nullable|exists:trucks,id',

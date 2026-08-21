@@ -1,9 +1,13 @@
 <?php
 
+use App\Models\Driver;
 use App\Models\Item;
 use App\Models\Pallet;
+use App\Models\Person;
 use App\Models\Transaction;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 
 test('recording a donation intake creates it in received status', function () {
     $user = userWithPermissions('manage-receiving');
@@ -20,6 +24,97 @@ test('recording a donation intake creates it in received status', function () {
     expect($donation->status->name)->toBe(Transaction::STATUS_RECEIVED)
         ->and($donation->category)->toBe('donation')
         ->and((float) $donation->manifest_weight_lbs)->toBe(12000.0);
+});
+
+test('driver, arrival method, container type, and source address are captured on intake', function () {
+    $user = userWithPermissions('manage-receiving');
+    $driver = Driver::create(['name' => 'Pat Driver', 'phone' => '555-0100']);
+
+    $record = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'driver_id' => $driver->id,
+        'arrival_method' => 'semi',
+        'container_types' => ['box', 'tote'],
+        'container_type_counts' => ['box' => 4, 'tote' => 2],
+        'container_count' => 6,
+        'source_address' => '123 Main St',
+        'source_city' => 'Asheville',
+        'source_state' => 'NC',
+        'source_zip' => '28801',
+    ])->assertCreated()->json('record');
+
+    $donation = Transaction::findOrFail($record['id']);
+
+    expect($donation->driver_id)->toBe($driver->id)
+        ->and($donation->arrival_method)->toBe('semi')
+        ->and($donation->container_types)->toBe(['box', 'tote'])
+        ->and($donation->container_type_counts)->toBe(['box' => 4, 'tote' => 2])
+        ->and($donation->container_count)->toBe(6)
+        ->and($donation->source_address)->toBe('123 Main St')
+        ->and($donation->source_city)->toBe('Asheville')
+        ->and($donation->source_state)->toBe('NC')
+        ->and($donation->source_zip)->toBe('28801');
+});
+
+test('pallets cannot be combined with other container types', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'container_types' => ['pallet', 'box'],
+    ])->assertStatus(422);
+});
+
+test('a trailer pulled by a pickup truck is a valid arrival method', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'arrival_method' => 'trailer',
+    ])->assertCreated();
+});
+
+test('an intake defaults to today but accepts a backdated order date', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $record = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'order_date' => '2026-08-01',
+    ])->assertCreated()->json('record');
+
+    expect(Transaction::findOrFail($record['id'])->order_date)->toBe('2026-08-01');
+});
+
+test('a contact person for the shipment can be linked, distinct from the donor', function () {
+    $user = userWithPermissions('manage-receiving');
+    $org = Person::create(['organization' => 'Big Org', 'is_organization' => true]);
+    $contact = Person::create(['first_name' => 'Cam', 'last_name' => 'Contact', 'parent_person_id' => $org->id]);
+
+    $record = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'person_id' => $org->id,
+        'contact_person_id' => $contact->id,
+    ])->assertCreated()->json('record');
+
+    $donation = Transaction::findOrFail($record['id']);
+    expect($donation->person_id)->toBe($org->id)
+        ->and($donation->contact_person_id)->toBe($contact->id);
+});
+
+test('pallets can be created as loose boxes or bags, not just pallets/gaylords', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $records = $this->actingAs($user)
+        ->postJson('/json/receiving/'.$donation->id.'/pallets', ['count' => 2, 'container_type' => 'box'])
+        ->assertCreated()->json('records');
+
+    expect($records)->toHaveCount(2)
+        ->and(Pallet::where('orderdonation_id', $donation->id)->where('container_type', 'box')->count())->toBe(2);
 });
 
 test('a non-donation category is logged but never enters the donation pipeline', function () {
@@ -157,27 +252,7 @@ test('an intake with pallets already created cannot be deleted', function () {
     expect(Transaction::find($donation->id))->not->toBeNull();
 });
 
-test('pallet lines can carry a content description applied to each created pallet', function () {
-    $user = userWithPermissions('manage-receiving');
-    $donation = Transaction::create([
-        'type' => 'donation', 'category' => 'donation',
-        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
-        'order_date' => now()->toDateString(),
-    ]);
-
-    $records = $this->actingAs($user)
-        ->postJson('/json/receiving/'.$donation->id.'/pallets', [
-            'count' => 4,
-            'content_description' => 'Mixed pallet',
-        ])
-        ->assertCreated()->json('records');
-
-    expect($records)->toHaveCount(4)
-        ->and(collect($records)->pluck('content_description')->unique()->all())->toBe(['Mixed pallet'])
-        ->and(Pallet::where('orderdonation_id', $donation->id)->where('content_description', 'Mixed pallet')->count())->toBe(4);
-});
-
-test('single-item pallets can be tagged with their item at receiving (expedited-sorting prep)', function () {
+test('pallet lines never carry content description or item at receiving — that happens at sorting', function () {
     $user = userWithPermissions('manage-receiving');
     $donation = Transaction::create([
         'type' => 'donation', 'category' => 'donation',
@@ -196,13 +271,28 @@ test('single-item pallets can be tagged with their item at receiving (expedited-
 
     $records = $this->actingAs($user)
         ->postJson('/json/receiving/'.$donation->id.'/pallets', [
-            'count' => 2,
+            'count' => 4,
+            // Even if a client sends these (old UI, direct API call), the
+            // endpoint no longer accepts or stores them.
+            'content_description' => 'Mixed pallet',
             'content_item_id' => $item->id,
         ])
         ->assertCreated()->json('records');
 
-    expect(collect($records)->pluck('content_item_id')->unique()->all())->toBe([$item->id])
-        ->and($records[0]['content_item']['description'])->toBe('Ketchup, 24ct case');
+    expect($records)->toHaveCount(4)
+        ->and(collect($records)->pluck('content_description')->unique()->all())->toBe([null])
+        ->and(collect($records)->pluck('content_item_id')->unique()->all())->toBe([null]);
+});
+
+test('quick_sort_candidate is a donation-level flag, not per-pallet', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $record = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'quick_sort_candidate' => true,
+    ])->assertCreated()->json('record');
+
+    expect(Transaction::findOrFail($record['id'])->quick_sort_candidate)->toBeTrue();
 });
 
 test('recategorizing an intake re-derives its lifecycle status', function () {
@@ -295,4 +385,42 @@ test('the donor identification flag can be cleared once a donor is identified', 
     ])->assertOk();
 
     expect($donation->fresh()->donor_identification_pending)->toBeFalse();
+});
+
+test('a photo of the shipment can be uploaded and served back, guarded by existence', function () {
+    Storage::fake('local');
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $this->actingAs($user)
+        ->post('/json/receiving/'.$donation->id.'/photo', ['photo' => UploadedFile::fake()->image('load.jpg')])
+        ->assertOk();
+
+    $donation->refresh();
+    expect($donation->photo_path)->not->toBeNull();
+    Storage::disk('local')->assertExists($donation->photo_path);
+
+    $this->actingAs($user)->get('/json/receiving/'.$donation->id.'/photo')->assertOk();
+});
+
+test('replacing a shipment photo deletes the old file', function () {
+    Storage::fake('local');
+    $user = userWithPermissions('manage-receiving');
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $this->actingAs($user)->post('/json/receiving/'.$donation->id.'/photo', ['photo' => UploadedFile::fake()->image('first.jpg')]);
+    $firstPath = $donation->fresh()->photo_path;
+
+    $this->actingAs($user)->post('/json/receiving/'.$donation->id.'/photo', ['photo' => UploadedFile::fake()->image('second.jpg')]);
+
+    Storage::disk('local')->assertMissing($firstPath);
+    Storage::disk('local')->assertExists($donation->fresh()->photo_path);
 });

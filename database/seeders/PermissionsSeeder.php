@@ -81,6 +81,11 @@ class PermissionsSeeder extends Seeder
         'manage-trusted-devices' => 'Approve, label, and revoke devices allowed to use PIN unlock',
         'manage-feedback' => 'View and manage in-app bug/feature reports, and configure the site banner',
         'manage-users' => 'Create, promote, and deactivate login-capable accounts (User Administration)',
+        // Administrator-only by default (not in any bundle below), same as
+        // manage-users/admin-system — a bad import can write a lot of
+        // wrong data quickly, given the blast radius.
+        'manage-import' => 'Upload, preview, and commit external data imports',
+        'admin-import' => 'View and delete import batch history',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [

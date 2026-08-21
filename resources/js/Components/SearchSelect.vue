@@ -149,6 +149,13 @@ export default {
 				}
 			},
 		},
+		// Lets a control's option source change at runtime (e.g. a contact
+		// picker scoped to whichever org is currently selected elsewhere on
+		// the page) — refetch under the new URL instead of keeping stale
+		// options from the old one.
+		optionsource(newVal, oldVal) {
+			if (newVal !== oldVal) this.fetchOptions();
+		},
 	},
 	methods: {
 		async fetchOptions(force = false) {

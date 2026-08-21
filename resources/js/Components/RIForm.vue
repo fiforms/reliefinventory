@@ -75,6 +75,24 @@
           </div>
       </template>
 
+  #actions is optional and replaces the default Save/Cancel/Delete/Back-to-List
+      button row, for pages that need a different action flow (e.g. a
+      multi-step wizard). It's bound to { editing, record, confirmingDelete,
+      save, cancel, delete, keepRecord }: `save(keepOpen)` behaves like the
+      default Save button, except when keepOpen is true it leaves the form
+      open on the saved record (refreshed with the server's response, e.g. to
+      pick up a newly-assigned id) instead of returning to the list. `cancel`
+      and `delete` are the same handlers the default bar uses; `keepRecord`
+      backs out of a delete confirmation. Omit this slot to keep the default
+      behavior — every existing RIForm page is unaffected.
+
+  RIForm also emits `select` (with the record) when a list row is opened,
+      `new` (with the new record — the template default, or the server's
+      response if `precreate`) when "New Record" is clicked, and `saved`
+      (with the server's record) after every successful save — useful for a
+      parent that needs to
+      reset its own local state (e.g. a wizard step) alongside RIForm's.
+
 -->
 <template>
   <div class="ri_form_container">
@@ -106,15 +124,26 @@
       </h2>
       <slot :editing="editing" :record="record" :templates="templates"></slot>
       <p v-if="saveError" class="ri_error">{{ saveError }}</p>
-      <div class="ri_formactions">
-        <button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
-        <button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
-        <button v-if="editing" @click="deleteRecord()" class="ri_deletebutton" :class="{ ri_confirming: confirmingDelete }">
-          {{ confirmingDelete ? 'Confirm Delete — cannot be undone' : 'Delete' }}
-        </button>
-        <button v-if="editing && confirmingDelete" @click="confirmingDelete = false" class="ri_linkbutton">Keep Record</button>
-        <button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to List</button>
-      </div>
+      <slot
+        name="actions"
+        :editing="editing"
+        :record="record"
+        :confirmingDelete="confirmingDelete"
+        :save="saveRecord"
+        :cancel="cancelRecord"
+        :delete="deleteRecord"
+        :keepRecord="() => (confirmingDelete = false)"
+      >
+        <div class="ri_formactions">
+          <button v-if="editing" @click="saveRecord()" class="ri_defaultbutton">Save</button>
+          <button v-if="editing" @click="cancelRecord()" class="ri_formbutton">Cancel Changes</button>
+          <button v-if="editing" @click="deleteRecord()" class="ri_deletebutton" :class="{ ri_confirming: confirmingDelete }">
+            {{ confirmingDelete ? 'Confirm Delete — cannot be undone' : 'Delete' }}
+          </button>
+          <button v-if="editing && confirmingDelete" @click="confirmingDelete = false" class="ri_linkbutton">Keep Record</button>
+          <button v-if="!editing" @click="cancelRecord()" class="ri_defaultbutton">Back to List</button>
+        </div>
+      </slot>
     </div>
   </div>
 </template>
@@ -148,6 +177,7 @@ export default {
       default: null,
     },
   },
+  emits: ['select', 'new', 'saved'],
   data() {
     return {
       records: [],
@@ -186,38 +216,41 @@ export default {
     selectRecord(record) {
       this.successMessage = null;
       this.record = JSON.parse(JSON.stringify(record));
+      this.$emit('select', this.record);
     },
-    saveRecord() {
+    // keepOpen leaves the form open on the saved record (refreshed from the
+    // server response) instead of returning to the list — for a page
+    // implementing its own multi-step flow via the #actions slot.
+    saveRecord(keepOpen = false) {
       this.saveError = null;
       this.successMessage = null;
       this.confirmingDelete = false;
-      if (this.record && this.record.id) {
-        // Record exists, we should update using PUT
-        axios.put(this.datasource + "/" + this.record.id, this.record)
-          .then((response) => {
+      const isUpdate = !!(this.record && this.record.id);
+      const request = isUpdate
+        ? axios.put(this.datasource + "/" + this.record.id, this.record)
+        : axios.post(this.datasource, this.record);
+      // Resolves true/false rather than rejecting, so a plain
+      // `@click="saveRecord()"` (the default action bar) doesn't produce an
+      // unhandled rejection — callers that care about success (e.g. a
+      // wizard's #actions slot deciding whether to advance) can await it.
+      return request
+        .then((response) => {
+          this.$emit('saved', response.data.record);
+          if (keepOpen) {
+            this.record = response.data.record;
+          } else {
             this.records = [];
             this.cancelRecord();
             this.fetchRecords();
-            this.successMessage = 'Record saved successfully.';
-          })
-          .catch((error) => {
-            console.log(error);
-            this.saveError = this.describeSaveError(error);
-          });
-      } else {
-        // This is a new record, create it using POST
-        axios.post(this.datasource, this.record)
-          .then((response) => {
-            this.records = [];
-            this.cancelRecord();
-            this.fetchRecords();
-            this.successMessage = 'Record created successfully.';
-          })
-          .catch((error) => {
-            console.log(error);
-            this.saveError = this.describeSaveError(error);
-          });
-      }
+            this.successMessage = isUpdate ? 'Record saved successfully.' : 'Record created successfully.';
+          }
+          return true;
+        })
+        .catch((error) => {
+          console.log(error);
+          this.saveError = this.describeSaveError(error);
+          return false;
+        });
     },
     deleteRecord() {
       // Two-step inline confirm: first click arms the button, second deletes.
@@ -259,10 +292,12 @@ export default {
             this.editing = true;
             this.records = [];
             this.fetchRecords();
+            this.$emit('new', this.record);
           });
       } else {
         this.record = JSON.parse(JSON.stringify(this.templates['_default']));
         this.editing = true;
+        this.$emit('new', this.record);
       }
     },
   },

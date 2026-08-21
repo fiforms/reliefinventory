@@ -51,15 +51,33 @@ class Transaction extends Model
         'id',
         'type',
         'category',    // donation | equipment | supplies | other — only "donation" enters the sorting pipeline
+        'category_other', // free text when category = other
         'person_id_user', // Foreign key linking to people (the user who entered the transaction)
         'person_id',  // Foreign key linking to people
+        // The person to contact about THIS shipment — distinct from person_id
+        // (the donor/org itself). A real, reusable Person (an org contact),
+        // not free text — see the 2026_08_21 contact_person_id migration.
+        'contact_person_id',
         'donor_identification_pending', // flagged for donor follow-up — see the 2026_08_15 migration
         'status_id',  // Status ID associated with the order-donation relation
-        'order_date', // Date of the transaction
+        'order_date', // Date of the transaction — staff-editable, defaults to today (see ReceivingController)
         'comments',   // Additional notes
         'container_count',
         'manifest',
         'manifest_weight_lbs',
+        'driver_id', // Foreign key to drivers — see the 2026_08_21 migration replacing driver_name/driver_phone
+        'arrival_method', // semi | box_truck | personal_vehicle | delivery_truck | trailer | other
+        'arrival_method_other', // free text when arrival_method = other
+        'carrier', // free text when arrival_method = delivery_truck (UPS/FedEx/Amazon/etc)
+        'container_types', // JSON array — ['pallet'] (exclusive) or a subset of box/bag/tote/loose; informational, never gates container_count
+        'container_type_counts', // JSON map of the above -> quantity, e.g. {"box": 4, "tote": 2}; container_count is their derived sum
+        'quick_sort_candidate', // dock-side judgment call: mostly one item, eligible for sorting's express lane — see the 2026_08_21 migration
+        'source_address', // where this donation came from — always captured, independent of donor_identification_pending
+        'source_city',
+        'source_state',
+        'source_zip',
+        'photo_path', // reference photo of the shipment/load — served via ReceivingController::photo()
+
         // Order Review & Confirm fields (type=order only) — see the
         // 2026_08_18 migrations. delivery_days/preferred_time only apply to
         // fulfillment_method=delivery — OrderController::complete() force-
@@ -72,6 +90,9 @@ class Transaction extends Model
         'contact_name',
         'contact_phone',
         'other_needs',
+        // See Person::$fillable's source_system/source_ref comment.
+        'source_system',
+        'source_ref',
     ];
 
     protected $casts = [
@@ -79,6 +100,9 @@ class Transaction extends Model
         'donor_identification_pending' => 'boolean',
         'status_changed_at' => 'datetime',
         'delivery_days' => 'array',
+        'container_types' => 'array',
+        'container_type_counts' => 'array',
+        'quick_sort_candidate' => 'boolean',
     ];
 
     /**
@@ -105,6 +129,18 @@ class Transaction extends Model
     public function person()
     {
         return $this->belongsTo(Person::class);
+    }
+
+    // The person to contact about this specific shipment — see
+    // contact_person_id's comment in $fillable above.
+    public function contactPerson()
+    {
+        return $this->belongsTo(Person::class, 'contact_person_id');
+    }
+
+    public function driver()
+    {
+        return $this->belongsTo(Driver::class);
     }
 
     // Orders have separate lines indicating the desired items

@@ -59,6 +59,22 @@ class Person extends Model
         'first_name',
         'last_name',
         'organization',
+        // Marks this Person as the org record itself (not inferred from
+        // organization being set, since a contact row also wants to record
+        // its own org affiliation) — see parent_person_id below.
+        'is_organization',
+        // Self-referential: links a contact Person to the org Person they
+        // belong to. Null for standalone people and for org records
+        // themselves.
+        'parent_person_id',
+        // Free-text relationship tag for a contact under a parent org
+        // (Primary/Delivery/Billing/...) — deliberately not a governed
+        // lookup table, since real Flowtrac contact-role data showed the
+        // role flags going unused or non-exclusive.
+        'contact_role',
+        // Open-ended party-type tag (Donor/Supplier/Warehouse Contact/...),
+        // see PersonCategory.
+        'category_id',
         'phone',
         'email',
         'address',
@@ -83,6 +99,10 @@ class Person extends Model
         // — see PeopleController/UserAdminController's VALIDATION_RULES.
         'email_verified_at',
         'disabled_at',
+        // Explicit source-system/source-ref pair for import idempotency —
+        // see the 2026_08_20 import-framework migration.
+        'source_system',
+        'source_ref',
     ];
 
     /**
@@ -96,6 +116,7 @@ class Person extends Model
         'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
         'is_volunteer' => 'boolean',
+        'is_organization' => 'boolean',
     ];
 
     /**
@@ -151,6 +172,28 @@ class Person extends Model
     public function county()
     {
         return $this->belongsTo(County::class, 'county_id');
+    }
+
+    /**
+     * The org Person this contact belongs to (null for standalone people
+     * and for org records themselves).
+     */
+    public function parent()
+    {
+        return $this->belongsTo(self::class, 'parent_person_id');
+    }
+
+    /**
+     * Contacts linked to this org Person via parent_person_id.
+     */
+    public function children()
+    {
+        return $this->hasMany(self::class, 'parent_person_id');
+    }
+
+    public function category()
+    {
+        return $this->belongsTo(PersonCategory::class, 'category_id');
     }
 
     /**

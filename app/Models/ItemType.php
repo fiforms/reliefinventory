@@ -64,6 +64,9 @@ class ItemType extends Model
         'name',
         'description',
         'active',
+        // See Person::$fillable's source_system/source_ref comment.
+        'source_system',
+        'source_ref',
     ];
 
     /**

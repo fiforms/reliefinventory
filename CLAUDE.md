@@ -91,7 +91,22 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   `InventoryReportController` both aggregate this ledger (usable additions − subtractions) — that used to
   be a known gap ("nothing computes stock-on-hand"); it isn't anymore.
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
-  unit that donation sorting scans to establish provenance.
+  unit that donation sorting scans to establish provenance. `container_type` widened over time to
+  `pallet|gaylord|box|bag|tote` — a non-palletized arrival still gets a printable, trackable label.
+  Receiving no longer collects per-pallet contents (`content_description`/`content_item_id` stay on the
+  model/columns for historical data and Sorting's own display, but the Receiving UI never writes them
+  anymore) — identifying what's actually in a container means opening it, which is Sorting's job, not
+  Receiving's. The donation-level `quick_sort_candidate` boolean is Receiving's replacement: a rough,
+  visible-only dock judgment call ("is this mostly one item, eligible for sorting's express lane?"), not
+  a per-pallet catalog tag. `drivers` is a separate lightweight table (name/phone/carrier, optionally
+  linked to a `Person` via `person_id` for the "driver is also the donor" case) — deliberately not
+  `Person`, since drivers aren't staff/donors/customers and don't need permissions. `orderdonations` also
+  carries `contact_person_id` (the person to contact about *this shipment*, reusing the org-contact model
+  — `is_organization`/`parent_person_id`/`contact_role` on `Person` — rather than free text), a JSON
+  `container_types` array (`['pallet']`, exclusive, or any subset of `box`/`bag`/`tote`/`loose` — a mixed
+  load can be several of the latter at once) with a matching `container_type_counts` JSON map of
+  type → quantity, and `photo_path` (a single reference photo of the shipment, served through
+  `ReceivingController::photo()` the same way `FeedbackReport` screenshots are).
 - `people` / `roles` / `people_roles` — a single `Person` table replaced a dropped `users` table (see
   migration `2025_02_20_155051_drop_users_table.php`); auth is on `Person`, not a `User` model (both map
   to the same `people` table/row — `User` is what `Auth::user()` returns, `Person` is the general party
@@ -126,18 +141,37 @@ It also supports an optional `filter` prop (`(record) => boolean`) plus a `#list
 whatever filter UI a page wants above the list (search box, checkbox, ...) — `Receiving.vue` is the
 reference implementation (donor search + a "flagged for donor ID only" toggle). There's still no
 pagination for large lists (a known gap), and `selectRecord` selects by the record object itself, not
-list position, so it stays correct under filtering.
+list position, so it stays correct under filtering. RIForm also supports an optional `#actions` slot
+(scoped: `editing, record, confirmingDelete, save, cancel, delete, keepRecord`) replacing its default
+Save/Cancel/Delete/Back-to-List bar for a page that needs a different action flow — `save(keepOpen)`
+behaves like the default Save button, except `keepOpen: true` leaves the form open on the saved record
+(refreshed with the server's response, e.g. to pick up a newly-assigned id) instead of returning to the
+list. Omitting the slot keeps every other RIForm page's behavior unchanged. RIForm also emits `select`
+(with the record), `new` (with the new record — the template default, or the server's response if
+`precreate`), and `saved` (with the server's record after every successful save), letting a parent reset
+its own local state (e.g. a wizard step) alongside RIForm's.
 
-**Donation sorting and order entry are both exceptions to the RIForm pattern.** `DonationSorting.vue` +
-`SortingSessionController`, and `OrderEntry.vue` + `OrderController`, implement a scan/keyboard-driven,
-autosaving flow instead: a session/order header is created the moment work starts (pallet scanned /
-customer confirmed), and each line is POSTed to the server individually as it's entered
-(`POST /json/sorting-sessions/{id}/lines`, `POST /json/orders/{id}/lines`) rather than batching everything
-into one save at the end. This is intentional — these are long-running, line-heavy entry sessions that
-must survive a browser crash or network drop without losing entered work. Follow this per-line-autosave
-pattern (not RIForm's save-at-end model) for any other long-running, high-line-count workflow (e.g. future
-order filling/picking). `OrderEntry.vue` also splits customer selection/confirmation into its own screen
-before line entry — deliberately, so the line-entry screen isn't crowded with contact-detail fields.
+**Donation sorting, order entry, and receiving are all exceptions to RIForm's single-screen pattern**,
+in two different ways. `DonationSorting.vue` + `SortingSessionController`, and `OrderEntry.vue` +
+`OrderController`, implement a scan/keyboard-driven, autosaving flow: a session/order header is created
+the moment work starts (pallet scanned / customer confirmed), and each line is POSTed to the server
+individually as it's entered (`POST /json/sorting-sessions/{id}/lines`, `POST /json/orders/{id}/lines`)
+rather than batching everything into one save at the end. This is intentional — these are long-running,
+line-heavy entry sessions that must survive a browser crash or network drop without losing entered work.
+Follow this per-line-autosave pattern (not RIForm's save-at-end model) for any other long-running,
+high-line-count workflow (e.g. future order filling/picking). `OrderEntry.vue` also splits customer
+selection/confirmation into its own screen before line entry — deliberately, so the line-entry screen
+isn't crowded with contact-detail fields.
+
+`Receiving.vue` takes a lighter approach on top of RIForm itself (via the `#actions` slot above) rather
+than a full custom rebuild: a local `wizardStep` (`'details' | 'photo' | 'labels'`) walks a donation
+through **Details** (category, arrival details, donor/driver/contact, container composition) → **Photo**
+(a file input only rendered once the record has a real id — attaching a photo needs somewhere to attach
+it to, so "Add Photo" always saves first) → **Print Labels** (donations only; other categories finish
+after the photo step). The Labels step auto-creates exactly the pallets/containers already declared by
+quantity on the Details screen (summed via `computeContainerCount()`) instead of asking staff to
+re-enter those numbers as manual batches — it's idempotent, topping up only whatever's still short if
+re-entered, and a manual "Add Label(s)" line stays available underneath for one-off corrections.
 
 `QrScanner.vue` wraps `html5-qrcode` for camera-based barcode/QR scanning; keyboard-wedge USB/Bluetooth
 scanners work via plain text input + Enter-to-submit and don't need this component.

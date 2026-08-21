@@ -7,6 +7,7 @@ import MultiSelect from '@/Components/MultiSelect.vue';
 import Checkbox from '@/Components/Checkbox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import TextArea from '@/Components/TextArea.vue';
+import SearchSelect from '@/Components/SearchSelect.vue';
 
 defineProps({
     breadcrumb: {
@@ -21,14 +22,27 @@ defineProps({
     <template #header>
     </template>
 
-    <RIForm 
-      title="People Entry Form" 
-      datasource="/json/people">
-      
+    <RIForm
+      ref="riform"
+      title="People Entry Form"
+      datasource="/json/people"
+      :filter="peopleFilter">
+
+      <template #listactions>
+        <input
+          type="text"
+          v-model="peopleSearch"
+          class="ri_forminput people_search"
+          placeholder="Search by name or organization..."
+        />
+      </template>
+
       <template #thead>
         <th>First Name</th>
         <th>Last Name</th>
         <th>Organization</th>
+        <th>Category</th>
+        <th>Parent Org</th>
         <th>Phone</th>
         <th>Email</th>
         <th>Roles</th>
@@ -38,7 +52,9 @@ defineProps({
       <template #tbody="{ record }">
         <td>{{ record.first_name }}</td>
         <td>{{ record.last_name }}</td>
-        <td>{{ record.organization || 'N/A' }}</td>
+        <td>{{ record.organization || 'N/A' }}<span v-if="record.is_organization" class="people_badge">org</span></td>
+        <td>{{ record.category ? record.category.name : '' }}</td>
+        <td>{{ record.parent ? record.parent.full_name : '' }}</td>
         <td>{{ record.phone || 'N/A' }}</td>
         <td>{{ record.email || 'N/A' }}</td>
         <td class="comma-separated"><span v-for="sub in record.roles" > {{ sub.name }} </span></td>
@@ -71,6 +87,62 @@ defineProps({
             />
           </div>
           <p class="ri_hint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">This record is the organization itself:</div>
+            <Checkbox
+              v-model="record.is_organization"
+              :enabled="editing"
+            />
+          </div>
+          <p class="ri_hint">
+            Check this for the org's own record (e.g. "Macedonia SDA Church") so individual contacts at
+            that org can be linked to it below, instead of inferring org-vs-individual from which name
+            fields happen to be filled in.
+          </p>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Parent Organization:</div>
+            <SearchSelect
+              v-model="record.parent_person_id"
+              optionsource="/json/people?is_organization=1"
+              display="full_name"
+              placeholder="Search organizations..."
+              :enabled="editing"
+            />
+          </div>
+          <p class="ri_hint">
+            Set this when this person is a contact at an organization already recorded above (checked
+            "This record is the organization itself"), rather than a standalone donor/recipient/contact.
+          </p>
+
+          <div class="ri_fieldset" v-if="record.parent_person_id">
+            <div class="ri_fieldlabel">Contact Role:</div>
+            <TextInput
+              v-model="record.contact_role"
+              placeholder="e.g. Primary, Delivery, Billing"
+              :enabled="editing"
+            />
+          </div>
+
+          <div class="ri_fieldset">
+            <div class="ri_fieldlabel">Category:</div>
+            <SearchSelect
+              ref="categorySelect"
+              v-model="record.category_id"
+              optionsource="/json/person-categories"
+              display="name"
+              placeholder="e.g. Donor, Supplier, Warehouse Contact..."
+              :allowcreate="true"
+              :enabled="editing"
+              @create="createCategory"
+            />
+          </div>
+          <p v-if="categoryError" class="ri_error">{{ categoryError }}</p>
+          <p class="ri_hint">
+            An open-ended tag for filtering the People list (Donor, Supplier, Warehouse Contact, etc.) —
+            type a new one to add it. Not tied to permissions and not required.
+          </p>
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Badge Code:</div>
@@ -185,9 +257,66 @@ defineProps({
   </AuthenticatedLayout>
 </template>
 
+<script>
+import axios from 'axios';
+import { invalidateOptions } from '@/Components/SearchSelect.vue';
+
+export default {
+  data() {
+    return {
+      peopleSearch: '',
+      categoryError: null,
+    };
+  },
+  computed: {
+    peopleFilter() {
+      const query = this.peopleSearch.trim().toLowerCase();
+      return (record) => {
+        if (!query) return true;
+        const haystack = [record.first_name, record.last_name, record.organization]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(query);
+      };
+    },
+  },
+  methods: {
+    // Category is a small open-ended tag list (Donor/Supplier/Warehouse
+    // Contact/...) — quick-added inline via SearchSelect's allowcreate,
+    // same idiom Receiving.vue uses for donors, but simpler (one field).
+    async createCategory(name) {
+      this.categoryError = null;
+      const trimmed = (name || '').trim();
+      if (!trimmed) return;
+      try {
+        const response = await axios.post('/json/person-categories', { name: trimmed });
+        invalidateOptions('/json/person-categories');
+        await this.$refs.categorySelect?.refresh(response.data.record.id);
+      } catch (error) {
+        this.categoryError = error.response?.data?.message || 'Could not save category.';
+      }
+    },
+  },
+};
+</script>
+
 <style scoped>
 
 td.comma-separated span:not(:last-child)::after {
   content: ', ';
+}
+
+.people_badge {
+  margin-left: 0.4em;
+  font-size: 0.75em;
+  color: #4338ca;
+  border: 1px solid #c7d2fe;
+  border-radius: 4px;
+  padding: 0.05em 0.4em;
+}
+
+.people_search {
+  max-width: 20rem;
 }
 </style>

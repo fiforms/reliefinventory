@@ -118,6 +118,11 @@ Route::get('/setup/feedback', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback')]);
 })->middleware(['auth', 'permission:manage-feedback']);
 
+Route::get('/setup/import', function () {
+    return Inertia::render('Imports',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/import')]);
+})->middleware(['auth', 'permission:manage-import']);
+
 // Help pages: static how-to guides, one per warehouse stage. Visible to
 // anyone authenticated (no permission gate) — the menu item that links here
 // has no permission_key either, see 2026_08_18_170000_add_help_menu.php.
@@ -130,6 +135,14 @@ Route::get('/help/sorting', function () {
     return Inertia::render('Help/Sorting',
         ['breadcrumb' => MenuItem::getBreadcrumb('/help/sorting')]);
 })->middleware(['auth']);
+
+// Printable PDF version of a help guide — same no-permission-gate rule as
+// the guide pages themselves. Route/controller named generically so more
+// guides (e.g. /report/help/sorting) can be added without redesigning this.
+Route::get('/report/help/receiving',
+    [HelpReportController::class, 'receiving'])
+    ->name('report.help.receiving')
+    ->middleware(['auth']);
 
 Route::get('/reports/labels', function () {
     return Inertia::render('PrintLabels',
@@ -216,6 +229,11 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pe
     // Read-only listing so the People edit form can offer per-person
     // permission overrides.
     Route::get('/permissions', [PermissionController::class, 'index']);
+    // person_categories: a tightly-coupled sub-resource of People (the
+    // open-ended party-type tag), not its own permission/admin page — see
+    // person-tagging-and-org-contacts-design memory.
+    Route::get('/person-categories', [PersonCategoryController::class, 'index']);
+    Route::post('/person-categories', [PersonCategoryController::class, 'store']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-users']], function () {
@@ -361,6 +379,14 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-re
     Route::delete('/receiving/{id}', [ReceivingController::class, 'destroy']);
     Route::post('/receiving/{id}/pallets', [ReceivingController::class, 'createPallets']);
     Route::post('/receiving/{id}/close-out', [ReceivingController::class, 'closeOut']);
+    Route::post('/receiving/{id}/photo', [ReceivingController::class, 'uploadPhoto']);
+    Route::get('/receiving/{id}/photo', [ReceivingController::class, 'photo']);
+
+    // drivers: a sub-resource of intake (see DriverController), not its own
+    // admin page/permission.
+    Route::get('/drivers', [DriverController::class, 'index']);
+    Route::post('/drivers', [DriverController::class, 'store']);
+    Route::put('/drivers/{driver}', [DriverController::class, 'update']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trucks']], function () {
@@ -404,6 +430,21 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-fe
     Route::get('/feedback-reports/{feedbackReport}/screenshot', [FeedbackReportController::class, 'screenshot']);
     Route::patch('/feedback-reports/{feedbackReport}', [FeedbackReportController::class, 'update']);
     Route::put('/banner-settings', [BannerSettingController::class, 'update']);
+});
+
+// Import: upload/preview/commit are manage-import; viewing/deleting batch
+// history is split into admin-import (both Administrator-only by default,
+// same as manage-users/admin-system — a bad import has real blast radius).
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-import']], function () {
+    Route::get('/imports/options', [ImportController::class, 'options']);
+    Route::post('/imports', [ImportController::class, 'store']);
+    Route::post('/imports/{id}/commit', [ImportController::class, 'commit']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-import']], function () {
+    Route::get('/imports', [ImportController::class, 'index']);
+    Route::get('/imports/{id}/rows', [ImportController::class, 'rows']);
+    Route::delete('/imports/{id}', [ImportController::class, 'destroy']);
 });
 
 // Destructive/structural ops — previously role:32768 (Administrator).

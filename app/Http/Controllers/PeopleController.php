@@ -24,6 +24,10 @@ class PeopleController extends Controller
         'first_name' => 'nullable|required_without_all:last_name,organization|string|max:255',
         'last_name' => 'nullable|required_without_all:first_name,organization|string|max:255',
         'organization' => 'nullable|string|max:255',
+        'is_organization' => 'nullable|boolean',
+        'parent_person_id' => 'nullable|exists:people,id',
+        'contact_role' => 'nullable|string|max:100',
+        'category_id' => 'nullable|exists:person_categories,id',
         'phone' => 'nullable|string|max:255',
         'email' => 'nullable|email|max:255|unique:people,email',
         'address' => 'nullable|string',
@@ -49,9 +53,24 @@ class PeopleController extends Controller
      *
      * @return JsonResponse
      */
-    public function index()
+    public function index(Request $request)
     {
-        $people = Person::with(['people_roles', 'roles', 'county', 'person_permissions'])->get();
+        $query = Person::with(['people_roles', 'roles', 'county', 'person_permissions', 'parent', 'category']);
+
+        // Lets a Parent Organization picker (SearchSelect) fetch only org
+        // records, via a distinct cached URL — see People.vue.
+        if ($request->boolean('is_organization')) {
+            $query->where('is_organization', true);
+        }
+
+        // Lets a shipment Contact Person picker (SearchSelect) fetch only the
+        // contacts under one org, via a distinct cached URL — see
+        // Receiving.vue's contact-person field.
+        if ($request->filled('parent_person_id')) {
+            $query->where('parent_person_id', $request->integer('parent_person_id'));
+        }
+
+        $people = $query->get();
 
         // Reshape the pivot-bearing relation into the flat {permission_id, granted}
         // form the frontend reads and submits, so read/write use the same shape.
@@ -69,6 +88,10 @@ class PeopleController extends Controller
                     'first_name' => '',
                     'last_name' => '',
                     'organization' => '',
+                    'is_organization' => false,
+                    'parent_person_id' => null,
+                    'contact_role' => '',
+                    'category_id' => null,
                     'phone' => '',
                     'email' => '',
                     'address' => '',
@@ -134,6 +157,10 @@ class PeopleController extends Controller
         $data = $request->validate($rules);
         $roleData = $data['people_roles'] ?? [];
         $permissionData = $data['person_permissions'] ?? [];
+
+        if (isset($data['parent_person_id']) && (int) $data['parent_person_id'] === (int) $id) {
+            return response()->json(['message' => 'A person cannot be their own parent organization.'], 422);
+        }
 
         if ($error = $this->permissionAssignment->assertNoEscalation(Auth::user(), $person, array_column($roleData, 'role_id'), $permissionData)) {
             return response()->json(['message' => $error], 403);
