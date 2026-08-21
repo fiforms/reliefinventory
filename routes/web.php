@@ -514,6 +514,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
 
     Route::get('/active-sessions', [ActiveSessionController::class, 'index']);
+    Route::get('/login-history', [ActiveSessionController::class, 'history']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-streams']], function () {

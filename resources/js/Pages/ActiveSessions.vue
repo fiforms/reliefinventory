@@ -13,6 +13,11 @@
 	(see TrackSessionActivity / ActiveSessionController). A fresh login shows
 	up on the very next poll; a logout ages out of the 15-minute window
 	rather than being detected explicitly.
+
+	Below the active-sessions table is a separate, permanent Login History
+	section (LoginHistory model, /json/login-history) — the most recent
+	successful logins (both password and PIN-unlock), which unlike the
+	table above never age out.
 -->
 
 <script setup>
@@ -33,6 +38,10 @@ const error = ref('');
 const loading = ref(true);
 const lastRefreshed = ref(null);
 
+const history = ref([]);
+const historyError = ref('');
+const historyLoading = ref(true);
+
 let pollTimer = null;
 
 async function fetchSessions() {
@@ -49,6 +58,18 @@ async function fetchSessions() {
 	}
 }
 
+async function fetchHistory() {
+	try {
+		const response = await axios.get('/json/login-history');
+		history.value = response.data.history;
+		historyError.value = '';
+	} catch (e) {
+		historyError.value = e.response?.data?.message || 'Could not load login history.';
+	} finally {
+		historyLoading.value = false;
+	}
+}
+
 function agoText(iso) {
 	const seconds = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
 	if (seconds < 60) return `${seconds}s ago`;
@@ -56,8 +77,13 @@ function agoText(iso) {
 	return `${minutes}m ago`;
 }
 
+function methodLabel(method) {
+	return method === 'pin' ? 'PIN unlock' : 'Password';
+}
+
 onMounted(() => {
 	fetchSessions();
+	fetchHistory();
 	pollTimer = setInterval(fetchSessions, 60000);
 });
 onUnmounted(() => {
@@ -116,6 +142,42 @@ const sortedSessions = computed(() =>
 					Someone who logs out won't disappear from this list instantly — their session just stops
 					updating and ages out of the {{ activeWindowMinutes }}-minute window on its own.
 				</p>
+			</section>
+
+			<section class="bg-white shadow rounded-lg p-6 space-y-4">
+				<h2 class="text-lg font-semibold">
+					Login History
+					<span class="text-gray-400 font-normal">({{ history.length }})</span>
+				</h2>
+
+				<div v-if="historyError" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">
+					{{ historyError }}
+				</div>
+
+				<div v-if="historyLoading" class="text-gray-500">Loading…</div>
+				<div v-else-if="history.length === 0" class="text-gray-500">No logins recorded yet.</div>
+
+				<table v-else class="min-w-full text-sm">
+					<thead>
+						<tr class="text-left text-gray-500 border-b">
+							<th class="py-2 pr-4">Name</th>
+							<th class="py-2 pr-4">Method</th>
+							<th class="py-2 pr-4">Logged In</th>
+							<th class="py-2 pr-4">IP</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr v-for="entry in history" :key="entry.id" class="border-b last:border-0">
+							<td class="py-2 pr-4 font-medium">{{ entry.name }}</td>
+							<td class="py-2 pr-4 text-gray-600">{{ methodLabel(entry.method) }}</td>
+							<td class="py-2 pr-4 text-gray-600">
+								{{ new Date(entry.logged_in_at).toLocaleString() }}
+								<span class="text-gray-400">({{ agoText(entry.logged_in_at) }})</span>
+							</td>
+							<td class="py-2 pr-4 font-mono text-xs text-gray-400">{{ entry.ip_address || '—' }}</td>
+						</tr>
+					</tbody>
+				</table>
 			</section>
 		</div>
 	</AuthenticatedLayout>

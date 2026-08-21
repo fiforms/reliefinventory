@@ -6,6 +6,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\LoginHistory;
 use App\Models\Person;
 use App\Models\User;
 use App\Services\PinLoginService;
@@ -131,6 +132,8 @@ class UnlockController extends Controller
 
         Auth::login(User::findOrFail($person->id));
         $request->session()->regenerate();
+
+        LoginHistory::record($person->id, 'pin', $request->ip(), $request->userAgent());
 
         // A successful PIN unlock re-proves presence on the device, so it's
         // worth refreshing the grant's expiry too (session_duration mode

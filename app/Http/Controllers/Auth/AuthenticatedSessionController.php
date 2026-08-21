@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
+use App\Models\LoginHistory;
 use App\Services\PinLoginService;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
@@ -64,6 +65,8 @@ class AuthenticatedSessionController extends Controller
         }
 
         $request->session()->regenerate();
+
+        LoginHistory::record($user->id, 'password', $request->ip(), $request->userAgent());
 
         // A real password login is what earns a device its PIN-unlock
         // trust for this person — see PinLoginService for the two-gate

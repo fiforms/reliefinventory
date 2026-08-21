@@ -5,7 +5,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\LoginHistory;
 use App\Models\Person;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -51,5 +53,30 @@ class ActiveSessionController extends Controller
             'sessions' => $rows,
             'active_window_minutes' => 15,
         ]);
+    }
+
+    /**
+     * Recent login history — a permanent log (LoginHistory) distinct from
+     * the sessions table above, which only reflects current presence and
+     * is overwritten on every request.
+     */
+    public function history(Request $request)
+    {
+        $limit = min((int) $request->integer('limit', 50), 200);
+
+        $rows = LoginHistory::with('person')
+            ->orderByDesc('logged_in_at')
+            ->limit($limit)
+            ->get()
+            ->map(fn (LoginHistory $entry) => [
+                'id' => $entry->id,
+                'person_id' => $entry->person_id,
+                'name' => $entry->person?->full_name ?? 'Unknown',
+                'method' => $entry->method,
+                'ip_address' => $entry->ip_address,
+                'logged_in_at' => $entry->logged_in_at->toIso8601String(),
+            ]);
+
+        return response()->json(['history' => $rows]);
     }
 }
