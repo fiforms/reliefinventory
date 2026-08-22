@@ -27,6 +27,21 @@
       changes (Vue tracks dependencies through the computed property that calls it),
       so no manual refresh wiring is needed.
 
+      `sort` is an optional (a, b) => number comparator (same contract as
+      Array.prototype.sort) applied to the list view after `filter`. RIForm has no
+      opinion on how a page lets someone change it — typically clickable #thead
+      cells toggling a local sortField/sortDir pair:
+
+      <RIForm ... :sort="(a, b) => sortDir * a[sortField].localeCompare(b[sortField])">
+        <template #thead>
+          <th @click="setSort('name')">Name</th>
+        </template>
+        ...
+      </RIForm>
+
+      Like `filter`, it's re-evaluated reactively whenever the state it closes over
+      changes.
+
   #thead is nested inside a <tr></tr> element at the top of the data table, and should
       contain multiple <th> headings corresponding to the columns desires to be
       displayed, i.e.
@@ -176,6 +191,12 @@ export default {
       type: Function,
       default: null,
     },
+    // Optional (a, b) => number comparator (Array.prototype.sort contract)
+    // applied to the list view after `filter` — see the doc comment above.
+    sort: {
+      type: Function,
+      default: null,
+    },
   },
   emits: ['select', 'new', 'saved'],
   data() {
@@ -191,7 +212,8 @@ export default {
   },
   computed: {
     filteredRecords() {
-      return this.filter ? this.records.filter(this.filter) : this.records;
+      const records = this.filter ? this.records.filter(this.filter) : this.records;
+      return this.sort ? [...records].sort(this.sort) : records;
     },
   },
   methods: {

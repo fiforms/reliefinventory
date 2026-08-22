@@ -6,6 +6,7 @@
 	requires no script or code. Use this as a model for other RIForm Vue Files -->
 
 <script setup>
+import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
@@ -19,6 +20,56 @@ defineProps({
         type: Array,
     },
 });
+
+// Search box: narrows the list in place by ACS Item# or Item Type name (same
+// pattern as People.vue's name/organization search).
+const itemSearch = ref('');
+
+function itemMatchesSearch(record) {
+	const text = itemSearch.value.trim().toLowerCase();
+	if (!text) return true;
+	return (
+		String(record.display_number ?? '').toLowerCase().includes(text) ||
+		String(record.name ?? '').toLowerCase().includes(text)
+	);
+}
+
+// Column-header sorting: clicking a header sorts by that field, clicking the
+// same header again flips direction.
+const sortField = ref('category');
+const sortDir = ref(1);
+
+function setSort(field) {
+	if (sortField.value === field) {
+		sortDir.value = -sortDir.value;
+	} else {
+		sortField.value = field;
+		sortDir.value = 1;
+	}
+}
+
+function sortArrow(field) {
+	if (sortField.value !== field) return '';
+	return sortDir.value === 1 ? ' ▲' : ' ▼';
+}
+
+const sortKeys = {
+	category: (r) => r.category?.name ?? '',
+	number: (r) => r.display_number ?? '',
+	name: (r) => r.name ?? '',
+	unit: (r) => r.unit?.abbreviation ?? '',
+	active: (r) => (r.active ? 1 : 0),
+};
+
+const itemSort = computed(() => (a, b) => {
+	const key = sortKeys[sortField.value];
+	const av = key(a);
+	const bv = key(b);
+	const cmp = typeof av === 'number' ? av - bv : String(av).localeCompare(String(bv), undefined, { numeric: true });
+	return sortDir.value * cmp;
+});
+
+
 </script>
 <template>
   <Head title="Master Item Catalog" />
@@ -29,18 +80,28 @@ defineProps({
 	<!-- Include the the RIForm Component. This component will attach to the JSON
 	     API URL specified in the datasource="" attribute for loading and saving data.
 	  -->
-	<RIForm 
-	  title="Master Item List" 
+	<RIForm
+	  title="Master Item List"
 	  datasource="/json/itemtypes"
-	  newrecordcaption="Add New Item">
-	 
-	  
+	  newrecordcaption="Add New Item"
+	  :filter="itemMatchesSearch"
+	  :sort="itemSort">
+
+	  <template #listactions>
+		<input
+		  type="text"
+		  v-model="itemSearch"
+		  class="ri_forminput item_search"
+		  placeholder="Search by ACS Item# or Item Type..."
+		/>
+	  </template>
+
 	    <template #thead>
-			<th>Category</th>
-			<th>ACS Item#</th>
-			<th>Item Type</th>
-			<th>Unit</th>
-		    <th style="text-align:center;">Active</th>
+			<th class="ri_sortable" @click="setSort('category')">Category{{ sortArrow('category') }}</th>
+			<th class="ri_sortable" @click="setSort('number')">ACS Item#{{ sortArrow('number') }}</th>
+			<th class="ri_sortable" @click="setSort('name')">Item Type{{ sortArrow('name') }}</th>
+			<th class="ri_sortable" @click="setSort('unit')">Unit{{ sortArrow('unit') }}</th>
+		    <th class="ri_sortable" style="text-align:center;" @click="setSort('active')">Active{{ sortArrow('active') }}</th>
 		</template>
 		<template #tbody="{ record, index }">
 			<td> {{ record.category.name }} </td>
@@ -178,6 +239,12 @@ defineProps({
 	</RIForm>
 	</AuthenticatedLayout>
 </template>
+
+<style scoped>
+.item_search {
+  max-width: 20rem;
+}
+</style>
 
 
 

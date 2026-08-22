@@ -76,6 +76,15 @@ table.ri_datatable tr:hover {
   background-color: #fafafa;
 }
 
+table.ri_datatable th.ri_sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+table.ri_datatable th.ri_sortable:hover {
+  background-color: #939393;
+}
+
 
 /* Button Styling — also covers <a> "buttons" (e.g. PDF download links that
    open in a new tab rather than triggering a click handler), so those
