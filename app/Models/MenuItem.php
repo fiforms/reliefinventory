@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class MenuItem extends Model
 {
-    protected $fillable = ['page_id', 'link_text', 'link_url', 'submenu_page_id', 'graphic_url', 'order', 'permission_key'];
+    protected $fillable = ['page_id', 'link_text', 'link_url', 'submenu_page_id', 'graphic_url', 'order', 'group_label', 'permission_key'];
 
     /**
      * Get the page associated with the menu item.

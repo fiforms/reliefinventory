@@ -9,16 +9,19 @@
        <div class="menu-page">
          <h2 class="menu-title">{{ currentPage.menu_title }}</h2>
          <p class="menu-header">{{ currentPage.header_text }}</p>
-         <div class="menu-items">
-           <div
-             v-for="item in currentPage.menu_items"
-             :key="item.id"
-             class="menu-item"
-             @click="navigate(item.link_url,false)"
-			 @contextmenu="navigate(item.link_url,true)"
-           >
-             <img :src="item.graphic_url" :alt="item.link_text" class="menu-icon" />
-             <span class="menu-text">{{ item.link_text }}</span>
+         <div v-for="group in menuGroups(currentPage)" :key="group.label || '_ungrouped'" class="menu-group">
+           <h3 v-if="group.label" class="menu-group-title">{{ group.label }}</h3>
+           <div class="menu-items">
+             <div
+               v-for="item in group.items"
+               :key="item.id"
+               class="menu-item"
+               @click="navigate(item.link_url,false)"
+			   @contextmenu="navigate(item.link_url,true)"
+             >
+               <img :src="item.graphic_url" :alt="item.link_text" class="menu-icon" />
+               <span class="menu-text">{{ item.link_text }}</span>
+             </div>
            </div>
          </div>
        </div>
@@ -98,6 +101,24 @@ export default {
 		}
 	  }
 	},
+	// Clusters a page's menu_items into sections by group_label, preserving
+	// each item's own `order`. Ungrouped items (group_label null — every
+	// page besides Setup, today) come back as a single labelless group, so
+	// the template renders the same flat grid as before with no heading.
+	menuGroups(page) {
+	  const groups = [];
+	  const byLabel = new Map();
+	  for (const item of page.menu_items) {
+		const label = item.group_label || null;
+		if (!byLabel.has(label)) {
+		  const group = { label, items: [] };
+		  byLabel.set(label, group);
+		  groups.push(group);
+		}
+		byLabel.get(label).items.push(item);
+	  }
+	  return groups;
+	},
 	navigateToPage(hashtag) {
 	  const targetPage = this.pages.find(page => page.hashtag === hashtag);
 	  if (targetPage) {
@@ -142,6 +163,20 @@ export default {
   font-size: 1rem;
   color: #555;
   margin-bottom: 20px;
+}
+
+.menu-group {
+  margin-bottom: 20px;
+}
+
+.menu-group-title {
+  font-size: 1.1rem;
+  font-weight: bold;
+  color: #444;
+  text-align: left;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 6px;
+  margin-bottom: 14px;
 }
 
 .menu-items {
