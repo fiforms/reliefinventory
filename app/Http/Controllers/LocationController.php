@@ -79,9 +79,9 @@ class LocationController extends Controller
     {
         $location = Location::findOrFail($id);
 
-        $data = $request->validate(self::validation + [
+        $data = $request->validate(array_merge(self::validation, [
             'code' => "required|string|unique:locations,code,$id",
-        ]);
+        ]));
 
         $location->update($data);
 
