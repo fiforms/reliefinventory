@@ -96,10 +96,10 @@ const sortedSessions = computed(() =>
 </script>
 
 <template>
-	<Head title="Who's Logged In" />
+	<Head title="User Activity" />
 	<AuthenticatedLayout :breadcrumb="breadcrumb">
 		<div class="max-w-4xl mx-auto p-4 space-y-6">
-			<h1 class="text-2xl font-bold">Who's Logged In</h1>
+			<h1 class="text-2xl font-bold">User Activity</h1>
 
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>
 
