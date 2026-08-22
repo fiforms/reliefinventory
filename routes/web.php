@@ -118,6 +118,11 @@ Route::get('/setup/feedback', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback')]);
 })->middleware(['auth', 'permission:manage-feedback']);
 
+Route::get('/setup/banner', function () {
+    return Inertia::render('SiteBanner',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/banner')]);
+})->middleware(['auth', 'permission:manage-feedback']);
+
 Route::get('/setup/import', function () {
     return Inertia::render('Imports',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/import')]);
