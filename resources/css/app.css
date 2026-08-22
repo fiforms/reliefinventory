@@ -319,4 +319,10 @@ h2.text-xl {
         text-align: left;
         padding-right: 0;
       }
+
+      .ri_formcontrol {
+        width: 100%; /* flex:1 only sizes height in column layout, so give
+                        controls (e.g. TileSelect's grid) a real width to
+                        wrap against instead of shrinking to content */
+      }
 }

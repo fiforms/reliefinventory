@@ -92,7 +92,7 @@ function select(value) {
 <style scoped>
 .tileselect_group {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, 84px);
+	grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
 	gap: 0.5em;
 }
 .tileselect_tile {
