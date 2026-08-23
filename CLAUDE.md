@@ -239,6 +239,18 @@ setup above: the `weasyprint` binary (Python, with native Pango/Cairo deps — `
 2026-08-17) — same historical trap as browsershot above, where a package sits as a driver's "suggest"
 and silently never gets pulled in.
 
+### Volunteer hours kiosk — active-window sync needs a systemd timer
+
+`people.volunteer_active` (gates the kiosk's default tile grid) is flipped automatically for volunteers
+on a scheduled `volunteer_window_start`/`volunteer_window_end` by `php artisan
+volunteers:sync-active-windows`, via `scripts/volunteer-sync.sh`. This app has no Laravel `Schedule::`-based
+cron; it reuses the same hourly-systemd-timer pattern already running in production for backups
+(`reliefinventory-backup.timer`, see `scripts/BACKUPS.md`) rather than introducing a new mechanism. Needs
+its own one-time provisioning step per server, same as the backup timer's install: copy
+`scripts/systemd/reliefinventory-volunteer-sync.service` and `.timer` to `/etc/systemd/system/`,
+`systemctl daemon-reload`, `systemctl enable --now reliefinventory-volunteer-sync.timer`. Not yet done on
+any server as of 2026-08-23 (feature still in development on the `volunteer-hours-kiosk` branch).
+
 ## Conventions to follow
 
 - Set audit/actor fields (`person_id_user`, etc.) from `Auth::id()` server-side in controllers — never

@@ -93,6 +93,24 @@ class PermissionsSeeder extends Seeder
         // wrong data quickly, given the blast radius.
         'manage-import' => 'Upload, preview, and commit external data imports',
         'admin-import' => 'View and delete import batch history',
+        // Narrowed from an earlier "broad volunteer tier" scoping (see the
+        // 2026_08_23_000007 rename migration) — this now covers declaring
+        // official building-safety state (closeout, starting/closing a
+        // roll call) on top of ordinary kiosk operation, so it's
+        // Office/Administrator by default rather than every front-line
+        // role, with per-person grants (e.g. a night security officer with
+        // no other role) for anyone else who needs it. Certifying a batch
+        // of hours is the separate FEMA-compliance-critical step (see
+        // PROJECT_ANALYSIS.md ~line 258).
+        'operate-volunteer-kiosk' => 'Operate the volunteer/visitor sign-in kiosk, and confirm building-safety state (closeout, roll call)',
+        'certify-volunteer-hours' => 'Certify volunteer hours for FEMA reporting',
+        // Deliberately broad (base volunteer tier, not just Office/Admin)
+        // — this only grants viewing the occupancy roster and marking
+        // people safe during an active roll call, not declaring building
+        // state, so it's meant to reach whoever might actually be
+        // fleeing a building and checking a roster from their phone, not
+        // just management.
+        'view-building-occupancy' => 'View who is currently in the building, and mark people safe during an active roll call',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -100,7 +118,7 @@ class PermissionsSeeder extends Seeder
         'manage-categories', 'manage-locations', 'manage-warehouses', 'manage-uses',
         'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
         'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
-        'manage-roles', 'manage-counties', 'view-reports',
+        'manage-roles', 'manage-counties', 'view-reports', 'view-building-occupancy',
     ];
 
     private const TEAM_LEADER_EXTRA_KEYS = [
@@ -122,6 +140,8 @@ class PermissionsSeeder extends Seeder
         ...self::VOLUNTEER_TIER_KEYS,
         ...self::TEAM_LEADER_EXTRA_KEYS,
         'manage-donation-offers',
+        'certify-volunteer-hours',
+        'operate-volunteer-kiosk',
     ];
 
     /**
@@ -135,7 +155,7 @@ class PermissionsSeeder extends Seeder
         'manage-categories', 'manage-locations', 'manage-warehouses', 'manage-uses',
         'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
         'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
-        'manage-counties', 'view-reports',
+        'manage-counties', 'view-reports', 'view-building-occupancy',
     ];
 
     public function run(): void

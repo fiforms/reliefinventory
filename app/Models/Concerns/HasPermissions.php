@@ -75,4 +75,33 @@ trait HasPermissions
     {
         return in_array($key, $this->effectivePermissionKeys(), true);
     }
+
+    /**
+     * The reverse of hasPermission(): every person who effectively holds a
+     * given key, role grants and per-person overrides both accounted for
+     * (an explicit granted=false override excludes someone their role
+     * would otherwise cover; an explicit granted=true override includes
+     * someone with no qualifying role at all — the "security officer with
+     * no other role" case). Used for the kiosk's PIN-candidate search,
+     * where the identity isn't known yet — the request only has a
+     * permission key and needs "who could this possibly be."
+     */
+    public function scopeWithPermission($query, string $key)
+    {
+        $permission = Permission::where('key', $key)->first();
+        if (! $permission) {
+            return $query->whereRaw('1 = 0');
+        }
+
+        $roleIds = $permission->roles()->pluck('roles.id');
+
+        return $query->where(function ($q) use ($roleIds, $permission) {
+            $q->whereHas('roles', fn ($rq) => $rq->whereIn('roles.id', $roleIds))
+                ->orWhereHas('person_permissions', fn ($pq) => $pq
+                    ->where('permission_id', $permission->id)
+                    ->where('person_permissions.granted', true));
+        })->whereDoesntHave('person_permissions', fn ($pq) => $pq
+            ->where('permission_id', $permission->id)
+            ->where('person_permissions.granted', false));
+    }
 }

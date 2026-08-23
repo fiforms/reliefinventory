@@ -112,6 +112,59 @@ class PinLoginService
         return (bool) TrustedDevice::where('device_token', $token)->first()?->isApproved();
     }
 
+    /**
+     * Read-only device lookup for the kiosk's guest-access guard — unlike
+     * resolveDevice(), never creates a TrustedDevice or queues a cookie.
+     * No cookie yet simply means this device has never been approved for
+     * anything, so it can't be in kiosk mode either.
+     */
+    public function deviceFromCookie(Request $request): ?TrustedDevice
+    {
+        $token = $request->cookie(self::COOKIE_NAME);
+        if (! $token) {
+            return null;
+        }
+
+        return TrustedDevice::where('device_token', $token)->first();
+    }
+
+    /**
+     * Puts THIS device into kiosk mode — from this point, the kiosk page/
+     * endpoints are reachable on it with no login at all (see
+     * KioskModeController and the guest-access middleware). Requires PIN
+     * unlock to be enabled and this specific device already admin-approved
+     * — same two-gate reasoning as PIN unlock itself, see the class doc
+     * comment. Caller is responsible for logging the enabling person out
+     * immediately after — this method only flips the flag.
+     */
+    public function enableKioskMode(TrustedDevice $device, int $personId): bool
+    {
+        if (! $this->settings()->enabled || ! $device->isApproved()) {
+            return false;
+        }
+
+        $device->update([
+            'kiosk_mode' => true,
+            'kiosk_mode_enabled_at' => now(),
+            'kiosk_mode_enabled_by_person_id' => $personId,
+        ]);
+
+        return true;
+    }
+
+    /**
+     * Called after any successful real login (password or PIN) — a kiosk
+     * device stops being one the instant someone's actually signed in on
+     * it, so "getting back to the real app" is just logging in, nothing
+     * separate to remember or undo.
+     */
+    public function clearKioskMode(TrustedDevice $device): void
+    {
+        if ($device->kiosk_mode) {
+            $device->update(['kiosk_mode' => false]);
+        }
+    }
+
     public function activeGrant(TrustedDevice $device, int $personId): ?DeviceTrustGrant
     {
         return DeviceTrustGrant::active()

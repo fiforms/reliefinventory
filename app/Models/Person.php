@@ -89,6 +89,14 @@ class Person extends Model
         // future volunteer-hours/FEMA-reporting tracking; editable from
         // both PeopleController and UserAdminController.
         'is_volunteer',
+        // Gates the volunteer kiosk's default tile grid — the single flag
+        // both the grid query and admin UI check. Admins can toggle it
+        // directly at any time; the window fields below drive it
+        // automatically for a known-duration commitment without requiring
+        // that manual follow-up. See volunteers:sync-active-windows.
+        'volunteer_active',
+        'volunteer_window_start',
+        'volunteer_window_end',
         // Admin-assigned (the physical badge is issued by staff), unlike
         // pin_hash below which is deliberately NOT fillable — a PIN is
         // self-service and must only ever be written by PinController,
@@ -116,6 +124,9 @@ class Person extends Model
         'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
         'is_volunteer' => 'boolean',
+        'volunteer_active' => 'boolean',
+        'volunteer_window_start' => 'date',
+        'volunteer_window_end' => 'date',
         'is_organization' => 'boolean',
     ];
 
@@ -182,6 +193,35 @@ class Person extends Model
     public function county()
     {
         return $this->belongsTo(County::class, 'county_id');
+    }
+
+    public function volunteerSignIns()
+    {
+        return $this->hasMany(VolunteerSignIn::class)->orderByDesc('signed_in_at');
+    }
+
+    /**
+     * The kiosk grid's per-tile state: an open (or pending_confirmation —
+     * a forgotten sign-out still needing to be resolved) sign-in, if any.
+     */
+    public function currentSignIn()
+    {
+        return $this->hasOne(VolunteerSignIn::class)
+            ->whereIn('status', [VolunteerSignIn::STATUS_OPEN, VolunteerSignIn::STATUS_PENDING_CONFIRMATION])
+            ->latestOfMany('signed_in_at');
+    }
+
+    /**
+     * Most recent closed sign-in — feeds the confirm screen's
+     * agency/work-description suggestion (a prefill, not a stored fact:
+     * agency can change visit to visit, see volunteer-hours-tracking-design
+     * memory).
+     */
+    public function lastSignIn()
+    {
+        return $this->hasOne(VolunteerSignIn::class)
+            ->where('status', VolunteerSignIn::STATUS_CLOSED)
+            ->latestOfMany('signed_in_at');
     }
 
     /**

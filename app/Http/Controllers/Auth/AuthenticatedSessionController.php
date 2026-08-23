@@ -71,7 +71,9 @@ class AuthenticatedSessionController extends Controller
         // A real password login is what earns a device its PIN-unlock
         // trust for this person — see PinLoginService for the two-gate
         // reasoning (device approval + per-person grant).
-        $pinLogin->grantTrust($pinLogin->resolveDevice($request), $user->id);
+        $device = $pinLogin->resolveDevice($request);
+        $pinLogin->grantTrust($device, $user->id);
+        $pinLogin->clearKioskMode($device);
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

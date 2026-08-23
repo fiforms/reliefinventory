@@ -1,0 +1,7 @@
+[Unit]
+Description=Relief Inventory volunteer active-window sync (see scripts/volunteer-sync.sh)
+After=network.target mariadb.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/bash /var/www/reliefinventory-demo/scripts/volunteer-sync.sh

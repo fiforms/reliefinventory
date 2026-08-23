@@ -47,6 +47,9 @@ class HandleInertiaRequests extends Middleware
             'banner' => $request->user()
                 ? app(BannerService::class)->propsFor($request->user()->id)
                 : ['active' => false],
+            'buildingSafety' => [
+                'canView' => (bool) $request->user()?->hasPermission('view-building-occupancy'),
+            ],
         ];
     }
 }

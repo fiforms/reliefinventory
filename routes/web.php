@@ -53,6 +53,21 @@ Route::get('/receiving/offers', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
 })->middleware(['auth', 'permission:manage-receiving']);
 
+// kiosk-access (not auth+permission) so a device in kiosk mode can reach
+// this page with nobody logged in — see EnsureKioskAccess. getBreadcrumb()
+// needs a real MenuItem row regardless of auth state, which exists.
+Route::get('/volunteers/kiosk', function () {
+    return Inertia::render('VolunteerKiosk',
+        ['breadcrumb' => Auth::check() ? MenuItem::getBreadcrumb('/volunteers/kiosk') : []]);
+})->middleware(['kiosk-access']);
+
+// No MenuItem/breadcrumb — reached only via the profile-menu quick-access
+// link (see AuthenticatedLayout.vue), not the main nav, since it needs to
+// be reachable from wherever someone happens to be in the app.
+Route::get('/building-safety', function () {
+    return Inertia::render('BuildingSafety');
+})->middleware(['auth', 'permission:view-building-occupancy']);
+
 Route::get('/donation-sorting', function () {
     return Inertia::render('DonationSorting',
         ['breadcrumb' => MenuItem::getBreadcrumb('/donation-sorting')]);
@@ -434,6 +449,59 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-do
     Route::post('/donation-offers/{donationOffer}/divert', [DonationOfferController::class, 'divert']);
     Route::post('/donation-offers/{donationOffer}/cancel', [DonationOfferController::class, 'cancel']);
     Route::post('/donation-offers/{donationOffer}/match', [DonationOfferController::class, 'match']);
+});
+
+// Facility sign-in kiosk (PROJECT_ANALYSIS.md Part 5) — kiosk-access
+// (not auth+permission) so these work both for a normally logged-in
+// operate-volunteer-kiosk holder AND a guest request from a device in
+// kiosk mode (see EnsureKioskAccess). Nothing here depends on Auth::id():
+// a kiosk sign-in is the volunteer's own record, not staff data entry.
+Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function () {
+    Route::get('/volunteer-sign-ins/roster', [VolunteerSignInController::class, 'roster']);
+    Route::get('/volunteer-sign-ins/search', [VolunteerSignInController::class, 'search']);
+    Route::post('/volunteer-sign-ins/people', [VolunteerSignInController::class, 'quickCreatePerson']);
+    Route::post('/volunteer-sign-ins', [VolunteerSignInController::class, 'store']);
+    Route::post('/volunteer-sign-ins/{volunteerSignIn}/sign-out', [VolunteerSignInController::class, 'signOut']);
+    Route::put('/volunteer-sign-ins/{volunteerSignIn}', [VolunteerSignInController::class, 'update']);
+
+    Route::get('/volunteer-sign-in-categories', [VolunteerSignInCategoryController::class, 'index']);
+    Route::post('/volunteer-sign-in-categories', [VolunteerSignInCategoryController::class, 'store']);
+});
+
+// Enabling kiosk mode itself requires a real logged-in session (you can't
+// bootstrap trust from a device that isn't already in kiosk mode) — this
+// is the one kiosk-related action that stays auth+permission, not
+// kiosk-access.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:operate-volunteer-kiosk']], function () {
+    Route::post('/volunteer-kiosk/enable-lock', [KioskModeController::class, 'enable']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:certify-volunteer-hours']], function () {
+    Route::post('/volunteer-sign-ins/certify', [VolunteerSignInController::class, 'certify']);
+});
+
+// Building safety (2026-08-23 design pass). Deliberately guest-accessible,
+// no `auth` middleware — closeout/roll-call start/close are PIN-verified
+// internally instead (see BuildingSafetyController), so they work from a
+// locked kiosk with nobody logged in once kiosk lock mode is built; until
+// then they're reachable only through the still-auth-gated kiosk page.
+// None of this depends on Auth::id() the way most of the app does.
+Route::group(['prefix' => 'json'], function () {
+    Route::get('/building-safety/occupancy-count', [BuildingSafetyController::class, 'kioskOccupancyCount']);
+    Route::get('/building-safety/kiosk-operators', [BuildingSafetyController::class, 'kioskOperatorCandidates']);
+    Route::post('/building-safety/closeout', [BuildingSafetyController::class, 'closeout']);
+    Route::post('/building-safety/roll-calls', [BuildingSafetyController::class, 'startRollCall']);
+    Route::post('/building-safety/roll-calls/{buildingRollCall}/close', [BuildingSafetyController::class, 'closeRollCall']);
+});
+
+// Viewing occupancy/participating in an active roll call is a normal
+// permission (not PIN-gated) — reaches whoever might be checking from
+// their phone, not just kiosk operators. See view-building-occupancy in
+// PermissionsSeeder.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-building-occupancy']], function () {
+    Route::get('/building-safety/occupancy', [BuildingSafetyController::class, 'occupancy']);
+    Route::get('/building-safety/roll-calls/active', [BuildingSafetyController::class, 'activeRollCall']);
+    Route::post('/building-safety/roll-calls/{buildingRollCall}/confirmations/{volunteerSignIn}', [BuildingSafetyController::class, 'confirmPerson']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trucks']], function () {

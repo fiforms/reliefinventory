@@ -140,6 +140,7 @@ class UnlockController extends Controller
         // especially — otherwise a person who's been actively working
         // could still get bumped mid-shift at the original login's expiry).
         $pinLogin->grantTrust($device, $person->id);
+        $pinLogin->clearKioskMode($device);
 
         return response()->json(['redirect' => route('dashboard')]);
     }

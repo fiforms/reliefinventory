@@ -1,0 +1,10 @@
+[Unit]
+Description=Hourly volunteer active-window sync
+
+[Timer]
+# Offset from :17 (the backup timer's minute) so the two don't contend.
+OnCalendar=*-*-* *:37:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

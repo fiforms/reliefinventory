@@ -94,6 +94,12 @@ const showingFeedbackModal = ref(false);
                                             Report an Issue
                                         </button>
                                         <DropdownLink
+                                            v-if="$page.props.buildingSafety.canView"
+                                            href="/building-safety"
+                                        >
+                                            Who's In The Building
+                                        </DropdownLink>
+                                        <DropdownLink
                                             v-if="$page.props.pinLogin.switchUserAvailable"
                                             :href="route('switch-user')"
                                             method="post"
@@ -199,6 +205,12 @@ const showingFeedbackModal = ref(false);
                             >
                                 Report an Issue
                             </button>
+                            <ResponsiveNavLink
+                                v-if="$page.props.buildingSafety.canView"
+                                href="/building-safety"
+                            >
+                                Who's In The Building
+                            </ResponsiveNavLink>
                             <ResponsiveNavLink
                                 v-if="$page.props.pinLogin.switchUserAvailable"
                                 :href="route('switch-user')"
