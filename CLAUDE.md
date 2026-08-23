@@ -271,3 +271,14 @@ and silently never gets pulled in.
   — even for edits that don't touch permissions at all, and even for a pure revoke. This is deliberately
   conservative (prevents using an unrelated edit as cover to touch someone you shouldn't be able to
   touch) — see `PeopleController::assertNoEscalation()`.
+- **"Order" and "Request" are the same thing, split by audience, not by data model.** Decided 2026-08-23:
+  the backend/DB keeps "order" everywhere it already used it — `Transaction`'s `type='order'` value, its
+  `New Order`/`Ready to Fill`/`Filling`/`Filled`/`Shipped` status strings, the `manage-orders` permission
+  key, `OrderController`, `/json/orders` routes, `OrderEntry.vue`'s component name — renaming any of that
+  is a bigger, separate decision (live status strings and permission keys, not just labels) from a UI
+  word swap, and isn't happening as part of this. Partner-facing UI text says "Request" instead (matches
+  Statesville's own historical term, "warehouse request form" — "order" reads retail-adjacent the same
+  way "customer" did before the Aug 2026 Partner rename). `DonationOffers.vue`'s Donor History section is
+  the first place this was actually applied (`requestStatusLabel()` swaps the word for display only);
+  `OrderEntry.vue`'s own on-screen labels still say "Order" in most places and haven't been swept yet —
+  don't assume one page's usage tells you the other's.

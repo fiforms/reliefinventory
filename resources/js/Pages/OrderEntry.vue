@@ -4,7 +4,14 @@
 <!-- OrderEntry.vue
 
 	Order intake, built as a session-based event stream (the same pattern as
-	DonationSorting.vue, not an RIForm document):
+	DonationSorting.vue, not an RIForm document). NOTE (2026-08-23): "order"
+	is this file's/the backend's name for the thing (component name, DB
+	status strings, manage-orders permission) — this page's own on-screen
+	labels are being moved to "Request" for partner-facing language (matches
+	Statesville's original "warehouse request form" wording; "order" reads
+	retail, same reasoning as the Customer->Partner rename below). Not fully
+	swept through this file's template text yet — treat "Order"/"Request" as
+	the same concept if you find both here.
 
 	  - Step 1 is the partner screen: select (or quick-add) the partner and
 	    confirm their contact/shipping details are current. Confirming creates

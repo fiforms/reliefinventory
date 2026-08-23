@@ -15,6 +15,11 @@ use Spatie\LaravelPdf\Facades\Pdf;
 /**
  * Order intake sessions.
  *
+ * "Order" is the name throughout this file/the DB (matches the `orders`
+ * status strings and the manage-orders permission key) — partner-facing UI
+ * calls the same thing a "Request" instead (see Transaction's status
+ * constants for the full rationale). Same object, two audiences.
+ *
  * Like donation sorting (and unlike the RIForm document model), order entry
  * is an event stream: the order header is created the moment a partner is
  * confirmed, and each requested line is committed as it is entered. A crash

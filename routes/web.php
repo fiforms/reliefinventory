@@ -266,7 +266,9 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {
     // Order intake sessions (header created at partner confirm; requested
-    // lines autosave one at a time — see OrderController)
+    // lines autosave one at a time — see OrderController). Routes/permission
+    // key/DB stay "order" — partner-facing UI shows "Request" instead, see
+    // OrderController's doc comment.
     Route::get('/orders', [OrderController::class, 'index']);
     // before /orders/{id} so "stock-hints" isn't captured as an id
     Route::get('/orders/stock-hints', [OrderController::class, 'stockHints']);

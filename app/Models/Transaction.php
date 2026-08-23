@@ -26,7 +26,15 @@ class Transaction extends Model
     public const STATUS_LOGGED = 'Logged';
 
     // Order lifecycle (New Order -> Ready to Fill -> Filling -> Filled ->
-    // Shipped). Only "New Order" is intake-editable — completing the
+    // Shipped). "Order" is the backend/DB term throughout — the `type`
+    // column, these status strings, the manage-orders permission key,
+    // OrderController, /json/orders routes — and stays "order" there
+    // deliberately (renaming stored strings/permission keys is a bigger,
+    // separate decision than a UI label swap). Partner-facing UI says
+    // "Request" instead (Tim/Statesville's original vocabulary was
+    // "warehouse request form" — "order" reads retail-adjacent the same
+    // way "customer" did, see the 2026-08-22 Customer->Partner rename).
+    // Only "New Order" is intake-editable — completing the
     // Review & Confirm screen (OrderController::complete) moves it to
     // "Ready to Fill", which locks it the same as any other non-New-Order
     // status. The rest progress from filling actions, never from the entry
