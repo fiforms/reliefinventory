@@ -6,10 +6,17 @@
 	Order intake, built as a session-based event stream (the same pattern as
 	DonationSorting.vue, not an RIForm document):
 
-	  - Step 1 is the customer screen: select (or quick-add) the customer and
+	  - Step 1 is the partner screen: select (or quick-add) the partner and
 	    confirm their contact/shipping details are current. Confirming creates
-	    the order header on the server immediately.
-	  - Step 2 is the line-entry screen: a slim one-line customer bar (the
+	    the order header on the server immediately. "Partner" here is the
+	    receiving org/distribution-site placing the order — see the
+	    2026-08-22 Customer→Partner rename (Tim's naming feedback:
+	    "Customer" reads as retail, "Partner" matches how the food-bank/
+	    disaster-relief world and Adventist Community Services both
+	    describe this tier). Internal variable/prop names (customerMode,
+	    newCustomer, etc.) were deliberately left as-is in this rename —
+	    pure internal identifiers, no user-facing meaning to fix.
+	  - Step 2 is the line-entry screen: a slim one-line partner bar (the
 	    details deliberately don't take screen space here), then rapid
 	    item-number-first entry — item # or name search, quantity, Enter,
 	    next line. Each line saves the moment it is entered; a crash never
@@ -17,11 +24,11 @@
 	  - Entering the same item twice pops a Combine-or-Cancel modal instead
 	    of silently adding a second line — almost always a re-scan/typo.
 	  - An advisory "~N usable on hand" hint shows for the selected item.
-	    This is a staff-facing page; customer-facing surfaces must never
+	    This is a staff-facing page; partner-facing surfaces must never
 	    show actual stock numbers (three-state availability at most).
 	  - Step 3 is Review & Confirm (Complete Order): comments, needed-but-
 	    not-in-catalog items, delivery-vs-pickup with a preferred date/time
-	    window, and a contact person (defaulted from the customer record,
+	    window, and a contact person (defaulted from the partner record,
 	    editable) — mirrors the fields on the offline order form PDF.
 	    Confirming here moves the order from New Order to Ready to Fill,
 	    which locks it against further intake edits (existing New-Order-only
@@ -156,7 +163,7 @@ export default {
 			}
 		},
 		personLabel(person) {
-			if (!person) return '(no customer)';
+			if (!person) return '(no partner)';
 			const name = [person.first_name, person.last_name].filter(Boolean).join(' ');
 			return person.organization ? person.organization + (name ? ' - ' + name : '') : name || '(unnamed)';
 		},
@@ -557,7 +564,7 @@ export default {
 				<p v-if="!orders.open.length && !listLoading">No open orders.</p>
 				<div v-else class="oe_tablewrap"><table class="ri_datatable" border="1">
 					<thead>
-						<tr><th>Date</th><th>Customer</th><th>Lines</th><th>Items</th><th>Status</th><th>Entered By</th></tr>
+						<tr><th>Date</th><th>Partner</th><th>Lines</th><th>Items</th><th>Status</th><th>Entered By</th></tr>
 					</thead>
 					<tbody>
 						<tr v-for="record in orders.open" :key="record.id"
@@ -577,7 +584,7 @@ export default {
 				<h3>Recently Completed</h3>
 				<div class="oe_tablewrap"><table class="ri_datatable" border="1">
 					<thead>
-						<tr><th>Date</th><th>Customer</th><th>Lines</th><th>Items</th><th>Status</th><th>Entered By</th></tr>
+						<tr><th>Date</th><th>Partner</th><th>Lines</th><th>Items</th><th>Status</th><th>Entered By</th></tr>
 					</thead>
 					<tbody>
 						<tr v-for="record in orders.recent" :key="record.id"
@@ -599,13 +606,13 @@ export default {
 			<div class="oe_topbar">
 				<button @click="cancelCustomerScreen" class="ri_formbutton">&larr; Back</button>
 				<span class="oe_title">
-					{{ customerMode === 'change' ? 'Change Customer' : 'New Order — Who is this for?' }}
+					{{ customerMode === 'change' ? 'Change Partner' : 'New Order — Who is this for?' }}
 				</span>
 			</div>
 			<p v-if="customerError" class="oe_error">{{ customerError }}</p>
 
 			<div class="oe_field">
-				<label>Customer:</label>
+				<label>Partner:</label>
 				<SearchSelect
 					ref="customerSelect"
 					v-model="customerId"
@@ -621,7 +628,7 @@ export default {
 
 			<!-- quick-add: a phone-in customer who isn't in People yet -->
 			<div v-if="creatingCustomer" class="oe_card">
-				<h3>New Customer</h3>
+				<h3>New Partner</h3>
 				<div class="oe_contactgrid">
 					<div class="oe_field"><label>First Name:</label>
 						<input type="text" v-model="newCustomer.first_name" class="ri_forminput" autofocus /></div>
@@ -644,7 +651,7 @@ export default {
 				</div>
 				<div class="oe_actions">
 					<button @click="saveNewCustomer" class="ri_defaultbutton" :disabled="customerSaving">
-						{{ customerSaving ? 'Saving...' : 'Save Customer' }}
+						{{ customerSaving ? 'Saving...' : 'Save Partner' }}
 					</button>
 					<button @click="creatingCustomer = false" class="ri_formbutton">Cancel</button>
 				</div>
@@ -680,7 +687,7 @@ export default {
 					<button @click="confirmCustomer" class="ri_defaultbutton" :disabled="customerSaving">
 						{{ customerSaving ? 'Saving...'
 							: (contactDirty ? 'Save Details & ' : '')
-								+ (customerMode === 'change' ? 'Use This Customer' : 'Start Order') }} &rarr;
+								+ (customerMode === 'change' ? 'Use This Partner' : 'Start Order') }} &rarr;
 					</button>
 				</div>
 			</div>
@@ -757,7 +764,7 @@ export default {
 
 			<div class="oe_card">
 				<h3>{{ review.fulfillment_method === 'pickup' ? 'Pickup' : 'Delivery' }} Contact</h3>
-				<p class="oe_hint">Defaults to the customer on file — change it if someone else is receiving this order.</p>
+				<p class="oe_hint">Defaults to the partner on file — change it if someone else is receiving this order.</p>
 				<div class="oe_contactgrid">
 					<div class="oe_field"><label>Contact Name:</label>
 						<input type="text" v-model="review.contact_name" class="ri_forminput" /></div>

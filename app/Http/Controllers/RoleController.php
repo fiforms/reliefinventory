@@ -1,12 +1,13 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
 use App\Models\Role;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class RoleController extends Controller
 {
@@ -17,9 +18,9 @@ class RoleController extends Controller
 
     /**
      * Retrieve roles. ?context=people restricts to the party-tracking
-     * roles shown on the main People form (Customer/Donor/Volunteer);
+     * roles shown on the main People form (Partner/Donor/Volunteer);
      * ?context=users restricts to the login-capable roles offered on the
-     * User Administration page (Administrator, Customer, and the other
+     * User Administration page (Administrator, Partner, and the other
      * staff roles) — see the visible_in_people_form/visible_in_user_admin
      * columns. No context param returns every role, unchanged.
      *
@@ -30,7 +31,7 @@ class RoleController extends Controller
      * checklist, rather than treating role membership as its own opaque
      * grant.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index(Request $request)
     {
@@ -56,8 +57,7 @@ class RoleController extends Controller
     /**
      * Store a new role.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -72,16 +72,15 @@ class RoleController extends Controller
     /**
      * Update an existing role.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
         $role = Role::findOrFail($id);
 
         $data = $request->validate([
-            'name' => 'required|string|max:255|unique:roles,name,' . $id,
+            'name' => 'required|string|max:255|unique:roles,name,'.$id,
             'description' => 'nullable|string',
         ]);
 
@@ -95,8 +94,8 @@ class RoleController extends Controller
     /**
      * Delete a role.
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {
@@ -110,7 +109,7 @@ class RoleController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting role: ' . $e->getMessage(),
+                'message' => 'Error deleting role: '.$e->getMessage(),
             ], 500);
         }
     }

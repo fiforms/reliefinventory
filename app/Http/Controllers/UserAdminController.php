@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\Password;
  * User Administration (TODO.md item 1) — create/promote/deactivate
  * login-capable accounts (anyone with a non-null email). Distinct from
  * PeopleController: that page manages party-tracking roles
- * (Customer/Donor, plus the is_volunteer flag — see Person::$fillable),
+ * (Partner/Donor, plus the is_volunteer flag — see Person::$fillable),
  * no permission overrides; this one manages the login-capable roles
- * (Administrator, Sorting and Inventory, Office, Customer/Client) and
+ * (Administrator, Sorting and Inventory, Office, Partner) and
  * per-person permission overrides. Whether an account belongs to a
  * volunteer is independent of which of these roles it holds.
  * Shares the escalation-guard/role-sync logic with PeopleController via

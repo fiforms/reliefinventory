@@ -6,13 +6,13 @@
 	User Administration (permission: manage-users; TODO.md item 1) —
 	create/promote/deactivate login-capable accounts (anyone with an
 	email). Distinct from /setup/people: that page manages party-tracking
-	roles (Customer/Donor) plus the is_volunteer flag, with no permission
+	roles (Partner/Donor) plus the is_volunteer flag, with no permission
 	overrides; this page manages the login-capable roles (Administrator,
-	Sorting and Inventory, Office, Customer/Client) and per-person
-	permission overrides. Roles here are mutually exclusive presets, not
-	a role hierarchy — see selectRole() below. Whether someone is a
-	volunteer is tracked separately (is_volunteer) since it's a fact about
-	the person, not their permission role — a volunteer can be the office
+	Sorting and Inventory, Office, Partner) and per-person permission
+	overrides. Roles here are mutually exclusive presets, not a role
+	hierarchy — see selectRole() below. Whether someone is a volunteer
+	is tracked separately (is_volunteer) since it's a fact about the
+	person, not their permission role — a volunteer can be the office
 	manager or an administrator.
 
 	Built to the admin-page-style conventions (see SystemAdmin.vue), not
@@ -20,7 +20,7 @@
 	deactivate actions, not a plain field-editing CRUD form), so it needs
 	its own list/detail flow rather than RIForm's generic one.
 
-	Warehouse Users / Customers is a display-only filter over the same
+	Warehouse Users / Partners is a display-only filter over the same
 	list+datasource — not a workflow split.
 -->
 
@@ -46,10 +46,10 @@ const allPermissions = ref([]);
 // Each role's own permission bundle (id + key only) — a role is just a
 // named preset over the flat permission list below, not a live grant
 // mechanism of its own. Fetched with ?context=users so this page only
-// ever offers the login-capable roles (Administrator, Customer/Client,
+// ever offers the login-capable roles (Administrator, Partner,
 // etc.), same restriction the roles picker used before.
 const roles = ref([]);
-const tab = ref('warehouse'); // 'warehouse' | 'customers'
+const tab = ref('warehouse'); // 'warehouse' | 'partners'
 const selected = ref(null); // the record being created/edited, or null for the list view
 const loading = ref(true);
 const saving = ref(false);
@@ -143,7 +143,7 @@ function roleAssigned(record, roleId) {
 
 // Roles here are mutually exclusive presets, not additive tags — tapping
 // one is a full reset to exactly that role's bundle (matching Admin then
-// Customer should leave nothing granted, not the union of both), the
+// Partner should leave nothing granted, not the union of both), the
 // same "Any Day" pattern OrderEntry.vue's delivery-day chips use for a
 // one-tap bulk-select, just applied as a replace instead of a merge.
 // Tapping the already-active role clears the selection entirely (also a
@@ -267,9 +267,9 @@ function resendInvite() {
           <button
             type="button"
             class="px-3 py-1 rounded-md border"
-            :class="tab === 'customers' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
-            @click="tab = 'customers'"
-          >Customers</button>
+            :class="tab === 'partners' ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-50'"
+            @click="tab = 'partners'"
+          >Partners</button>
         </div>
 
         <p v-if="loading" class="text-gray-500 text-sm">Loading users…</p>
@@ -347,7 +347,7 @@ function resendInvite() {
             >{{ role.name }} <span class="role-chip-count">({{ (role.permissions || []).length }})</span></button>
           </div>
           <p class="text-xs text-gray-500 mt-1">
-            Customer/Client accounts currently have ordering-scoped access pending — see
+            Partner accounts currently have ordering-scoped access pending — see
             TODO.md item 1. They can log in, but ordering permissions aren't wired up yet.
           </p>
         </div>
