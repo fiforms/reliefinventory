@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ItemType;
 use Illuminate\Support\Facades\DB;
+use League\Csv\Writer;
 use Spatie\LaravelPdf\Facades\Pdf;
 
 /**
@@ -47,6 +48,41 @@ class InventoryReportController extends Controller
             ->driver('weasyprint')
             ->format('letter')
             ->name('inventory-report-'.$generatedAt->format('Y-m-d').'.pdf');
+    }
+
+    /**
+     * Spreadsheet download of the same snapshot the PDF prints — one row
+     * per item type, same activity filter as pdf() so the two exports
+     * agree on what counts as "in the report."
+     */
+    public function csv()
+    {
+        $records = $this->buildRecords()->filter(
+            fn ($r) => $r['on_hand'] !== 0 || $r['outdated'] !== 0 || $r['trashed'] !== 0 || $r['diverted'] !== 0
+        )->values();
+
+        $csv = Writer::createFromString('');
+        $csv->insertOne(['Item #', 'Name', 'Status', 'Category', 'Unit', 'On Hand', 'Outdated', 'Trashed', 'Diverted']);
+        foreach ($records as $r) {
+            $csv->insertOne([
+                $r['display_number'],
+                $r['name'],
+                $r['status'],
+                $r['category'],
+                $r['unit'],
+                $r['on_hand'],
+                $r['outdated'],
+                $r['trashed'],
+                $r['diverted'],
+            ]);
+        }
+
+        $filename = 'inventory-report-'.now()->format('Y-m-d').'.csv';
+
+        return response($csv->toString(), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+        ]);
     }
 
     private function buildRecords()
