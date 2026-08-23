@@ -82,7 +82,7 @@ class Transaction extends Model
         // 2026_08_18 migrations. delivery_days/preferred_time only apply to
         // fulfillment_method=delivery — OrderController::complete() force-
         // clears both when it's pickup (the warehouse sets pickup days/
-        // times, not the customer); needed_by_date is shared by both.
+        // times, not the partner); needed_by_date is shared by both.
         'fulfillment_method',
         'needed_by_date',
         'delivery_days', // array of Sun..Sat; the UI defaults/represents "Any Day" as all 7 selected

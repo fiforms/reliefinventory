@@ -16,7 +16,7 @@ use Spatie\LaravelPdf\Facades\Pdf;
  * Order intake sessions.
  *
  * Like donation sorting (and unlike the RIForm document model), order entry
- * is an event stream: the order header is created the moment a customer is
+ * is an event stream: the order header is created the moment a partner is
  * confirmed, and each requested line is committed as it is entered. A crash
  * or dropped connection never loses more than the line being typed. Phone
  * orders and hand-entered PDF order forms both come through this same API —
@@ -58,7 +58,7 @@ class OrderController extends Controller
     /**
      * Intake edits are only allowed while the order is still "New Order" —
      * once filling has begun, changing the requested lines would silently
-     * desync what the floor is picking from what the customer sees.
+     * desync what the floor is picking from what the partner sees.
      */
     private function rejectIfLocked(Transaction $order)
     {
@@ -103,7 +103,7 @@ class OrderController extends Controller
 
     /**
      * Advisory usable stock on hand per itemtype, for the intake screen's
-     * "~N on hand" hint. Staff-facing only — customer-facing surfaces must
+     * "~N on hand" hint. Staff-facing only — partner-facing surfaces must
      * never show actual quantities (three-state availability at most).
      */
     public function stockHints()
@@ -122,7 +122,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Open a new order for a confirmed customer. Status is system-controlled:
+     * Open a new order for a confirmed partner. Status is system-controlled:
      * every order starts as "New Order" and progresses via filling actions,
      * never from the form.
      */
@@ -156,7 +156,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Update order header fields (customer, date, comments).
+     * Update order header fields (partner, date, comments).
      */
     public function update(Request $request, $id)
     {
@@ -193,7 +193,7 @@ class OrderController extends Controller
         $data = $request->validate(self::COMPLETE_VALIDATION);
         $data['status_id'] = Transaction::statusId(Transaction::STATUS_READY_TO_FILL);
 
-        // The warehouse controls pickup days/times, not the customer — force
+        // The warehouse controls pickup days/times, not the partner — force
         // these clear on pickup regardless of what the client sent (e.g. a
         // leftover selection from switching the radio before submitting).
         if ($data['fulfillment_method'] === 'pickup') {
@@ -270,7 +270,7 @@ class OrderController extends Controller
     }
 
     /**
-     * Offline order form: printed or emailed to a POD/customer who fills in
+     * Offline order form: printed or emailed to a POD/partner who fills in
      * quantities by hand and returns it, to be hand-keyed in as a
      * volunteer-transcription order (same intake channel as a phone order —
      * see the order-intake design notes). Deliberately never prints an

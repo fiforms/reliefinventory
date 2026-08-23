@@ -11,8 +11,8 @@ use App\Models\Person;
 use Illuminate\Support\Collection;
 
 /**
- * Shared between PeopleController (party roles: Customer/Donor/Volunteer)
- * and UserAdminController (login-capable staff/customer accounts) — both
+ * Shared between PeopleController (party roles: Partner/Donor/Volunteer)
+ * and UserAdminController (login-capable staff/partner accounts) — both
  * controllers let an acting user assign roles/permission overrides to a
  * Person, and the "you can't grant or touch what you don't hold yourself"
  * escalation guard is identical either way. Extracted rather than

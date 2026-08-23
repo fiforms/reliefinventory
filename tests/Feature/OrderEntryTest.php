@@ -11,7 +11,7 @@ use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
 
-function orderCustomer(): Person
+function orderPartner(): Person
 {
     return Person::create(['first_name' => 'Pat', 'last_name' => 'Rivera']);
 }
@@ -25,23 +25,23 @@ function orderItemtype(string $name = 'Bottled Water'): ItemType
     return ItemType::create(['name' => $name, 'unit_id' => $unitId, 'category_id' => $category->id]);
 }
 
-test('creating an order requires a customer and starts as New Order with the acting user recorded', function () {
+test('creating an order requires a partner and starts as New Order with the acting user recorded', function () {
     $user = userWithPermissions('manage-orders');
     $impersonated = User::factory()->create();
-    $customer = orderCustomer();
+    $partner = orderPartner();
 
     // no person_id -> rejected
     $this->actingAs($user)->postJson('/json/orders', [])->assertStatus(422);
 
     // person_id_user and status are system-controlled, never from the client
     $this->actingAs($user)->postJson('/json/orders', [
-        'person_id' => $customer->id,
+        'person_id' => $partner->id,
         'person_id_user' => $impersonated->id,
         'status_id' => Transaction::statusId('Shipped'),
     ])->assertCreated();
 
     $order = Transaction::where('type', 'order')->latest('id')->first();
-    expect($order->person_id)->toBe($customer->id)
+    expect($order->person_id)->toBe($partner->id)
         ->and($order->person_id_user)->toBe($user->id)
         ->and($order->status->name)->toBe('New Order')
         ->and($order->order_date)->toBe(now()->toDateString());
@@ -49,17 +49,17 @@ test('creating an order requires a customer and starts as New Order with the act
 
 test('order entry endpoints require the manage-orders permission', function () {
     $user = userWithPermissions('general-access');
-    $customer = orderCustomer();
+    $partner = orderPartner();
 
     $this->actingAs($user)->getJson('/json/orders')->assertForbidden();
-    $this->actingAs($user)->postJson('/json/orders', ['person_id' => $customer->id])->assertForbidden();
+    $this->actingAs($user)->postJson('/json/orders', ['person_id' => $partner->id])->assertForbidden();
 });
 
 test('requested lines autosave one at a time and can be corrected or removed', function () {
     $user = userWithPermissions('manage-orders');
     $itemtype = orderItemtype();
     $order = $this->actingAs($user)
-        ->postJson('/json/orders', ['person_id' => orderCustomer()->id])
+        ->postJson('/json/orders', ['person_id' => orderPartner()->id])
         ->json('record');
 
     $line = $this->actingAs($user)->postJson('/json/orders/'.$order['id'].'/lines', [
@@ -86,7 +86,7 @@ test('an order locks against intake edits once it leaves New Order status', func
     $itemtype = orderItemtype();
     $order = Transaction::create([
         'type' => 'order',
-        'person_id' => orderCustomer()->id,
+        'person_id' => orderPartner()->id,
         'person_id_user' => $user->id,
         'status_id' => Transaction::statusId(Transaction::STATUS_FILLING),
         'order_date' => now()->toDateString(),
@@ -106,11 +106,11 @@ test('an order locks against intake edits once it leaves New Order status', func
 
 test('the order list splits open orders from completed ones', function () {
     $user = userWithPermissions('manage-orders');
-    $customer = orderCustomer();
+    $partner = orderPartner();
 
     $make = fn (string $status) => Transaction::create([
         'type' => 'order',
-        'person_id' => $customer->id,
+        'person_id' => $partner->id,
         'person_id_user' => $user->id,
         'status_id' => Transaction::statusId($status),
         'order_date' => now()->toDateString(),
@@ -130,9 +130,9 @@ test('the order list splits open orders from completed ones', function () {
 test('completing an order requires a fulfillment method and moves it to Ready to Fill, locking further edits', function () {
     $user = userWithPermissions('manage-orders');
     $itemtype = orderItemtype();
-    $customer = orderCustomer();
+    $partner = orderPartner();
     $order = $this->actingAs($user)
-        ->postJson('/json/orders', ['person_id' => $customer->id])
+        ->postJson('/json/orders', ['person_id' => $partner->id])
         ->json('record');
 
     $this->actingAs($user)->postJson('/json/orders/'.$order['id'].'/lines', [
@@ -174,7 +174,7 @@ test('completing an order requires a fulfillment method and moves it to Ready to
 test('completing as pickup clears delivery_days and preferred_time even if submitted, since the warehouse controls those', function () {
     $user = userWithPermissions('manage-orders');
     $order = $this->actingAs($user)
-        ->postJson('/json/orders', ['person_id' => orderCustomer()->id])
+        ->postJson('/json/orders', ['person_id' => orderPartner()->id])
         ->json('record');
 
     $response = $this->actingAs($user)->patchJson('/json/orders/'.$order['id'].'/complete', [

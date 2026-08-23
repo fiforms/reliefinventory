@@ -265,7 +265,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {
-    // Order intake sessions (header created at customer confirm; requested
+    // Order intake sessions (header created at partner confirm; requested
     // lines autosave one at a time — see OrderController)
     Route::get('/orders', [OrderController::class, 'index']);
     // before /orders/{id} so "stock-hints" isn't captured as an id
@@ -382,7 +382,7 @@ Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv
     ->middleware(['auth', 'permission:view-reports']);
 
 // Offline order form (in-stock item types only, no quantities) — printed or
-// emailed to a POD/customer, then hand-keyed back in as an order.
+// emailed to a POD/partner, then hand-keyed back in as an order.
 Route::get('/report/order-form.pdf', [OrderController::class, 'orderFormPdf'])
     ->name('report.order-form')
     ->middleware(['auth', 'permission:manage-orders']);

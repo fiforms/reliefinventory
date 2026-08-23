@@ -21,7 +21,7 @@ use Illuminate\Database\Seeder;
  * role_bitpack magnitude; a real difference can be layered in later via
  * person_permissions or additional role grants once there's a concrete
  * need). Administrator gets everything (matching role:32768 + role:4
- * today, since an admin always passed both). Customer/Donor get nothing
+ * today, since an admin always passed both). Partner/Donor get nothing
  * (they never corresponded to a route gate).
  *
  * view-dashboard is the first actual Volunteer/Team Leader split: the
@@ -46,7 +46,7 @@ class PermissionsSeeder extends Seeder
 {
     private const PERMISSIONS = [
         'general-access' => 'Access placeholder/non-resource pages not yet tied to a specific permission',
-        'manage-people' => 'View, create, and update people (customers/donors)',
+        'manage-people' => 'View, create, and update people (partners/donors)',
         'admin-people' => 'Delete people',
         'manage-orders' => 'View, update, and delete orders/donations',
         'manage-items' => 'Manage the item catalog',

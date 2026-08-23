@@ -119,7 +119,7 @@ test('pipeline counts group by status and report zero for statuses with no rows'
         ->and($counts['orders'][Transaction::STATUS_SHIPPED])->toBe(0);
 });
 
-test('order county breakdown groups by customer county without exposing names', function () {
+test('order county breakdown groups by partner county without exposing names', function () {
     $county = County::create(['county' => 'Thurston', 'state' => 'WA']);
     // county_id isn't mass-assignable on Person (not in $fillable), so set it directly
     $inCounty = Person::create(['first_name' => 'A', 'last_name' => 'B']);

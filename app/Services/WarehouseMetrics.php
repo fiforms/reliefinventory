@@ -145,7 +145,7 @@ class WarehouseMetrics
     }
 
     /**
-     * Order counts by customer county — county only, never a name or
+     * Order counts by partner county — county only, never a name or
      * organization. Safe for both the internal dashboard and the
      * externally-shared Situation Report.
      */
