@@ -246,20 +246,35 @@ const statusClasses = {
 					</div>
 				</div>
 
-				<!-- Donor history: past donations and past offers, so the decision isn't made blind -->
+				<!-- Donor history: past donations, requests, and offers, so the
+				     decision isn't made blind. Each subsection always shows its
+				     header, even empty — a section that just disappears when
+				     there's nothing to show reads as "did this load?" rather
+				     than "there's genuinely none." -->
 				<template v-if="record.person">
 					<h3 class="don_subhead">Donor History</h3>
-					<div v-if="!pastDonations(record).length && !pastOffers(record).length" class="ri_hint">
-						No prior donations or offers from this donor on file.
-					</div>
-					<ul v-if="pastDonations(record).length" class="don_historylist">
+
+					<h4 class="don_subsubhead">Donations</h4>
+					<div v-if="!pastDonations(record).length" class="ri_hint">No prior donations on file.</div>
+					<ul v-else class="don_historylist">
 						<li v-for="d in pastDonations(record)" :key="'d' + d.id">
 							Donation #{{ d.id }} — {{ d.order_date }} — {{ d.status?.name || 'Unknown status' }}
 						</li>
 					</ul>
-					<ul v-if="pastOffers(record).length" class="don_historylist">
+
+					<h4 class="don_subsubhead">Requests</h4>
+					<div v-if="!pastRequests(record).length" class="ri_hint">No prior requests on file.</div>
+					<ul v-else class="don_historylist">
+						<li v-for="d in pastRequests(record)" :key="'r' + d.id">
+							Request #{{ d.id }} — {{ d.order_date }} — {{ requestStatusLabel(d.status?.name) }}
+						</li>
+					</ul>
+
+					<h4 class="don_subsubhead">Offers</h4>
+					<div v-if="!pastOffers(record).length" class="ri_hint">No prior offers on file.</div>
+					<ul v-else class="don_historylist">
 						<li v-for="o in pastOffers(record)" :key="'o' + o.id">
-							Offer #{{ o.id }} — {{ statusLabels[o.status] }}
+							Offer #{{ o.id }} — {{ o.status_date }} — {{ statusLabels[o.status] }}
 						</li>
 					</ul>
 				</template>
@@ -452,8 +467,24 @@ export default {
 			// regardless of whatever status the template happens to carry.
 			return !record.id || record.status === 'offered' || record.status === 'pending';
 		},
+		// Person.orderDonations (order_donations here, per Inertia's snake_case
+		// props) returns every Transaction for this person regardless of
+		// type — donations and orders share one table. Split by type rather
+		// than showing one undifferentiated list, since "New Order"/"Ready
+		// to Fill" statuses only make sense for orders and are confusing
+		// mislabeled as a "Donation".
 		pastDonations(record) {
-			return (record.person?.order_donations || []).filter((d) => d.id !== record.donation_id);
+			return (record.person?.order_donations || [])
+				.filter((d) => d.type === 'donation' && d.id !== record.donation_id);
+		},
+		pastRequests(record) {
+			return (record.person?.order_donations || []).filter((d) => d.type === 'order');
+		},
+		// Backend/DB language stays "order" (status strings, permission
+		// keys, routes); partner-facing UI language says "Request" instead
+		// — swap the word in an order's status name for display only.
+		requestStatusLabel(statusName) {
+			return statusName ? statusName.replace('Order', 'Request') : 'Unknown status';
 		},
 		pastOffers(record) {
 			return (record.person?.donation_offers || []).filter((o) => o.id !== record.id);
@@ -595,6 +626,11 @@ export default {
 <style scoped>
 .don_subhead {
 	margin-top: 1.5em;
+}
+.don_subsubhead {
+	margin-top: 0.75em;
+	font-size: 0.9em;
+	color: #555;
 }
 .don_checkbox {
 	display: flex;

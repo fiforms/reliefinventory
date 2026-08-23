@@ -3,6 +3,7 @@
 use App\Models\DonationOffer;
 use App\Models\Person;
 use App\Models\Transaction;
+use Illuminate\Support\Carbon;
 
 function makeOffer(array $overrides = []): DonationOffer
 {
@@ -32,6 +33,33 @@ test('creating an offer writes an initial status log row', function () {
         ->and($offer->statusLogs->first()->from_status)->toBeNull()
         ->and($offer->statusLogs->first()->to_status)->toBe(DonationOffer::STATUS_OFFERED)
         ->and($offer->statusLogs->first()->contact_method)->toBe('phone');
+});
+
+test('status_date always reflects the current status, not the original creation date', function () {
+    $recorder = userWithPermissions('manage-receiving');
+    $decider = userWithPermissions('manage-donation-offers');
+    $donor = Person::create(['first_name' => 'Test', 'last_name' => 'Donor']);
+
+    Carbon::setTestNow('2026-08-01');
+    $offerId = $this->actingAs($recorder)->postJson('/json/donation-offers', [
+        'person_id' => $donor->id,
+    ])->assertCreated()->json('record.id');
+    $offer = DonationOffer::findOrFail($offerId);
+    expect($offer->status_date)->toBe('2026-08-01');
+
+    Carbon::setTestNow('2026-08-05');
+    $this->actingAs($decider)->postJson("/json/donation-offers/{$offer->id}/approve", [
+        'eta_start' => '2026-08-10',
+    ])->assertOk();
+    expect($offer->fresh()->status_date)->toBe('2026-08-05');
+
+    Carbon::setTestNow('2026-08-12');
+    $this->actingAs($decider)->postJson("/json/donation-offers/{$offer->id}/cancel", [
+        'cancelled_reason' => 'No longer needed.',
+    ])->assertOk();
+    expect($offer->fresh()->status_date)->toBe('2026-08-12');
+
+    Carbon::setTestNow();
 });
 
 test('approving an offered donation requires an eta and moves it to pending', function () {

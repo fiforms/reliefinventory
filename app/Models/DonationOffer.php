@@ -50,6 +50,12 @@ class DonationOffer extends Model
         'entered_by_person_id',
     ];
 
+    // Appended so callers (Donor History in particular) get a status/date
+    // pair that's always internally consistent — never "Offered" paired
+    // with a date from some other, later transition. See
+    // getStatusDateAttribute() below.
+    protected $appends = ['status_date'];
+
     // eta_start/eta_end are deliberately NOT cast to Carbon: an Eloquent
     // 'date' cast serializes to a full ISO datetime string in JSON, which a
     // browser parses as UTC midnight and can then render as the wrong local
@@ -101,6 +107,25 @@ class DonationOffer extends Model
         }
 
         return $start->format('M j').' – '.Carbon::parse($this->eta_end)->format('M j');
+    }
+
+    /**
+     * The date of the transition that produced the *current* status — the
+     * log row's own timestamp, not this record's created_at. Guarantees the
+     * status and the date shown alongside it always describe the same
+     * moment: an "offered" offer shows when it was offered, a "refused" one
+     * shows when it was refused, never a stale creation date paired with a
+     * status that's since moved on.
+     */
+    public function getStatusDateAttribute(): ?string
+    {
+        // statusLogs() is already ordered ascending by created_at, so the
+        // last entry is the current status's transition — take that
+        // instead of re-querying with an extra orderBy (which stacks on
+        // top of the relation's own, rather than replacing it).
+        $logs = $this->relationLoaded('statusLogs') ? $this->statusLogs : $this->statusLogs()->get();
+
+        return $logs->last()?->created_at?->toDateString();
     }
 
     /**

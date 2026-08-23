@@ -28,7 +28,7 @@ class DonationOfferController extends Controller
     // that already had history.
     private const WITH = [
         'person.orderDonations.status',
-        'person.donationOffers',
+        'person.donationOffers.statusLogs',
         'contactPerson',
         'enteredBy',
         'statusLogs.changedBy',
