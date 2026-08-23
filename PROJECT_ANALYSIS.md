@@ -1,6 +1,6 @@
 # Relief Inventory — Codebase Analysis & Completion Plan
 
-*Analysis date: July 9, 2026 — branch `master` @ d954362. Corrected/updated Aug 4, 2026 to reflect the scan-driven sorting rewrite and Part 5 planning; Aug 12–15, 2026 to reflect the live beta (Part 6), the granular permissions model (Part 7), the Order Entry rebuild + reporting/dashboard suite (Part 8), and incomplete-intake-information handling (Part 9); Aug 21, 2026 to reflect the Receiving intake redesign (Part 10); Aug 22–23, 2026 to reflect the Outstanding Orders Report, CSV report exports, the Customer→Partner rename, and the pre-arrival Donation Offer workflow — see inline notes below marked "Update (Aug 2026)".*
+*Analysis date: July 9, 2026 — branch `master` @ d954362. Corrected/updated Aug 4, 2026 to reflect the scan-driven sorting rewrite and Part 5 planning; Aug 12–15, 2026 to reflect the live beta (Part 6), the granular permissions model (Part 7), the Order Entry rebuild + reporting/dashboard suite (Part 8), and incomplete-intake-information handling (Part 9); Aug 21, 2026 to reflect the Receiving intake redesign (Part 10); Aug 22–23, 2026 to reflect the Outstanding Orders Report, CSV report exports, the Customer→Partner rename, and the pre-arrival Donation Offer workflow; Aug 23, 2026 to add Part 11, sequencing the full pending-design backlog into one dependency-ordered list — see inline notes below marked "Update (Aug 2026)".*
 
 ## Executive Summary
 
@@ -14,10 +14,16 @@ The project has a solid foundation: a well-normalized database schema (transacti
 
 **Update (Aug 22–23, 2026): a report gap closed, a naming fix, and the pre-arrival Donation Offer workflow.** `/reports/orders` is no longer a "Coming Soon" placeholder — `OutstandingOrdersReportController` + `OutstandingOrdersReport.vue` list every order not yet Shipped, with PDF and CSV export; the Inventory Report gained a matching CSV export, and both share a new `ReportDownloadButton` component. The "Customer" role was renamed to "Partner" throughout (Role row + menu item text) per Tim's feedback that "Customer" reads as retail — the food-bank/disaster-relief term for this tier is "partner agency." Separately, the long-designed **Donation Offer** workflow (see the `donation-offer-workflow` design memory) is now built: a new `DonationOffer`/`DonationOfferStatusLog` pair tracks a donation from a phoned-in offer through an approve/refuse/divert decision, an ETA-sorted "pending" worklist, and matching to the real Receiving intake (either at intake time or after the fact) — with a full append-only audit trail of every transition. Lives inside Receiving (`/receiving/offers`, no new top-level nav item); decision actions are gated on a new `manage-donation-offers` permission, granted to the Office role by default.
 
+**Update (Aug 23, 2026): the pending-design backlog got reconciled into one sequence.** Nine separate
+"approved, NOT built" designs had piled up as independent memories with no ordering against each other —
+**Part 11 is now the single dependency-ordered "what's next" list**; treat it as the starting point for
+any future planning session in this repo rather than re-deriving priority from scratch or picking whichever
+memory got mentioned most recently.
+
 The application is roughly **60–65% of the way** to the stated vision as of Aug 2026 (revised up from 40–50%). The remaining problems fall into two groups:
 
-1. **Broken plumbing (narrowing further)** — most of the originally-flagged breakage is fixed; what's left is mainly the still-dead `DonationController` (confirmed unused, not yet removed), `ItemController` update/destroy routes, and a handful of still-unbuilt report pages (`/reports/flow`, `/reports/donors`, `/reports/customers` — `/reports/orders` is built as of Aug 2026) — see corrected items in Part 1.
-2. **Missing workflows** — order filling/picking, BOL generation, distribution-point applications, and delivery/receiving with signed BOL upload still do not exist. Part 5 (added Aug 2026) expands the vision further — a network of facilities (not just one warehouse), FEMA-compliant volunteer hour tracking, and a fair-share request allocation engine — none of that is built yet either.
+1. **Broken plumbing (narrowing further)** — most of the originally-flagged breakage is fixed; what's left is mainly the still-dead `DonationController` (confirmed unused, not yet removed), `ItemController` update/destroy routes, and a handful of still-unbuilt report pages (`/reports/flow`, `/reports/donors`, `/reports/partners` — `/reports/orders` is built as of Aug 2026) — see corrected items in Part 1.
+2. **Missing workflows** — order filling/picking, BOL generation, distribution-point applications, and delivery/receiving with signed BOL upload still do not exist; see **Part 11** for the sequencing across these and the rest of the pending-design backlog. Part 5 (added Aug 2026) expands the vision further — a network of facilities (not just one warehouse), FEMA-compliant volunteer hour tracking, and a fair-share request allocation engine — deliberately sequenced last in Part 11, none of it built yet.
 
 ---
 
@@ -110,6 +116,13 @@ The goal: a donation can be received, tagged, sorted, and counted — with full 
 2. ~~Wire pallets into sorting~~ **done**, exactly as scoped (scan pallet tag, `pallet_id` on every ledger line, line-by-line autosave) — see `DonationSorting.vue` + `SortingSessionController`.
 3. ~~Stock-on-hand service + endpoint~~ **done** — `WarehouseMetrics::inventorySummary()` / `InventoryReportController::buildRecords()`, aggregated per item type (not yet per pallet/location — that drill-down still doesn't exist).
 4. ~~Inventory report page~~ **done** (`/reports/inventory`) — current stock by category/item, with a per-SKU breakdown. No drill-down to source pallets/donors yet (donor provenance ends at sorting per design, not a data gap — see `picking-and-inventory-inference` design notes referenced in Part 6).
+
+**Update (Aug 23, 2026): superseded as the "what's next" source.** This Phase 2/3/4 breakdown predates most
+of the Part 5+ planning sessions and the standalone approved-but-unbuilt design memories (order
+fulfillment, facility network, item conversion, stock source tagging, etc.) — none of those are folded in
+here, and this list was never reconciled against them. **Part 11 below is the current, dependency-ordered
+backlog across all of it; treat this Phase 2/3/4 breakdown as a historical record of the original
+completion plan, not the live one.**
 
 ### Phase 2 — Orders, filling, and BOLs (≈3 weeks)
 
@@ -471,3 +484,60 @@ Prompted by comparing Receiving.vue against a real, field-tested precedent: the 
 Also fixed along the way: `ChipSelect.vue` never carried the `ri_formcontrol` class its sibling `SearchSelect.vue` always had, which is why a long chip list (Truck Size, once it grew past 4 short options) would wrap its whole control onto a new line instead of just wrapping its chips within the aligned column — a systemic fix, not a per-page patch.
 
 **Not done, deliberately deferred:** AI-assisted extraction from a photographed shipping label (there's a real precedent to reference, from the ChurchToolbox facility tracker); a `Warehouse.pallets_enabled`-style admin toggle for warehouses without pallets or a label printer (the `pallets_enabled` column and its JSON CRUD API already exist from earlier facility-network work, just no admin page was ever built); Sorting-side consumption of `quick_sort_candidate` (the actual express lane).
+
+---
+
+## Part 11 — What's Next: Sequencing the Pending Design Backlog (Aug 23, 2026)
+
+By this point there are ~9 designs sitting in the "approved (or discussed), NOT built" state, each captured
+in its own memory rather than one ordered list — genuinely useful for context on *why* each one looks the
+way it does, but nobody had reconciled them against each other or against the original Phase 2–4 plan into
+one "start here" sequence. This section is that reconciliation, ordered by actual technical dependency
+(what unblocks what), not by when each was designed. Re-derive this ordering rather than trusting it
+blindly if enough has shipped since Aug 23, 2026 that the reasoning below no longer holds — check each
+item's own memory for a more recent "Update" note first.
+
+**Tier 0 — one open decision, not a build task.** Order Filling/Picking (Phase 2 item 1 above) is the
+single biggest unblocker in the whole backlog (see Tier 1), but it's blocked on an actual undecided fork,
+not on time: scan-driven flow vs. PDF-batch entry, same real-world "paper batch → office transcription"
+pattern the Statesville SOP review found sorting already works this way at scale (`statesville-sop-review`,
+`picking-and-inventory-inference` — STALE, marked with this exact open fork). Resolve this the way
+Sorting's own scan-vs-batch question was resolved (a short design conversation, not a coin flip) before
+writing any filling code.
+
+**Tier 1 — build once Tier 0 is decided; unblocks everything below it.** **Order Filling/Picking**
+(Phase 2 item 1) is what actually makes `item_ledgers.qty_subtracted` real — right now nothing in the live
+app writes a nonzero value there (confirmed while scoping `stock-source-tagging-and-equipment-tracking-design`),
+so "current inventory" today is cumulative intake only. Everything downstream of "an order got filled" is
+blocked on this:
+- **BOL generation** (Phase 2 item 2) — needs filled lines to print.
+- **`order-fulfillment-lifecycle-design`** (Ready to Ship, pickup-vs-ship terminus, Shipped-not-final) —
+  the stage immediately after filling.
+- **Usage-rate/reorder-threshold alerting**, part E of `stock-source-tagging-and-equipment-tracking-design`
+  — meaningless without real subtraction data to compute a trailing rate from. (Parts A–D of that same
+  design — `source_type` tagging, `item_kind`, the `Asset` model for equipment — are *not* blocked on this
+  and can land independently; only the alerting part needs to wait.)
+
+**Tier 2 — additive, no hard blockers either direction; interleave with Tier 1 or do first, whichever fits
+available time.**
+- `stock-source-tagging-and-equipment-tracking-design` parts A–D (source tagging, catalog `item_kind`,
+  the equipment `Asset` model).
+- `item-conversion-internal-transfer-design` (recount-forced item/UOM reassignment) — touches the catalog
+  and ledger, not order fulfillment.
+- `party-roles-warehouse-contacts-and-people-report-design` (explicit Donor/Partner role tagging,
+  `WarehouseContact`, combined People & Organizations report).
+- `public-needs-list-design` — conceptually could ship before Tier 1 (order lines already exist without
+  filling), though it becomes more meaningful once real fulfillment history exists behind it.
+- `volunteer-hours-tracking-design` — its own kiosk feature, doesn't touch orders/inventory at all.
+- `menu-grouping-and-theming` — pure UI polish, smallest item in the backlog.
+
+**Tier 3 — do last.** `facility-network-and-allocation-model` (Part 5's Facility/Incident-scoped network,
+fair-share allocation) is the most structurally invasive item here — it reshapes scoping for orders,
+inventory, and permissions everywhere else in the app. Building it before the single-warehouse core loop
+(Tier 0/1) is solid means re-scoping all of the above a second time once it lands. Sequence it after
+Tiers 1–2, not alongside them.
+
+**Remaining Phase 3/4 items** (distribution-point self-service application + approval queue, delivery
+logging + signed BOL upload, flow/donor/customer reports, pagination) still apply as originally scoped in
+Part 3 above and aren't reordered by this section — they weren't in conflict with anything newer, just
+not yet reconciled into one list until now.
