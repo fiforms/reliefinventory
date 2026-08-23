@@ -16,7 +16,7 @@
 
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import TextArea from '@/Components/TextArea.vue';
 import SearchSelect from '@/Components/SearchSelect.vue';
@@ -96,6 +96,10 @@ const containerTypeOptions = [
 			@select="onOpenRecord"
 			@new="onOpenRecord"
 		>
+			<template #titleactions>
+				<Link href="/receiving/offers" class="ri_defaultbutton ri_floating">Donation Offers</Link>
+			</template>
+
 			<template #listactions>
 				<input
 					type="text"
@@ -135,6 +139,20 @@ const containerTypeOptions = [
 			<template #default="{ record, editing, templates }">
 				<template v-if="wizardStep === 'details'">
 					<div class="ri_formtable">
+						<div class="ri_fieldset" v-if="!record.id">
+							<div class="ri_fieldlabel">Match to a phoned-in offer?</div>
+							<SearchSelect
+								ref="offerSelect"
+								v-model="matchedOfferId"
+								optionsource="/json/donation-offers?status=pending"
+								display="label"
+								:searchfields="['label']"
+								placeholder="Search pending donation offers..."
+								:enabled="editing"
+								@selected="(o) => onOfferSelected(record, o)"
+							/>
+						</div>
+
 						<div class="ri_fieldset">
 							<div class="ri_fieldlabel">Date:</div>
 							<div class="ri_formcontrol">
@@ -536,6 +554,10 @@ export default {
 
 			donorSearch: '',
 			flaggedOnly: false,
+
+			// Matching a phoned-in DonationOffer at intake — see
+			// onOfferSelected()/onOpenRecord() and store()'s donation_offer_id.
+			matchedOfferId: null,
 		};
 	},
 	computed: {
@@ -570,6 +592,21 @@ export default {
 			if (record) record.container_type_counts = record.container_type_counts || {};
 			const types = record?.container_types || [];
 			this.arrivalMode = types.includes('pallet') ? 'pallet' : types.length ? 'other' : null;
+			this.matchedOfferId = record?.donation_offer_id || null;
+		},
+		// Selecting a pending offer pre-fills the donor/contact/manifest fields
+		// it already has and stashes the offer id for store() to pick up —
+		// matching at intake instead of requiring a separate trip to the
+		// offers worklist afterward.
+		onOfferSelected(record, offer) {
+			if (!offer) return;
+			record.donation_offer_id = offer.id;
+			record.person_id = offer.person_id;
+			record.person = offer.person;
+			record.contact_person_id = offer.contact_person_id;
+			if (offer.description) {
+				record.comments = record.comments ? `${record.comments}\n\n${offer.description}` : offer.description;
+			}
 		},
 		// Pallets is exclusive; switching to it replaces any box/bag/tote/loose
 		// selection, and switching to Other clears a prior "pallet" choice
@@ -838,6 +875,32 @@ export default {
 				this.closeOutError = error.response?.data?.message || 'Could not close out that donation.';
 			}
 		},
+
+		// ---------- matching a phoned-in offer, hand-off from DonationOffers.vue ----------
+		waitForTemplates() {
+			return new Promise((resolve) => {
+				const check = () => {
+					if (this.$refs.riform?.templates?._default) resolve();
+					else setTimeout(check, 50);
+				};
+				check();
+			});
+		},
+	},
+	async mounted() {
+		const offerId = new URLSearchParams(window.location.search).get('match_offer_id');
+		if (!offerId) return;
+		try {
+			const response = await axios.get('/json/donation-offers?status=pending');
+			const offer = (response.data.records || []).find((o) => String(o.id) === String(offerId));
+			if (!offer) return;
+			await this.waitForTemplates();
+			this.$refs.riform.newRecord();
+			this.onOfferSelected(this.$refs.riform.record, offer);
+			this.matchedOfferId = offer.id;
+		} catch (error) {
+			// Offer no longer available/pending — just leave a fresh blank form.
+		}
 	},
 };
 </script>

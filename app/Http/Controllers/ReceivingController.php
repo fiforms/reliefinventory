@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\DonationOffer;
 use App\Models\Pallet;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
@@ -146,22 +147,45 @@ class ReceivingController extends Controller
      * sorting pipeline (received status); other categories are logged for
      * the manifest audit trail but don't get a stored donation lifecycle.
      */
+    /**
+     * A donation offered by phone ahead of arrival (see DonationOffer) can
+     * be matched right here at intake instead of requiring a separate trip
+     * to the offers worklist afterward. Validated ad hoc, not part of
+     * VALIDATION_RULES, so it never mass-assigns onto the Transaction.
+     */
     public function store(Request $request)
     {
         $data = $request->validate(self::VALIDATION_RULES);
+        $offerId = $request->validate(['donation_offer_id' => 'nullable|exists:donation_offers,id'])['donation_offer_id'] ?? null;
 
         if ($error = $this->containerTypesError($data)) {
             return response()->json(['message' => $error], 422);
         }
 
-        $donation = Transaction::create(array_merge($data, [
-            'type' => 'donation',
-            'person_id_user' => Auth::id(),
-            'order_date' => $data['order_date'] ?? now()->toDateString(),
-            'status_id' => Transaction::statusId(
-                $data['category'] === 'donation' ? Transaction::STATUS_RECEIVED : Transaction::STATUS_LOGGED
-            ),
-        ]));
+        $offer = null;
+        if ($offerId) {
+            $offer = DonationOffer::findOrFail($offerId);
+            if ($offer->status !== DonationOffer::STATUS_PENDING) {
+                return response()->json(['message' => 'That donation offer is not pending and can\'t be matched.'], 422);
+            }
+        }
+
+        $donation = DB::transaction(function () use ($data, $offer) {
+            $donation = Transaction::create(array_merge($data, [
+                'type' => 'donation',
+                'person_id_user' => Auth::id(),
+                'order_date' => $data['order_date'] ?? now()->toDateString(),
+                'status_id' => Transaction::statusId(
+                    $data['category'] === 'donation' ? Transaction::STATUS_RECEIVED : Transaction::STATUS_LOGGED
+                ),
+            ]));
+
+            if ($offer) {
+                $offer->transitionTo(DonationOffer::STATUS_RECEIVED, Auth::id(), ['donation_id' => $donation->id]);
+            }
+
+            return $donation;
+        });
 
         return response()->json(['record' => $donation->load(['person', 'contactPerson', 'driver', 'status'])], 201);
     }

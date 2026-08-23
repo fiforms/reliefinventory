@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\DonationOffer;
 use App\Models\Driver;
 use App\Models\Item;
 use App\Models\Pallet;
@@ -405,6 +406,24 @@ test('a photo of the shipment can be uploaded and served back, guarded by existe
     Storage::disk('local')->assertExists($donation->photo_path);
 
     $this->actingAs($user)->get('/json/receiving/'.$donation->id.'/photo')->assertOk();
+});
+
+test('an intake matched to a pending donation offer links and transitions it', function () {
+    $user = userWithPermissions('manage-receiving');
+    $donor = Person::create(['first_name' => 'Offer', 'last_name' => 'Donor']);
+    $offer = DonationOffer::create([
+        'person_id' => $donor->id,
+        'status' => DonationOffer::STATUS_PENDING,
+    ]);
+
+    $record = $this->actingAs($user)->postJson('/json/receiving', [
+        'category' => 'donation',
+        'person_id' => $donor->id,
+        'donation_offer_id' => $offer->id,
+    ])->assertCreated()->json('record');
+
+    expect($offer->fresh()->status)->toBe(DonationOffer::STATUS_RECEIVED)
+        ->and($offer->fresh()->donation_id)->toBe($record['id']);
 });
 
 test('replacing a shipment photo deletes the old file', function () {

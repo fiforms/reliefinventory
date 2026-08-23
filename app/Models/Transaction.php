@@ -167,6 +167,12 @@ class Transaction extends Model
         return $this->hasMany(Pallet::class, 'orderdonation_id');
     }
 
+    // The pre-arrival DonationOffer this intake was matched to, if any.
+    public function donationOffer()
+    {
+        return $this->hasOne(DonationOffer::class, 'donation_id');
+    }
+
     /**
      * Asymmetric rollup: the FIRST pallet to leave "received" starts
      * sorting; the LAST pallet to reach "empty" completes the donation.

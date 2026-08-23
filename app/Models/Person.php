@@ -163,10 +163,20 @@ class Person extends Model
      * Define relationships to other models (if applicable).
      */
 
-    // Example relationship with OrderDonation (assuming a person can have many orders or donations)
+    // Every order/donation Transaction where this person is the donor/recipient.
+    // Fixed 2026-08-23: previously referenced a nonexistent OrderDonation
+    // class and was never actually usable — see DonationOfferController's
+    // donor-history use for the first real caller.
     public function orderDonations()
     {
-        return $this->hasMany(OrderDonation::class, 'person_id');
+        return $this->hasMany(Transaction::class, 'person_id');
+    }
+
+    // Pre-arrival donation offers where this person is the donor — see
+    // DonationOffer for the offered/accepted/pending/... lifecycle.
+    public function donationOffers()
+    {
+        return $this->hasMany(DonationOffer::class, 'person_id');
     }
 
     public function county()

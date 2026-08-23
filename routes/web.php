@@ -43,6 +43,16 @@ Route::get('/receiving', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
 })->middleware(['auth', 'permission:manage-receiving']);
 
+// Offers live inside Receiving, not as their own top-level nav item — no
+// new MenuItem, just a nested URL reusing Receiving's breadcrumb entry.
+// Page-level gate stays the loose manage-receiving (viewing/logging a call
+// is fine for anyone who does intake); the decision endpoints below enforce
+// the narrower manage-donation-offers.
+Route::get('/receiving/offers', function () {
+    return Inertia::render('DonationOffers',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
+})->middleware(['auth', 'permission:manage-receiving']);
+
 Route::get('/donation-sorting', function () {
     return Inertia::render('DonationSorting',
         ['breadcrumb' => MenuItem::getBreadcrumb('/donation-sorting')]);
@@ -171,6 +181,11 @@ Route::get('/reports/inventory', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/inventory')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+Route::get('/reports/orders', function () {
+    return Inertia::render('OutstandingOrdersReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/orders')]);
+})->middleware(['auth', 'permission:view-reports']);
+
 // Internal warehouse dashboard: full-detail view for management/admins.
 Route::get('/reports/dashboard', function () {
     return Inertia::render('WarehouseDashboard',
@@ -189,7 +204,6 @@ Route::get('/reports/sitrep', function () {
 // Renders a "coming soon" placeholder instead of 404ing.
 foreach ([
     '/order-filling' => 'Order Filling',
-    '/reports/orders' => 'Outstanding Orders Report',
     '/reports/flow' => 'Inventory Flow Report',
     '/reports/donors' => 'Donor Report',
     '/reports/customers' => 'Customer Report',
@@ -333,6 +347,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-it
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-reports']], function () {
     Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
+    Route::get('/reports/orders', [OutstandingOrdersReportController::class, 'index']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-dashboard']], function () {
@@ -352,6 +367,18 @@ Route::get('/report/sitrep.pdf', [SitrepController::class, 'pdf'])
 
 Route::get('/report/inventory.pdf', [InventoryReportController::class, 'pdf'])
     ->name('report.inventory')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/inventory.csv', [InventoryReportController::class, 'csv'])
+    ->name('report.inventory.csv')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/orders.pdf', [OutstandingOrdersReportController::class, 'pdf'])
+    ->name('report.orders')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv'])
+    ->name('report.orders.csv')
     ->middleware(['auth', 'permission:view-reports']);
 
 // Offline order form (in-stock item types only, no quantities) — printed or
@@ -392,6 +419,21 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-re
     Route::get('/drivers', [DriverController::class, 'index']);
     Route::post('/drivers', [DriverController::class, 'store']);
     Route::put('/drivers/{driver}', [DriverController::class, 'update']);
+
+    // Recording/editing a donation offer (logging the call) is loose —
+    // decision actions are gated separately below.
+    Route::get('/donation-offers', [DonationOfferController::class, 'index']);
+    Route::get('/donation-offers/unmatched-donations', [DonationOfferController::class, 'unmatchedDonations']);
+    Route::post('/donation-offers', [DonationOfferController::class, 'store']);
+    Route::put('/donation-offers/{donationOffer}', [DonationOfferController::class, 'update']);
+});
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-donation-offers']], function () {
+    Route::post('/donation-offers/{donationOffer}/approve', [DonationOfferController::class, 'approve']);
+    Route::post('/donation-offers/{donationOffer}/refuse', [DonationOfferController::class, 'refuse']);
+    Route::post('/donation-offers/{donationOffer}/divert', [DonationOfferController::class, 'divert']);
+    Route::post('/donation-offers/{donationOffer}/cancel', [DonationOfferController::class, 'cancel']);
+    Route::post('/donation-offers/{donationOffer}/match', [DonationOfferController::class, 'match']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trucks']], function () {

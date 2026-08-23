@@ -119,6 +119,15 @@ button.ri_floating, a.ri_floating {
 	  float: right;
 }
 
+/* Wraps RIForm's #titleactions slot — floats alongside the default
+   New Record-style button with a gap between them, so a page-supplied
+   button (e.g. Receiving.vue's "Donation Offers" link) doesn't butt up
+   against it. */
+.ri_titleactions {
+  float: right;
+  margin-right: 0.75em;
+}
+
 button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton,
 a.ri_defaultbutton, a.ri_formbutton, a.ri_deletebutton {
   display: inline-block;

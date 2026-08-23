@@ -8,8 +8,20 @@
 
   This component expects attributes for "title" and the "datasource" JSON API url
 
-  It has four slots: #thead, #tbody, #default, and #listactions, with bindings as
-  described below:
+  It has five slots: #thead, #tbody, #default, #listactions, and #titleactions, with
+  bindings as described below:
+
+  #titleactions is optional and rendered in the title bar itself, right next to the
+      default "New Record"-style button — the place for a page-level navigation button
+      (e.g. a link to a related page) that should sit alongside it rather than in the
+      #listactions row below:
+
+      <RIForm ... newrecordcaption="Record an Intake">
+        <template #titleactions>
+          <Link href="/related-page" class="ri_defaultbutton ri_floating">Related Page</Link>
+        </template>
+        ...
+      </RIForm>
 
   #listactions is optional and rendered between the title bar and the table — the
       place for a page to add its own search box, toggle, or dropdown filter. RIForm
@@ -114,6 +126,9 @@
     <div v-if="!record" class="ri_datatable_container">
       <h2 class="ri_datatable_head">{{ title }}
         <button @click="newRecord()" class="ri_defaultbutton ri_floating">{{ newrecordcaption }}</button>
+        <span v-if="$slots.titleactions" class="ri_titleactions">
+          <slot name="titleactions"></slot>
+        </span>
       </h2>
       <div v-if="$slots.listactions" class="ri_listactions">
         <slot name="listactions"></slot>

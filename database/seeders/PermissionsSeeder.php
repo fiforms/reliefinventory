@@ -65,6 +65,13 @@ class PermissionsSeeder extends Seeder
         'admin-packagetypes' => 'Create, update, and delete package types',
         'manage-sorting' => 'Run donation sorting sessions',
         'manage-receiving' => 'Record dock-side intake and manage donation close-out',
+        // Recording a phoned-in offer stays on manage-receiving above —
+        // anyone answering the phone can log a call. This key is only the
+        // decision (approve/refuse/divert/cancel) and matching an arrival
+        // to a pending offer, deliberately not bundled with manage-receiving
+        // and not granted to Volunteer/Team Leader/Sorting and Inventory by
+        // default — the office team is who actually fields these calls.
+        'manage-donation-offers' => 'Approve, refuse, divert, or cancel donation offers, and match arrivals to pending offers',
         'manage-pallets' => 'Manage pallets and pallet status history',
         'manage-trucks' => 'Manage trucks',
         'manage-containers' => 'View and manage generic containers',
@@ -114,6 +121,7 @@ class PermissionsSeeder extends Seeder
     private const OFFICE_KEYS = [
         ...self::VOLUNTEER_TIER_KEYS,
         ...self::TEAM_LEADER_EXTRA_KEYS,
+        'manage-donation-offers',
     ];
 
     /**
