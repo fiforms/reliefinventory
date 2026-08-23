@@ -206,7 +206,7 @@ foreach ([
     '/order-filling' => 'Order Filling',
     '/reports/flow' => 'Inventory Flow Report',
     '/reports/donors' => 'Donor Report',
-    '/reports/customers' => 'Customer Report',
+    '/reports/customers' => 'Partner Report',
 ] as $path => $feature) {
     Route::get($path, function () use ($path, $feature) {
         return Inertia::render('ComingSoon', [
