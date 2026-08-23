@@ -112,7 +112,7 @@ const statusClasses = {
 							ref="donorSelect"
 							v-model="record.person_id"
 							optionsource="/json/people"
-							display="organization"
+							display="full_name"
 							:searchfields="['organization', 'first_name', 'last_name']"
 							placeholder="Search donors..."
 							:allowcreate="true"
@@ -193,16 +193,14 @@ const statusClasses = {
 						<div class="ri_formcontrol don_etarange">
 							<input
 								type="date"
-								:value="toDateInput(record.eta_start)"
-								@input="record.eta_start = $event.target.value"
+								v-model.lazy="record.eta_start"
 								class="ri_forminput"
 								:disabled="!editing"
 							/>
 							<span>to</span>
 							<input
 								type="date"
-								:value="toDateInput(record.eta_end)"
-								@input="record.eta_end = $event.target.value"
+								v-model.lazy="record.eta_end"
 								class="ri_forminput"
 								:disabled="!editing"
 							/>
@@ -215,16 +213,14 @@ const statusClasses = {
 							<div class="ri_formcontrol don_etarange">
 								<input
 									type="date"
-									:value="toDateInput(record.eta_start)"
-									@input="record.eta_start = $event.target.value"
+									v-model.lazy="record.eta_start"
 									class="ri_forminput"
 									:disabled="!editing"
 								/>
 								<span>to</span>
 								<input
 									type="date"
-									:value="toDateInput(record.eta_end)"
-									@input="record.eta_end = $event.target.value"
+									v-model.lazy="record.eta_end"
 									class="ri_forminput"
 									:disabled="!editing"
 								/>
@@ -326,9 +322,9 @@ const statusClasses = {
 						<div class="ri_fieldset" v-if="decision.action === 'approve'">
 							<div class="ri_fieldlabel">ETA Window (start required):</div>
 							<div class="ri_formcontrol don_etarange">
-								<input type="date" v-model="decision.eta_start" class="ri_forminput" />
+								<input type="date" v-model.lazy="decision.eta_start" class="ri_forminput" />
 								<span>to</span>
-								<input type="date" v-model="decision.eta_end" class="ri_forminput" />
+								<input type="date" v-model.lazy="decision.eta_end" class="ri_forminput" />
 							</div>
 						</div>
 						<div class="ri_fieldset" v-if="decision.action === 'approve'">
@@ -393,7 +389,10 @@ import { invalidateOptions } from '@/Components/SearchSelect.vue';
 export default {
 	data() {
 		return {
-			pendingOnly: true,
+			// Defaults to showing everything — defaulting this to true hid a
+			// just-logged offer (status 'offered', not yet 'pending') right
+			// after saving it, with no visible explanation why.
+			pendingOnly: false,
 
 			creatingDonor: false,
 			newDonor: { first_name: '', last_name: '', organization: '' },
