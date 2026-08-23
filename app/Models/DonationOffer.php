@@ -163,4 +163,38 @@ class DonationOffer extends Model
             ]);
         });
     }
+
+    /**
+     * A follow-up call that doesn't decide anything — e.g. the donor calls
+     * back to push their ETA out or add detail to what they're offering.
+     * Applies any column updates (eta_start/eta_end/description, ...) and
+     * appends a status_log row same as transitionTo(), but with
+     * from_status === to_status instead of an actual transition, so it's
+     * exempt from the TRANSITIONS legal-move check. Keeps the "who/when/how
+     * + notes" history complete for offers that get touched more than once
+     * before a decision is made.
+     */
+    public function logNote(
+        ?int $personId,
+        array $columnUpdates = [],
+        ?string $contactMethod = null,
+        ?string $notes = null
+    ): void {
+        DB::transaction(function () use ($personId, $columnUpdates, $contactMethod, $notes) {
+            foreach ($columnUpdates as $column => $value) {
+                $this->{$column} = $value;
+            }
+            if (! empty($columnUpdates)) {
+                $this->save();
+            }
+
+            $this->statusLogs()->create([
+                'from_status' => $this->status,
+                'to_status' => $this->status,
+                'changed_by_person_id' => $personId,
+                'contact_method' => $contactMethod,
+                'notes' => $notes,
+            ]);
+        });
+    }
 }

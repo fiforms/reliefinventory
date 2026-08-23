@@ -162,6 +162,42 @@ class DonationOfferController extends Controller
         return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
     }
 
+    /**
+     * A follow-up call that doesn't decide anything — the donor calls back
+     * to push the ETA or add detail before anyone's approved/refused it
+     * yet. Same "offered or pending only" lock as update(), but always
+     * appends a status_log row (via logNote()) so the conversation history
+     * stays complete, same idea as FeedbackReportController's
+     * same-status-note update.
+     */
+    public function addNote(Request $request, DonationOffer $donationOffer)
+    {
+        if (! in_array($donationOffer->status, [DonationOffer::STATUS_OFFERED, DonationOffer::STATUS_PENDING], true)) {
+            return response()->json(['message' => 'This offer has already been decided and can\'t be updated.'], 422);
+        }
+
+        $data = $request->validate([
+            'eta_start' => 'nullable|date',
+            'eta_end' => 'nullable|date|after_or_equal:eta_start',
+            'description' => 'nullable|string',
+            'contact_method' => 'nullable|in:phone,email,in_person,other',
+            'notes' => 'required|string',
+        ]);
+
+        $donationOffer->logNote(
+            Auth::id(),
+            [
+                'eta_start' => $data['eta_start'] ?? $donationOffer->eta_start,
+                'eta_end' => $data['eta_end'] ?? $donationOffer->eta_end,
+                'description' => $data['description'] ?? $donationOffer->description,
+            ],
+            $data['contact_method'] ?? null,
+            $data['notes'],
+        );
+
+        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+    }
+
     public function approve(Request $request, DonationOffer $donationOffer)
     {
         if ($donationOffer->status !== DonationOffer::STATUS_OFFERED) {

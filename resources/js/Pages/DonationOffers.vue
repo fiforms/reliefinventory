@@ -288,7 +288,7 @@ const statusClasses = {
 						class="don_logentry"
 					>
 						<span class="font-semibold">
-							{{ log.from_status ? `${statusLabels[log.from_status]} → ${statusLabels[log.to_status]}` : `Logged as ${statusLabels[log.to_status]}` }}
+							{{ logHeadline(log) }}
 						</span>
 						by {{ log.changed_by?.full_name || 'Unknown' }}
 						<span class="don_logmeta">— {{ formatDateTime(log.created_at) }}<template v-if="log.contact_method"> · {{ contactMethodLabel(log.contact_method) }}</template></span>
@@ -298,100 +298,126 @@ const statusClasses = {
 			</template>
 
 			<template #actions="{ editing, record, save, cancel }">
-				<div class="ri_formactions" v-if="!editing">
-					<button @click="cancel()" class="ri_defaultbutton">Back to List</button>
-				</div>
-				<template v-else>
-					<div class="ri_formactions">
+				<div class="ri_formactions">
+					<template v-if="editing">
 						<button @click="save()" class="ri_defaultbutton">Save</button>
 						<button @click="cancel()" class="ri_formbutton">Cancel</button>
-					</div>
-
-					<template v-if="record.status === 'offered'">
-						<h3 class="don_subhead">Decision</h3>
-						<div class="don_decisionrow">
-							<button @click="startDecision(record, 'approve')" class="ri_defaultbutton">Approve</button>
-							<button @click="startDecision(record, 'refuse')" class="ri_formbutton">Refuse</button>
-							<button @click="startDecision(record, 'divert')" class="ri_formbutton">Divert</button>
-						</div>
 					</template>
+					<button v-else @click="cancel()" class="ri_defaultbutton">Back to List</button>
+				</div>
 
-					<template v-if="record.status === 'pending'">
-						<h3 class="don_subhead">Decision</h3>
-						<div class="don_decisionrow">
-							<button @click="startDecision(record, 'cancel')" class="ri_formbutton">Cancel Offer</button>
-							<button @click="startDecision(record, 'match')" class="ri_defaultbutton">Match to Arrival</button>
-						</div>
-						<p class="ri_hint">
-							Or
-							<Link :href="`/receiving?match_offer_id=${record.id}`">start a new Receiving intake for this offer</Link>.
-						</p>
-					</template>
-
-					<!-- Inline confirm panel — shown after a decision button is clicked -->
-					<div v-if="decision" class="don_decisionpanel">
-						<h4 class="don_subhead">
-							{{ { approve: 'Approve Offer', refuse: 'Refuse Offer', divert: 'Divert Offer', cancel: 'Cancel Offer', match: 'Match to Arrival' }[decision.action] }}
-						</h4>
-
-						<div class="ri_fieldset" v-if="decision.action === 'approve'">
-							<div class="ri_fieldlabel">ETA Window (start required):</div>
-							<div class="ri_formcontrol don_etarange">
-								<input type="date" v-model.lazy="decision.eta_start" class="ri_forminput" />
-								<span>to</span>
-								<input type="date" v-model.lazy="decision.eta_end" class="ri_forminput" />
-							</div>
-						</div>
-						<div class="ri_fieldset" v-if="decision.action === 'approve'">
-							<div class="ri_fieldlabel">Transit Notes:</div>
-							<TextArea v-model="decision.transit_notes" />
-						</div>
-
-						<div class="ri_fieldset" v-if="decision.action === 'refuse'">
-							<div class="ri_fieldlabel">Reason (required):</div>
-							<TextArea v-model="decision.refused_reason" />
-						</div>
-
-						<div class="ri_fieldset" v-if="decision.action === 'divert'">
-							<div class="ri_fieldlabel">Diverted to (required):</div>
-							<TextInput v-model="decision.diverted_to" />
-						</div>
-
-						<div class="ri_fieldset" v-if="decision.action === 'cancel'">
-							<div class="ri_fieldlabel">Reason (required):</div>
-							<TextArea v-model="decision.cancelled_reason" />
-						</div>
-
-						<div class="ri_fieldset" v-if="decision.action === 'match'">
-							<div class="ri_fieldlabel">Match to arrived donation:</div>
-							<SearchSelect
-								v-model="decision.donation_id"
-								optionsource="/json/donation-offers/unmatched-donations"
-								display="label"
-								:searchfields="['label']"
-								placeholder="Search unmatched intakes..."
-							/>
-						</div>
-
-						<div class="ri_fieldset">
-							<div class="ri_fieldlabel">Contact Method:</div>
-							<select v-model="decision.contact_method" class="ri_forminput">
-								<option :value="null">—</option>
-								<option v-for="o in contactMethodOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
-							</select>
-						</div>
-						<div class="ri_fieldset">
-							<div class="ri_fieldlabel">Notes:</div>
-							<TextArea v-model="decision.notes" />
-						</div>
-
-						<p v-if="decisionError" class="ri_error">{{ decisionError }}</p>
-						<div class="ri_formactions">
-							<button @click="confirmDecision(record)" :disabled="decisionSaving" class="ri_defaultbutton">Confirm</button>
-							<button @click="decision = null" class="ri_formbutton">Cancel</button>
-						</div>
+				<!-- Decisions are actions on the offer, not field edits — they're
+				     always available here regardless of the record's own
+				     edit-lock toggle above, so approving/refusing/etc. doesn't
+				     require first unlocking the record for editing. -->
+				<template v-if="record.status === 'offered'">
+					<h3 class="don_subhead">Decision</h3>
+					<div class="don_decisionrow">
+						<button @click="startDecision(record, 'approve')" class="ri_defaultbutton">Approve</button>
+						<button @click="startDecision(record, 'refuse')" class="ri_formbutton">Refuse</button>
+						<button @click="startDecision(record, 'divert')" class="ri_formbutton">Divert</button>
 					</div>
 				</template>
+
+				<template v-if="record.status === 'pending'">
+					<h3 class="don_subhead">Decision</h3>
+					<div class="don_decisionrow">
+						<button @click="startDecision(record, 'cancel')" class="ri_formbutton">Cancel Offer</button>
+						<button @click="startDecision(record, 'match')" class="ri_defaultbutton">Match to Arrival</button>
+					</div>
+					<p class="ri_hint">
+						Or
+						<Link :href="`/receiving?match_offer_id=${record.id}`">start a new Receiving intake for this offer</Link>.
+					</p>
+				</template>
+
+				<!-- A follow-up call that doesn't decide anything — the donor
+				     pushes the ETA out or adds detail before anyone's
+				     approved/refused it yet. Available whenever a decision
+				     would be (offered or pending), separate from those
+				     buttons since it doesn't change the status. -->
+				<template v-if="record.status === 'offered' || record.status === 'pending'">
+					<div class="don_decisionrow">
+						<button @click="startDecision(record, 'note')" class="ri_formbutton">Log a Call / Update ETA</button>
+					</div>
+				</template>
+
+				<!-- Inline confirm panel — shown after a decision button is clicked -->
+				<div v-if="decision" class="don_decisionpanel">
+					<h4 class="don_subhead">
+						{{ { approve: 'Approve Offer', refuse: 'Refuse Offer', divert: 'Divert Offer', cancel: 'Cancel Offer', match: 'Match to Arrival', note: 'Log a Call / Update' }[decision.action] }}
+					</h4>
+
+					<div class="ri_fieldset" v-if="decision.action === 'note'">
+						<div class="ri_fieldlabel">ETA Window:</div>
+						<div class="ri_formcontrol don_etarange">
+							<input type="date" v-model.lazy="decision.eta_start" class="ri_forminput" />
+							<span>to</span>
+							<input type="date" v-model.lazy="decision.eta_end" class="ri_forminput" />
+						</div>
+					</div>
+					<div class="ri_fieldset" v-if="decision.action === 'note'">
+						<div class="ri_fieldlabel">What's being offered (update if it's changed):</div>
+						<TextArea v-model="decision.description" />
+					</div>
+
+					<div class="ri_fieldset" v-if="decision.action === 'approve'">
+						<div class="ri_fieldlabel">ETA Window (start required):</div>
+						<div class="ri_formcontrol don_etarange">
+							<input type="date" v-model.lazy="decision.eta_start" class="ri_forminput" />
+							<span>to</span>
+							<input type="date" v-model.lazy="decision.eta_end" class="ri_forminput" />
+						</div>
+					</div>
+					<div class="ri_fieldset" v-if="decision.action === 'approve'">
+						<div class="ri_fieldlabel">Transit Notes:</div>
+						<TextArea v-model="decision.transit_notes" />
+					</div>
+
+					<div class="ri_fieldset" v-if="decision.action === 'refuse'">
+						<div class="ri_fieldlabel">Reason (required):</div>
+						<TextArea v-model="decision.refused_reason" />
+					</div>
+
+					<div class="ri_fieldset" v-if="decision.action === 'divert'">
+						<div class="ri_fieldlabel">Diverted to (required):</div>
+						<TextInput v-model="decision.diverted_to" />
+					</div>
+
+					<div class="ri_fieldset" v-if="decision.action === 'cancel'">
+						<div class="ri_fieldlabel">Reason (required):</div>
+						<TextArea v-model="decision.cancelled_reason" />
+					</div>
+
+					<div class="ri_fieldset" v-if="decision.action === 'match'">
+						<div class="ri_fieldlabel">Match to arrived donation:</div>
+						<SearchSelect
+							v-model="decision.donation_id"
+							optionsource="/json/donation-offers/unmatched-donations"
+							display="label"
+							:searchfields="['label']"
+							placeholder="Search unmatched intakes..."
+						/>
+					</div>
+
+					<div class="ri_fieldset">
+						<div class="ri_fieldlabel">Contact Method:</div>
+						<select v-model="decision.contact_method" class="ri_forminput">
+							<option :value="null">—</option>
+							<option v-for="o in contactMethodOptions" :key="o.value" :value="o.value">{{ o.label }}</option>
+						</select>
+					</div>
+					<div class="ri_fieldset">
+						<div class="ri_fieldlabel">Notes{{ decision.action === 'note' ? ' (required)' : '' }}:</div>
+						<TextArea v-model="decision.notes" />
+					</div>
+
+					<p v-if="decisionError" class="ri_error">{{ decisionError }}</p>
+					<div class="ri_formactions">
+						<button @click="confirmDecision(record)" :disabled="decisionSaving" class="ri_defaultbutton">Confirm</button>
+						<button @click="decision = null" class="ri_formbutton">Cancel</button>
+					</div>
+				</div>
 			</template>
 		</RIForm>
 	</AuthenticatedLayout>
@@ -461,6 +487,26 @@ export default {
 		},
 		contactMethodLabel(value) {
 			return { phone: 'Phone', email: 'Email', in_person: 'In Person', other: 'Other' }[value] || value;
+		},
+		// A logNote() entry (follow-up call, no decision made) has
+		// from_status === to_status — distinguish that from the initial
+		// "logged as" entry (from_status null) and an actual transition.
+		// Duplicates the <script setup> statusLabels map by value (same
+		// reason contactMethodLabel() above duplicates its options rather
+		// than importing them: methods here run outside script setup's
+		// scope and can't see its top-level consts).
+		logHeadline(log) {
+			const labels = {
+				offered: 'Offered',
+				pending: 'Pending Arrival',
+				refused: 'Refused',
+				diverted: 'Diverted',
+				cancelled: 'Cancelled',
+				received: 'Received',
+			};
+			if (!log.from_status) return `Logged as ${labels[log.to_status]}`;
+			if (log.from_status === log.to_status) return `Update — ${labels[log.to_status]}`;
+			return `${labels[log.from_status]} → ${labels[log.to_status]}`;
 		},
 		isEditableStatus(record) {
 			// !record.id covers a brand-new record before its first save,
@@ -573,6 +619,7 @@ export default {
 				action,
 				eta_start: this.toDateInput(record.eta_start),
 				eta_end: this.toDateInput(record.eta_end),
+				description: record.description || '',
 				transit_notes: '',
 				refused_reason: '',
 				diverted_to: '',
@@ -606,10 +653,19 @@ export default {
 				this.decisionError = 'Select the arrived intake to match.';
 				return;
 			}
+			if (action === 'note' && !this.decision.notes.trim()) {
+				this.decisionError = 'Enter a note describing the call.';
+				return;
+			}
+
+			// 'note' (a follow-up call that doesn't decide anything) hits
+			// its own endpoint — every other action shares the /{action}
+			// naming convention.
+			const endpoint = action === 'note' ? 'note' : action;
 
 			this.decisionSaving = true;
 			try {
-				const response = await axios.post(`/json/donation-offers/${record.id}/${action}`, this.decision);
+				const response = await axios.post(`/json/donation-offers/${record.id}/${endpoint}`, this.decision);
 				Object.assign(record, response.data.record);
 				this.decision = null;
 				this.$refs.riform?.fetchRecords();

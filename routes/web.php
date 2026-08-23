@@ -428,6 +428,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-re
     Route::get('/donation-offers/unmatched-donations', [DonationOfferController::class, 'unmatchedDonations']);
     Route::post('/donation-offers', [DonationOfferController::class, 'store']);
     Route::put('/donation-offers/{donationOffer}', [DonationOfferController::class, 'update']);
+    Route::post('/donation-offers/{donationOffer}/note', [DonationOfferController::class, 'addNote']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-donation-offers']], function () {

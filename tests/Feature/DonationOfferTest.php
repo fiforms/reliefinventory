@@ -240,6 +240,47 @@ test('editing is blocked once an offer has reached a terminal status', function 
     ])->assertStatus(422);
 });
 
+test('a follow-up call can update the ETA and description without changing status', function () {
+    $user = userWithPermissions('manage-receiving');
+    $offer = makeOffer(['status' => DonationOffer::STATUS_PENDING, 'eta_start' => '2026-09-01', 'eta_end' => '2026-09-01']);
+
+    $response = $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/note", [
+        'eta_start' => '2026-09-08',
+        'eta_end' => '2026-09-10',
+        'description' => 'Now also includes a pallet of bottled water.',
+        'contact_method' => 'phone',
+        'notes' => 'Donor called to push the delivery back a week.',
+    ])->assertOk();
+
+    $offer->refresh();
+
+    expect($offer->status)->toBe(DonationOffer::STATUS_PENDING)
+        ->and($offer->eta_start)->toBe('2026-09-08')
+        ->and($offer->eta_end)->toBe('2026-09-10')
+        ->and($offer->description)->toBe('Now also includes a pallet of bottled water.')
+        ->and($offer->statusLogs)->toHaveCount(1);
+
+    $log = $offer->statusLogs->last();
+    expect($log->from_status)->toBe(DonationOffer::STATUS_PENDING)
+        ->and($log->to_status)->toBe(DonationOffer::STATUS_PENDING)
+        ->and($log->notes)->toBe('Donor called to push the delivery back a week.')
+        ->and($response->json('record.status'))->toBe(DonationOffer::STATUS_PENDING);
+});
+
+test('a follow-up call requires a note and is blocked once the offer is decided', function () {
+    $user = userWithPermissions('manage-receiving');
+    $offer = makeOffer();
+
+    $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/note", [
+        'eta_start' => now()->addWeek()->toDateString(),
+    ])->assertStatus(422);
+
+    $decided = makeOffer(['status' => DonationOffer::STATUS_REFUSED, 'refused_reason' => 'No longer needed.']);
+    $this->actingAs($user)->postJson("/json/donation-offers/{$decided->id}/note", [
+        'notes' => 'Trying to add a note after the fact.',
+    ])->assertStatus(422);
+});
+
 test('a manage-receiving-only user can log offers but not decide them', function () {
     $recorder = userWithPermissions('manage-receiving');
     $donor = Person::create(['first_name' => 'Test', 'last_name' => 'Donor']);
