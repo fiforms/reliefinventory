@@ -90,7 +90,7 @@ const statusClasses = {
 			<template #thead>
 				<th>Donor</th>
 				<th>Status</th>
-				<th>ETA</th>
+				<th>ETA (Date Range)</th>
 				<th>Description</th>
 			</template>
 
@@ -100,7 +100,7 @@ const statusClasses = {
 					<span class="don_badge" :class="statusClasses[record.status]">{{ statusLabels[record.status] }}</span>
 					<span v-if="record.is_overdue" class="don_badge don_badge_overdue">overdue</span>
 				</td>
-				<td>{{ formatDateTime(record.eta) }}</td>
+				<td>{{ formatEtaRange(record.eta_start, record.eta_end) }}</td>
 				<td>{{ record.description }}</td>
 			</template>
 
@@ -189,12 +189,20 @@ const statusClasses = {
 					</div>
 
 					<div class="ri_fieldset" v-if="record.status === 'offered'">
-						<div class="ri_fieldlabel">Rough ETA (if known):</div>
-						<div class="ri_formcontrol">
+						<div class="ri_fieldlabel">Rough ETA Window (if known):</div>
+						<div class="ri_formcontrol don_etarange">
 							<input
-								type="datetime-local"
-								:value="toDatetimeLocal(record.eta)"
-								@input="record.eta = $event.target.value"
+								type="date"
+								:value="toDateInput(record.eta_start)"
+								@input="record.eta_start = $event.target.value"
+								class="ri_forminput"
+								:disabled="!editing"
+							/>
+							<span>to</span>
+							<input
+								type="date"
+								:value="toDateInput(record.eta_end)"
+								@input="record.eta_end = $event.target.value"
 								class="ri_forminput"
 								:disabled="!editing"
 							/>
@@ -203,12 +211,20 @@ const statusClasses = {
 
 					<template v-if="record.status === 'pending'">
 						<div class="ri_fieldset">
-							<div class="ri_fieldlabel">ETA:</div>
-							<div class="ri_formcontrol">
+							<div class="ri_fieldlabel">ETA Window:</div>
+							<div class="ri_formcontrol don_etarange">
 								<input
-									type="datetime-local"
-									:value="toDatetimeLocal(record.eta)"
-									@input="record.eta = $event.target.value"
+									type="date"
+									:value="toDateInput(record.eta_start)"
+									@input="record.eta_start = $event.target.value"
+									class="ri_forminput"
+									:disabled="!editing"
+								/>
+								<span>to</span>
+								<input
+									type="date"
+									:value="toDateInput(record.eta_end)"
+									@input="record.eta_end = $event.target.value"
 									class="ri_forminput"
 									:disabled="!editing"
 								/>
@@ -308,9 +324,11 @@ const statusClasses = {
 						</h4>
 
 						<div class="ri_fieldset" v-if="decision.action === 'approve'">
-							<div class="ri_fieldlabel">ETA (required):</div>
-							<div class="ri_formcontrol">
-								<input type="datetime-local" v-model="decision.eta" class="ri_forminput" />
+							<div class="ri_fieldlabel">ETA Window (start required):</div>
+							<div class="ri_formcontrol don_etarange">
+								<input type="date" v-model="decision.eta_start" class="ri_forminput" />
+								<span>to</span>
+								<input type="date" v-model="decision.eta_end" class="ri_forminput" />
 							</div>
 						</div>
 						<div class="ri_fieldset" v-if="decision.action === 'approve'">
@@ -399,10 +417,10 @@ export default {
 		},
 		offerSort() {
 			return (a, b) => {
-				if (!a.eta && !b.eta) return 0;
-				if (!a.eta) return 1;
-				if (!b.eta) return -1;
-				return new Date(a.eta) - new Date(b.eta);
+				if (!a.eta_start && !b.eta_start) return 0;
+				if (!a.eta_start) return 1;
+				if (!b.eta_start) return -1;
+				return new Date(a.eta_start) - new Date(b.eta_start);
 			};
 		},
 	},
@@ -412,6 +430,20 @@ export default {
 		},
 		formatDateTime(value) {
 			return value ? new Date(value).toLocaleString() : '';
+		},
+		// Parses a "YYYY-MM-DD" string as a local calendar date, not UTC —
+		// `new Date("YYYY-MM-DD")` is spec'd to parse as UTC midnight, which
+		// can render as the wrong day in a timezone west of UTC.
+		formatLocalDate(value) {
+			if (!value) return '';
+			const [y, m, d] = value.split('-').map(Number);
+			return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		},
+		formatEtaRange(start, end) {
+			if (!start) return '';
+			const startLabel = this.formatLocalDate(start);
+			if (!end || end === start) return startLabel;
+			return `${startLabel} – ${this.formatLocalDate(end)}`;
 		},
 		contactMethodLabel(value) {
 			return { phone: 'Phone', email: 'Email', in_person: 'In Person', other: 'Other' }[value] || value;
@@ -499,18 +531,18 @@ export default {
 		},
 
 		// ---------- decisions: approve/refuse/divert/cancel/match ----------
-		toDatetimeLocal(value) {
-			if (!value) return '';
-			const d = new Date(value);
-			if (isNaN(d)) return '';
-			const pad = (n) => String(n).padStart(2, '0');
-			return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+		// eta_start/eta_end arrive from the server as a plain "YYYY-MM-DD"
+		// string (deliberately uncast on the model — see DonationOffer.php),
+		// which is exactly what <input type="date"> expects.
+		toDateInput(value) {
+			return value || '';
 		},
 		startDecision(record, action) {
 			this.decisionError = null;
 			this.decision = {
 				action,
-				eta: this.toDatetimeLocal(record.eta),
+				eta_start: this.toDateInput(record.eta_start),
+				eta_end: this.toDateInput(record.eta_end),
 				transit_notes: '',
 				refused_reason: '',
 				diverted_to: '',
@@ -524,7 +556,7 @@ export default {
 			this.decisionError = null;
 			const { action } = this.decision;
 
-			if (action === 'approve' && !this.decision.eta) {
+			if (action === 'approve' && !this.decision.eta_start) {
 				this.decisionError = 'Enter an ETA.';
 				return;
 			}
@@ -613,6 +645,14 @@ export default {
 }
 .don_historylog {
 	margin: 0.5em 0;
+}
+.don_etarange {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+}
+.don_etarange .ri_forminput {
+	width: auto;
 }
 .don_logentry {
 	border: 1px solid #e5e7eb;

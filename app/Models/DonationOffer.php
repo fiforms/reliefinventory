@@ -6,6 +6,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -42,15 +43,21 @@ class DonationOffer extends Model
         'person_id',
         'contact_person_id',
         'status',
-        'eta',
+        'eta_start',
+        'eta_end',
         'transit_notes',
         'description',
         'entered_by_person_id',
     ];
 
-    protected $casts = [
-        'eta' => 'datetime',
-    ];
+    // eta_start/eta_end are deliberately NOT cast to Carbon: an Eloquent
+    // 'date' cast serializes to a full ISO datetime string in JSON, which a
+    // browser parses as UTC midnight and can then render as the wrong local
+    // calendar day (e.g. one day early in a timezone west of UTC) — the
+    // same trap Transaction::needed_by_date avoids by staying uncast. Left
+    // as the raw "YYYY-MM-DD" string MySQL returns, which binds directly to
+    // an <input type="date">; use Carbon::parse() here when date math is
+    // actually needed.
 
     public function person()
     {
@@ -78,8 +85,27 @@ class DonationOffer extends Model
     }
 
     /**
+     * Compact display string for the ETA date range — a single date when
+     * eta_end is unset or matches eta_start, otherwise "M j – M j".
+     */
+    public function etaRangeLabel(): ?string
+    {
+        if (! $this->eta_start) {
+            return null;
+        }
+
+        $start = Carbon::parse($this->eta_start);
+
+        if (! $this->eta_end || $this->eta_end === $this->eta_start) {
+            return $start->format('M j');
+        }
+
+        return $start->format('M j').' – '.Carbon::parse($this->eta_end)->format('M j');
+    }
+
+    /**
      * Move to a new status, applying any accompanying column updates (e.g.
-     * eta/transit_notes on accept, refused_reason on refuse, donation_id on
+     * eta_start/eta_end/transit_notes on accept, refused_reason on refuse, donation_id on
      * match) and appending an audit-log row, all in one transaction — the
      * only place this model's status column is ever written. Mirrors
      * Pallet::transitionTo().

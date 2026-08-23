@@ -8,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Models\DonationOffer;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 
 /**
@@ -53,12 +54,12 @@ class DonationOfferController extends Controller
 
         $records->each(function (DonationOffer $offer) {
             $offer->is_overdue = $offer->status === DonationOffer::STATUS_PENDING
-                && $offer->eta !== null
-                && $offer->eta->isPast();
+                && $offer->eta_end !== null
+                && Carbon::parse($offer->eta_end)->isPast();
             // Flat display field for SearchSelect (Receiving.vue's picker),
             // which can't traverse into nested person.full_name.
             $offer->label = ($offer->person->full_name ?? 'Unknown donor')
-                .($offer->eta ? ' — ETA '.$offer->eta->format('M j') : '');
+                .($offer->eta_start ? ' — ETA '.$offer->etaRangeLabel() : '');
         });
 
         return response()->json([
@@ -68,7 +69,8 @@ class DonationOfferController extends Controller
                     'person_id' => null,
                     'contact_person_id' => null,
                     'description' => null,
-                    'eta' => null,
+                    'eta_start' => null,
+                    'eta_end' => null,
                     // isEditableStatus() in DonationOffers.vue keys off this
                     // to enable the donor/contact pickers — without it a new
                     // record's status is undefined and every field renders
@@ -108,7 +110,8 @@ class DonationOfferController extends Controller
             'person_id' => 'required|exists:people,id',
             'contact_person_id' => 'nullable|exists:people,id',
             'description' => 'nullable|string',
-            'eta' => 'nullable|date',
+            'eta_start' => 'nullable|date',
+            'eta_end' => 'nullable|date|after_or_equal:eta_start',
             'contact_method' => 'nullable|in:phone,email,in_person,other',
             'notes' => 'nullable|string',
         ]);
@@ -117,7 +120,8 @@ class DonationOfferController extends Controller
             'person_id' => $data['person_id'],
             'contact_person_id' => $data['contact_person_id'] ?? null,
             'description' => $data['description'] ?? null,
-            'eta' => $data['eta'] ?? null,
+            'eta_start' => $data['eta_start'] ?? null,
+            'eta_end' => $data['eta_end'] ?? null,
             'status' => DonationOffer::STATUS_OFFERED,
             'entered_by_person_id' => Auth::id(),
         ]);
@@ -149,7 +153,8 @@ class DonationOfferController extends Controller
             'person_id' => 'required|exists:people,id',
             'contact_person_id' => 'nullable|exists:people,id',
             'description' => 'nullable|string',
-            'eta' => 'nullable|date',
+            'eta_start' => 'nullable|date',
+            'eta_end' => 'nullable|date|after_or_equal:eta_start',
         ]);
 
         $donationOffer->update($data);
@@ -164,7 +169,8 @@ class DonationOfferController extends Controller
         }
 
         $data = $request->validate([
-            'eta' => 'required|date',
+            'eta_start' => 'required|date',
+            'eta_end' => 'nullable|date|after_or_equal:eta_start',
             'transit_notes' => 'nullable|string',
             'contact_method' => 'nullable|in:phone,email,in_person,other',
             'notes' => 'nullable|string',
@@ -173,7 +179,11 @@ class DonationOfferController extends Controller
         $donationOffer->transitionTo(
             DonationOffer::STATUS_PENDING,
             Auth::id(),
-            ['eta' => $data['eta'], 'transit_notes' => $data['transit_notes'] ?? null],
+            [
+                'eta_start' => $data['eta_start'],
+                'eta_end' => $data['eta_end'] ?? null,
+                'transit_notes' => $data['transit_notes'] ?? null,
+            ],
             $data['contact_method'] ?? null,
             $data['notes'] ?? null,
         );
