@@ -71,10 +71,15 @@ class BuildingSafetyController extends Controller
      */
     public function emergencyOccupancyList(): JsonResponse
     {
+        // Sorted by last name (falling back to the full display name for an
+        // org-only person with no last_name) rather than signed_in_at — a
+        // sweep checking names off this list wants it alphabetical, not in
+        // arrival order.
         $records = VolunteerSignIn::occupying()
             ->with(['person', 'otherCategory'])
-            ->orderBy('signed_in_at')
             ->get()
+            ->sortBy(fn (VolunteerSignIn $signIn) => strtolower($signIn->person?->last_name ?: $signIn->person?->full_name ?: ''))
+            ->values()
             ->map(fn (VolunteerSignIn $signIn) => $this->presentOccupant($signIn));
 
         return response()->json(['records' => $records]);

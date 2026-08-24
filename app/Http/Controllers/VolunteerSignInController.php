@@ -54,10 +54,18 @@ class VolunteerSignInController extends Controller
             return response()->json(['records' => []]);
         }
 
+        // Prefix match on name (not substring) — kiosk operators type from
+        // the start of a first or last name, and substring matching was
+        // pulling in unrelated people whose name merely contained the
+        // typed letters partway through (e.g. "mar" matching "Walmart").
+        // Organization matches the start of *any word* in it rather than a
+        // pure prefix, since those are often searched by an internal word
+        // (e.g. "Cross" for "American Red Cross").
         $people = Person::where(function ($q) use ($query) {
-            $q->where('first_name', 'like', "%{$query}%")
-                ->orWhere('last_name', 'like', "%{$query}%")
-                ->orWhere('organization', 'like', "%{$query}%");
+            $q->where('first_name', 'like', "{$query}%")
+                ->orWhere('last_name', 'like', "{$query}%")
+                ->orWhere('organization', 'like', "{$query}%")
+                ->orWhere('organization', 'like', "% {$query}%");
         })
             ->orderBy('first_name')
             ->orderBy('last_name')

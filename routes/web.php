@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\KioskSetting;
 use App\Models\MenuItem;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
@@ -57,8 +58,10 @@ Route::get('/receiving/offers', function () {
 // this page with nobody logged in — see EnsureKioskAccess. getBreadcrumb()
 // needs a real MenuItem row regardless of auth state, which exists.
 Route::get('/volunteers/kiosk', function () {
-    return Inertia::render('VolunteerKiosk',
-        ['breadcrumb' => Auth::check() ? MenuItem::getBreadcrumb('/volunteers/kiosk') : []]);
+    return Inertia::render('VolunteerKiosk', [
+        'breadcrumb' => Auth::check() ? MenuItem::getBreadcrumb('/volunteers/kiosk') : [],
+        'kioskWelcomeMessage' => KioskSetting::current()->welcome_message,
+    ]);
 })->middleware(['kiosk-access']);
 
 // No MenuItem/breadcrumb — reached only via the profile-menu quick-access
@@ -658,6 +661,13 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-str
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
     Route::get('/pin-login-settings', [PinLoginSettingsController::class, 'show']);
     Route::put('/pin-login-settings', [PinLoginSettingsController::class, 'update']);
+});
+
+// Volunteer kiosk's front-screen welcome message — system-wide config,
+// same gate as every other system-wide toggle.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
+    Route::get('/kiosk-settings', [KioskSettingController::class, 'show']);
+    Route::put('/kiosk-settings', [KioskSettingController::class, 'update']);
 });
 
 // Which specific devices may use PIN unlock — deliberately a narrower,

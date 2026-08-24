@@ -40,6 +40,13 @@ defineProps({
 	breadcrumb: {
 		type: Array,
 	},
+	// Admin-settable location/facility line shown above the "Facility
+	// Sign-In/Sign-Out" tagline — see KioskSetting/KioskSettingController.
+	// Null falls back to a generic greeting.
+	kioskWelcomeMessage: {
+		type: String,
+		default: null,
+	},
 });
 </script>
 
@@ -51,75 +58,105 @@ defineProps({
 	     null here. A bare wrapper with a deliberately unobtrusive "Staff
 	     Login" link is the only way back to the full app. -->
 	<component :is="isAuthenticated ? AuthenticatedLayout : 'div'" :breadcrumb="isAuthenticated ? breadcrumb : undefined">
-		<div class="vk_page">
+		<div class="vk_page" :class="{ vk_page_bare: !isAuthenticated }">
 			<div v-if="!isAuthenticated" class="vk_stafflogin">
 				<a href="/login">Staff Login</a>
 			</div>
-			<div v-if="isAuthenticated && view === 'grid'" class="vk_kioskmode_bar">
-				<button type="button" class="ri_formbutton" :disabled="enablingKioskMode" @click="enableKioskMode">
-					Enable Kiosk Mode
-				</button>
-				<span class="vk_hint">Locks this device to sign-in only, no login required, until someone logs in again.</span>
-			</div>
 
-			<div v-if="view === 'grid' || view === 'safety' || view === 'emergency-list'" class="vk_safetybar">
-				<span>{{ occupancyCount === null ? '…' : occupancyCount }} in the building</span>
-				<button type="button" class="ri_formbutton" @click="openEmergencyList">Emergency List — Current Building Occupancy</button>
-				<!-- No login needed above: a firefighter sweeping the building
-				     can't be expected to know anyone's PIN. Closeout stays
-				     behind staff login, off the front screen, since it's a
-				     routine end-of-day action, not an emergency one. -->
-				<button v-if="isAuthenticated" type="button" class="ri_formbutton" @click="openSafety('closeout')">Confirm Building Empty</button>
-			</div>
+			<div class="vk_shell">
+				<header v-if="view === 'grid'" class="vk_header">
+					<img src="/img/welcome.webp" alt="" class="vk_header_badge" />
+					<h1 class="vk_header_title">Facility Sign-In/Sign-Out</h1>
+					<p v-if="kioskWelcomeMessage" class="vk_header_tagline">{{ kioskWelcomeMessage }}</p>
+				</header>
 
-			<!-- ---------------- default (type-ahead) view ---------------- -->
-			<template v-if="view === 'grid'">
-				<div class="vk_searchbar">
-					<input
-						ref="searchInput"
-						v-model="searchQuery"
-						type="text"
-						class="ri_forminput vk_searchinput"
-						placeholder="Start typing your name"
-						autocomplete="off"
-						autocapitalize="words"
-						autofocus
-					/>
-				</div>
-
-				<div class="vk_secondarybar">
-					<button type="button" class="ri_formbutton" @click="openGuest">Guest</button>
-					<button type="button" class="ri_formbutton" @click="openAddNew">New Volunteer</button>
-				</div>
-
-				<p v-if="searchQuery.trim() && tiles.length === 0" class="vk_hint">
-					No match for "{{ searchQuery }}".
-				</p>
-				<p v-else-if="!searchQuery.trim()" class="vk_hint">Type your name above to sign in or out.</p>
-
-				<div v-if="tiles.length" class="vk_grid">
-					<button
-						v-for="person in tiles"
-						:key="person.id"
-						type="button"
-						class="vk_tile"
-						:class="{ vk_tile_active: !!person.current_sign_in }"
-						@click="selectTile(person)"
-					>
-						<span class="vk_tile_name">{{ personName(person) }}</span>
-						<span v-if="person.current_sign_in" class="vk_tile_status vk_tile_status_in">
-							Signed in since {{ formatTime(person.current_sign_in.signed_in_at) }}
-						</span>
-						<span v-else-if="person.forgotten_sign_in" class="vk_tile_status vk_tile_status_forgotten">
-							Tap to record when you left
-						</span>
-						<span v-else-if="person.last_sign_in" class="vk_tile_status">
-							{{ [person.last_sign_in.agency, person.last_sign_in.description_of_work].filter(Boolean).join(' — ') || 'Tap to sign in' }}
-						</span>
-						<span v-else class="vk_tile_status">Tap to sign in</span>
+				<div v-if="isAuthenticated && view === 'grid'" class="vk_kioskmode_bar">
+					<button type="button" class="ri_formbutton" :disabled="enablingKioskMode" @click="enableKioskMode">
+						Enable Kiosk Mode
 					</button>
+					<span class="vk_hint vk_hint_inline">Locks this device to sign-in only, no login required, until someone logs in again.</span>
 				</div>
-			</template>
+
+				<!-- ---------------- default (type-ahead) view ---------------- -->
+				<template v-if="view === 'grid'">
+					<button
+						type="button"
+						class="ri_formbutton vk_firsttimebtn"
+						:class="{ vk_firsttimebtn_open: showFirstTimeOptions }"
+						@click="showFirstTimeOptions = !showFirstTimeOptions"
+					>
+						First Time Here?
+						<span class="vk_firsttimebtn_chevron" :class="{ vk_firsttimebtn_chevron_open: showFirstTimeOptions }" aria-hidden="true">▾</span>
+					</button>
+					<div v-if="showFirstTimeOptions" class="vk_secondarybar">
+						<button type="button" class="ri_formbutton vk_secondarybtn" @click="openGuest">Guest</button>
+						<button type="button" class="ri_formbutton vk_secondarybtn" @click="openAddNew">New Volunteer</button>
+					</div>
+
+					<p class="vk_instruction">If you've been here before, start typing your name and select your name when it appears</p>
+					<div class="vk_searchbar">
+						<span class="vk_searchicon" aria-hidden="true">🔍</span>
+						<!-- This is the only free-text field on the kiosk's front
+						     screen, so browsers/password managers default to
+						     treating it as a login field and offer to fill/save a
+						     password into it. autocomplete="off" alone is
+						     routinely ignored by Chromium's heuristics, so this
+						     also renames the field away from anything
+						     name/login-shaped, opts out the major extension
+						     managers via their vendor-specific ignore attributes,
+						     and starts the input readonly — removed on first
+						     focus — since Chrome's native save-password prompt
+						     specifically skips fields that were readonly when the
+						     page loaded. -->
+						<input
+							ref="searchInput"
+							v-model="searchQuery"
+							type="search"
+							name="vk-lookup-not-a-login-field"
+							class="ri_forminput vk_searchinput"
+							placeholder="Start typing your name"
+							autocomplete="off"
+							autocapitalize="words"
+							autocorrect="off"
+							spellcheck="false"
+							data-lpignore="true"
+							data-1p-ignore
+							data-bwignore
+							data-form-type="other"
+							readonly
+							@focus="$event.target.removeAttribute('readonly')"
+							autofocus
+						/>
+					</div>
+
+					<p v-if="searchQuery.trim() && tiles.length === 0" class="vk_hint vk_hint_center">
+						No match for "{{ searchQuery }}".
+					</p>
+
+					<div v-if="tiles.length" class="vk_grid">
+						<button
+							v-for="person in tiles"
+							:key="person.id"
+							type="button"
+							class="vk_tile"
+							:class="{ vk_tile_active: !!person.current_sign_in, vk_tile_forgotten: !!person.forgotten_sign_in }"
+							@click="selectTile(person)"
+						>
+							<span class="vk_tile_name">{{ personName(person) }}</span>
+							<span v-if="person.current_sign_in" class="vk_tile_status vk_tile_status_in">
+								<span class="vk_tile_dot" aria-hidden="true"></span>
+								Signed in since {{ formatTime(person.current_sign_in.signed_in_at) }}
+							</span>
+							<span v-else-if="person.forgotten_sign_in" class="vk_tile_status vk_tile_status_forgotten">
+								Tap to record when you left
+							</span>
+							<span v-else-if="person.last_sign_in" class="vk_tile_status">
+								{{ [person.last_sign_in.agency, person.last_sign_in.description_of_work].filter(Boolean).join(' — ') || 'Tap to sign in' }}
+							</span>
+							<span v-else class="vk_tile_status">Tap to sign in</span>
+						</button>
+					</div>
+				</template>
 
 			<!-- ---------------- new volunteer (first-time) ---------------- -->
 			<template v-else-if="view === 'add-new'">
@@ -149,6 +186,17 @@ defineProps({
 				<div class="vk_confirm">
 					<h2 class="vk_confirm_title">Thanks for coming, {{ personName(selected) }}!</h2>
 					<p class="vk_hint">You're signed in. Please check in at the office to complete your first-time sign-in.</p>
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" @click="cancelConfirm">Done</button>
+					</div>
+				</div>
+			</template>
+
+			<!-- ---------------- sign-in thank-you (existing person) ---------------- -->
+			<template v-else-if="view === 'signin-thanks'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Thank you, {{ greetingName(selected) }}!</h2>
+					<p class="vk_hint">Please remember to sign out! Have a great day!</p>
 					<div class="ri_formactions">
 						<button class="ri_defaultbutton" @click="cancelConfirm">Done</button>
 					</div>
@@ -280,6 +328,17 @@ defineProps({
 				</div>
 			</template>
 
+			<!-- ---------------- sign-out thank-you ---------------- -->
+			<template v-else-if="view === 'signout-thanks'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">See you next time, {{ greetingName(selected) }}!</h2>
+					<p class="vk_hint">You're signed out. Thanks for coming!</p>
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" @click="cancelConfirm">Done</button>
+					</div>
+				</div>
+			</template>
+
 			<!-- ---------------- forgotten sign-out (building was cleared) ---------------- -->
 			<template v-else-if="view === 'forgotten-sign-out'">
 				<div class="vk_confirm">
@@ -352,7 +411,8 @@ defineProps({
 			<!-- ---------------- emergency list (no login, no PIN) ---------------- -->
 			<template v-else-if="view === 'emergency-list'">
 				<div class="vk_confirm">
-					<h2 class="vk_confirm_title">Emergency List — Current Building Occupancy</h2>
+					<h2 class="vk_confirm_title">Emergency Roster</h2>
+				<p class="vk_hint">Everyone currently signed in to the building, for use during an evacuation or emergency sweep.</p>
 
 					<p v-if="emergencyListLoading" class="vk_hint">Loading…</p>
 					<p v-else-if="emergencyListError" class="vk_error">{{ emergencyListError }}</p>
@@ -373,6 +433,28 @@ defineProps({
 					</div>
 				</div>
 			</template>
+
+			<!-- Footer — occupancy count + the emergency roster, present on
+			     every screen that isn't already a modal-style confirm/form
+			     (kept off the safety/emergency-list screens themselves so it
+			     doesn't compete with their own back buttons). No login
+			     needed: a firefighter sweeping the building can't be expected
+			     to know anyone's PIN. Closeout stays behind staff login,
+			     off the front screen, since it's a routine end-of-day
+			     action, not an emergency one. -->
+			<div v-if="view === 'grid'" class="vk_footerbar">
+				<span class="vk_footerbar_count">
+					<span class="vk_footerbar_dot" aria-hidden="true"></span>
+					{{ occupancyCount === null ? '…' : occupancyCount }} currently in the building
+				</span>
+				<div class="vk_footerbar_actions">
+					<button type="button" class="ri_formbutton vk_footerbar_btn vk_footerbar_btn_emergency" @click="openEmergencyList">
+						Emergency Roster
+					</button>
+					<button v-if="isAuthenticated" type="button" class="ri_formbutton vk_footerbar_btn" @click="openSafety('closeout')">Confirm Building Empty</button>
+				</div>
+			</div>
+			</div>
 		</div>
 	</component>
 </template>
@@ -383,7 +465,7 @@ import axios from 'axios';
 export default {
 	data() {
 		return {
-			view: 'grid', // 'grid' | 'confirm-in' | 'confirm-out' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'safety' | 'emergency-list'
+			view: 'grid', // 'grid' | 'confirm-in' | 'signin-thanks' | 'confirm-out' | 'signout-thanks' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'safety' | 'emergency-list'
 
 			enablingKioskMode: false,
 
@@ -396,6 +478,9 @@ export default {
 			safetyPin: '',
 			safetySaving: false,
 			safetyError: null,
+
+			showFirstTimeOptions: false,
+			confirmationTimer: null,
 
 			searchQuery: '',
 			searchResults: [],
@@ -478,6 +563,13 @@ export default {
 			const name = [person.first_name, person.last_name].filter(Boolean).join(' ');
 			return name || person.organization || 'Unknown';
 		},
+		// For the "Thank you, ___!" greeting — a first name reads friendlier
+		// than a full name, but falls back to personName() for an org-only
+		// person with no first_name.
+		greetingName(person) {
+			if (!person) return '';
+			return person.first_name || this.personName(person);
+		},
 		formatTime(value) {
 			if (!value) return '';
 			return new Date(value).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' });
@@ -518,6 +610,7 @@ export default {
 			this.view = 'confirm-in';
 		},
 		cancelConfirm() {
+			clearTimeout(this.confirmationTimer);
 			this.view = 'grid';
 			this.selected = null;
 			this.saveError = null;
@@ -527,6 +620,7 @@ export default {
 			this.newGuest = { first_name: '', last_name: '' };
 			this.searchQuery = '';
 			this.searchResults = [];
+			this.showFirstTimeOptions = false;
 			this.$nextTick(() => this.$refs.searchInput?.focus());
 		},
 		openAddNew() {
@@ -586,7 +680,8 @@ export default {
 					expected_departure_at: this.form.expected_departure_at || null,
 				});
 				this.loadOccupancyCount();
-				this.cancelConfirm();
+				this.view = 'signin-thanks';
+				this.confirmationTimer = setTimeout(() => this.cancelConfirm(), 5000);
 			} catch (e) {
 				this.saveError = e.response?.data?.message || 'Could not sign in.';
 			} finally {
@@ -626,7 +721,8 @@ export default {
 			try {
 				await axios.post(`/json/volunteer-sign-ins/${this.selected.current_sign_in.id}/sign-out`);
 				this.loadOccupancyCount();
-				this.cancelConfirm();
+				this.view = 'signout-thanks';
+				this.confirmationTimer = setTimeout(() => this.cancelConfirm(), 5000);
 			} catch (e) {
 				this.saveError = e.response?.data?.message || 'Could not sign out.';
 			} finally {
@@ -706,122 +802,328 @@ export default {
 	},
 	beforeUnmount() {
 		if (this.occupancyPollTimer) clearInterval(this.occupancyPollTimer);
+		clearTimeout(this.confirmationTimer);
 	},
 };
 </script>
 
 <style scoped>
 .vk_page {
-	padding: 1em;
+	--vk_accent: #2563eb;
+	--vk_accent_dark: #1d4ed8;
+	min-height: 100vh;
+	/* Extra bottom padding reserves room for the fixed .vk_footerbar so it
+	   never overlaps the last row of tiles. */
+	padding: 1.5em 1em 7em;
+	background: linear-gradient(160deg, #eef2ff 0%, #f8fafc 45%, #f0fdf4 100%);
+}
+/* Kiosk-lock mode (EnsureKioskAccess, no logged-in staff) fills the whole
+   browser viewport with no app chrome around it, so the gradient should
+   read as the device's own background, not a boxed-in page. */
+.vk_page_bare {
+	min-height: 100vh;
 }
 .vk_stafflogin {
+	max-width: 720px;
+	margin: 0 auto 0.5em;
 	text-align: right;
-	margin-bottom: 0.5em;
 }
 .vk_stafflogin a {
 	font-size: 0.75rem;
-	color: #999;
+	color: #9ca3af;
+}
+.vk_shell {
+	max-width: 720px;
+	margin: 0 auto;
+}
+.vk_header {
+	text-align: center;
+	margin-bottom: 1.5em;
+}
+.vk_header_badge {
+	/* Tailwind's preflight sets img { display: block }, which takes it out
+	   of the text-align: center on .vk_header above — needs its own
+	   centering. */
+	display: block;
+	margin: 0 auto 0.4em;
+	width: 6.5rem;
+	height: 6.5rem;
+	border-radius: 22px;
+	box-shadow: 0 4px 14px rgba(15, 23, 42, 0.15);
+}
+.vk_header_title {
+	font-size: 2rem;
+	font-weight: 800;
+	color: #111827;
+	letter-spacing: -0.01em;
+}
+.vk_header_tagline {
+	color: #6b7280;
+	font-size: 1.05rem;
+	font-weight: 600;
+	margin-top: 0.25em;
 }
 .vk_kioskmode_bar {
 	display: flex;
 	align-items: center;
+	flex-wrap: wrap;
 	gap: 0.75em;
-	margin-bottom: 0.5em;
+	margin-bottom: 0.75em;
 }
-.vk_safetybar {
+/* Pinned to the bottom of the viewport (not just the end of the page
+   content) so occupancy count + the emergency roster are always reachable
+   without scrolling, even once the tile grid grows past one screen. */
+.vk_footerbar {
+	position: fixed;
+	left: 50%;
+	bottom: 1em;
+	transform: translateX(-50%);
+	width: calc(100% - 2em);
+	max-width: 720px;
+	z-index: 20;
 	display: flex;
 	align-items: center;
-	gap: 1em;
-	margin-bottom: 1em;
-	padding: 0.5em 0.75em;
-	background: #f9fafb;
+	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 0.75em 1em;
+	padding: 0.85em 1.1em;
+	background: white;
 	border: 1px solid #e5e7eb;
-	border-radius: 8px;
-	font-weight: 600;
+	border-radius: 16px;
+	box-shadow: 0 4px 16px rgba(15, 23, 42, 0.12);
+}
+.vk_footerbar_count {
+	display: flex;
+	align-items: center;
+	gap: 0.5em;
+	font-weight: 700;
+	color: #111827;
+}
+.vk_footerbar_dot {
+	width: 0.6em;
+	height: 0.6em;
+	border-radius: 50%;
+	background: #10b981;
+	box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.2);
+	flex-shrink: 0;
+}
+.vk_footerbar_actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em;
+}
+.vk_footerbar_btn {
+	font-size: 0.85rem;
+	padding: 0.5em 1em;
+}
+.vk_footerbar_btn_emergency {
+	background-color: #dc2626;
+}
+.vk_footerbar_btn_emergency:hover {
+	background-color: #b91c1c;
+}
+/* Card that holds every non-grid screen (confirm, add-new, guest,
+   safety, emergency list) — gives the kiosk a consistent "panel" feel
+   instead of form fields floating loose on the gradient background. */
+.vk_confirm {
+	max-width: 480px;
+	margin: 0 auto;
+	background: white;
+	border: 1px solid #e5e7eb;
+	border-radius: 16px;
+	padding: 1.75em;
+	box-shadow: 0 8px 24px rgba(15, 23, 42, 0.06);
 }
 .vk_searchbar {
+	position: relative;
 	margin-bottom: 1em;
+}
+.vk_searchicon {
+	position: absolute;
+	left: 1em;
+	top: 50%;
+	transform: translateY(-50%);
+	font-size: 1.2rem;
+	opacity: 0.6;
+	pointer-events: none;
 }
 .vk_searchinput {
 	width: 100%;
-	font-size: 1.2rem;
-	padding: 0.75em;
+	font-size: 1.35rem;
+	padding: 0.9em 1em 0.9em 2.75em;
+	border-radius: 14px;
+	border: 2px solid #e2e8f0;
+	background: white;
+	box-shadow: 0 2px 8px rgba(15, 23, 42, 0.05);
+	transition: border-color 0.15s ease, box-shadow 0.15s ease;
+	/* type="search" pulls in the browser's own search-field chrome (a
+	   round-rect appearance on WebKit, a built-in clear button) that
+	   fights with our own icon/border styling above. */
+	-webkit-appearance: none;
+	appearance: none;
+}
+.vk_searchinput::-webkit-search-cancel-button {
+	-webkit-appearance: none;
+	appearance: none;
+}
+.vk_searchinput:focus {
+	outline: none;
+	border-color: var(--vk_accent);
+	box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.15);
+}
+.vk_firsttimebtn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4em;
+	width: 100%;
+	font-size: 0.95rem;
+	font-weight: 700;
+	color: #374151;
+	background: white;
+	border: 2px dashed #cbd5e1;
+	margin-bottom: 0.75em;
+}
+.vk_firsttimebtn:hover {
+	background: #f8fafc;
+	border-color: #94a3b8;
+}
+.vk_firsttimebtn_open {
+	border-style: solid;
+	border-color: var(--vk_accent);
+	color: var(--vk_accent);
+}
+.vk_firsttimebtn_chevron {
+	display: inline-block;
+	transition: transform 0.15s ease;
+}
+.vk_firsttimebtn_chevron_open {
+	transform: rotate(180deg);
+}
+.vk_instruction {
+	font-size: 0.95rem;
+	font-weight: 600;
+	color: #374151;
+	margin-bottom: 0.5em;
 }
 .vk_secondarybar {
 	display: flex;
-	gap: 0.5em;
-	margin-bottom: 1em;
+	gap: 0.6em;
+	margin-bottom: 1.75em;
+}
+.vk_secondarybtn {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.4em;
+	font-size: 1rem;
+	font-weight: 800;
+	padding: 0.85em 1em;
+	border-radius: 12px;
+	background-color: var(--vk_accent);
+}
+.vk_secondarybtn:hover {
+	background-color: var(--vk_accent_dark);
 }
 .vk_hint {
-	color: #666;
-	margin: 1em 0;
+	color: #6b7280;
+}
+.vk_hint_inline {
+	font-size: 0.8rem;
+}
+.vk_hint_center {
+	text-align: center;
+	margin: 1.5em 0;
 }
 .vk_error {
 	color: #b91c1c;
-	margin: 0.5em 0;
+	background: #fef2f2;
+	border: 1px solid #fecaca;
+	border-radius: 8px;
+	padding: 0.6em 0.9em;
+	margin: 0.75em 0;
 }
 .vk_grid {
 	display: grid;
-	grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-	gap: 0.75em;
+	grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+	gap: 0.85em;
 }
 .vk_tile {
-	min-height: 96px;
+	min-height: 104px;
 	display: flex;
 	flex-direction: column;
 	justify-content: center;
 	align-items: flex-start;
-	gap: 0.35em;
-	border: 1px solid #d1d5db;
-	border-radius: 10px;
+	gap: 0.4em;
+	border: 1px solid #e2e8f0;
+	border-radius: 14px;
 	background: white;
-	padding: 1em;
+	padding: 1.1em;
 	text-align: left;
 	cursor: pointer;
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+	transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
 }
 .vk_tile:hover {
-	background: #f3f4f6;
+	border-color: #cbd5e1;
+	box-shadow: 0 6px 16px rgba(15, 23, 42, 0.08);
+	transform: translateY(-1px);
+}
+.vk_tile:active {
+	transform: translateY(0);
+	box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
 }
 .vk_tile_active {
 	background: #ecfdf5;
 	border-color: #10b981;
 }
-.vk_tile_addnew {
-	border-style: dashed;
-	justify-content: center;
-	align-items: center;
-	text-align: center;
+.vk_tile_forgotten {
+	background: #fffbeb;
+	border-color: #f59e0b;
 }
 .vk_tile_name {
-	font-size: 1.1rem;
-	font-weight: bold;
+	font-size: 1.15rem;
+	font-weight: 700;
+	color: #111827;
 }
 .vk_tile_status {
 	font-size: 0.85rem;
-	color: #666;
+	color: #6b7280;
 }
 .vk_tile_status_in {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
 	color: #047857;
 	font-weight: 600;
+}
+.vk_tile_dot {
+	width: 0.5em;
+	height: 0.5em;
+	border-radius: 50%;
+	background: #10b981;
+	flex-shrink: 0;
 }
 .vk_tile_status_forgotten {
 	color: #b45309;
 	font-weight: 600;
 }
-.vk_confirm {
-	max-width: 480px;
-}
 .vk_confirm_title {
-	font-size: 1.3rem;
-	font-weight: bold;
-	margin-bottom: 0.75em;
+	font-size: 1.4rem;
+	font-weight: 800;
+	color: #111827;
+	margin-bottom: 0.6em;
 }
 .vk_category_choice {
 	display: flex;
 	gap: 0.5em;
 }
+.vk_category_choice .ri_formbutton {
+	flex: 1;
+}
 .vk_choice_active {
-	background: #1f2937;
+	background: var(--vk_accent);
 	color: white;
 }
 .vk_emergencylist {
@@ -831,16 +1133,16 @@ export default {
 	margin: 0 0 1em;
 }
 .vk_emergencylist li {
-	padding: 0.5em 0;
+	padding: 0.6em 0;
 	border-bottom: 1px solid #e5e7eb;
 	font-size: 1.1rem;
 }
 .vk_emergencylist_tag {
 	margin-left: 0.6em;
-	padding: 0.1em 0.6em;
+	padding: 0.15em 0.65em;
 	border-radius: 999px;
 	font-size: 0.75rem;
-	font-weight: 600;
+	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: 0.02em;
 }
@@ -851,5 +1153,32 @@ export default {
 .vk_emergencylist_tag_guest {
 	background: #fef3c7;
 	color: #b45309;
+}
+
+@media (max-width: 480px) {
+	.vk_page {
+		/* Stacked bar (below) is taller than the single-row desktop one,
+		   so it needs more reserved clearance underneath the grid. */
+		padding-bottom: 10em;
+	}
+	.vk_header_title {
+		font-size: 1.6rem;
+	}
+	.vk_confirm {
+		padding: 1.25em;
+		border-radius: 12px;
+	}
+	.vk_footerbar {
+		width: calc(100% - 1.5em);
+		border-radius: 12px;
+		flex-direction: column;
+		align-items: stretch;
+	}
+	.vk_footerbar_actions {
+		justify-content: stretch;
+	}
+	.vk_footerbar_btn {
+		flex: 1;
+	}
 }
 </style>
