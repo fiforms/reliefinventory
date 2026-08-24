@@ -7,12 +7,15 @@
 	not built on RIForm — closer in spirit to DonationSorting.vue's custom
 	session flow than to an admin CRUD form.
 
-	Default view is a scrollable, always-alphabetical tile grid of active
-	volunteers (people.volunteer_active — see the active-window design in
-	the volunteer-hours-tracking-design memory); typing in the search box
-	is a filter layered on top, matching against every person (not just the
-	active roster), so a deactivated regular or a first-time walk-in who
-	already has a Person record can still be found.
+	Redesigned 2026-08-23 per the phone-Claude handoff (see
+	volunteer-kiosk-phone-design-handoff-2026-08-23 memory) to be
+	type-ahead-first rather than browse-first: default view is just a
+	search box, auto-focused, with no tile grid until something's typed —
+	deliberately no tap-from-a-full-list. Matching against every person
+	(not just the active roster) so a deactivated regular or a first-time
+	walk-in who already has a Person record can still be found. Guest and
+	New Volunteer are separate always-visible buttons alongside the search
+	box, not folded into the results.
 
 	One smart tile, same tap target for sign-in and sign-out: a tile shows
 	"signed in since ..." when the person has an open (or
@@ -21,7 +24,9 @@
 	work_site/description_of_work are per-sign-in, not stored on Person
 	(an agency can change visit to visit) — the confirm screen prefills
 	them as a *suggestion* from the person's most recent closed sign-in
-	(last_sign_in), never a stored fact.
+	(last_sign_in), never a stored fact. New Volunteer and Guest skip this
+	confirm screen entirely — they log immediately on their own quick
+	form's submit, per the handoff doc.
 -->
 
 <script setup>
@@ -57,33 +62,42 @@ defineProps({
 				<span class="vk_hint">Locks this device to sign-in only, no login required, until someone logs in again.</span>
 			</div>
 
-			<div v-if="view === 'grid' || view === 'safety'" class="vk_safetybar">
+			<div v-if="view === 'grid' || view === 'safety' || view === 'emergency-list'" class="vk_safetybar">
 				<span>{{ occupancyCount === null ? '…' : occupancyCount }} in the building</span>
-				<button type="button" class="ri_formbutton" @click="openSafety('closeout')">Confirm Building Empty</button>
-				<button type="button" class="ri_formbutton" @click="openSafety(activeRollCallId ? 'close-roll-call' : 'start-roll-call')">
-					{{ activeRollCallId ? 'Close Roll Call' : 'Start Roll Call' }}
-				</button>
+				<button type="button" class="ri_formbutton" @click="openEmergencyList">Emergency List — Current Building Occupancy</button>
+				<!-- No login needed above: a firefighter sweeping the building
+				     can't be expected to know anyone's PIN. Closeout stays
+				     behind staff login, off the front screen, since it's a
+				     routine end-of-day action, not an emergency one. -->
+				<button v-if="isAuthenticated" type="button" class="ri_formbutton" @click="openSafety('closeout')">Confirm Building Empty</button>
 			</div>
 
-			<!-- ---------------- grid view ---------------- -->
+			<!-- ---------------- default (type-ahead) view ---------------- -->
 			<template v-if="view === 'grid'">
 				<div class="vk_searchbar">
 					<input
+						ref="searchInput"
 						v-model="searchQuery"
 						type="text"
 						class="ri_forminput vk_searchinput"
-						placeholder="Search by name — or just scroll to find your tile"
+						placeholder="Start typing your name"
+						autocomplete="off"
+						autocapitalize="words"
 						autofocus
 					/>
 				</div>
 
-				<p v-if="rosterError" class="vk_error">{{ rosterError }}</p>
-				<p v-else-if="rosterLoading" class="vk_hint">Loading…</p>
-				<p v-else-if="tiles.length === 0 && searchQuery.trim()" class="vk_hint">
+				<div class="vk_secondarybar">
+					<button type="button" class="ri_formbutton" @click="openGuest">Guest</button>
+					<button type="button" class="ri_formbutton" @click="openAddNew">New Volunteer</button>
+				</div>
+
+				<p v-if="searchQuery.trim() && tiles.length === 0" class="vk_hint">
 					No match for "{{ searchQuery }}".
 				</p>
+				<p v-else-if="!searchQuery.trim()" class="vk_hint">Type your name above to sign in or out.</p>
 
-				<div class="vk_grid">
+				<div v-if="tiles.length" class="vk_grid">
 					<button
 						v-for="person in tiles"
 						:key="person.id"
@@ -96,37 +110,81 @@ defineProps({
 						<span v-if="person.current_sign_in" class="vk_tile_status vk_tile_status_in">
 							Signed in since {{ formatTime(person.current_sign_in.signed_in_at) }}
 						</span>
+						<span v-else-if="person.forgotten_sign_in" class="vk_tile_status vk_tile_status_forgotten">
+							Tap to record when you left
+						</span>
 						<span v-else-if="person.last_sign_in" class="vk_tile_status">
 							{{ [person.last_sign_in.agency, person.last_sign_in.description_of_work].filter(Boolean).join(' — ') || 'Tap to sign in' }}
 						</span>
 						<span v-else class="vk_tile_status">Tap to sign in</span>
 					</button>
-
-					<button type="button" class="vk_tile vk_tile_addnew" @click="openAddNew">
-						<span class="vk_tile_name">+ Add New</span>
-						<span class="vk_tile_status">Not on the list?</span>
-					</button>
 				</div>
 			</template>
 
-			<!-- ---------------- add new person ---------------- -->
+			<!-- ---------------- new volunteer (first-time) ---------------- -->
 			<template v-else-if="view === 'add-new'">
 				<div class="vk_confirm">
-					<h2 class="vk_confirm_title">New Sign-In</h2>
+					<h2 class="vk_confirm_title">New Volunteer</h2>
+					<p class="vk_hint">First time here? Enter your name below to sign in.</p>
 
 					<div class="ri_formcontrol">
 						<InputLabel value="First Name" />
-						<TextInput v-model="newPerson.first_name" />
+						<TextInput v-model="newPerson.first_name" autocomplete="off" />
 					</div>
 					<div class="ri_formcontrol">
 						<InputLabel value="Last Name" />
-						<TextInput v-model="newPerson.last_name" />
+						<TextInput v-model="newPerson.last_name" autocomplete="off" />
 					</div>
 					<p v-if="addPersonError" class="vk_error">{{ addPersonError }}</p>
 
 					<div class="ri_formactions">
-						<button class="ri_defaultbutton" :disabled="addingPerson" @click="submitAddNew">Continue</button>
+						<button class="ri_defaultbutton" :disabled="addingPerson" @click="submitAddNew">Sign In</button>
 						<button class="ri_formbutton" @click="cancelConfirm">Cancel</button>
+					</div>
+				</div>
+			</template>
+
+			<!-- ---------------- new volunteer thank-you ---------------- -->
+			<template v-else-if="view === 'new-volunteer-thanks'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Thanks for coming, {{ personName(selected) }}!</h2>
+					<p class="vk_hint">You're signed in. Please check in at the office to complete your first-time sign-in.</p>
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" @click="cancelConfirm">Done</button>
+					</div>
+				</div>
+			</template>
+
+			<!-- ---------------- guest ---------------- -->
+			<template v-else-if="view === 'guest'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Guest Sign-In</h2>
+					<p class="vk_hint">For visitors, inspectors, and other one-off guests.</p>
+
+					<div class="ri_formcontrol">
+						<InputLabel value="First Name" />
+						<TextInput v-model="newGuest.first_name" autocomplete="off" />
+					</div>
+					<div class="ri_formcontrol">
+						<InputLabel value="Last Name" />
+						<TextInput v-model="newGuest.last_name" autocomplete="off" />
+					</div>
+					<p v-if="guestError" class="vk_error">{{ guestError }}</p>
+
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" :disabled="addingGuest" @click="submitGuest">Sign In</button>
+						<button class="ri_formbutton" @click="cancelConfirm">Cancel</button>
+					</div>
+				</div>
+			</template>
+
+			<!-- ---------------- guest thank-you ---------------- -->
+			<template v-else-if="view === 'guest-thanks'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Thanks, {{ personName(selected) }}!</h2>
+					<p class="vk_hint">You're signed in as a guest.</p>
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" @click="cancelConfirm">Done</button>
 					</div>
 				</div>
 			</template>
@@ -222,6 +280,34 @@ defineProps({
 				</div>
 			</template>
 
+			<!-- ---------------- forgotten sign-out (building was cleared) ---------------- -->
+			<template v-else-if="view === 'forgotten-sign-out'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Welcome back, {{ personName(selected) }}</h2>
+					<p class="vk_hint">
+						Looks like you forgot to sign out — you were signed in since
+						{{ formatTime(selected.forgotten_sign_in.signed_in_at) }}, and the building's been
+						confirmed empty since then. What time did you leave?
+					</p>
+
+					<div class="ri_formcontrol">
+						<InputLabel value="Time You Left" />
+						<input v-model="forgottenSignOutAt" type="datetime-local" class="ri_forminput" />
+					</div>
+
+					<p v-if="saveError" class="vk_error">{{ saveError }}</p>
+
+					<div class="ri_formactions">
+						<button
+							class="ri_defaultbutton"
+							:disabled="saving || !forgottenSignOutAt"
+							@click="submitForgottenSignOut"
+						>Save &amp; Continue to Sign In</button>
+						<button class="ri_formbutton" @click="cancelConfirm">Cancel</button>
+					</div>
+				</div>
+			</template>
+
 			<!-- ---------------- building safety (PIN-gated) ---------------- -->
 			<template v-else-if="view === 'safety'">
 				<div class="vk_confirm">
@@ -262,6 +348,31 @@ defineProps({
 					</div>
 				</div>
 			</template>
+
+			<!-- ---------------- emergency list (no login, no PIN) ---------------- -->
+			<template v-else-if="view === 'emergency-list'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Emergency List — Current Building Occupancy</h2>
+
+					<p v-if="emergencyListLoading" class="vk_hint">Loading…</p>
+					<p v-else-if="emergencyListError" class="vk_error">{{ emergencyListError }}</p>
+					<p v-else-if="emergencyList.length === 0" class="vk_hint">Nobody is currently signed in.</p>
+					<ul v-else class="vk_emergencylist">
+						<li v-for="occupant in emergencyList" :key="occupant.id">
+							<strong>{{ occupant.name }}</strong>
+							<span
+								class="vk_emergencylist_tag"
+								:class="occupant.category === 'volunteer' ? 'vk_emergencylist_tag_volunteer' : 'vk_emergencylist_tag_guest'"
+							>{{ occupant.why }}</span>
+							<span class="vk_hint"> — signed in {{ formatTime(occupant.signed_in_at) }}</span>
+						</li>
+					</ul>
+
+					<div class="ri_formactions">
+						<button class="ri_formbutton" @click="closeEmergencyList">Back</button>
+					</div>
+				</div>
+			</template>
 		</div>
 	</component>
 </template>
@@ -272,23 +383,19 @@ import axios from 'axios';
 export default {
 	data() {
 		return {
-			view: 'grid', // 'grid' | 'confirm-in' | 'confirm-out' | 'add-new' | 'safety'
+			view: 'grid', // 'grid' | 'confirm-in' | 'confirm-out' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'safety' | 'emergency-list'
 
 			enablingKioskMode: false,
 
 			occupancyCount: null,
-			activeRollCallId: null,
-			safetyAction: null, // 'closeout' | 'start-roll-call' | 'close-roll-call'
+			occupancyPollTimer: null,
+			safetyAction: null, // 'closeout'
 			safetyQuery: '',
 			safetyCandidates: [],
 			safetyOperator: null,
 			safetyPin: '',
 			safetySaving: false,
 			safetyError: null,
-
-			roster: [],
-			rosterLoading: false,
-			rosterError: null,
 
 			searchQuery: '',
 			searchResults: [],
@@ -304,6 +411,16 @@ export default {
 			newPerson: { first_name: '', last_name: '' },
 			addingPerson: false,
 			addPersonError: null,
+
+			newGuest: { first_name: '', last_name: '' },
+			addingGuest: false,
+			guestError: null,
+
+			emergencyList: [],
+			emergencyListLoading: false,
+			emergencyListError: null,
+
+			forgottenSignOutAt: '',
 		};
 	},
 	computed: {
@@ -311,13 +428,11 @@ export default {
 			return !!this.$page.props.auth.user;
 		},
 		tiles() {
-			return this.searchQuery.trim() ? this.searchResults : this.roster;
+			return this.searchQuery.trim() ? this.searchResults : [];
 		},
 		safetyTitle() {
 			return {
 				closeout: 'Confirm Building Empty',
-				'start-roll-call': 'Start Roll Call',
-				'close-roll-call': 'Close Roll Call',
 			}[this.safetyAction] || '';
 		},
 	},
@@ -367,17 +482,9 @@ export default {
 			if (!value) return '';
 			return new Date(value).toLocaleString(undefined, { hour: 'numeric', minute: '2-digit' });
 		},
-		async loadRoster() {
-			this.rosterLoading = true;
-			this.rosterError = null;
-			try {
-				const response = await axios.get('/json/volunteer-sign-ins/roster');
-				this.roster = response.data.records;
-			} catch (e) {
-				this.rosterError = 'Could not load the volunteer list.';
-			} finally {
-				this.rosterLoading = false;
-			}
+		toDatetimeLocal(date) {
+			const pad = (n) => String(n).padStart(2, '0');
+			return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 		},
 		async loadCategories() {
 			const response = await axios.get('/json/volunteer-sign-in-categories');
@@ -392,6 +499,11 @@ export default {
 			this.saveError = null;
 			if (person.current_sign_in) {
 				this.view = 'confirm-out';
+				return;
+			}
+			if (person.forgotten_sign_in) {
+				this.forgottenSignOutAt = this.toDatetimeLocal(new Date());
+				this.view = 'forgotten-sign-out';
 				return;
 			}
 			this.form = this.blankForm();
@@ -411,8 +523,11 @@ export default {
 			this.saveError = null;
 			this.addPersonError = null;
 			this.newPerson = { first_name: '', last_name: '' };
+			this.guestError = null;
+			this.newGuest = { first_name: '', last_name: '' };
 			this.searchQuery = '';
-			this.loadRoster();
+			this.searchResults = [];
+			this.$nextTick(() => this.$refs.searchInput?.focus());
 		},
 		openAddNew() {
 			this.newPerson = { first_name: '', last_name: '' };
@@ -423,14 +538,42 @@ export default {
 			this.addingPerson = true;
 			this.addPersonError = null;
 			try {
-				const response = await axios.post('/json/volunteer-sign-ins/people', this.newPerson);
-				this.selected = response.data.record;
-				this.form = this.blankForm();
-				this.view = 'confirm-in';
+				const personResponse = await axios.post('/json/volunteer-sign-ins/people', this.newPerson);
+				this.selected = personResponse.data.record;
+				await axios.post('/json/volunteer-sign-ins', {
+					person_id: this.selected.id,
+					category: 'volunteer',
+				});
+				this.loadOccupancyCount();
+				this.view = 'new-volunteer-thanks';
 			} catch (e) {
-				this.addPersonError = e.response?.data?.message || 'Could not add this person.';
+				this.addPersonError = e.response?.data?.message || 'Could not sign in.';
 			} finally {
 				this.addingPerson = false;
+			}
+		},
+		openGuest() {
+			this.newGuest = { first_name: '', last_name: '' };
+			this.guestError = null;
+			this.view = 'guest';
+		},
+		async submitGuest() {
+			this.addingGuest = true;
+			this.guestError = null;
+			try {
+				const personResponse = await axios.post('/json/volunteer-sign-ins/guests', this.newGuest);
+				this.selected = personResponse.data.record;
+				await axios.post('/json/volunteer-sign-ins', {
+					person_id: this.selected.id,
+					category: 'other',
+					other_category_text: 'Guest',
+				});
+				this.loadOccupancyCount();
+				this.view = 'guest-thanks';
+			} catch (e) {
+				this.guestError = e.response?.data?.message || 'Could not sign in.';
+			} finally {
+				this.addingGuest = false;
 			}
 		},
 		async submitSignIn() {
@@ -442,9 +585,37 @@ export default {
 					...this.form,
 					expected_departure_at: this.form.expected_departure_at || null,
 				});
+				this.loadOccupancyCount();
 				this.cancelConfirm();
 			} catch (e) {
 				this.saveError = e.response?.data?.message || 'Could not sign in.';
+			} finally {
+				this.saving = false;
+			}
+		},
+		async submitForgottenSignOut() {
+			this.saving = true;
+			this.saveError = null;
+			try {
+				await axios.post(`/json/volunteer-sign-ins/${this.selected.forgotten_sign_in.id}/sign-out`, {
+					signed_out_at: this.forgottenSignOutAt,
+				});
+				this.loadOccupancyCount();
+				// They're at the kiosk tapping their own tile right now, so
+				// go straight into a fresh sign-in rather than back to the
+				// grid — the old row closing out is a correction, not the
+				// thing they came here to do.
+				this.form = this.blankForm();
+				if (this.selected.last_sign_in) {
+					this.form.agency = this.selected.last_sign_in.agency || '';
+					this.form.title_function = this.selected.last_sign_in.title_function || '';
+					this.form.work_site = this.selected.last_sign_in.work_site || '';
+					this.form.description_of_work = this.selected.last_sign_in.description_of_work || '';
+				}
+				this.saveError = null;
+				this.view = 'confirm-in';
+			} catch (e) {
+				this.saveError = e.response?.data?.message || 'Could not save.';
 			} finally {
 				this.saving = false;
 			}
@@ -454,6 +625,7 @@ export default {
 			this.saveError = null;
 			try {
 				await axios.post(`/json/volunteer-sign-ins/${this.selected.current_sign_in.id}/sign-out`);
+				this.loadOccupancyCount();
 				this.cancelConfirm();
 			} catch (e) {
 				this.saveError = e.response?.data?.message || 'Could not sign out.';
@@ -465,7 +637,23 @@ export default {
 		async loadOccupancyCount() {
 			const response = await axios.get('/json/building-safety/occupancy-count');
 			this.occupancyCount = response.data.count;
-			this.activeRollCallId = response.data.active_roll_call_id;
+		},
+		async openEmergencyList() {
+			this.view = 'emergency-list';
+			this.emergencyListLoading = true;
+			this.emergencyListError = null;
+			try {
+				const response = await axios.get('/json/building-safety/emergency-occupancy-list');
+				this.emergencyList = response.data.records;
+			} catch (e) {
+				this.emergencyListError = 'Could not load the occupancy list.';
+			} finally {
+				this.emergencyListLoading = false;
+			}
+		},
+		closeEmergencyList() {
+			this.view = 'grid';
+			this.emergencyList = [];
 		},
 		openSafety(action) {
 			this.safetyAction = action;
@@ -485,13 +673,7 @@ export default {
 			this.safetyError = null;
 			const payload = { person_id: this.safetyOperator.id, pin: this.safetyPin };
 			try {
-				if (this.safetyAction === 'closeout') {
-					await axios.post('/json/building-safety/closeout', payload);
-				} else if (this.safetyAction === 'start-roll-call') {
-					await axios.post('/json/building-safety/roll-calls', payload);
-				} else if (this.safetyAction === 'close-roll-call') {
-					await axios.post(`/json/building-safety/roll-calls/${this.activeRollCallId}/close`, payload);
-				}
+				await axios.post('/json/building-safety/closeout', payload);
 				this.cancelSafety();
 			} catch (e) {
 				this.safetyError = e.response?.data?.message || 'Could not complete this action.';
@@ -515,9 +697,15 @@ export default {
 		},
 	},
 	mounted() {
-		this.loadRoster();
 		this.loadCategories();
 		this.loadOccupancyCount();
+		// Sign-in/out already re-fetches the count directly; this poll only
+		// exists to catch sign-ins/outs happening on another kiosk device
+		// pointed at the same building.
+		this.occupancyPollTimer = setInterval(this.loadOccupancyCount, 180000);
+	},
+	beforeUnmount() {
+		if (this.occupancyPollTimer) clearInterval(this.occupancyPollTimer);
 	},
 };
 </script>
@@ -558,6 +746,11 @@ export default {
 	width: 100%;
 	font-size: 1.2rem;
 	padding: 0.75em;
+}
+.vk_secondarybar {
+	display: flex;
+	gap: 0.5em;
+	margin-bottom: 1em;
 }
 .vk_hint {
 	color: #666;
@@ -611,6 +804,10 @@ export default {
 	color: #047857;
 	font-weight: 600;
 }
+.vk_tile_status_forgotten {
+	color: #b45309;
+	font-weight: 600;
+}
 .vk_confirm {
 	max-width: 480px;
 }
@@ -626,5 +823,33 @@ export default {
 .vk_choice_active {
 	background: #1f2937;
 	color: white;
+}
+.vk_emergencylist {
+	max-width: 640px;
+	list-style: none;
+	padding: 0;
+	margin: 0 0 1em;
+}
+.vk_emergencylist li {
+	padding: 0.5em 0;
+	border-bottom: 1px solid #e5e7eb;
+	font-size: 1.1rem;
+}
+.vk_emergencylist_tag {
+	margin-left: 0.6em;
+	padding: 0.1em 0.6em;
+	border-radius: 999px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+.vk_emergencylist_tag_volunteer {
+	background: #d1fae5;
+	color: #047857;
+}
+.vk_emergencylist_tag_guest {
+	background: #fef3c7;
+	color: #b45309;
 }
 </style>

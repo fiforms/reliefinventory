@@ -24,7 +24,11 @@ const props = defineProps({
   allowscan: {
 	type: Boolean,
 	default: false,
-  }
+  },
+  autocomplete: {
+	type: String,
+	default: undefined,
+  },
 });
 
 const input = ref(null);
@@ -58,6 +62,7 @@ defineExpose({ focus: () => input.value.focus() });
         ref="input"
         :type="type"
         :placeholder="placeholder"
+        :autocomplete="autocomplete"
       />
       <button 
         v-if="allowscan" 

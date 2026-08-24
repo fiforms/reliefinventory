@@ -3,16 +3,45 @@
 
 <script setup>
 import { ref } from 'vue';
+import axios from 'axios';
 import Banner from '@/Components/Banner.vue';
 import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import FeedbackReportModal from '@/Components/FeedbackReportModal.vue';
 import NavLink from '@/Components/NavLink.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
 
 const showingNavigationDropdown = ref(false);
 const showingFeedbackModal = ref(false);
+
+const page = usePage();
+const unreadCount = ref(page.props.notifications.unreadCount);
+const notificationRecords = ref([]);
+const notificationsLoaded = ref(false);
+
+function timeAgo(value) {
+    const seconds = Math.max(0, Math.round((Date.now() - new Date(value)) / 1000));
+    if (seconds < 60) return 'just now';
+    const minutes = Math.round(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.round(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    return `${Math.round(hours / 24)}d ago`;
+}
+
+async function loadNotifications() {
+    const response = await axios.get('/json/notifications');
+    notificationRecords.value = response.data.records;
+    unreadCount.value = response.data.unread_count;
+    notificationsLoaded.value = true;
+}
+
+async function markAllNotificationsRead() {
+    await axios.post('/json/notifications/read-all');
+    notificationRecords.value = notificationRecords.value.map((n) => ({ ...n, read_at: n.read_at || new Date().toISOString() }));
+    unreadCount.value = 0;
+}
 </script>
 
 <template>
@@ -51,6 +80,54 @@ const showingFeedbackModal = ref(false);
                         </div>
 
                         <div class="hidden sm:ms-6 sm:flex sm:items-center">
+                            <!-- Notification Bell -->
+                            <div class="relative ms-3">
+                                <Dropdown align="right" width="96">
+                                    <template #trigger>
+                                        <button
+                                            type="button"
+                                            class="relative inline-flex items-center rounded-md border border-transparent bg-white px-3 py-2 text-sm font-medium leading-4 text-gray-500 transition duration-150 ease-in-out hover:text-gray-700 focus:outline-none"
+                                            @click="loadNotifications"
+                                        >
+                                            🔔
+                                            <span
+                                                v-if="unreadCount > 0"
+                                                class="absolute -top-1 -right-1 inline-flex items-center justify-center rounded-full bg-red-600 px-1.5 py-0.5 text-xs font-bold leading-none text-white"
+                                            >{{ unreadCount }}</span>
+                                        </button>
+                                    </template>
+
+                                    <template #content>
+                                        <div class="flex items-center justify-between px-4 py-2 text-sm font-semibold text-gray-700">
+                                            <span>Notifications</span>
+                                            <button
+                                                v-if="unreadCount > 0"
+                                                type="button"
+                                                class="text-xs font-normal text-indigo-600 hover:underline"
+                                                @click.stop="markAllNotificationsRead"
+                                            >Mark all read</button>
+                                        </div>
+                                        <div class="max-h-96 overflow-y-auto">
+                                            <p v-if="!notificationsLoaded" class="px-4 py-3 text-sm text-gray-500">Loading…</p>
+                                            <p v-else-if="notificationRecords.length === 0" class="px-4 py-3 text-sm text-gray-500">
+                                                No notifications yet.
+                                            </p>
+                                            <div
+                                                v-for="notification in notificationRecords"
+                                                :key="notification.id"
+                                                class="border-t border-gray-100 px-4 py-2 text-sm"
+                                                :class="notification.read_at ? 'text-gray-500' : 'font-medium text-gray-900'"
+                                            >
+                                                <div>
+                                                    {{ notification.data.category_label }} — {{ notification.data.name }}
+                                                </div>
+                                                <div class="text-xs text-gray-400">{{ timeAgo(notification.created_at) }}</div>
+                                            </div>
+                                        </div>
+                                    </template>
+                                </Dropdown>
+                            </div>
+
                             <!-- Settings Dropdown -->
                             <div class="relative ms-3">
                                 <Dropdown align="right" width="48">

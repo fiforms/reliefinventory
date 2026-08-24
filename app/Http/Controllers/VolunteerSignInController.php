@@ -6,9 +6,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\Person;
+use App\Models\User;
 use App\Models\VolunteerSignIn;
+use App\Notifications\KioskCheckInAlert;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Notification;
 
 /**
  * The facility sign-in kiosk's JSON API. See VolunteerSignIn and the
@@ -16,7 +19,7 @@ use Illuminate\Support\Facades\Auth;
  */
 class VolunteerSignInController extends Controller
 {
-    private const WITH = ['currentSignIn', 'lastSignIn'];
+    private const WITH = ['currentSignIn', 'lastSignIn', 'forgottenSignIn'];
 
     /**
      * The kiosk's default tile grid: active volunteers, alphabetical, each
@@ -89,6 +92,29 @@ class VolunteerSignInController extends Controller
     }
 
     /**
+     * Quick-add for a one-off guest (visitor, inspector, state/other
+     * representative — anyone who isn't going to become a searchable
+     * regular). Deliberately NOT flagged is_volunteer/volunteer_active,
+     * unlike quickCreatePerson — a guest never joins the active roster or
+     * shows up in the type-ahead search.
+     */
+    public function quickCreateGuest(Request $request)
+    {
+        $data = $request->validate([
+            'first_name' => 'required_without:last_name|nullable|string|max:255',
+            'last_name' => 'required_without:first_name|nullable|string|max:255',
+        ]);
+
+        $person = Person::create([
+            ...$data,
+            'is_volunteer' => false,
+            'volunteer_active' => false,
+        ]);
+
+        return response()->json(['record' => $person->fresh(self::WITH)], 201);
+    }
+
+    /**
      * Sign a person in. Rejects if they already have an open or
      * pending_confirmation sign-in — that's a sign-out (or a
      * confirm-and-correct), not a second sign-in.
@@ -120,7 +146,34 @@ class VolunteerSignInController extends Controller
             'status' => VolunteerSignIn::STATUS_OPEN,
         ]);
 
+        $this->maybeNotifyCheckIn($signIn);
+
         return response()->json(['record' => $signIn->fresh(['person', 'otherCategory'])], 201);
+    }
+
+    /**
+     * Alert Administrator/Office/Team Leader of a check-in staff should
+     * know about right away: a guest (any 'other'-category sign-in) or a
+     * volunteer's first-ever sign-in. Deliberately skipped for a routine
+     * returning volunteer — an alert on every ordinary sign-in would
+     * quickly become noise nobody reads. "First-ever" is derived from the
+     * data (this person's only VolunteerSignIn row) rather than a
+     * client-supplied flag, since the New Volunteer kiosk flow is the only
+     * path that can produce that state.
+     */
+    private function maybeNotifyCheckIn(VolunteerSignIn $signIn): void
+    {
+        $isGuest = $signIn->category === VolunteerSignIn::CATEGORY_OTHER;
+        $isFirstEverVolunteerSignIn = $signIn->category === VolunteerSignIn::CATEGORY_VOLUNTEER
+            && VolunteerSignIn::where('person_id', $signIn->person_id)->count() === 1;
+
+        if (! $isGuest && ! $isFirstEverVolunteerSignIn) {
+            return;
+        }
+
+        $recipients = User::whereHas('roles', fn ($q) => $q->whereIn('name', ['Administrator', 'Office', 'Team Leader']))->get();
+
+        Notification::send($recipients, new KioskCheckInAlert($signIn));
     }
 
     /**

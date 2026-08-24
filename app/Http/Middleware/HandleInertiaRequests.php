@@ -50,6 +50,9 @@ class HandleInertiaRequests extends Middleware
             'buildingSafety' => [
                 'canView' => (bool) $request->user()?->hasPermission('view-building-occupancy'),
             ],
+            'notifications' => [
+                'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,
+            ],
         ];
     }
 }

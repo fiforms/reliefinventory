@@ -460,6 +460,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function ()
     Route::get('/volunteer-sign-ins/roster', [VolunteerSignInController::class, 'roster']);
     Route::get('/volunteer-sign-ins/search', [VolunteerSignInController::class, 'search']);
     Route::post('/volunteer-sign-ins/people', [VolunteerSignInController::class, 'quickCreatePerson']);
+    Route::post('/volunteer-sign-ins/guests', [VolunteerSignInController::class, 'quickCreateGuest']);
     Route::post('/volunteer-sign-ins', [VolunteerSignInController::class, 'store']);
     Route::post('/volunteer-sign-ins/{volunteerSignIn}/sign-out', [VolunteerSignInController::class, 'signOut']);
     Route::put('/volunteer-sign-ins/{volunteerSignIn}', [VolunteerSignInController::class, 'update']);
@@ -480,14 +481,28 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:certify-v
     Route::post('/volunteer-sign-ins/certify', [VolunteerSignInController::class, 'certify']);
 });
 
-// Building safety (2026-08-23 design pass). Deliberately guest-accessible,
-// no `auth` middleware — closeout/roll-call start/close are PIN-verified
-// internally instead (see BuildingSafetyController), so they work from a
-// locked kiosk with nobody logged in once kiosk lock mode is built; until
-// then they're reachable only through the still-auth-gated kiosk page.
-// None of this depends on Auth::id() the way most of the app does.
-Route::group(['prefix' => 'json'], function () {
+// The notification bell (AuthenticatedLayout.vue) — generic over Laravel's
+// own Notifiable trait, currently only fed by KioskCheckInAlert. Just
+// `auth`, no extra permission key: recipients are whoever the notification
+// was addressed to, scoped naturally via $request->user()->notifications().
+Route::group(['prefix' => 'json', 'middleware' => ['auth']], function () {
+    Route::get('/notifications', [NotificationController::class, 'index']);
+    Route::post('/notifications/{notification}/read', [NotificationController::class, 'markRead']);
+    Route::post('/notifications/read-all', [NotificationController::class, 'markAllRead']);
+});
+
+// Building safety (2026-08-23 design pass). kiosk-access rather than plain
+// `auth` — closeout/roll-call start/close are additionally PIN-verified
+// internally (see BuildingSafetyController), so they work from a locked
+// kiosk with nobody logged in, but reaching them at all still requires
+// either a normal operate-volunteer-kiosk session or a device already in
+// kiosk-lock mode. Was briefly wide open (no middleware at all, so the
+// emergency-occupancy-list endpoint below was leaking full names to
+// anyone on the internet) until this was caught. None of this depends on
+// Auth::id() the way most of the app does.
+Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function () {
     Route::get('/building-safety/occupancy-count', [BuildingSafetyController::class, 'kioskOccupancyCount']);
+    Route::get('/building-safety/emergency-occupancy-list', [BuildingSafetyController::class, 'emergencyOccupancyList']);
     Route::get('/building-safety/kiosk-operators', [BuildingSafetyController::class, 'kioskOperatorCandidates']);
     Route::post('/building-safety/closeout', [BuildingSafetyController::class, 'closeout']);
     Route::post('/building-safety/roll-calls', [BuildingSafetyController::class, 'startRollCall']);

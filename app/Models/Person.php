@@ -202,12 +202,42 @@ class Person extends Model
 
     /**
      * The kiosk grid's per-tile state: an open (or pending_confirmation —
-     * a forgotten sign-out still needing to be resolved) sign-in, if any.
+     * a forgotten sign-out still needing to be resolved) sign-in, if any
+     * — but only if it's within the current building-empty window, i.e.
+     * matches VolunteerSignIn::scopeOccupying(). This is what makes the
+     * tile grid agree with the occupancy count it drives: after a
+     * "Confirm Building Empty" closeout, a tile shouldn't still read
+     * "signed in" for someone whose row predates it. See
+     * forgottenSignIn() for that older-than-the-last-closeout case — the
+     * kiosk offers a "you forgot to sign out" resolution for it instead
+     * of just hiding it (which would otherwise dead-end: store() still
+     * sees the row as open and refuses a fresh sign-in).
      */
     public function currentSignIn()
     {
+        $lastCloseoutAt = BuildingCloseout::max('closed_at');
+
         return $this->hasOne(VolunteerSignIn::class)
             ->whereIn('status', [VolunteerSignIn::STATUS_OPEN, VolunteerSignIn::STATUS_PENDING_CONFIRMATION])
+            ->when($lastCloseoutAt, fn ($q) => $q->where('signed_in_at', '>', $lastCloseoutAt))
+            ->latestOfMany('signed_in_at');
+    }
+
+    /**
+     * An open/pending_confirmation sign-in from before the last building
+     * closeout — the building's been confirmed empty since, but this
+     * person's row was never actually closed out. Surfaced separately
+     * from currentSignIn() so the kiosk can offer a friendly "you forgot
+     * to sign out — what time did you leave?" resolution instead of a
+     * dead-end "already signed in" error on their next sign-in attempt.
+     */
+    public function forgottenSignIn()
+    {
+        $lastCloseoutAt = BuildingCloseout::max('closed_at') ?? '1970-01-01 00:00:00';
+
+        return $this->hasOne(VolunteerSignIn::class)
+            ->whereIn('status', [VolunteerSignIn::STATUS_OPEN, VolunteerSignIn::STATUS_PENDING_CONFIRMATION])
+            ->where('signed_in_at', '<=', $lastCloseoutAt)
             ->latestOfMany('signed_in_at');
     }
 

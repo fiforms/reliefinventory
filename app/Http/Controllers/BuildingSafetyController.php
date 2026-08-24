@@ -63,6 +63,24 @@ class BuildingSafetyController extends Controller
     }
 
     /**
+     * Same data as occupancy(), but guest-accessible (no login, no PIN) —
+     * the kiosk's "Emergency List" button. A firefighter sweeping the
+     * building in an actual emergency can't be expected to know anyone's
+     * PIN; kioskOccupancyCount() deliberately withholds names for the
+     * routine display, but that tradeoff doesn't apply here.
+     */
+    public function emergencyOccupancyList(): JsonResponse
+    {
+        $records = VolunteerSignIn::occupying()
+            ->with(['person', 'otherCategory'])
+            ->orderBy('signed_in_at')
+            ->get()
+            ->map(fn (VolunteerSignIn $signIn) => $this->presentOccupant($signIn));
+
+        return response()->json(['records' => $records]);
+    }
+
+    /**
      * Guest-accessible search for the PIN picker — matches everyone who
      * currently holds operate-volunteer-kiosk, not just whoever's logged
      * in, since the whole point is this doesn't depend on a session.
