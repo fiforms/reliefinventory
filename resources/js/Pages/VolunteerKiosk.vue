@@ -35,6 +35,7 @@ import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import TextArea from '@/Components/TextArea.vue';
 import InputLabel from '@/Components/InputLabel.vue';
+import KioskEnableConfirmModal from '@/Components/KioskEnableConfirmModal.vue';
 
 defineProps({
 	breadcrumb: {
@@ -46,6 +47,12 @@ defineProps({
 	kioskWelcomeMessage: {
 		type: String,
 		default: null,
+	},
+	// Set when login/PIN-unlock just cleared kiosk lock on this device
+	// (?closeout=1) — surfaces "Confirm Building Empty" as a suggestion.
+	showCloseoutPrompt: {
+		type: Boolean,
+		default: false,
 	},
 });
 </script>
@@ -71,7 +78,7 @@ defineProps({
 				</header>
 
 				<div v-if="isAuthenticated && view === 'grid'" class="vk_kioskmode_bar">
-					<button type="button" class="ri_formbutton" :disabled="enablingKioskMode" @click="enableKioskMode">
+					<button type="button" class="ri_formbutton" @click="showKioskConfirmModal = true">
 						Enable Kiosk Mode
 					</button>
 					<span class="vk_hint vk_hint_inline">Locks this device to sign-in only, no login required, until someone logs in again.</span>
@@ -411,6 +418,9 @@ defineProps({
 			<!-- ---------------- emergency list (no login, no PIN) ---------------- -->
 			<template v-else-if="view === 'emergency-list'">
 				<div class="vk_confirm">
+					<div class="ri_formactions" style="margin-bottom: 1em;">
+						<button class="ri_formbutton" @click="closeEmergencyList">Back</button>
+					</div>
 					<h2 class="vk_confirm_title">Emergency Roster</h2>
 				<p class="vk_hint">Everyone currently signed in to the building, for use during an evacuation or emergency sweep.</p>
 
@@ -430,6 +440,63 @@ defineProps({
 
 					<div class="ri_formactions">
 						<button class="ri_formbutton" @click="closeEmergencyList">Back</button>
+					</div>
+				</div>
+			</template>
+
+			<!-- ---------------- end-of-day closeout: decision ---------------- -->
+			<template v-else-if="view === 'closeout-decision'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">Welcome Back</h2>
+					<p class="vk_hint">
+						This device was in kiosk mode. Is this an end-of-day closeout?
+					</p>
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" @click="openCloseoutReview">Yes — Walk Through Closeout</button>
+						<button class="ri_formbutton" @click="dismissCloseoutPrompt">Not Now</button>
+					</div>
+				</div>
+			</template>
+
+			<!-- ---------------- end-of-day closeout: review ---------------- -->
+			<template v-else-if="view === 'closeout-review'">
+				<div class="vk_confirm">
+					<h2 class="vk_confirm_title">End-of-Day Closeout</h2>
+					<p class="vk_hint">
+						Everyone currently signed in — sign out anyone who's leaving now, then confirm the building is
+						empty whenever you're ready.
+					</p>
+
+					<p v-if="closeoutRosterLoading" class="vk_hint">Loading…</p>
+					<p v-else-if="closeoutRosterError" class="vk_error">{{ closeoutRosterError }}</p>
+					<p v-else-if="closeoutRoster.length === 0" class="vk_hint">Nobody is currently signed in.</p>
+					<ul v-else class="vk_closeoutroster">
+						<li v-for="occupant in closeoutRoster" :key="occupant.id" class="vk_closeoutroster_row">
+							<div>
+								<strong>{{ occupant.name }}</strong>
+								<span class="vk_hint"> — signed in {{ formatTime(occupant.signed_in_at) }}</span>
+							</div>
+							<button
+								type="button"
+								class="ri_formbutton"
+								:disabled="signingOutId === occupant.id"
+								@click="signOutFromCloseout(occupant)"
+							>{{ signingOutId === occupant.id ? 'Signing Out…' : 'Sign Out' }}</button>
+						</li>
+					</ul>
+
+					<!-- Informational, never blocking — the roster can be stale
+					     or the person closing may already know better; the
+					     Confirm button below stays enabled either way. -->
+					<p v-if="!closeoutRosterLoading && closeoutRoster.length > 0" class="vk_closeout_warning">
+						{{ closeoutRoster.length }} {{ closeoutRoster.length === 1 ? 'person is' : 'people are' }} still
+						listed as in the building. Sign them out above, or confirm the building is empty anyway if
+						that's not accurate.
+					</p>
+
+					<div class="ri_formactions">
+						<button class="ri_defaultbutton" @click="openSafety('closeout', 'closeout-review')">Confirm Building Empty</button>
+						<button class="ri_formbutton" @click="view = 'grid'">Back</button>
 					</div>
 				</div>
 			</template>
@@ -457,6 +524,15 @@ defineProps({
 			</div>
 		</div>
 	</component>
+
+	<!-- Same shared confirm modal the Setup menu tile uses (Dashboard.vue) —
+	     this is the on-page "Enable Kiosk Mode" button's entry point into it,
+	     for someone already here rather than tapping the tile. -->
+	<KioskEnableConfirmModal
+		:show="showKioskConfirmModal"
+		@close="showKioskConfirmModal = false"
+		@enabled="() => (window.location.href = '/volunteers/kiosk')"
+	/>
 </template>
 
 <script>
@@ -465,13 +541,19 @@ import axios from 'axios';
 export default {
 	data() {
 		return {
-			view: 'grid', // 'grid' | 'confirm-in' | 'signin-thanks' | 'confirm-out' | 'signout-thanks' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'safety' | 'emergency-list'
+			view: 'grid', // 'grid' | 'confirm-in' | 'signin-thanks' | 'confirm-out' | 'signout-thanks' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'safety' | 'emergency-list' | 'closeout-decision' | 'closeout-review'
 
-			enablingKioskMode: false,
+			showKioskConfirmModal: false,
+
+			closeoutRoster: [],
+			closeoutRosterLoading: false,
+			closeoutRosterError: null,
+			signingOutId: null,
 
 			occupancyCount: null,
 			occupancyPollTimer: null,
 			safetyAction: null, // 'closeout'
+			safetyReturnView: 'grid',
 			safetyQuery: '',
 			safetyCandidates: [],
 			safetyOperator: null,
@@ -751,8 +833,9 @@ export default {
 			this.view = 'grid';
 			this.emergencyList = [];
 		},
-		openSafety(action) {
+		openSafety(action, returnView = 'grid') {
 			this.safetyAction = action;
+			this.safetyReturnView = returnView;
 			this.safetyQuery = '';
 			this.safetyCandidates = [];
 			this.safetyOperator = null;
@@ -761,7 +844,10 @@ export default {
 			this.view = 'safety';
 		},
 		cancelSafety() {
-			this.view = 'grid';
+			// Cancelling PIN entry goes back to wherever this was opened from
+			// (the closeout review screen, or the plain grid) — a completed
+			// closeout always lands on the grid instead, see submitSafetyAction.
+			this.view = this.safetyReturnView;
 			this.loadOccupancyCount();
 		},
 		async submitSafetyAction() {
@@ -770,27 +856,62 @@ export default {
 			const payload = { person_id: this.safetyOperator.id, pin: this.safetyPin };
 			try {
 				await axios.post('/json/building-safety/closeout', payload);
-				this.cancelSafety();
+				this.view = 'grid';
+				this.loadOccupancyCount();
 			} catch (e) {
 				this.safetyError = e.response?.data?.message || 'Could not complete this action.';
 			} finally {
 				this.safetySaving = false;
 			}
 		},
-
-		async enableKioskMode() {
-			if (!confirm('This will log you out and lock this device to sign-in only. Continue?')) {
-				return;
-			}
-			this.enablingKioskMode = true;
+		// ---------------- end-of-day closeout review (?closeout=1) ----------------
+		// A dedicated screen, not a dismissable banner — walks whoever's
+		// closing up through what's actually needed: see who's still
+		// listed in, sign people out right here (handy when a group is
+		// leaving together), and only then decide to confirm the building
+		// empty. Never blocks that confirm on the roster being empty —
+		// the warning is informational, the choice stays with the person
+		// closing (they may know the roster's stale, or be confirming
+		// deliberately with people still shown).
+		openCloseoutReview() {
+			this.view = 'closeout-review';
+			this.loadCloseoutRoster();
+		},
+		dismissCloseoutPrompt() {
+			// Landing here at all only happens because a staff login/PIN-
+			// unlock just cleared kiosk lock (see mounted()) — "Not Now"
+			// means they're not doing closeout right now either, so send
+			// them on to Setup (where the Volunteer Kiosk tile that got
+			// them into kiosk mode in the first place lives) rather than
+			// leaving them sitting on the kiosk sign-in/out grid itself.
+			window.location.href = '/dashboard#setup';
+		},
+		async loadCloseoutRoster() {
+			this.closeoutRosterLoading = true;
+			this.closeoutRosterError = null;
 			try {
-				await axios.post('/json/volunteer-kiosk/enable-lock');
-				window.location.href = '/volunteers/kiosk';
+				const response = await axios.get('/json/building-safety/emergency-occupancy-list');
+				this.closeoutRoster = response.data.records;
 			} catch (e) {
-				alert(e.response?.data?.message || 'Could not enable kiosk mode.');
-				this.enablingKioskMode = false;
+				this.closeoutRosterError = 'Could not load who is currently in the building.';
+			} finally {
+				this.closeoutRosterLoading = false;
 			}
 		},
+		async signOutFromCloseout(occupant) {
+			this.signingOutId = occupant.id;
+			this.closeoutRosterError = null;
+			try {
+				await axios.post(`/json/volunteer-sign-ins/${occupant.id}/sign-out`);
+				await this.loadCloseoutRoster();
+				this.loadOccupancyCount();
+			} catch (e) {
+				this.closeoutRosterError = e.response?.data?.message || 'Could not sign that person out.';
+			} finally {
+				this.signingOutId = null;
+			}
+		},
+
 	},
 	mounted() {
 		this.loadCategories();
@@ -799,6 +920,13 @@ export default {
 		// exists to catch sign-ins/outs happening on another kiosk device
 		// pointed at the same building.
 		this.occupancyPollTimer = setInterval(this.loadOccupancyCount, 180000);
+
+		// A staff login/PIN-unlock just cleared kiosk lock on this device
+		// (?closeout=1) — open straight onto the decision screen instead of
+		// the plain grid, see openCloseoutReview()/dismissCloseoutPrompt().
+		if (this.showCloseoutPrompt && this.isAuthenticated) {
+			this.view = 'closeout-decision';
+		}
 	},
 	beforeUnmount() {
 		if (this.occupancyPollTimer) clearInterval(this.occupancyPollTimer);
@@ -869,6 +997,37 @@ export default {
 	flex-wrap: wrap;
 	gap: 0.75em;
 	margin-bottom: 0.75em;
+}
+.vk_closeoutroster {
+	list-style: none;
+	margin: 0 0 1em;
+	padding: 0;
+	text-align: left;
+	max-height: 45vh;
+	overflow-y: auto;
+	border: 1px solid #e5e7eb;
+	border-radius: 0.5em;
+}
+.vk_closeoutroster_row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.75em;
+	padding: 0.7em 0.9em;
+	border-bottom: 1px solid #f1f5f9;
+}
+.vk_closeoutroster_row:last-child {
+	border-bottom: none;
+}
+.vk_closeout_warning {
+	background: #fffbeb;
+	border: 1px solid #fde68a;
+	border-radius: 0.5em;
+	color: #92400e;
+	font-size: 0.85rem;
+	padding: 0.75em 1em;
+	margin: 0 0 1em;
+	text-align: left;
 }
 /* Pinned to the bottom of the viewport (not just the end of the page
    content) so occupancy count + the emergency roster are always reachable

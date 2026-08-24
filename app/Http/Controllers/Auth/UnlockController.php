@@ -140,9 +140,13 @@ class UnlockController extends Controller
         // especially — otherwise a person who's been actively working
         // could still get bumped mid-shift at the original login's expiry).
         $pinLogin->grantTrust($device, $person->id);
-        $pinLogin->clearKioskMode($device);
+        $wasKiosk = $pinLogin->clearKioskMode($device);
 
-        return response()->json(['redirect' => route('dashboard')]);
+        // See AuthenticatedSessionController::store — same "land back on the
+        // kiosk page, don't force it" handling for a device coming out of lock.
+        return response()->json([
+            'redirect' => $wasKiosk ? '/volunteers/kiosk?closeout=1' : route('dashboard'),
+        ]);
     }
 
     private function badgeRecentlyVerified(Request $request, int $personId): bool

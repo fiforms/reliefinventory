@@ -73,7 +73,14 @@ class AuthenticatedSessionController extends Controller
         // reasoning (device approval + per-person grant).
         $device = $pinLogin->resolveDevice($request);
         $pinLogin->grantTrust($device, $user->id);
-        $pinLogin->clearKioskMode($device);
+        $wasKiosk = $pinLogin->clearKioskMode($device);
+
+        // A device coming out of kiosk lock lands back on the kiosk page
+        // itself (with "Confirm Building Empty" offered there, not forced)
+        // rather than the dashboard — see volunteer-kiosk-phone-design memory.
+        if ($wasKiosk) {
+            return redirect('/volunteers/kiosk?closeout=1');
+        }
 
         return redirect()->intended(route('dashboard', absolute: false));
     }

@@ -35,11 +35,15 @@ class MenuItem extends Model
      */
     public static function getBreadcrumb($url)
     {
-
-        $menuItem = self::where('link_url', $url)->first();
+        // Matched on the path only, ignoring any query string on the stored
+        // link_url (e.g. the Volunteer Kiosk tile's "/volunteers/kiosk?enable=1")
+        // — callers always pass the plain path, and the breadcrumb itself
+        // should link to the plain page rather than re-triggering whatever
+        // one-time query-driven behavior the tile's own link carries.
+        $menuItem = self::whereRaw("SUBSTRING_INDEX(link_url, '?', 1) = ?", [$url])->first();
 
         $breadcrumbs = [[
-            'href' => $menuItem->link_url,
+            'href' => $url,
             'title' => $menuItem->link_text,
         ]];
 

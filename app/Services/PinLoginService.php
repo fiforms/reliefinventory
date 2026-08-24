@@ -156,13 +156,20 @@ class PinLoginService
      * Called after any successful real login (password or PIN) — a kiosk
      * device stops being one the instant someone's actually signed in on
      * it, so "getting back to the real app" is just logging in, nothing
-     * separate to remember or undo.
+     * separate to remember or undo. Returns whether the device actually
+     * was in kiosk mode, so callers can route someone returning from a
+     * locked kiosk back to the kiosk page (with its "Confirm Building
+     * Empty" action available) instead of straight to the dashboard.
      */
-    public function clearKioskMode(TrustedDevice $device): void
+    public function clearKioskMode(TrustedDevice $device): bool
     {
         if ($device->kiosk_mode) {
             $device->update(['kiosk_mode' => false]);
+
+            return true;
         }
+
+        return false;
     }
 
     public function activeGrant(TrustedDevice $device, int $personId): ?DeviceTrustGrant

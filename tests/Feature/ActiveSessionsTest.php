@@ -66,7 +66,45 @@ test('the login history json endpoint requires the admin-system permission', fun
         ->assertForbidden();
 });
 
-test('login history lists recorded logins newest first', function () {
+test('login history with no person_id shows only the most recent login per person', function () {
+    $ann = User::factory()->create(['first_name' => 'Ann', 'last_name' => 'Active']);
+    $bob = User::factory()->create(['first_name' => 'Bob', 'last_name' => 'Busy']);
+
+    LoginHistory::create([
+        'person_id' => $ann->id,
+        'method' => 'password',
+        'ip_address' => '10.0.0.1',
+        'user_agent' => 'test',
+        'logged_in_at' => now()->subMinute(),
+    ]);
+    LoginHistory::create([
+        'person_id' => $ann->id,
+        'method' => 'pin',
+        'ip_address' => '10.0.0.2',
+        'user_agent' => 'test',
+        'logged_in_at' => now(),
+    ]);
+    LoginHistory::create([
+        'person_id' => $bob->id,
+        'method' => 'password',
+        'ip_address' => '10.0.0.3',
+        'user_agent' => 'test',
+        'logged_in_at' => now()->subSeconds(30),
+    ]);
+
+    $response = $this->actingAs(userWithPermissions('admin-system'))
+        ->get('/json/login-history');
+
+    $response->assertOk();
+    $rows = collect($response->json('history'));
+
+    expect($rows)->toHaveCount(2);
+    expect($rows->first()['name'])->toBe('Ann Active');
+    expect($rows->first()['method'])->toBe('pin');
+    expect($rows->last()['name'])->toBe('Bob Busy');
+});
+
+test('login history with a person_id returns that person\'s full history', function () {
     $person = User::factory()->create(['first_name' => 'Ann', 'last_name' => 'Active']);
 
     LoginHistory::create([
@@ -85,7 +123,7 @@ test('login history lists recorded logins newest first', function () {
     ]);
 
     $response = $this->actingAs(userWithPermissions('admin-system'))
-        ->get('/json/login-history');
+        ->get('/json/login-history?person_id='.$person->id);
 
     $response->assertOk();
     $rows = collect($response->json('history'));

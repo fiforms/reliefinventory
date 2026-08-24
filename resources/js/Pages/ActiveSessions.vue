@@ -15,9 +15,12 @@
 	rather than being detected explicitly.
 
 	Below the active-sessions table is a separate, permanent Login History
-	section (LoginHistory model, /json/login-history) — the most recent
-	successful logins (both password and PIN-unlock), which unlike the
-	table above never age out.
+	section (LoginHistory model, /json/login-history) — one row per person
+	showing their most recent successful login (both password and
+	PIN-unlock), which unlike the table above never ages out. Tap a row to
+	expand that person's full login history (fetched on demand via
+	/json/login-history?person_id=...) rather than pre-loading every login
+	for every person up front.
 -->
 
 <script setup>
@@ -41,6 +44,11 @@ const lastRefreshed = ref(null);
 const history = ref([]);
 const historyError = ref('');
 const historyLoading = ref(true);
+
+const expandedPersonId = ref(null);
+const personHistory = ref([]);
+const personHistoryError = ref('');
+const personHistoryLoading = ref(false);
 
 let pollTimer = null;
 
@@ -77,8 +85,106 @@ function agoText(iso) {
 	return `${minutes}m ago`;
 }
 
+// Lightweight, dependency-free UA summary ("Safari 17.5 on macOS 10.15.7")
+// for display — the raw string stays available (tap to expand) for
+// whenever the short form isn't enough to tell devices apart.
+// Windows NT 10.0 covers both Windows 10 and 11 (browsers don't expose
+// which); we label it "Windows 10" since that's what most UA parsers do.
+function uaSummary(ua) {
+	if (!ua) return '—';
+
+	const match1 = (re) => ua.match(re)?.[1];
+	const majorOf = (v) => v?.split('.')[0];
+
+	let os = 'Unknown OS';
+	let osVersion = '';
+	if (/iPhone|iPad|iPod/.test(ua)) {
+		os = 'iOS';
+		osVersion = match1(/OS (\d+[_.]\d+(?:[_.]\d+)?) like Mac OS X/)?.replace(/_/g, '.');
+	} else if (/Android/.test(ua)) {
+		os = 'Android';
+		osVersion = match1(/Android (\d+(?:\.\d+)*)/);
+	} else if (/Mac OS X/.test(ua)) {
+		os = 'macOS';
+		osVersion = match1(/Mac OS X (\d+[_.]\d+(?:[_.]\d+)?)/)?.replace(/_/g, '.');
+	} else if (/Windows/.test(ua)) {
+		os = 'Windows';
+		const windowsVersions = { '10.0': '10', '6.3': '8.1', '6.2': '8', '6.1': '7' };
+		const nt = match1(/Windows NT (\d+\.\d+)/);
+		osVersion = windowsVersions[nt] || nt || '';
+	} else if (/Linux/.test(ua)) {
+		os = 'Linux';
+	}
+
+	let browser = 'Unknown browser';
+	let browserVersion = '';
+	if (/Edg\//.test(ua)) {
+		browser = 'Edge';
+		browserVersion = majorOf(match1(/Edg\/(\d+(?:\.\d+)*)/));
+	} else if (/OPR\//.test(ua)) {
+		browser = 'Opera';
+		browserVersion = majorOf(match1(/OPR\/(\d+(?:\.\d+)*)/));
+	} else if (/CriOS\//.test(ua)) {
+		browser = 'Chrome';
+		browserVersion = majorOf(match1(/CriOS\/(\d+(?:\.\d+)*)/));
+	} else if (/Chrome\//.test(ua)) {
+		browser = 'Chrome';
+		browserVersion = majorOf(match1(/Chrome\/(\d+(?:\.\d+)*)/));
+	} else if (/FxiOS\//.test(ua)) {
+		browser = 'Firefox';
+		browserVersion = majorOf(match1(/FxiOS\/(\d+(?:\.\d+)*)/));
+	} else if (/Firefox\//.test(ua)) {
+		browser = 'Firefox';
+		browserVersion = majorOf(match1(/Firefox\/(\d+(?:\.\d+)*)/));
+	} else if (/Version\/.*Safari\//.test(ua)) {
+		browser = 'Safari';
+		browserVersion = match1(/Version\/(\d+(?:\.\d+)*)/);
+	} else if (/Safari\//.test(ua)) {
+		browser = 'Safari';
+	}
+
+	const browserLabel = browserVersion ? `${browser} ${browserVersion}` : browser;
+	const osLabel = osVersion ? `${os} ${osVersion}` : os;
+
+	return `${browserLabel} on ${osLabel}`;
+}
+
+// Tap-to-expand for the raw user-agent string, keyed by login_history id —
+// separate from expandedPersonId (which expands a person's full history)
+// so tapping one doesn't fight with the other.
+const expandedUserAgentIds = ref(new Set());
+function toggleUserAgent(id) {
+	const next = new Set(expandedUserAgentIds.value);
+	if (next.has(id)) next.delete(id);
+	else next.add(id);
+	expandedUserAgentIds.value = next;
+}
+
 function methodLabel(method) {
 	return method === 'pin' ? 'PIN unlock' : 'Password';
+}
+
+async function toggleExpanded(entry) {
+	if (expandedPersonId.value === entry.person_id) {
+		expandedPersonId.value = null;
+		return;
+	}
+
+	expandedPersonId.value = entry.person_id;
+	personHistory.value = [];
+	personHistoryError.value = '';
+	personHistoryLoading.value = true;
+
+	try {
+		const response = await axios.get('/json/login-history', {
+			params: { person_id: entry.person_id, limit: 200 },
+		});
+		personHistory.value = response.data.history;
+	} catch (e) {
+		personHistoryError.value = e.response?.data?.message || 'Could not load login history.';
+	} finally {
+		personHistoryLoading.value = false;
+	}
 }
 
 onMounted(() => {
@@ -162,20 +268,75 @@ const sortedSessions = computed(() =>
 						<tr class="text-left text-gray-500 border-b">
 							<th class="py-2 pr-4">Name</th>
 							<th class="py-2 pr-4">Method</th>
-							<th class="py-2 pr-4">Logged In</th>
+							<th class="py-2 pr-4">Last Login</th>
+							<th class="py-2 pr-4">Device / Browser</th>
 							<th class="py-2 pr-4">IP</th>
 						</tr>
 					</thead>
 					<tbody>
-						<tr v-for="entry in history" :key="entry.id" class="border-b last:border-0">
-							<td class="py-2 pr-4 font-medium">{{ entry.name }}</td>
-							<td class="py-2 pr-4 text-gray-600">{{ methodLabel(entry.method) }}</td>
-							<td class="py-2 pr-4 text-gray-600">
-								{{ new Date(entry.logged_in_at).toLocaleString() }}
-								<span class="text-gray-400">({{ agoText(entry.logged_in_at) }})</span>
-							</td>
-							<td class="py-2 pr-4 font-mono text-xs text-gray-400">{{ entry.ip_address || '—' }}</td>
-						</tr>
+						<template v-for="entry in history" :key="entry.id">
+							<tr
+								class="border-b last:border-0 cursor-pointer hover:bg-gray-50"
+								@click="toggleExpanded(entry)"
+							>
+								<td class="py-2 pr-4 font-medium">
+									<span class="text-gray-400 inline-block w-3">{{
+										expandedPersonId === entry.person_id ? '▾' : '▸'
+									}}</span>
+									{{ entry.name }}
+								</td>
+								<td class="py-2 pr-4 text-gray-600">{{ methodLabel(entry.method) }}</td>
+								<td class="py-2 pr-4 text-gray-600">{{ new Date(entry.logged_in_at).toLocaleString() }}</td>
+								<td
+									class="py-2 pr-4 text-xs text-gray-400 max-w-[16rem] cursor-pointer"
+									:title="entry.user_agent"
+									@click.stop="toggleUserAgent(entry.id)"
+								>
+									<span v-if="expandedUserAgentIds.has(entry.id)" class="whitespace-normal break-all">
+										{{ entry.user_agent || '—' }}
+									</span>
+									<span v-else class="truncate block hover:text-gray-600">{{ uaSummary(entry.user_agent) }}</span>
+								</td>
+								<td class="py-2 pr-4 font-mono text-xs text-gray-400">{{ entry.ip_address || '—' }}</td>
+							</tr>
+							<tr v-if="expandedPersonId === entry.person_id" class="border-b last:border-0 bg-gray-50">
+								<td colspan="5" class="py-3 px-4">
+									<div v-if="personHistoryError" class="text-red-800 text-xs">
+										{{ personHistoryError }}
+									</div>
+									<div v-else-if="personHistoryLoading" class="text-gray-500 text-xs">Loading…</div>
+									<table v-else class="min-w-full text-xs">
+										<thead>
+											<tr class="text-left text-gray-500 border-b">
+												<th class="py-1 pr-4">Method</th>
+												<th class="py-1 pr-4">Logged In</th>
+												<th class="py-1 pr-4">Device / Browser</th>
+												<th class="py-1 pr-4">IP</th>
+											</tr>
+										</thead>
+										<tbody>
+											<tr v-for="past in personHistory" :key="past.id" class="border-b last:border-0">
+												<td class="py-1 pr-4 text-gray-600">{{ methodLabel(past.method) }}</td>
+												<td class="py-1 pr-4 text-gray-600">
+													{{ new Date(past.logged_in_at).toLocaleString() }}
+												</td>
+												<td
+													class="py-1 pr-4 text-gray-400 max-w-[16rem] cursor-pointer"
+													:title="past.user_agent"
+													@click="toggleUserAgent(past.id)"
+												>
+													<span v-if="expandedUserAgentIds.has(past.id)" class="whitespace-normal break-all">
+														{{ past.user_agent || '—' }}
+													</span>
+													<span v-else class="truncate block hover:text-gray-600">{{ uaSummary(past.user_agent) }}</span>
+												</td>
+												<td class="py-1 pr-4 font-mono text-gray-400">{{ past.ip_address || '—' }}</td>
+											</tr>
+										</tbody>
+									</table>
+								</td>
+							</tr>
+						</template>
 					</tbody>
 				</table>
 			</section>

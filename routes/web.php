@@ -61,6 +61,10 @@ Route::get('/volunteers/kiosk', function () {
     return Inertia::render('VolunteerKiosk', [
         'breadcrumb' => Auth::check() ? MenuItem::getBreadcrumb('/volunteers/kiosk') : [],
         'kioskWelcomeMessage' => KioskSetting::current()->welcome_message,
+        // ?closeout=1 (a device just coming out of kiosk lock via login/PIN
+        // unlock — see PinLoginService::clearKioskMode) surfaces the
+        // "Confirm Building Empty" action as a suggestion, not a forced step.
+        'showCloseoutPrompt' => request()->boolean('closeout'),
     ]);
 })->middleware(['kiosk-access']);
 

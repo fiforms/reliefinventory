@@ -26,6 +26,17 @@
          </div>
        </div>
      </div>
+
+     <!-- Confirming here, before ever navigating, is deliberate — see
+          KioskEnableConfirmModal's doc comment. Tapping the Volunteer Kiosk
+          tile (see navigate()) opens this in place instead of loading
+          VolunteerKiosk.vue's authenticated view first just to show a modal
+          on top of it. -->
+     <KioskEnableConfirmModal
+       :show="showKioskConfirmModal"
+       @close="showKioskConfirmModal = false"
+       @enabled="onKioskModeEnabled"
+     />
    </AuthenticatedLayout>
 </template>
 
@@ -33,14 +44,22 @@
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
+import KioskEnableConfirmModal from '@/Components/KioskEnableConfirmModal.vue';
 
 import axios from 'axios';
+
+// Special-cased rather than a generic "confirm before navigating" menu
+// flag (no admin-editable-menu behavior exists yet to drive that) — see
+// KioskEnableConfirmModal's doc comment for why this tile in particular
+// confirms in place instead of navigating first.
+const KIOSK_MODE_TILE_URL = '/volunteers/kiosk';
 
 export default {
   name: "MenuComponent",
   components: {
     AuthenticatedLayout,
-    Head
+    Head,
+    KioskEnableConfirmModal,
   },
   data() {
     return {
@@ -48,6 +67,7 @@ export default {
 	  currentPage: null,
 	  route: "",
 	  breadcrumb: [],
+	  showKioskConfirmModal: false,
     };
   },
   created() {
@@ -78,6 +98,10 @@ export default {
       }
     },
     navigate(url,newWindow) {
+	  if (url === KIOSK_MODE_TILE_URL && !newWindow) {
+		  this.showKioskConfirmModal = true;
+		  return;
+	  }
 	  if (url.startsWith('#')) {
 		if(newWindow) return false;
 	    const targetPage = this.pages.find(page => page.hashtag === url.substring(1));
@@ -101,15 +125,32 @@ export default {
 		}
 	  }
 	},
+	onKioskModeEnabled() {
+	  // Backend already logged the operator out (KioskModeController::enable);
+	  // a hard navigation is what re-requests this URL as a guest and lands
+	  // directly on the real kiosk screen — no authenticated stop along the way.
+	  window.location.href = KIOSK_MODE_TILE_URL;
+	},
 	// Clusters a page's menu_items into sections by group_label, preserving
 	// each item's own `order`. Ungrouped items (group_label null — every
 	// page besides Setup, today) come back as a single labelless group, so
 	// the template renders the same flat grid as before with no heading.
+	//
+	// An unlabeled item encountered *after* grouping has already started
+	// (e.g. the trailing "Return" tile on a page that also has labeled
+	// groups) joins the last group instead of opening its own row — each
+	// group renders as its own flex-wrap row, so giving it a fresh
+	// (labelless) group forced it onto a lonely row of its own even when
+	// there was space beside the last tile above it.
 	menuGroups(page) {
 	  const groups = [];
 	  const byLabel = new Map();
 	  for (const item of page.menu_items) {
 		const label = item.group_label || null;
+		if (label === null && groups.length) {
+		  groups[groups.length - 1].items.push(item);
+		  continue;
+		}
 		if (!byLabel.has(label)) {
 		  const group = { label, items: [] };
 		  byLabel.set(label, group);
