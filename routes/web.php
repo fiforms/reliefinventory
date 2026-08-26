@@ -5,8 +5,10 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\KioskLocation;
 use App\Models\KioskSetting;
 use App\Models\MenuItem;
+use App\Services\PinLoginService;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -58,9 +60,21 @@ Route::get('/receiving/offers', function () {
 // this page with nobody logged in — see EnsureKioskAccess. getBreadcrumb()
 // needs a real MenuItem row regardless of auth state, which exists.
 Route::get('/volunteers/kiosk', function () {
+    // Location comes from THIS device (set when kiosk mode was enabled on
+    // it), never a single global setting — falls back to the sole active
+    // location if there's only one and this device hasn't been assigned
+    // one yet (e.g. an operator viewing the page before ever enabling
+    // kiosk mode here).
+    $device = app(PinLoginService::class)->deviceFromCookie(request());
+    $activeLocations = KioskLocation::where('active', true)->get();
+    $location = $device?->kioskLocation ?: ($activeLocations->count() === 1 ? $activeLocations->first() : null);
+
     return Inertia::render('VolunteerKiosk', [
         'breadcrumb' => Auth::check() ? MenuItem::getBreadcrumb('/volunteers/kiosk') : [],
-        'kioskWelcomeMessage' => KioskSetting::current()->welcome_message,
+        'kioskLocationId' => $location?->id,
+        'kioskLocationName' => $location?->name,
+        'kioskWelcomeMessage' => $location?->welcome_message,
+        'idleResetMinutes' => KioskSetting::current()->idle_reset_minutes,
         // ?closeout=1 (a device just coming out of kiosk lock via login/PIN
         // unlock — see PinLoginService::clearKioskMode) surfaces the
         // "Confirm Building Empty" action as a suggestion, not a forced step.
@@ -126,6 +140,11 @@ Route::get('/setup/system', function () {
 Route::get('/setup/active-sessions', function () {
     return Inertia::render('ActiveSessions',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/active-sessions')]);
+})->middleware(['auth', 'permission:admin-system']);
+
+Route::get('/setup/kiosk-settings', function () {
+    return Inertia::render('KioskSettings',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/kiosk-settings')]);
 })->middleware(['auth', 'permission:admin-system']);
 
 // Gated loosely at the route level (general-access — the page itself
@@ -472,8 +491,15 @@ Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function ()
     Route::post('/volunteer-sign-ins/{volunteerSignIn}/sign-out', [VolunteerSignInController::class, 'signOut']);
     Route::put('/volunteer-sign-ins/{volunteerSignIn}', [VolunteerSignInController::class, 'update']);
 
-    Route::get('/volunteer-sign-in-categories', [VolunteerSignInCategoryController::class, 'index']);
-    Route::post('/volunteer-sign-in-categories', [VolunteerSignInCategoryController::class, 'store']);
+    // Read-only, filtered to the requesting device/kiosk's own location —
+    // management (store) of this list lives in the admin-system group
+    // below, alongside the rest of the Kiosk Settings page.
+    Route::get('/sign-in-categories', [SignInCategoryController::class, 'index']);
+
+    // Agency/Task suggestion lists (non-sensitive, no location scoping) —
+    // read here so the kiosk device itself can populate its type-ahead;
+    // management (store) lives in the admin-system group below.
+    Route::get('/kiosk-suggestions', [KioskSuggestionController::class, 'index']);
 });
 
 // Enabling kiosk mode itself requires a real logged-in session (you can't
@@ -482,6 +508,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function ()
 // kiosk-access.
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:operate-volunteer-kiosk']], function () {
     Route::post('/volunteer-kiosk/enable-lock', [KioskModeController::class, 'enable']);
+    Route::get('/kiosk-locations/active', [KioskLocationController::class, 'active']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:certify-volunteer-hours']], function () {
@@ -667,11 +694,22 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::put('/pin-login-settings', [PinLoginSettingsController::class, 'update']);
 });
 
-// Volunteer kiosk's front-screen welcome message — system-wide config,
-// same gate as every other system-wide toggle.
+// Kiosk Settings page (2026-08-26): behavior settings, locations, guest
+// types (sign_in_categories, management side), and agency/task
+// suggestions. All system-wide config, same gate as every other
+// system-wide toggle.
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
     Route::get('/kiosk-settings', [KioskSettingController::class, 'show']);
     Route::put('/kiosk-settings', [KioskSettingController::class, 'update']);
+
+    Route::get('/kiosk-locations', [KioskLocationController::class, 'index']);
+    Route::post('/kiosk-locations', [KioskLocationController::class, 'store']);
+    Route::put('/kiosk-locations/{kioskLocation}', [KioskLocationController::class, 'update']);
+
+    Route::post('/kiosk-suggestions', [KioskSuggestionController::class, 'store']);
+
+    Route::get('/kiosk-locations/{kioskLocation}/sign-in-categories', [SignInCategoryController::class, 'forLocation']);
+    Route::post('/sign-in-categories', [SignInCategoryController::class, 'store']);
 });
 
 // Which specific devices may use PIN unlock — deliberately a narrower,

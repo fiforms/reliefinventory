@@ -23,6 +23,7 @@ class TrustedDevice extends Model
         'kiosk_mode',
         'kiosk_mode_enabled_at',
         'kiosk_mode_enabled_by_person_id',
+        'kiosk_location_id',
     ];
 
     protected $casts = [
@@ -41,6 +42,11 @@ class TrustedDevice extends Model
     public function kioskModeEnabledBy()
     {
         return $this->belongsTo(Person::class, 'kiosk_mode_enabled_by_person_id');
+    }
+
+    public function kioskLocation()
+    {
+        return $this->belongsTo(KioskLocation::class);
     }
 
     public function grants()

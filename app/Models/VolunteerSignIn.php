@@ -55,7 +55,7 @@ class VolunteerSignIn extends Model
 
     public function otherCategory()
     {
-        return $this->belongsTo(VolunteerSignInCategory::class, 'other_category_id');
+        return $this->belongsTo(SignInCategory::class, 'other_category_id');
     }
 
     public function certifiedBy()

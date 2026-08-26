@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\KioskLocation;
 use App\Services\PinLoginService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -23,6 +24,20 @@ class KioskModeController extends Controller
 {
     public function enable(Request $request, PinLoginService $pinLogin): JsonResponse
     {
+        $activeLocations = KioskLocation::where('active', true)->get();
+
+        $locationId = $request->integer('location_id') ?: null;
+        if ($locationId && ! $activeLocations->contains('id', $locationId)) {
+            return response()->json(['message' => 'That location is not available.'], 422);
+        }
+        if (! $locationId) {
+            if ($activeLocations->count() === 1) {
+                $locationId = $activeLocations->first()->id;
+            } elseif ($activeLocations->count() > 1) {
+                return response()->json(['message' => 'Choose which location this kiosk is at.'], 422);
+            }
+        }
+
         $device = $pinLogin->resolveDevice($request);
 
         if (! $pinLogin->enableKioskMode($device, $request->user()->id)) {
@@ -32,6 +47,8 @@ class KioskModeController extends Controller
                     : 'PIN unlock must be enabled system-wide before a device can run as a kiosk.',
             ], 422);
         }
+
+        $device->update(['kiosk_location_id' => $locationId]);
 
         Auth::guard('web')->logout();
         $request->session()->invalidate();

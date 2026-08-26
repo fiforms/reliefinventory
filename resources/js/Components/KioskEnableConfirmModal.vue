@@ -15,7 +15,7 @@
 -->
 
 <script setup>
-import { ref } from 'vue';
+import { ref, watch } from 'vue';
 import axios from 'axios';
 import Modal from '@/Components/Modal.vue';
 
@@ -30,6 +30,22 @@ const emit = defineEmits(['close', 'enabled']);
 
 const enabling = ref(false);
 const error = ref(null);
+
+// Only shown/asked when there's more than one active location — a
+// single-site install (still the common case) never sees this.
+const locations = ref([]);
+const locationId = ref(null);
+
+watch(() => props.show, async (show) => {
+	if (!show) return;
+	try {
+		const response = await axios.get('/json/kiosk-locations/active');
+		locations.value = response.data.records;
+		locationId.value = locations.value.length === 1 ? locations.value[0].id : null;
+	} catch (e) {
+		locations.value = [];
+	}
+});
 
 function cancel() {
 	if (enabling.value) return;
@@ -51,7 +67,7 @@ async function confirm() {
 	enabling.value = true;
 	error.value = null;
 	try {
-		await axios.post('/json/volunteer-kiosk/enable-lock');
+		await axios.post('/json/volunteer-kiosk/enable-lock', { location_id: locationId.value });
 		emit('enabled');
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not enable kiosk mode.';
@@ -68,9 +84,16 @@ async function confirm() {
 				This will log you out and lock this device to sign-in/sign-out only — no login required — until
 				someone logs back in.
 			</p>
+			<label v-if="locations.length > 1" class="ri_formcontrol">
+				<span class="text-gray-700">Which location is this kiosk at?</span>
+				<select v-model.number="locationId" class="ri_forminput">
+					<option :value="null">— Choose —</option>
+					<option v-for="location in locations" :key="location.id" :value="location.id">{{ location.name }}</option>
+				</select>
+			</label>
 			<p v-if="error" class="kecm_error">{{ error }}</p>
 			<div class="ri_formactions">
-				<button type="button" class="ri_defaultbutton" :disabled="enabling" @click="confirm">
+				<button type="button" class="ri_defaultbutton" :disabled="enabling || (locations.length > 1 && !locationId)" @click="confirm">
 					{{ enabling ? 'Enabling…' : 'Enable Kiosk Mode' }}
 				</button>
 				<button type="button" class="ri_formbutton" :disabled="enabling" @click="cancel">Cancel</button>

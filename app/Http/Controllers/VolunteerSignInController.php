@@ -132,7 +132,7 @@ class VolunteerSignInController extends Controller
         $data = $request->validate([
             'person_id' => 'required|exists:people,id',
             'category' => 'required|in:'.VolunteerSignIn::CATEGORY_VOLUNTEER.','.VolunteerSignIn::CATEGORY_OTHER,
-            'other_category_id' => 'nullable|exists:volunteer_sign_in_categories,id',
+            'other_category_id' => 'nullable|exists:sign_in_categories,id',
             'other_category_text' => 'nullable|string|max:255',
             'agency' => 'nullable|string|max:255',
             'title_function' => 'nullable|string|max:255',
@@ -217,7 +217,7 @@ class VolunteerSignInController extends Controller
     {
         $data = $request->validate([
             'category' => 'sometimes|in:'.VolunteerSignIn::CATEGORY_VOLUNTEER.','.VolunteerSignIn::CATEGORY_OTHER,
-            'other_category_id' => 'nullable|exists:volunteer_sign_in_categories,id',
+            'other_category_id' => 'nullable|exists:sign_in_categories,id',
             'other_category_text' => 'nullable|string|max:255',
             'agency' => 'nullable|string|max:255',
             'title_function' => 'nullable|string|max:255',

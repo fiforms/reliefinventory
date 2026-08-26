@@ -49,10 +49,6 @@ const settings = reactive({
 	keep_yearly: 3,
 });
 
-const kioskSettings = reactive({ welcome_message: '' });
-const savingKiosk = ref(false);
-const kioskSavedAt = ref(null);
-
 const dayNames = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
 
 let pollTimer = null;
@@ -172,25 +168,6 @@ async function saveSettings() {
 	}
 }
 
-async function fetchKioskSettings() {
-	const response = await axios.get('/json/kiosk-settings');
-	Object.assign(kioskSettings, response.data.settings);
-}
-
-async function saveKioskSettings() {
-	savingKiosk.value = true;
-	error.value = '';
-	try {
-		const response = await axios.put('/json/kiosk-settings', kioskSettings);
-		Object.assign(kioskSettings, response.data.settings);
-		kioskSavedAt.value = new Date();
-	} catch (e) {
-		error.value = e.response?.data?.message || 'Could not save the kiosk welcome message.';
-	} finally {
-		savingKiosk.value = false;
-	}
-}
-
 function formatStamp(stamp) {
 	// 20260814-112703 -> 2026-08-14 11:27 (server time)
 	const m = stamp?.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/);
@@ -211,7 +188,6 @@ function formatBytes(bytes) {
 }
 
 onMounted(() => fetchStatus().catch(() => { error.value = 'Could not load system status.'; }));
-onMounted(() => fetchKioskSettings().catch(() => { error.value = 'Could not load kiosk settings.'; }));
 onUnmounted(stopPolling);
 </script>
 
@@ -223,32 +199,6 @@ onUnmounted(stopPolling);
 
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>
 			<div v-if="notice" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3">{{ notice }}</div>
-
-			<!-- Volunteer kiosk -->
-			<section class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Volunteer Kiosk</h2>
-				<label class="block text-sm">
-					<span class="text-gray-700">Welcome banner</span>
-					<input
-						type="text"
-						maxlength="255"
-						v-model="kioskSettings.welcome_message"
-						placeholder="Welcome!"
-						class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-					/>
-				</label>
-				<div class="flex gap-3 items-center">
-					<PrimaryButton :disabled="savingKiosk" @click="saveKioskSettings">
-						{{ savingKiosk ? 'Saving…' : 'Save' }}
-					</PrimaryButton>
-					<span v-if="kioskSavedAt" class="text-sm text-green-700">Saved {{ kioskSavedAt.toLocaleTimeString() }}</span>
-				</div>
-				<p class="text-xs text-gray-500">
-					Shown as the headline on the volunteer sign-in kiosk (/volunteers/kiosk), above the
-					"Facility Sign-In/Sign-Out" tagline — e.g. a location name like "Welcome to the
-					Statesville Warehouse". Leave blank for a generic "Welcome!".
-				</p>
-			</section>
 
 			<div v-if="!status" class="text-gray-500">Loading system status…</div>
 

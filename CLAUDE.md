@@ -251,6 +251,36 @@ its own one-time provisioning step per server, same as the backup timer's instal
 `systemctl daemon-reload`, `systemctl enable --now reliefinventory-volunteer-sync.timer`. Not yet done on
 any server as of 2026-08-23 (feature still in development on the `volunteer-hours-kiosk` branch).
 
+### Kiosk Settings (`/setup/kiosk-settings`, `admin-system`) — real multi-location support
+
+`KioskLocation` (2026-08-26) replaced the single global `kiosk_settings.welcome_message` with real
+locations: each has its own `name` (required kiosk header) and `welcome_message` (optional banner,
+shown only when non-blank — no generic "Welcome!" filler). Which location a given kiosk device shows
+lives on `TrustedDevice::kiosk_location_id`, assigned when kiosk mode is enabled on that device
+(`KioskModeController::enable` auto-picks the sole active location, or requires an explicit
+`location_id` when more than one exists — `KioskEnableConfirmModal.vue` only shows the picker in that
+case) — never read from a single global setting, so multiple physical kiosks can each show their own
+site. `kiosk_settings` itself now only holds `idle_reset_minutes` (inactivity timeout before the kiosk
+screen resets to the welcome/grid view; null means never).
+
+`VolunteerSignInCategory`/`volunteer_sign_in_categories` were renamed to `SignInCategory`/
+`sign_in_categories` in the same pass — the "volunteer" prefix was never accurate (it already backed
+the non-volunteer "Other category" picker), and the list now does double duty as the kiosk's per-location
+**Guest type** picker (Maintenance/Repair, FEMA, State, ...), shown only in the quick Guest sign-in flow,
+always alongside a free-text "Other". Uniqueness is scoped to `(kiosk_location_id, name)`, not a bare
+name, since the same type can exist at more than one location.
+
+`KioskSuggestion` (`kiosk_suggestions`, `kind` = `agency`|`task`) backs type-ahead `<datalist>`
+suggestions on the kiosk's Agency and Title/Function fields — global, not per-location (unlike guest
+types), since both fields stay free text regardless of what's suggested.
+
+A static kiosk-exit PIN and a "required building safety"/"required expected departure" toggle were
+both considered and deliberately **not** built: leaving kiosk mode already goes through a real login
+(no separate secret needed, see `EnsureKioskAccess`), and building safety is a facility-wide
+roll-call/closeout process an operator starts, not a per-sign-in gate a settings toggle could
+meaningfully check. A per-person custom message shown at sign-in confirmation (e.g. "please check in
+with the office") was also raised and is unbuilt — idea-stage only, no design done yet.
+
 ## Conventions to follow
 
 - Set audit/actor fields (`person_id_user`, etc.) from `Auth::id()` server-side in controllers — never

@@ -16,7 +16,7 @@ class KioskSetting extends Model
     protected $table = 'kiosk_settings';
 
     protected $fillable = [
-        'welcome_message',
+        'idle_reset_minutes',
     ];
 
     public static function current(): self

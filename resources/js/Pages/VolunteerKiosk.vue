@@ -41,11 +41,27 @@ defineProps({
 	breadcrumb: {
 		type: Array,
 	},
-	// Admin-settable location/facility line shown above the "Facility
-	// Sign-In/Sign-Out" tagline — see KioskSetting/KioskSettingController.
-	// Null falls back to a generic greeting.
+	// This device's assigned KioskLocation (see KioskLocation/
+	// TrustedDevice::kiosk_location_id) — null if none is resolved yet
+	// (e.g. more than one active location exists and this device hasn't
+	// had kiosk mode enabled on it).
+	kioskLocationId: {
+		type: Number,
+		default: null,
+	},
+	kioskLocationName: {
+		type: String,
+		default: null,
+	},
+	// That location's optional banner line — shown only when non-blank.
 	kioskWelcomeMessage: {
 		type: String,
+		default: null,
+	},
+	// Minutes of inactivity before the kiosk resets to this view — null
+	// means never (see KioskSetting::idle_reset_minutes).
+	idleResetMinutes: {
+		type: Number,
 		default: null,
 	},
 	// Set when login/PIN-unlock just cleared kiosk lock on this device
@@ -74,6 +90,7 @@ defineProps({
 				<header v-if="view === 'grid'" class="vk_header">
 					<img src="/img/welcome.webp" alt="" class="vk_header_badge" />
 					<h1 class="vk_header_title">Facility Sign-In/Sign-Out</h1>
+					<p v-if="kioskLocationName" class="vk_header_location">{{ kioskLocationName }}</p>
 					<p v-if="kioskWelcomeMessage" class="vk_header_tagline">{{ kioskWelcomeMessage }}</p>
 				</header>
 
@@ -224,6 +241,17 @@ defineProps({
 						<InputLabel value="Last Name" />
 						<TextInput v-model="newGuest.last_name" autocomplete="off" />
 					</div>
+					<div class="ri_formcontrol">
+						<InputLabel value="Guest Type" />
+						<select v-model="newGuest.other_category_id" class="ri_forminput">
+							<option :value="null">— Choose or type below —</option>
+							<option v-for="cat in otherCategories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+						</select>
+					</div>
+					<div class="ri_formcontrol">
+						<InputLabel value="Or describe (free text)" />
+						<TextInput v-model="newGuest.other_category_text" placeholder="e.g. State Representative" />
+					</div>
 					<p v-if="guestError" class="vk_error">{{ guestError }}</p>
 
 					<div class="ri_formactions">
@@ -283,12 +311,18 @@ defineProps({
 
 					<div class="ri_formcontrol">
 						<InputLabel value="Agency" />
-						<TextInput v-model="form.agency" placeholder="e.g. American Red Cross" />
+						<input v-model="form.agency" list="vk_agency_suggestions" class="ri_forminput" placeholder="e.g. American Red Cross" />
+						<datalist id="vk_agency_suggestions">
+							<option v-for="s in agencySuggestions" :key="s.id" :value="s.value" />
+						</datalist>
 					</div>
 
 					<div class="ri_formcontrol">
 						<InputLabel value="Title / Function (optional — professional services only)" />
-						<TextInput v-model="form.title_function" />
+						<input v-model="form.title_function" list="vk_task_suggestions" class="ri_forminput" />
+						<datalist id="vk_task_suggestions">
+							<option v-for="s in taskSuggestions" :key="s.id" :value="s.value" />
+						</datalist>
 					</div>
 
 					<div class="ri_formcontrol">
@@ -563,12 +597,15 @@ export default {
 
 			showFirstTimeOptions: false,
 			confirmationTimer: null,
+			idleTimer: null,
 
 			searchQuery: '',
 			searchResults: [],
 			searchTimer: null,
 
 			otherCategories: [],
+			agencySuggestions: [],
+			taskSuggestions: [],
 
 			selected: null,
 			form: this.blankForm(),
@@ -579,7 +616,7 @@ export default {
 			addingPerson: false,
 			addPersonError: null,
 
-			newGuest: { first_name: '', last_name: '' },
+			newGuest: this.blankGuest(),
 			addingGuest: false,
 			guestError: null,
 
@@ -640,6 +677,9 @@ export default {
 				expected_departure_at: '',
 			};
 		},
+		blankGuest() {
+			return { first_name: '', last_name: '', other_category_id: null, other_category_text: '' };
+		},
 		personName(person) {
 			if (!person) return '';
 			const name = [person.first_name, person.last_name].filter(Boolean).join(' ');
@@ -661,8 +701,18 @@ export default {
 			return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 		},
 		async loadCategories() {
-			const response = await axios.get('/json/volunteer-sign-in-categories');
+			const response = await axios.get('/json/sign-in-categories', {
+				params: { kiosk_location_id: this.kioskLocationId || undefined },
+			});
 			this.otherCategories = response.data.records;
+		},
+		async loadSuggestions() {
+			const [agencyResponse, taskResponse] = await Promise.all([
+				axios.get('/json/kiosk-suggestions', { params: { kind: 'agency' } }),
+				axios.get('/json/kiosk-suggestions', { params: { kind: 'task' } }),
+			]);
+			this.agencySuggestions = agencyResponse.data.records;
+			this.taskSuggestions = taskResponse.data.records;
 		},
 		async runSearch(query) {
 			const response = await axios.get('/json/volunteer-sign-ins/search', { params: { q: query } });
@@ -699,7 +749,7 @@ export default {
 			this.addPersonError = null;
 			this.newPerson = { first_name: '', last_name: '' };
 			this.guestError = null;
-			this.newGuest = { first_name: '', last_name: '' };
+			this.newGuest = this.blankGuest();
 			this.searchQuery = '';
 			this.searchResults = [];
 			this.showFirstTimeOptions = false;
@@ -729,7 +779,7 @@ export default {
 			}
 		},
 		openGuest() {
-			this.newGuest = { first_name: '', last_name: '' };
+			this.newGuest = this.blankGuest();
 			this.guestError = null;
 			this.view = 'guest';
 		},
@@ -737,12 +787,17 @@ export default {
 			this.addingGuest = true;
 			this.guestError = null;
 			try {
-				const personResponse = await axios.post('/json/volunteer-sign-ins/guests', this.newGuest);
+				const { first_name, last_name, other_category_id, other_category_text } = this.newGuest;
+				const personResponse = await axios.post('/json/volunteer-sign-ins/guests', { first_name, last_name });
 				this.selected = personResponse.data.record;
 				await axios.post('/json/volunteer-sign-ins', {
 					person_id: this.selected.id,
 					category: 'other',
-					other_category_text: 'Guest',
+					other_category_id,
+					// Falls back to a plain "Guest" only if the visitor picked/typed
+					// nothing at all — keeps prior behavior when no guest types are
+					// configured yet for this location.
+					other_category_text: other_category_id || other_category_text ? other_category_text : 'Guest',
 				});
 				this.loadOccupancyCount();
 				this.view = 'guest-thanks';
@@ -911,10 +966,20 @@ export default {
 				this.signingOutId = null;
 			}
 		},
-
+		// Any tap/keystroke pushes the idle-reset deadline back out — bound
+		// to document in mounted() so it fires regardless of which
+		// screen/element is active.
+		resetIdleTimer() {
+			if (!this.idleResetMinutes) return;
+			clearTimeout(this.idleTimer);
+			this.idleTimer = setTimeout(() => {
+				if (this.view !== 'grid') this.cancelConfirm();
+			}, this.idleResetMinutes * 60000);
+		},
 	},
 	mounted() {
 		this.loadCategories();
+		this.loadSuggestions();
 		this.loadOccupancyCount();
 		// Sign-in/out already re-fetches the count directly; this poll only
 		// exists to catch sign-ins/outs happening on another kiosk device
@@ -927,10 +992,21 @@ export default {
 		if (this.showCloseoutPrompt && this.isAuthenticated) {
 			this.view = 'closeout-decision';
 		}
+
+		if (this.idleResetMinutes) {
+			document.addEventListener('click', this.resetIdleTimer);
+			document.addEventListener('keydown', this.resetIdleTimer);
+			document.addEventListener('touchstart', this.resetIdleTimer);
+			this.resetIdleTimer();
+		}
 	},
 	beforeUnmount() {
 		if (this.occupancyPollTimer) clearInterval(this.occupancyPollTimer);
 		clearTimeout(this.confirmationTimer);
+		clearTimeout(this.idleTimer);
+		document.removeEventListener('click', this.resetIdleTimer);
+		document.removeEventListener('keydown', this.resetIdleTimer);
+		document.removeEventListener('touchstart', this.resetIdleTimer);
 	},
 };
 </script>
@@ -984,6 +1060,12 @@ export default {
 	font-weight: 800;
 	color: #111827;
 	letter-spacing: -0.01em;
+}
+.vk_header_location {
+	color: #374151;
+	font-size: 1.15rem;
+	font-weight: 700;
+	margin-top: 0.3em;
 }
 .vk_header_tagline {
 	color: #6b7280;
