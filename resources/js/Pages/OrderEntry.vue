@@ -4,7 +4,14 @@
 <!-- OrderEntry.vue
 
 	Order intake, built as a session-based event stream (the same pattern as
-	DonationSorting.vue, not an RIForm document):
+	DonationSorting.vue, not an RIForm document). NOTE (2026-08-23): "order"
+	is this file's/the backend's name for the thing (component name, DB
+	status strings, manage-orders permission) — this page's own on-screen
+	labels are being moved to "Request" for partner-facing language (matches
+	Statesville's original "warehouse request form" wording; "order" reads
+	retail, same reasoning as the Customer->Partner rename below). Not fully
+	swept through this file's template text yet — treat "Order"/"Request" as
+	the same concept if you find both here.
 
 	  - Step 1 is the partner screen: select (or quick-add) the partner and
 	    confirm their contact/shipping details are current. Confirming creates
@@ -13,9 +20,11 @@
 	    2026-08-22 Customer→Partner rename (Tim's naming feedback:
 	    "Customer" reads as retail, "Partner" matches how the food-bank/
 	    disaster-relief world and Adventist Community Services both
-	    describe this tier). Internal variable/prop names (customerMode,
-	    newCustomer, etc.) were deliberately left as-is in this rename —
-	    pure internal identifiers, no user-facing meaning to fix.
+	    describe this tier). Internal variable/prop names (partnerMode,
+	    newPartner, etc.) were originally left as "customer*" since they're
+	    pure internal identifiers with no user-facing meaning — renamed to
+	    match on 2026-08-23 for codebase-wide consistency after all, per
+	    Mark's request.
 	  - Step 2 is the line-entry screen: a slim one-line partner bar (the
 	    details deliberately don't take screen space here), then rapid
 	    item-number-first entry — item # or name search, quantity, Enter,
@@ -58,21 +67,21 @@ export default {
 	data() {
 		return {
 			// list view
-			view: 'list', // 'list' | 'customer' | 'order' | 'review'
+			view: 'list', // 'list' | 'partner' | 'order' | 'review'
 			orders: { open: [], recent: [] },
 			listLoading: false,
 			listError: null,
 
-			// customer screen
-			customerMode: 'new', // 'new' (start an order) | 'change' (repoint an open order)
-			customerId: null,
-			customer: null,
-			contact: null,           // editable copy of the customer's contact fields
+			// partner screen
+			partnerMode: 'new', // 'new' (start an order) | 'change' (repoint an open order)
+			partnerId: null,
+			partner: null,
+			contact: null,           // editable copy of the partner's contact fields
 			contactOriginal: null,   // JSON snapshot for the dirty check
-			customerError: null,
-			customerSaving: false,
-			creatingCustomer: false,
-			newCustomer: {},
+			partnerError: null,
+			partnerSaving: false,
+			creatingPartner: false,
+			newPartner: {},
 
 			// active order
 			order: null,
@@ -183,34 +192,34 @@ export default {
 			};
 		},
 
-		// ---------- customer screen ----------
+		// ---------- partner screen ----------
 		startNewOrder() {
-			this.customerMode = 'new';
-			this.resetCustomerScreen();
-			this.view = 'customer';
-			this.$nextTick(() => this.$refs.customerSelect?.focus());
+			this.partnerMode = 'new';
+			this.resetPartnerScreen();
+			this.view = 'partner';
+			this.$nextTick(() => this.$refs.partnerSelect?.focus());
 		},
-		changeCustomer() {
-			this.customerMode = 'change';
-			this.resetCustomerScreen();
-			this.view = 'customer';
-			this.$nextTick(() => this.$refs.customerSelect?.focus());
+		changePartner() {
+			this.partnerMode = 'change';
+			this.resetPartnerScreen();
+			this.view = 'partner';
+			this.$nextTick(() => this.$refs.partnerSelect?.focus());
 		},
-		resetCustomerScreen() {
-			this.customerId = null;
-			this.customer = null;
+		resetPartnerScreen() {
+			this.partnerId = null;
+			this.partner = null;
 			this.contact = null;
 			this.contactOriginal = null;
-			this.customerError = null;
-			this.creatingCustomer = false;
+			this.partnerError = null;
+			this.creatingPartner = false;
 		},
-		cancelCustomerScreen() {
-			this.view = this.customerMode === 'change' && this.order ? 'order' : 'list';
+		cancelPartnerScreen() {
+			this.view = this.partnerMode === 'change' && this.order ? 'order' : 'list';
 		},
-		customerSelected(person) {
-			this.customer = person;
-			this.creatingCustomer = false;
-			this.customerError = null;
+		partnerSelected(person) {
+			this.partner = person;
+			this.creatingPartner = false;
+			this.partnerError = null;
 			if (person) {
 				this.contact = Object.fromEntries(CONTACT_FIELDS.map((f) => [f, person[f] ?? '']));
 				this.contactOriginal = JSON.stringify(this.contact);
@@ -218,78 +227,78 @@ export default {
 				this.contact = null;
 			}
 		},
-		startNewCustomer(name) {
-			this.creatingCustomer = true;
-			this.customerError = null;
+		startNewPartner(name) {
+			this.creatingPartner = true;
+			this.partnerError = null;
 			const parts = (name || '').trim().split(/\s+/);
-			this.newCustomer = {
+			this.newPartner = {
 				first_name: parts[0] || '',
 				last_name: parts.slice(1).join(' '),
 				organization: parts.length <= 1 ? (name || '') : '',
 				phone: '', email: '', address: '', city: '', state: '', zip: '',
 			};
 		},
-		async saveNewCustomer() {
-			this.customerError = null;
-			const hasName = this.newCustomer.first_name.trim() && this.newCustomer.last_name.trim();
-			const hasOrg = (this.newCustomer.organization || '').trim();
+		async saveNewPartner() {
+			this.partnerError = null;
+			const hasName = this.newPartner.first_name.trim() && this.newPartner.last_name.trim();
+			const hasOrg = (this.newPartner.organization || '').trim();
 			if (!hasName && !hasOrg) {
-				// An order/customer contact may only have an organization known
+				// An order/partner contact may only have an organization known
 				// (no specific person) — that's fine.
-				this.customerError = 'Enter a name (first and last) or an organization.';
+				this.partnerError = 'Enter a name (first and last) or an organization.';
 				return;
 			}
-			this.customerSaving = true;
+			this.partnerSaving = true;
 			try {
-				const response = await axios.post('/json/people', this.newCustomer);
+				const response = await axios.post('/json/people', this.newPartner);
 				invalidateOptions('/json/people');
-				await this.$refs.customerSelect?.refresh(response.data.record.id);
-				this.customerId = response.data.record.id;
-				this.customerSelected(response.data.record);
+				await this.$refs.partnerSelect?.refresh(response.data.record.id);
+				this.partnerId = response.data.record.id;
+				this.partnerSelected(response.data.record);
 			} catch (error) {
-				this.customerError = error.response?.data?.message
+				this.partnerError = error.response?.data?.message
 					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
-					|| 'Could not save the new customer.';
+					|| 'Could not save the new partner.';
 			} finally {
-				this.customerSaving = false;
+				this.partnerSaving = false;
 			}
 		},
 		/**
-		 * Confirm the customer: push any contact edits to the person record,
+		 * Confirm the partner: push any contact edits to the person record,
 		 * then create the order (or repoint the open one). The people update
 		 * endpoint replaces roles/permissions from the payload, so the
 		 * person's existing ones are sent back unchanged.
 		 */
-		async confirmCustomer() {
-			if (!this.customerId) {
-				this.customerError = 'Choose or add a customer first.';
+		async confirmPartner() {
+			if (!this.partnerId) {
+				this.partnerError = 'Choose or add a partner first.';
 				return;
 			}
-			this.customerError = null;
-			this.customerSaving = true;
+			this.partnerError = null;
+			this.partnerSaving = true;
 			try {
 				if (this.contactDirty) {
-					await axios.put('/json/people/' + this.customerId, {
+					await axios.put('/json/people/' + this.partnerId, {
 						...this.contact,
 						email: this.contact.email || null,
-						people_roles: (this.customer.people_roles || []).map((r) => ({ role_id: r.role_id })),
-						person_permissions: this.customer.person_permissions || [],
+						people_roles: (this.partner.people_roles || []).map((r) => ({ role_id: r.role_id })),
+						person_permissions: this.partner.person_permissions || [],
 					});
 					invalidateOptions('/json/people');
 				}
-				if (this.customerMode === 'change' && this.order) {
-					const response = await axios.patch('/json/orders/' + this.order.id, { person_id: this.customerId });
+				if (this.partnerMode === 'change' && this.order) {
+					const response = await axios.patch('/json/orders/' + this.order.id, { person_id: this.partnerId });
 					this.openOrder(response.data.record, this.lines);
 				} else {
-					const response = await axios.post('/json/orders', { person_id: this.customerId });
+					const response = await axios.post('/json/orders', { person_id: this.partnerId });
 					this.openOrder(response.data.record);
 				}
 			} catch (error) {
-				this.customerError = error.response?.data?.message
+				this.partnerError = error.response?.data?.message
 					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
 					|| 'Could not start the order.';
 			} finally {
-				this.customerSaving = false;
+				this.partnerSaving = false;
 			}
 		},
 
@@ -601,59 +610,59 @@ export default {
 			</div>
 		</div>
 
-		<!-- ======================= CUSTOMER SCREEN ======================= -->
-		<div v-else-if="view === 'customer'" class="oe_container oe_customer">
+		<!-- ======================= PARTNER SCREEN ======================= -->
+		<div v-else-if="view === 'partner'" class="oe_container oe_partner">
 			<div class="oe_topbar">
-				<button @click="cancelCustomerScreen" class="ri_formbutton">&larr; Back</button>
+				<button @click="cancelPartnerScreen" class="ri_formbutton">&larr; Back</button>
 				<span class="oe_title">
-					{{ customerMode === 'change' ? 'Change Partner' : 'New Order — Who is this for?' }}
+					{{ partnerMode === 'change' ? 'Change Partner' : 'New Order — Who is this for?' }}
 				</span>
 			</div>
-			<p v-if="customerError" class="oe_error">{{ customerError }}</p>
+			<p v-if="partnerError" class="oe_error">{{ partnerError }}</p>
 
 			<div class="oe_field">
 				<label>Partner:</label>
 				<SearchSelect
-					ref="customerSelect"
-					v-model="customerId"
+					ref="partnerSelect"
+					v-model="partnerId"
 					optionsource="/json/people"
 					display="full_name"
 					:searchfields="['full_name', 'organization', 'city']"
 					placeholder="Search by name or organization..."
 					:allowcreate="true"
-					@selected="customerSelected"
-					@create="startNewCustomer"
+					@selected="partnerSelected"
+					@create="startNewPartner"
 				/>
 			</div>
 
-			<!-- quick-add: a phone-in customer who isn't in People yet -->
-			<div v-if="creatingCustomer" class="oe_card">
+			<!-- quick-add: a phone-in partner who isn't in People yet -->
+			<div v-if="creatingPartner" class="oe_card">
 				<h3>New Partner</h3>
 				<div class="oe_contactgrid">
 					<div class="oe_field"><label>First Name:</label>
-						<input type="text" v-model="newCustomer.first_name" class="ri_forminput" autofocus /></div>
+						<input type="text" v-model="newPartner.first_name" class="ri_forminput" autofocus /></div>
 					<div class="oe_field"><label>Last Name:</label>
-						<input type="text" v-model="newCustomer.last_name" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.last_name" class="ri_forminput" /></div>
 					<div class="oe_field"><label>Organization:</label>
-						<input type="text" v-model="newCustomer.organization" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.organization" class="ri_forminput" /></div>
 					<div class="oe_field"><label>Phone:</label>
-						<input type="text" v-model="newCustomer.phone" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.phone" class="ri_forminput" /></div>
 					<div class="oe_field"><label>Email:</label>
-						<input type="email" v-model="newCustomer.email" class="ri_forminput" /></div>
+						<input type="email" v-model="newPartner.email" class="ri_forminput" /></div>
 					<div class="oe_field"><label>Address:</label>
-						<input type="text" v-model="newCustomer.address" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.address" class="ri_forminput" /></div>
 					<div class="oe_field"><label>City:</label>
-						<input type="text" v-model="newCustomer.city" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.city" class="ri_forminput" /></div>
 					<div class="oe_field"><label>State:</label>
-						<input type="text" v-model="newCustomer.state" maxlength="2" class="ri_forminput oe_state" /></div>
+						<input type="text" v-model="newPartner.state" maxlength="2" class="ri_forminput oe_state" /></div>
 					<div class="oe_field"><label>Zip:</label>
-						<input type="text" v-model="newCustomer.zip" maxlength="10" class="ri_forminput oe_zip" /></div>
+						<input type="text" v-model="newPartner.zip" maxlength="10" class="ri_forminput oe_zip" /></div>
 				</div>
 				<div class="oe_actions">
-					<button @click="saveNewCustomer" class="ri_defaultbutton" :disabled="customerSaving">
-						{{ customerSaving ? 'Saving...' : 'Save Partner' }}
+					<button @click="saveNewPartner" class="ri_defaultbutton" :disabled="partnerSaving">
+						{{ partnerSaving ? 'Saving...' : 'Save Partner' }}
 					</button>
-					<button @click="creatingCustomer = false" class="ri_formbutton">Cancel</button>
+					<button @click="creatingPartner = false" class="ri_formbutton">Cancel</button>
 				</div>
 			</div>
 
@@ -680,21 +689,21 @@ export default {
 						<input type="text" v-model="contact.state" maxlength="2" class="ri_forminput oe_state" /></div>
 					<div class="oe_field"><label>Zip:</label>
 						<input type="text" v-model="contact.zip" maxlength="10" class="ri_forminput oe_zip" /></div>
-					<div class="oe_field" v-if="customer?.county"><label>County:</label>
-						<span>{{ customer.county.county }}</span></div>
+					<div class="oe_field" v-if="partner?.county"><label>County:</label>
+						<span>{{ partner.county.county }}</span></div>
 				</div>
 				<div class="oe_actions">
-					<button @click="confirmCustomer" class="ri_defaultbutton" :disabled="customerSaving">
-						{{ customerSaving ? 'Saving...'
+					<button @click="confirmPartner" class="ri_defaultbutton" :disabled="partnerSaving">
+						{{ partnerSaving ? 'Saving...'
 							: (contactDirty ? 'Save Details & ' : '')
-								+ (customerMode === 'change' ? 'Use This Partner' : 'Start Order') }} &rarr;
+								+ (partnerMode === 'change' ? 'Use This Partner' : 'Start Order') }} &rarr;
 					</button>
 				</div>
 			</div>
 		</div>
 
 		<!-- ======================= REVIEW & CONFIRM ======================= -->
-		<div v-else-if="view === 'review' && order && review" class="oe_container oe_customer">
+		<div v-else-if="view === 'review' && order && review" class="oe_container oe_partner">
 			<div class="oe_topbar">
 				<button @click="backFromReview" class="ri_formbutton">&larr; Back</button>
 				<span class="oe_title">Review &amp; Confirm — Order #{{ order.id }}</span>
@@ -716,7 +725,7 @@ export default {
 
 			<div class="oe_card">
 				<h3>Needed But Not in Catalog</h3>
-				<p class="oe_hint">Anything this customer needs that isn't listed in our items — same as "Other Needs" on the offline order form.</p>
+				<p class="oe_hint">Anything this partner needs that isn't listed in our items — same as "Other Needs" on the offline order form.</p>
 				<TextArea v-model="review.other_needs" placeholder="Items not available to order..." />
 			</div>
 
@@ -800,14 +809,14 @@ export default {
 			</div>
 			<p v-if="headerError" class="oe_error">{{ headerError }}</p>
 
-			<!-- slim customer bar: just enough to know who you're talking to -->
-			<div class="oe_customerbar">
-				<span class="oe_customer_name">{{ personLabel(order.person) }}</span>
-				<span v-if="order.person && (order.person.city || order.person.state)" class="oe_customer_where">
+			<!-- slim partner bar: just enough to know who you're talking to -->
+			<div class="oe_partnerbar">
+				<span class="oe_partner_name">{{ personLabel(order.person) }}</span>
+				<span v-if="order.person && (order.person.city || order.person.state)" class="oe_partner_where">
 					{{ [order.person.city, order.person.state].filter(Boolean).join(', ') }}
 				</span>
-				<span v-if="order.person && order.person.phone" class="oe_customer_where">{{ order.person.phone }}</span>
-				<button v-if="!readonly" @click="changeCustomer" class="ri_linkbutton">Change</button>
+				<span v-if="order.person && order.person.phone" class="oe_partner_where">{{ order.person.phone }}</span>
+				<button v-if="!readonly" @click="changePartner" class="ri_linkbutton">Change</button>
 			</div>
 
 			<p v-if="lineError" class="oe_error">{{ lineError }}</p>
@@ -954,7 +963,7 @@ export default {
 	margin: 0 auto;
 	padding: 16px;
 }
-.oe_customer {
+.oe_partner {
 	max-width: 720px;
 }
 .oe_headeractions {
@@ -1081,7 +1090,7 @@ export default {
 	gap: 10px;
 	margin-top: 10px;
 }
-.oe_customerbar {
+.oe_partnerbar {
 	display: flex;
 	align-items: center;
 	gap: 14px;
@@ -1092,11 +1101,11 @@ export default {
 	background: #eef2ff;
 	margin-bottom: 12px;
 }
-.oe_customer_name {
+.oe_partner_name {
 	font-weight: bold;
 	font-size: 1.05rem;
 }
-.oe_customer_where {
+.oe_partner_where {
 	color: #555;
 }
 .oe_lines {

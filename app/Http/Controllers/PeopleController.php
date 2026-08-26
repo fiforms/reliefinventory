@@ -49,7 +49,7 @@ class PeopleController extends Controller
     ];
 
     /**
-     * Retrieve all people (customers and donors).
+     * Retrieve all people (partners and donors).
      *
      * @return JsonResponse
      */
@@ -117,7 +117,7 @@ class PeopleController extends Controller
     }
 
     /**
-     * Store a new person (customer or donor).
+     * Store a new person (partner or donor).
      *
      * @return JsonResponse
      */

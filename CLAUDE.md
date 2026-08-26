@@ -13,9 +13,10 @@ distribution points, with full source (donor/pallet) traceability.
 — read it before starting non-trivial work here. Most of Phase 0/1's original defect list is now fixed
 (source traceability, stock-on-hand, the permission model, DB transactions, RIForm error/delete UX, a real
 test suite); what's still genuinely open is order filling/picking, BOL upload, the facility-network
-expansion (Part 5), and several report pages (`/reports/orders`, `/reports/flow`, `/reports/donors`,
-`/reports/customers` are still "Coming Soon" placeholders) — check the doc's own inline "Update" notes for
-the current state of any given item before assuming it's still broken.
+expansion (Part 5), and several report pages (`/reports/flow`, `/reports/donors`, `/reports/customers` are
+still "Coming Soon" placeholders — `/reports/orders`, the Outstanding Orders Report, is built as of
+2026-08-22) — check the doc's own inline "Update" notes for the current state of any given item before
+assuming it's still broken.
 
 ## Commands
 
@@ -107,6 +108,18 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   load can be several of the latter at once) with a matching `container_type_counts` JSON map of
   type → quantity, and `photo_path` (a single reference photo of the shipment, served through
   `ReceivingController::photo()` the same way `FeedbackReport` screenshots are).
+- `donation_offers` / `donation_offer_status_log` — pre-arrival tracking for a donation offered by phone
+  before anything ships (not every donation goes through this; a walk-in `Transaction` can exist with no
+  offer behind it). Lifecycle: `offered` → `refused`/`diverted` (terminal) or `pending` (accepted, ETA-
+  sorted worklist) → `cancelled`/`received`. `DonationOffer::transitionTo()` (mirrors `Pallet::
+  transitionTo()`) writes the status column and appends a `donation_offer_status_log` row — one append-
+  only log table for every transition (who/when/how/notes), not per-status column pairs, following the
+  same pattern as `FeedbackReportStatusLog`. Matching a `pending` offer to the real `Transaction` happens
+  either at Receiving intake time (`ReceivingController::store()` accepts an optional
+  `donation_offer_id`) or after the fact from `/receiving/offers`'s worklist — receiving doesn't have to
+  wait on an exact match at the dock. Decision actions (approve/refuse/divert/cancel/match) are gated on
+  `manage-donation-offers`, deliberately separate from `manage-receiving` (logging a call is looser than
+  deciding it) and not granted to every role by default.
 - `people` / `roles` / `people_roles` — a single `Person` table replaced a dropped `users` table (see
   migration `2025_02_20_155051_drop_users_table.php`); auth is on `Person`, not a `User` model (both map
   to the same `people` table/row — `User` is what `Auth::user()` returns, `Person` is the general party
@@ -139,9 +152,13 @@ RIForm surfaces save/delete errors inline (`saveError`) and uses a two-step inli
 `window.confirm`); its detail-view buttons sit in a `.ri_formactions` flex action bar styled in `app.css`.
 It also supports an optional `filter` prop (`(record) => boolean`) plus a `#listactions` slot for
 whatever filter UI a page wants above the list (search box, checkbox, ...) — `Receiving.vue` is the
-reference implementation (donor search + a "flagged for donor ID only" toggle). There's still no
-pagination for large lists (a known gap), and `selectRecord` selects by the record object itself, not
-list position, so it stays correct under filtering. RIForm also supports an optional `#actions` slot
+reference implementation (donor search + a "flagged for donor ID only" toggle). A separate `#titleactions`
+slot (added 2026-08-22) renders in the title bar itself, next to the default New Record-style button —
+for a page-level navigation button that should sit alongside it rather than down in `#listactions`
+(`Receiving.vue`'s "Donation Offers" link to `/receiving/offers`); it's wrapped in a `.ri_titleactions`
+span (float + margin, styled in `app.css`) so the spacing lives in RIForm itself, not per-caller. There's
+still no pagination for large lists (a known gap), and `selectRecord` selects by the record object itself,
+not list position, so it stays correct under filtering. RIForm also supports an optional `#actions` slot
 (scoped: `editing, record, confirmingDelete, save, cancel, delete, keepRecord`) replacing its default
 Save/Cancel/Delete/Back-to-List bar for a page that needs a different action flow — `save(keepOpen)`
 behaves like the default Save button, except `keepOpen: true` leaves the form open on the saved record
@@ -296,3 +313,14 @@ with the office") was also raised and is unbuilt — idea-stage only, no design 
   — even for edits that don't touch permissions at all, and even for a pure revoke. This is deliberately
   conservative (prevents using an unrelated edit as cover to touch someone you shouldn't be able to
   touch) — see `PeopleController::assertNoEscalation()`.
+- **"Order" and "Request" are the same thing, split by audience, not by data model.** Decided 2026-08-23:
+  the backend/DB keeps "order" everywhere it already used it — `Transaction`'s `type='order'` value, its
+  `New Order`/`Ready to Fill`/`Filling`/`Filled`/`Shipped` status strings, the `manage-orders` permission
+  key, `OrderController`, `/json/orders` routes, `OrderEntry.vue`'s component name — renaming any of that
+  is a bigger, separate decision (live status strings and permission keys, not just labels) from a UI
+  word swap, and isn't happening as part of this. Partner-facing UI text says "Request" instead (matches
+  Statesville's own historical term, "warehouse request form" — "order" reads retail-adjacent the same
+  way "customer" did before the Aug 2026 Partner rename). `DonationOffers.vue`'s Donor History section is
+  the first place this was actually applied (`requestStatusLabel()` swaps the word for display only);
+  `OrderEntry.vue`'s own on-screen labels still say "Order" in most places and haven't been swept yet —
+  don't assume one page's usage tells you the other's.

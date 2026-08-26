@@ -12,7 +12,7 @@
 	exportable to PDF at any time via the same data this page shows.
 
 	What NEVER appears here (enforced server-side in SitrepController, not
-	just hidden in this template): customer/donor names, addresses,
+	just hidden in this template): partner/donor names, addresses,
 	comments, exact order line items, or donor-quality figures.
 -->
 

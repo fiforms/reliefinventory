@@ -14,7 +14,7 @@ use Spatie\LaravelPdf\Facades\Pdf;
  * Stock-on-hand rollup — the ledger (item_ledgers) never gets aggregated
  * anywhere else in the app, so this is the one place "what do we have"
  * gets answered. Staff-only: this reports exact quantities, which is fine
- * here (unlike any future customer-facing surface, which must never show
+ * here (unlike any future partner-facing surface, which must never show
  * real numbers — see the order-intake design notes).
  *
  * "On hand" mirrors the rule sorting/order-intake already use: usable

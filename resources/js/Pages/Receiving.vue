@@ -140,17 +140,21 @@ const containerTypeOptions = [
 				<template v-if="wizardStep === 'details'">
 					<div class="ri_formtable">
 						<div class="ri_fieldset" v-if="!record.id">
-							<div class="ri_fieldlabel">Match to a phoned-in offer?</div>
-							<SearchSelect
-								ref="offerSelect"
-								v-model="matchedOfferId"
-								optionsource="/json/donation-offers?status=pending"
-								display="label"
-								:searchfields="['label']"
-								placeholder="Search pending donation offers..."
-								:enabled="editing"
-								@selected="(o) => onOfferSelected(record, o)"
-							/>
+							<div class="ri_fieldlabel">Does this match a phoned-in offer?</div>
+							<div v-if="pendingOffers.length" class="recv_offerlist">
+								<div
+									v-for="offer in pendingOffers"
+									:key="offer.id"
+									class="recv_offercard"
+									:class="{ recv_offercard_selected: matchedOfferId === offer.id }"
+									@click="editing && toggleOfferMatch(record, offer)"
+								>
+									<div class="recv_offerdonor">{{ offer.person?.full_name || 'Unknown donor' }}</div>
+									<div v-if="offer.description" class="recv_offerdesc">{{ offer.description }}</div>
+									<div v-if="offer.eta_start" class="recv_offereta">ETA {{ formatEtaRange(offer.eta_start, offer.eta_end) }}</div>
+								</div>
+							</div>
+							<div v-else class="ri_hint">No pending offers on file — this arrival wasn't phoned in ahead, or none of the current offers match.</div>
 						</div>
 
 						<div class="ri_fieldset">
@@ -280,7 +284,7 @@ const containerTypeOptions = [
 								ref="donorSelect"
 								v-model="record.person_id"
 								optionsource="/json/people"
-								display="organization"
+								display="full_name"
 								:searchfields="['organization', 'first_name', 'last_name']"
 								placeholder="Search donors..."
 								:allowcreate="true"
@@ -557,7 +561,12 @@ export default {
 
 			// Matching a phoned-in DonationOffer at intake — see
 			// onOfferSelected()/onOpenRecord() and store()'s donation_offer_id.
+			// pendingOffers is a glance-and-pick list (not a search box) —
+			// dock staff usually don't know the offer's donor name well
+			// enough to search for it, but can recognize it from a
+			// short list of what's currently expected.
 			matchedOfferId: null,
+			pendingOffers: [],
 		};
 	},
 	computed: {
@@ -576,6 +585,41 @@ export default {
 		donorName(record) {
 			return record.person?.full_name || '(no donor recorded)';
 		},
+		// Parses a "YYYY-MM-DD" string as a local calendar date, not UTC —
+		// see the identical helper in DonationOffers.vue.
+		formatLocalDate(value) {
+			if (!value) return '';
+			const [y, m, d] = value.split('-').map(Number);
+			return new Date(y, m - 1, d).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+		},
+		formatEtaRange(start, end) {
+			if (!start) return '';
+			const startLabel = this.formatLocalDate(start);
+			if (!end || end === start) return startLabel;
+			return `${startLabel} – ${this.formatLocalDate(end)}`;
+		},
+		async loadPendingOffers() {
+			try {
+				const response = await axios.get('/json/donation-offers?status=pending');
+				this.pendingOffers = response.data.records || [];
+			} catch (error) {
+				this.pendingOffers = [];
+			}
+		},
+		// Clicking a card selects it (pre-filling donor/contact/manifest
+		// fields); clicking the already-selected card clears the match
+		// without undoing whatever it already pre-filled — matching the
+		// wrong offer is rare enough that a full undo isn't worth the
+		// complexity, and the pre-filled fields stay manually editable.
+		toggleOfferMatch(record, offer) {
+			if (this.matchedOfferId === offer.id) {
+				this.matchedOfferId = null;
+				record.donation_offer_id = null;
+				return;
+			}
+			this.matchedOfferId = offer.id;
+			this.onOfferSelected(record, offer);
+		},
 
 		// ---------- wizard navigation ----------
 		onOpenRecord(record) {
@@ -593,6 +637,7 @@ export default {
 			const types = record?.container_types || [];
 			this.arrivalMode = types.includes('pallet') ? 'pallet' : types.length ? 'other' : null;
 			this.matchedOfferId = record?.donation_offer_id || null;
+			if (!record?.id) this.loadPendingOffers();
 		},
 		// Selecting a pending offer pre-fills the donor/contact/manifest fields
 		// it already has and stashes the offer id for store() to pick up —
@@ -967,6 +1012,37 @@ export default {
 	align-items: center;
 	gap: 0.4em;
 	font-weight: normal;
+}
+.recv_offerlist {
+	display: flex;
+	flex-direction: column;
+	gap: 0.4em;
+	max-width: 32em;
+}
+.recv_offercard {
+	border: 1px solid #e5e7eb;
+	border-radius: 4px;
+	padding: 0.5em 0.75em;
+	cursor: pointer;
+	background: #fff;
+}
+.recv_offercard:hover {
+	border-color: #9ca3af;
+}
+.recv_offercard_selected {
+	border-color: #2563eb;
+	background: #eff6ff;
+}
+.recv_offerdonor {
+	font-weight: 600;
+}
+.recv_offerdesc {
+	font-size: 0.9em;
+	color: #444;
+}
+.recv_offereta {
+	font-size: 0.85em;
+	color: #666;
 }
 .recv_search {
 	min-width: 220px;

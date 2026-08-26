@@ -247,7 +247,7 @@ foreach ([
     '/order-filling' => 'Order Filling',
     '/reports/flow' => 'Inventory Flow Report',
     '/reports/donors' => 'Donor Report',
-    '/reports/customers' => 'Customer Report',
+    '/reports/partners' => 'Partner Report',
 ] as $path => $feature) {
     Route::get($path, function () use ($path, $feature) {
         return Inertia::render('ComingSoon', [
@@ -306,8 +306,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {
-    // Order intake sessions (header created at customer confirm; requested
-    // lines autosave one at a time — see OrderController)
+    // Order intake sessions (header created at partner confirm; requested
+    // lines autosave one at a time — see OrderController). Routes/permission
+    // key/DB stay "order" — partner-facing UI shows "Request" instead, see
+    // OrderController's doc comment.
     Route::get('/orders', [OrderController::class, 'index']);
     // before /orders/{id} so "stock-hints" isn't captured as an id
     Route::get('/orders/stock-hints', [OrderController::class, 'stockHints']);
@@ -423,7 +425,7 @@ Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv
     ->middleware(['auth', 'permission:view-reports']);
 
 // Offline order form (in-stock item types only, no quantities) — printed or
-// emailed to a POD/customer, then hand-keyed back in as an order.
+// emailed to a POD/partner, then hand-keyed back in as an order.
 Route::get('/report/order-form.pdf', [OrderController::class, 'orderFormPdf'])
     ->name('report.order-form')
     ->middleware(['auth', 'permission:manage-orders']);
@@ -467,6 +469,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-re
     Route::get('/donation-offers/unmatched-donations', [DonationOfferController::class, 'unmatchedDonations']);
     Route::post('/donation-offers', [DonationOfferController::class, 'store']);
     Route::put('/donation-offers/{donationOffer}', [DonationOfferController::class, 'update']);
+    Route::post('/donation-offers/{donationOffer}/note', [DonationOfferController::class, 'addNote']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-donation-offers']], function () {

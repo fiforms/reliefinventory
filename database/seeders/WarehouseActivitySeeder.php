@@ -37,16 +37,16 @@ class WarehouseActivitySeeder extends Seeder
         $warehouse = Warehouse::first() ?? Warehouse::create(['name' => 'Default Warehouse', 'pallets_enabled' => true]);
         $locations = $this->ensureLocations($warehouse);
         $donors = $this->ensureDonors();
-        $customers = $this->ensureCustomers();
+        $partners = $this->ensurePartners();
         $items = $this->pickItemsForActivity();
 
         $this->seedReceivedDonation($donors[0]);
         $this->seedSortingDonation($donors[1], $items);
         $this->seedCompleteDonation($donors[2], $items, $locations);
         $this->seedWarehouseStock($items, $locations);
-        $this->seedNonWarehousePallets($locations, $customers);
+        $this->seedNonWarehousePallets($locations, $partners);
 
-        $this->seedOrders($customers, $items);
+        $this->seedOrders($partners, $items);
     }
 
     // ---------- people & locations ----------
@@ -62,7 +62,7 @@ class WarehouseActivitySeeder extends Seeder
         return collect($rows)->map(fn ($row) => Person::firstOrCreate(['email' => $row['email']], $row))->all();
     }
 
-    private function ensureCustomers(): array
+    private function ensurePartners(): array
     {
         $rows = [
             ['first_name' => 'First', 'last_name' => 'Baptist', 'organization' => 'First Baptist Church POD', 'email' => 'pod@example-fbc.org', 'city' => 'Lacey', 'state' => 'WA'],
@@ -283,11 +283,11 @@ class WarehouseActivitySeeder extends Seeder
      * One pallet each of Shipping/Hold/Quarantine so the dashboard has all
      * five kinds represented, not just Receiving/Warehouse.
      */
-    private function seedNonWarehousePallets(array $locations, array $customers): void
+    private function seedNonWarehousePallets(array $locations, array $partners): void
     {
         $shipping = Pallet::create([
             'kind' => 'S', 'status' => 'building', 'container_type' => 'pallet',
-            'destination_person_id' => $customers[0]->id,
+            'destination_person_id' => $partners[0]->id,
             'location_id' => $locations[5]->id,
             'datepacked' => Carbon::now()->subHours(2)->toDateString(),
         ]);
@@ -313,38 +313,38 @@ class WarehouseActivitySeeder extends Seeder
 
     // ---------- orders across the full lifecycle ----------
 
-    private function seedOrders(array $customers, $items): void
+    private function seedOrders(array $partners, $items): void
     {
         $newOrderLines = [
             [$items[0], 20], [$items[1], 15], [$items[2], 30],
         ];
-        $this->makeOrder($customers[0], Transaction::STATUS_NEW_ORDER, $newOrderLines, fillFraction: 0.0, daysAgo: 0);
+        $this->makeOrder($partners[0], Transaction::STATUS_NEW_ORDER, $newOrderLines, fillFraction: 0.0, daysAgo: 0);
 
-        $this->makeOrder($customers[1], Transaction::STATUS_NEW_ORDER, [
+        $this->makeOrder($partners[1], Transaction::STATUS_NEW_ORDER, [
             [$items[3], 10], [$items[4], 25],
         ], fillFraction: 0.0, daysAgo: 0);
 
-        $this->makeOrder($customers[2], Transaction::STATUS_NEW_ORDER, [
+        $this->makeOrder($partners[2], Transaction::STATUS_NEW_ORDER, [
             [$items[5], 40],
         ], fillFraction: 0.0, daysAgo: 1);
 
-        $this->makeOrder($customers[3], Transaction::STATUS_FILLING, [
+        $this->makeOrder($partners[3], Transaction::STATUS_FILLING, [
             [$items[12], 20], [$items[13], 10], [$items[14], 15],
         ], fillFraction: 0.4, daysAgo: 1);
 
-        $this->makeOrder($customers[0], Transaction::STATUS_FILLING, [
+        $this->makeOrder($partners[0], Transaction::STATUS_FILLING, [
             [$items[15], 12], [$items[16], 8],
         ], fillFraction: 0.5, daysAgo: 2);
 
-        $this->makeOrder($customers[1], Transaction::STATUS_FILLED, [
+        $this->makeOrder($partners[1], Transaction::STATUS_FILLED, [
             [$items[17], 18], [$items[18], 6],
         ], fillFraction: 1.0, daysAgo: 3);
 
-        $this->makeOrder($customers[2], Transaction::STATUS_FILLED, [
+        $this->makeOrder($partners[2], Transaction::STATUS_FILLED, [
             [$items[19], 25],
         ], fillFraction: 1.0, daysAgo: 4);
 
-        $this->makeOrder($customers[3], Transaction::STATUS_SHIPPED, [
+        $this->makeOrder($partners[3], Transaction::STATUS_SHIPPED, [
             [$items[20], 15], [$items[21], 10],
         ], fillFraction: 1.0, daysAgo: 6);
     }
@@ -352,11 +352,11 @@ class WarehouseActivitySeeder extends Seeder
     /**
      * @param  array<array{0: object, 1: int}>  $lines  [itemEntry, qty_requested] pairs
      */
-    private function makeOrder(Person $customer, string $statusName, array $lines, float $fillFraction, int $daysAgo): void
+    private function makeOrder(Person $partner, string $statusName, array $lines, float $fillFraction, int $daysAgo): void
     {
         $order = Transaction::create([
             'type' => 'order',
-            'person_id' => $customer->id,
+            'person_id' => $partner->id,
             'status_id' => Transaction::statusId($statusName),
             'order_date' => Carbon::now()->subDays($daysAgo)->toDateString(),
         ]);

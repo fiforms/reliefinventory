@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 
 /**
  * A lightweight directory for drivers who bring donations/deliveries —
- * deliberately not a Person: drivers aren't staff, donors, or customers by
+ * deliberately not a Person: drivers aren't staff, donors, or partners by
  * default and don't need permissions/roles. See the 2026_08_21 migration.
  */
 class Driver extends Model

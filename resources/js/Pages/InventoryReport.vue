@@ -6,7 +6,7 @@
 	Stock-on-hand rollup — the ledger (item_ledgers) never gets aggregated
 	anywhere else in the app, so this answers "what do we have" for the
 	first time. Staff-only: shows exact quantities, which is fine here
-	(unlike any future customer-facing surface).
+	(unlike any future partner-facing surface).
 
 	Rolled up per itemtype (matching the level orders are requested at), with
 	an expandable row for the underlying items/SKUs. Defaults to hiding

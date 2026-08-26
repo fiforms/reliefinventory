@@ -3,6 +3,7 @@
 use App\Models\DonationOffer;
 use App\Models\Person;
 use App\Models\Transaction;
+use Illuminate\Support\Carbon;
 
 function makeOffer(array $overrides = []): DonationOffer
 {
@@ -34,6 +35,33 @@ test('creating an offer writes an initial status log row', function () {
         ->and($offer->statusLogs->first()->contact_method)->toBe('phone');
 });
 
+test('status_date always reflects the current status, not the original creation date', function () {
+    $recorder = userWithPermissions('manage-receiving');
+    $decider = userWithPermissions('manage-donation-offers');
+    $donor = Person::create(['first_name' => 'Test', 'last_name' => 'Donor']);
+
+    Carbon::setTestNow('2026-08-01');
+    $offerId = $this->actingAs($recorder)->postJson('/json/donation-offers', [
+        'person_id' => $donor->id,
+    ])->assertCreated()->json('record.id');
+    $offer = DonationOffer::findOrFail($offerId);
+    expect($offer->status_date)->toBe('2026-08-01');
+
+    Carbon::setTestNow('2026-08-05');
+    $this->actingAs($decider)->postJson("/json/donation-offers/{$offer->id}/approve", [
+        'eta_start' => '2026-08-10',
+    ])->assertOk();
+    expect($offer->fresh()->status_date)->toBe('2026-08-05');
+
+    Carbon::setTestNow('2026-08-12');
+    $this->actingAs($decider)->postJson("/json/donation-offers/{$offer->id}/cancel", [
+        'cancelled_reason' => 'No longer needed.',
+    ])->assertOk();
+    expect($offer->fresh()->status_date)->toBe('2026-08-12');
+
+    Carbon::setTestNow();
+});
+
 test('approving an offered donation requires an eta and moves it to pending', function () {
     $user = userWithPermissions('manage-donation-offers');
     $offer = makeOffer();
@@ -42,7 +70,7 @@ test('approving an offered donation requires an eta and moves it to pending', fu
         ->assertStatus(422);
 
     $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/approve", [
-        'eta' => now()->addDays(2)->toIso8601String(),
+        'eta_start' => now()->addDays(2)->toDateString(),
         'transit_notes' => 'Leaving Friday morning.',
         'contact_method' => 'phone',
     ])->assertOk();
@@ -58,12 +86,34 @@ test('approving an offered donation requires an eta and moves it to pending', fu
         ->and($offer->statusLogs->last()->to_status)->toBe(DonationOffer::STATUS_PENDING);
 });
 
+test('approving accepts an eta date range and rejects an end before the start', function () {
+    $user = userWithPermissions('manage-donation-offers');
+    $offer = makeOffer();
+
+    $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/approve", [
+        'eta_start' => now()->addDays(3)->toDateString(),
+        'eta_end' => now()->addDays(1)->toDateString(),
+    ])->assertStatus(422);
+
+    $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/approve", [
+        'eta_start' => now()->addDays(1)->toDateString(),
+        'eta_end' => now()->addDays(3)->toDateString(),
+    ])->assertOk();
+
+    $offer->refresh();
+    expect($offer->eta_start)->toBe(now()->addDays(1)->toDateString())
+        ->and($offer->eta_end)->toBe(now()->addDays(3)->toDateString())
+        ->and($offer->etaRangeLabel())->toBe(
+            now()->addDays(1)->format('M j').' – '.now()->addDays(3)->format('M j')
+        );
+});
+
 test('approve is rejected once the offer has already moved past offered', function () {
     $user = userWithPermissions('manage-donation-offers');
     $offer = makeOffer(['status' => DonationOffer::STATUS_PENDING]);
 
     $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/approve", [
-        'eta' => now()->addDay()->toIso8601String(),
+        'eta_start' => now()->addDay()->toDateString(),
     ])->assertStatus(422);
 });
 
@@ -190,6 +240,47 @@ test('editing is blocked once an offer has reached a terminal status', function 
     ])->assertStatus(422);
 });
 
+test('a follow-up call can update the ETA and description without changing status', function () {
+    $user = userWithPermissions('manage-receiving');
+    $offer = makeOffer(['status' => DonationOffer::STATUS_PENDING, 'eta_start' => '2026-09-01', 'eta_end' => '2026-09-01']);
+
+    $response = $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/note", [
+        'eta_start' => '2026-09-08',
+        'eta_end' => '2026-09-10',
+        'description' => 'Now also includes a pallet of bottled water.',
+        'contact_method' => 'phone',
+        'notes' => 'Donor called to push the delivery back a week.',
+    ])->assertOk();
+
+    $offer->refresh();
+
+    expect($offer->status)->toBe(DonationOffer::STATUS_PENDING)
+        ->and($offer->eta_start)->toBe('2026-09-08')
+        ->and($offer->eta_end)->toBe('2026-09-10')
+        ->and($offer->description)->toBe('Now also includes a pallet of bottled water.')
+        ->and($offer->statusLogs)->toHaveCount(1);
+
+    $log = $offer->statusLogs->last();
+    expect($log->from_status)->toBe(DonationOffer::STATUS_PENDING)
+        ->and($log->to_status)->toBe(DonationOffer::STATUS_PENDING)
+        ->and($log->notes)->toBe('Donor called to push the delivery back a week.')
+        ->and($response->json('record.status'))->toBe(DonationOffer::STATUS_PENDING);
+});
+
+test('a follow-up call requires a note and is blocked once the offer is decided', function () {
+    $user = userWithPermissions('manage-receiving');
+    $offer = makeOffer();
+
+    $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/note", [
+        'eta_start' => now()->addWeek()->toDateString(),
+    ])->assertStatus(422);
+
+    $decided = makeOffer(['status' => DonationOffer::STATUS_REFUSED, 'refused_reason' => 'No longer needed.']);
+    $this->actingAs($user)->postJson("/json/donation-offers/{$decided->id}/note", [
+        'notes' => 'Trying to add a note after the fact.',
+    ])->assertStatus(422);
+});
+
 test('a manage-receiving-only user can log offers but not decide them', function () {
     $recorder = userWithPermissions('manage-receiving');
     $donor = Person::create(['first_name' => 'Test', 'last_name' => 'Donor']);
@@ -201,7 +292,7 @@ test('a manage-receiving-only user can log offers but not decide them', function
     $offer = makeOffer();
 
     $this->actingAs($recorder)->postJson("/json/donation-offers/{$offer->id}/approve", [
-        'eta' => now()->addDay()->toIso8601String(),
+        'eta_start' => now()->addDay()->toDateString(),
     ])->assertForbidden();
 });
 
@@ -210,7 +301,7 @@ test('a manage-donation-offers user can perform every decision action', function
     $offer = makeOffer();
 
     $this->actingAs($decider)->postJson("/json/donation-offers/{$offer->id}/approve", [
-        'eta' => now()->addDay()->toIso8601String(),
+        'eta_start' => now()->addDay()->toDateString(),
     ])->assertOk();
 });
 
@@ -228,7 +319,7 @@ test('a full offered to pending to received lifecycle produces one ordered log r
     ]);
 
     $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/approve", [
-        'eta' => now()->addDay()->toIso8601String(),
+        'eta_start' => now()->addDay()->toDateString(),
     ])->assertOk();
     $this->actingAs($user)->postJson("/json/donation-offers/{$offer->id}/match", [
         'donation_id' => $donation->id,

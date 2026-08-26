@@ -1,12 +1,13 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class TestPeopleSeeder extends Seeder
 {
@@ -27,7 +28,7 @@ class TestPeopleSeeder extends Seeder
                 'city' => 'Greensboro',
                 'state' => 'NC',
                 'zip' => '27401',
-                'comments' => 'A regular customer.',
+                'comments' => 'A regular partner.',
                 'created_at' => Carbon::now(),
                 'updated_at' => Carbon::now(),
             ],
