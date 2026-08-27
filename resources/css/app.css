@@ -141,6 +141,31 @@ a.ri_defaultbutton, a.ri_formbutton, a.ri_deletebutton {
   transition: background-color 0.3s ease;
 }
 
+/* Two of these buttons placed side by side (e.g. a table row's action
+   column) have no gap of their own otherwise — callers relying on a flex
+   `gap` wrapper (like .ri_formactions) are unaffected, this only adds
+   space when one directly follows another with nothing else between. */
+button.ri_defaultbutton + button.ri_defaultbutton,
+button.ri_defaultbutton + button.ri_formbutton,
+button.ri_defaultbutton + button.ri_deletebutton,
+button.ri_formbutton + button.ri_defaultbutton,
+button.ri_formbutton + button.ri_formbutton,
+button.ri_formbutton + button.ri_deletebutton,
+button.ri_deletebutton + button.ri_defaultbutton,
+button.ri_deletebutton + button.ri_formbutton,
+button.ri_deletebutton + button.ri_deletebutton,
+a.ri_defaultbutton + a.ri_defaultbutton,
+a.ri_defaultbutton + a.ri_formbutton,
+a.ri_defaultbutton + a.ri_deletebutton,
+a.ri_formbutton + a.ri_defaultbutton,
+a.ri_formbutton + a.ri_formbutton,
+a.ri_formbutton + a.ri_deletebutton,
+a.ri_deletebutton + a.ri_defaultbutton,
+a.ri_deletebutton + a.ri_formbutton,
+a.ri_deletebutton + a.ri_deletebutton {
+  margin-left: 0.5em;
+}
+
 /* Solid-color buttons have no border, so the browser's default focus
    ring can be nearly invisible on them — tabbing to one gives no clue
    where focus landed. Plain :focus (not :focus-visible) because focus

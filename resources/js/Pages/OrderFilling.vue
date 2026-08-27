@@ -182,15 +182,26 @@ export default {
 		async printPickSheets() {
 			this.listError = null;
 			this.printing = true;
+			// Open the tab synchronously, in direct response to the click — opening it
+			// after the await below would no longer count as user-gesture-initiated and
+			// gets silently popup-blocked in Chrome, even though the POST itself succeeds.
+			const pdfWindow = window.open('', '_blank');
 			try {
 				const response = await axios.post('/json/order-filling/print-pick-sheets');
 				const ids = response.data.order_ids || [];
 				if (ids.length) {
 					const query = ids.map((id) => 'ids[]=' + id).join('&');
-					window.open('/report/pick-sheets.pdf?' + query, '_blank');
+					if (pdfWindow) {
+						pdfWindow.location = '/report/pick-sheets.pdf?' + query;
+					} else {
+						window.open('/report/pick-sheets.pdf?' + query, '_blank');
+					}
+				} else if (pdfWindow) {
+					pdfWindow.close();
 				}
 				await this.fetchQueue();
 			} catch (error) {
+				if (pdfWindow) pdfWindow.close();
 				this.listError = error.response?.data?.message || 'Could not print pick sheets.';
 			} finally {
 				this.printing = false;
@@ -406,7 +417,7 @@ export default {
 							<td>{{ orderProgress(order).filled }} of {{ orderProgress(order).total }} lines filled</td>
 							<td>
 								<button @click="continueFilling(order)" class="ri_formbutton">Continue</button>
-								<button @click="reprintOrder(order)" class="ri_linkbutton">Print</button>
+								<button @click="reprintOrder(order)" class="ri_formbutton">Print</button>
 							</td>
 						</tr>
 					</tbody>
