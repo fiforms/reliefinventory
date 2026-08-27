@@ -138,6 +138,9 @@ export default {
 						<tr v-if="expanded[record.id]" class="oor_detailrow">
 							<td></td>
 							<td colspan="8">
+								<p v-if="record.status === 'Filled'" class="oor_bollink">
+									<a :href="'/report/bol/' + record.id + '.pdf'" target="_blank" @click.stop class="ri_defaultbutton">Generate BOL</a>
+								</p>
 								<table class="oor_subtable" v-if="record.lines.length">
 									<thead>
 										<tr><th>Item #</th><th>Item</th><th>Qty Requested</th><th>Unit</th></tr>
@@ -221,6 +224,9 @@ export default {
 	letter-spacing: 0.05em;
 	padding: 2px 6px;
 	border-radius: 8px;
+}
+.oor_bollink {
+	margin: 0 0 10px 0;
 }
 .oor_detailrow td {
 	background: #fafafa;

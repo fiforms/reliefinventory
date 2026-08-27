@@ -63,6 +63,10 @@ class OrderController extends Controller
         'contact_name' => 'nullable|string|max:191',
         'contact_phone' => 'nullable|string|max:50',
         'other_needs' => 'nullable|string',
+        // Delivery instructions for the driver (gate codes, dock location,
+        // contact-on-arrival) — separate from other_needs (additional
+        // requested items). Carried through to the BOL.
+        'special_instructions' => 'nullable|string',
     ];
 
     /**
@@ -96,6 +100,9 @@ class OrderController extends Controller
             Transaction::statusId(Transaction::STATUS_READY_TO_FILL),
             Transaction::statusId(Transaction::STATUS_FILLING),
             Transaction::statusId(Transaction::STATUS_FILLED),
+            Transaction::statusId(Transaction::STATUS_READY_TO_SHIP),
+            Transaction::statusId(Transaction::STATUS_SHIPPED),
+            Transaction::statusId(Transaction::STATUS_DELIVERED),
         ];
 
         return response()->json([
@@ -327,5 +334,49 @@ class OrderController extends Controller
         ])->sortBy([['category', 'asc'], ['display_number', 'asc']])->values();
 
         return $records->groupBy('category');
+    }
+
+    /**
+     * BOL (Bill of Lading) — "the most important piece of paper in
+     * shipping," per the design notes: a chain-of-custody document, not
+     * just an itemized shipment record. Driver/carrier is filled in once
+     * the Shipping page has assigned one (Ready to Ship or later); before
+     * that the printed form leaves those lines blank for hand-entry. The
+     * signature lines themselves are always blank on this generated copy —
+     * this produces the document to be signed, not a signature-capture
+     * flow (that happens on paper, then comes back via the Driver Portal
+     * as the signed_bol_path upload). Only generatable once an order has
+     * actually been filled. bol_number is assigned the first time this is
+     * called and reused on every reprint after that, so a reload/reprint
+     * never changes the number on an already-printed BOL.
+     */
+    public function bolPdf($id)
+    {
+        $order = Transaction::where('type', 'order')
+            ->with(['person', 'driver', 'orderLines.itemtype.unit', 'orderLines.itemLedgers'])
+            ->findOrFail($id);
+
+        $bolEligibleStatuses = [
+            Transaction::STATUS_FILLED,
+            Transaction::STATUS_READY_TO_SHIP,
+            Transaction::STATUS_SHIPPED,
+            Transaction::STATUS_DELIVERED,
+            Transaction::STATUS_COMPLETED,
+        ];
+        if (! in_array($order->status?->name, $bolEligibleStatuses, true)) {
+            abort(409, 'A BOL can only be generated once an order has been filled.');
+        }
+
+        if (! $order->bol_number) {
+            $order->bol_number = 'BOL-'.str_pad($order->id, 6, '0', STR_PAD_LEFT);
+            $order->save();
+        }
+
+        $generatedAt = now();
+
+        return Pdf::view('reports.bol', ['order' => $order, 'generatedAt' => $generatedAt])
+            ->driver('weasyprint')
+            ->format('letter')
+            ->name($order->bol_number.'.pdf');
     }
 }

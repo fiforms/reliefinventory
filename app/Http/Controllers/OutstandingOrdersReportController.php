@@ -11,10 +11,13 @@ use League\Csv\Writer;
 use Spatie\LaravelPdf\Facades\Pdf;
 
 /**
- * Every order not yet Shipped — the "what's still owed to a partner" view
+ * Every order not yet Completed — the "what's still owed to a partner" view
  * that Order Entry's own list doesn't provide on its own (that page is an
  * entry tool, not a report: no export, no cross-order line totals). Reuses
  * the same "open" status set as OrderController::index()'s "open" bucket.
+ * Completed (manager approved the signed BOL) is this order type's real
+ * terminus — see Transaction::STATUS_COMPLETED. Delivered is still
+ * "outstanding": it's just awaiting manager review, not done.
  */
 class OutstandingOrdersReportController extends Controller
 {
@@ -23,6 +26,9 @@ class OutstandingOrdersReportController extends Controller
         Transaction::STATUS_READY_TO_FILL,
         Transaction::STATUS_FILLING,
         Transaction::STATUS_FILLED,
+        Transaction::STATUS_READY_TO_SHIP,
+        Transaction::STATUS_SHIPPED,
+        Transaction::STATUS_DELIVERED,
     ];
 
     public function index()

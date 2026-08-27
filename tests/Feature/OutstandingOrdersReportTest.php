@@ -30,7 +30,7 @@ test('the outstanding orders report requires the view-reports permission', funct
     $this->actingAs($user)->get('/report/orders.csv')->assertForbidden();
 });
 
-test('the outstanding orders report lists every non-Shipped order and excludes Shipped ones', function () {
+test('the outstanding orders report lists every non-Completed order and excludes Completed ones', function () {
     $user = userWithPermissions('view-reports');
     $partner = outstandingOrdersPartner();
 
@@ -39,12 +39,14 @@ test('the outstanding orders report lists every non-Shipped order and excludes S
     $filling = makeOutstandingOrder(Transaction::STATUS_FILLING, $partner);
     $filled = makeOutstandingOrder(Transaction::STATUS_FILLED, $partner);
     $shipped = makeOutstandingOrder(Transaction::STATUS_SHIPPED, $partner);
+    $delivered = makeOutstandingOrder(Transaction::STATUS_DELIVERED, $partner);
+    $completed = makeOutstandingOrder(Transaction::STATUS_COMPLETED, $partner);
 
     $records = collect($this->actingAs($user)->getJson('/json/reports/orders')->assertOk()->json('records'));
 
     expect($records->pluck('id'))
-        ->toContain($newOrder->id, $readyToFill->id, $filling->id, $filled->id)
-        ->not->toContain($shipped->id);
+        ->toContain($newOrder->id, $readyToFill->id, $filling->id, $filled->id, $shipped->id, $delivered->id)
+        ->not->toContain($completed->id);
 
     $record = $records->firstWhere('id', $newOrder->id);
     expect($record['partner'])->toBe('Pat Rivera')

@@ -46,6 +46,22 @@ Route::get('/order-filling', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/order-filling')]);
 })->middleware(['auth', 'permission:manage-orders']);
 
+Route::get('/shipping', function () {
+    return Inertia::render('Shipping',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/shipping')]);
+})->middleware(['auth', 'permission:manage-orders']);
+
+// Driver Portal — deliberately NOT auth-gated: a driver has no account (see
+// Driver's doc comment) and signs in with just phone + PIN, handled inside
+// DriverPortalController itself. A staff visitor with manage-orders sees an
+// admin read-only view of the same data instead — see the controller's doc
+// comment for the full dual-audience design.
+Route::get('/driver-portal', [DriverPortalController::class, 'page']);
+Route::post('/driver-portal/login', [DriverPortalController::class, 'login'])->middleware('throttle:6,1');
+Route::post('/driver-portal/logout', [DriverPortalController::class, 'logout']);
+Route::get('/driver-portal/loads', [DriverPortalController::class, 'loads']);
+Route::post('/driver-portal/loads/{id}/bol', [DriverPortalController::class, 'uploadBol']);
+
 Route::get('/receiving', function () {
     return Inertia::render('Receiving',
         ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
@@ -337,6 +353,21 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);
     Route::delete('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'destroyFill']);
 
+    // Shipping — Filled -> Ready to Ship (driver assigned) -> Shipped
+    // (staff-confirmed departure); see ShippingController's doc comment.
+    // Delivered is set separately, by DriverPortalController.
+    Route::get('/shipping', [ShippingController::class, 'index']);
+    Route::patch('/shipping/{id}/assign', [ShippingController::class, 'assign']);
+    Route::patch('/shipping/{id}/mark-shipped', [ShippingController::class, 'markShipped']);
+    Route::get('/shipping/{id}/signed-bol', [ShippingController::class, 'signedBol']);
+    Route::post('/shipping/{id}/approve', [ShippingController::class, 'approve']);
+    Route::post('/shipping/{id}/reject', [ShippingController::class, 'reject']);
+
+    // Driver Portal PIN — how a driver gets into /driver-portal. Kept under
+    // manage-orders (Shipping's own permission) rather than manage-receiving
+    // like the rest of DriverController, since this is a shipping concern.
+    Route::post('/drivers/{driver}/set-pin', [DriverController::class, 'setPin']);
+
     // Dead code (no consuming Vue page — SortingSessionController owns
     // donation creation now), left routed rather than silently
     // orphaned; shares orders' permission since it's the same table.
@@ -449,6 +480,12 @@ Route::get('/report/order-form.pdf', [OrderController::class, 'orderFormPdf'])
 // the batch select+lock step that precedes this) — safe to reload/reprint.
 Route::get('/report/pick-sheets.pdf', [OrderFillingController::class, 'pickSheetsPdf'])
     ->name('report.pick-sheets')
+    ->middleware(['auth', 'permission:manage-orders']);
+
+// BOL (Bill of Lading) for a Filled order. bol_number is assigned on first
+// generation and reused thereafter — safe to reload/reprint.
+Route::get('/report/bol/{id}.pdf', [OrderController::class, 'bolPdf'])
+    ->name('report.bol')
     ->middleware(['auth', 'permission:manage-orders']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {

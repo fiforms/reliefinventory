@@ -26,23 +26,34 @@ class WarehouseMetrics
 {
     private const TREND_STATIC_THRESHOLD_PCT = 5.0;
 
+    // An order sitting in any of these has been picked — "fulfilled" for
+    // dashboard/trend purposes, regardless of how far it's since progressed
+    // toward the driver actually leaving with it.
+    private const FULFILLED_ORDER_STATUSES = [
+        Transaction::STATUS_FILLED,
+        Transaction::STATUS_READY_TO_SHIP,
+        Transaction::STATUS_SHIPPED,
+        Transaction::STATUS_DELIVERED,
+        Transaction::STATUS_COMPLETED,
+    ];
+
     /**
-     * Orders currently sitting in Filled or Shipped are "fulfilled" —
+     * Orders currently sitting in Filled or later are "fulfilled" —
      * status_changed_at reflects the moment an order most recently entered
-     * its current status, which for a still-Filled or still-Shipped order
-     * is exactly the fulfillment moment. An order only ever holds one
-     * current status at a time, so this never double-counts a Filled order
-     * that later ships.
+     * its current status, which for a still-Filled (or later) order is
+     * exactly the fulfillment moment. An order only ever holds one current
+     * status at a time, so this never double-counts a Filled order that
+     * later ships.
      */
     public function ordersFulfilledCounts(): array
     {
         return $this->periodCounts(
             fn (Carbon $since) => Transaction::where('type', 'order')
-                ->whereHas('status', fn ($q) => $q->whereIn('name', [Transaction::STATUS_FILLED, Transaction::STATUS_SHIPPED]))
+                ->whereHas('status', fn ($q) => $q->whereIn('name', self::FULFILLED_ORDER_STATUSES))
                 ->where('status_changed_at', '>=', $since)
                 ->count(),
             fn () => Transaction::where('type', 'order')
-                ->whereHas('status', fn ($q) => $q->whereIn('name', [Transaction::STATUS_FILLED, Transaction::STATUS_SHIPPED]))
+                ->whereHas('status', fn ($q) => $q->whereIn('name', self::FULFILLED_ORDER_STATUSES))
                 ->count()
         );
     }
@@ -104,7 +115,7 @@ class WarehouseMetrics
     public function ordersTrend(int $days = 7): array
     {
         return $this->trend(fn (Carbon $since, Carbon $until) => Transaction::where('type', 'order')
-            ->whereHas('status', fn ($q) => $q->whereIn('name', [Transaction::STATUS_FILLED, Transaction::STATUS_SHIPPED]))
+            ->whereHas('status', fn ($q) => $q->whereIn('name', self::FULFILLED_ORDER_STATUSES))
             ->whereBetween('status_changed_at', [$since, $until])
             ->count(), $days);
     }
@@ -133,7 +144,7 @@ class WarehouseMetrics
             ->all();
 
         $donationStatuses = [Transaction::STATUS_RECEIVED, Transaction::STATUS_SORTING, Transaction::STATUS_COMPLETE];
-        $orderStatuses = [Transaction::STATUS_NEW_ORDER, Transaction::STATUS_FILLING, Transaction::STATUS_FILLED, Transaction::STATUS_SHIPPED];
+        $orderStatuses = [Transaction::STATUS_NEW_ORDER, Transaction::STATUS_FILLING, Transaction::STATUS_FILLED, Transaction::STATUS_READY_TO_SHIP, Transaction::STATUS_SHIPPED, Transaction::STATUS_DELIVERED, Transaction::STATUS_COMPLETED];
 
         $donationCounts = $byStatus('donation', $donationStatuses);
         $orderCounts = $byStatus('order', $orderStatuses);

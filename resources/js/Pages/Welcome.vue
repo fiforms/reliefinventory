@@ -43,6 +43,7 @@ function handleImageError() {
         <h1 class="text-2xl font-bold text-blue-600">Relief Inventory</h1>
         <nav class="space-x-4">
           <a href="/login" class="text-gray-700 hover:text-blue-600">Login</a>
+          <a href="/driver-portal" class="text-gray-700 hover:text-blue-600">Driver Portal</a>
 	  <a :href="hostedLink" class="text-gray-700 hover:text-blue-600" target="blank">{{ hostedBy }} -&gt;</a>
         </nav>
       </div>

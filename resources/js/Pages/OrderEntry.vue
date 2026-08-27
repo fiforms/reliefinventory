@@ -353,6 +353,7 @@ export default {
 				contact_name: this.order.contact_name || this.contactNameDefault(this.order.person),
 				contact_phone: this.order.contact_phone || this.order.person?.phone || '',
 				other_needs: this.order.other_needs || '',
+				special_instructions: this.order.special_instructions || '',
 			};
 			this.view = 'review';
 		},
@@ -791,6 +792,12 @@ export default {
 					<div class="oe_field"><label>Contact Phone:</label>
 						<input type="text" v-model="review.contact_phone" class="ri_forminput" /></div>
 				</div>
+			</div>
+
+			<div class="oe_card">
+				<h3>Special Delivery Instructions</h3>
+				<p class="oe_hint">Gate codes, dock location, who to contact on arrival &mdash; carried through to the BOL when this order ships. Not the same as "Needed But Not in Catalog" above.</p>
+				<TextArea v-model="review.special_instructions" placeholder="Instructions for the driver..." />
 			</div>
 
 			<div class="oe_actions">

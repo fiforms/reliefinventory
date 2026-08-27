@@ -119,12 +119,18 @@ test('the order list splits open orders from completed ones', function () {
     $readyToFill = $make(Transaction::STATUS_READY_TO_FILL);
     $filling = $make(Transaction::STATUS_FILLING);
     $shipped = $make(Transaction::STATUS_SHIPPED);
+    $delivered = $make(Transaction::STATUS_DELIVERED);
+    $completed = $make(Transaction::STATUS_COMPLETED);
 
     $response = $this->actingAs($user)->getJson('/json/orders')->assertOk()->json();
 
-    expect(collect($response['open'])->pluck('id'))->toContain($open->id, $readyToFill->id, $filling->id)
-        ->not->toContain($shipped->id)
-        ->and(collect($response['recent'])->pluck('id'))->toContain($shipped->id);
+    // Completed (manager approved the signed BOL) is this order type's
+    // real terminus — Shipped and Delivered are both still "open" (a load
+    // can sit Shipped a while before the driver returns proof of delivery,
+    // and Delivered just means it's awaiting manager review).
+    expect(collect($response['open'])->pluck('id'))->toContain($open->id, $readyToFill->id, $filling->id, $shipped->id, $delivered->id)
+        ->not->toContain($completed->id)
+        ->and(collect($response['recent'])->pluck('id'))->toContain($completed->id);
 });
 
 test('completing an order requires a fulfillment method and moves it to Ready to Fill, locking further edits', function () {

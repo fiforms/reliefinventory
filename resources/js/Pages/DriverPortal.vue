@@ -1,0 +1,310 @@
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+     Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
+
+<!-- DriverPortal.vue
+
+	Driver-facing, no login required: a driver signs in with phone + PIN
+	(set by staff on the Shipping page) to see their own Ready to Ship /
+	Shipped loads and upload the signed BOL once a delivery is done — that
+	upload moves the order straight to Delivered. The exact same URL also
+	works for staff (manage-orders): logged in with no driver session, they
+	get a read-only view of every load currently out, across all drivers —
+	see DriverPortalController's doc comment for the reasoning.
+
+	Mirrors VolunteerKiosk.vue's dual-layout pattern: AuthenticatedLayout
+	only when someone is actually logged in as staff, a bare div otherwise
+	(a driver has no account at all).
+-->
+
+<script>
+import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import { Head } from '@inertiajs/vue3';
+import axios from 'axios';
+
+export default {
+	components: { AuthenticatedLayout, Head },
+	props: {
+		breadcrumb: { type: Array },
+		isStaffViewer: { type: Boolean, default: false },
+		driverName: { type: String, default: null },
+	},
+	data() {
+		return {
+			signedInAs: this.driverName,
+			loginForm: { phone: '', pin: '' },
+			loggingIn: false,
+			loginError: null,
+
+			current: [],
+			delivered: [],
+			loading: false,
+			loadError: null,
+
+			uploadingId: null,
+			uploadError: {},
+		};
+	},
+	computed: {
+		isAuthenticated() {
+			return !!this.$page.props.auth.user;
+		},
+		signedIn() {
+			return this.isStaffViewer || !!this.signedInAs;
+		},
+	},
+	methods: {
+		totals(order) {
+			const lines = order.order_lines || [];
+			return { lines: lines.length, qty: lines.reduce((sum, l) => sum + (l.qty_requested || 0), 0) };
+		},
+		async login() {
+			this.loggingIn = true;
+			this.loginError = null;
+			try {
+				const response = await axios.post('/driver-portal/login', this.loginForm);
+				this.signedInAs = response.data.driverName;
+				this.loginForm = { phone: '', pin: '' };
+				await this.fetchLoads();
+			} catch (e) {
+				this.loginError = e.response?.data?.message || 'Could not sign in.';
+			} finally {
+				this.loggingIn = false;
+			}
+		},
+		async logout() {
+			await axios.post('/driver-portal/logout');
+			this.signedInAs = null;
+			this.current = [];
+			this.delivered = [];
+		},
+		async fetchLoads() {
+			this.loading = true;
+			this.loadError = null;
+			try {
+				const response = await axios.get('/driver-portal/loads');
+				this.current = response.data.current || [];
+				this.delivered = response.data.delivered || [];
+			} catch (e) {
+				this.loadError = 'Could not load your assigned loads.';
+			} finally {
+				this.loading = false;
+			}
+		},
+		triggerUpload(order) {
+			// Vue 3 collects refs used inside v-for into an array, even
+			// when the ref name is a unique per-item string like this one.
+			this.$refs['fileInput' + order.id]?.[0]?.click();
+		},
+		async onFileChosen(order, event) {
+			const file = event.target.files?.[0];
+			event.target.value = '';
+			if (!file) return;
+
+			this.uploadingId = order.id;
+			this.uploadError = { ...this.uploadError, [order.id]: null };
+			const formData = new FormData();
+			formData.append('file', file);
+			try {
+				await axios.post('/driver-portal/loads/' + order.id + '/bol', formData);
+				await this.fetchLoads();
+			} catch (e) {
+				this.uploadError = { ...this.uploadError, [order.id]: e.response?.data?.message || 'Could not upload that file.' };
+			} finally {
+				this.uploadingId = null;
+			}
+		},
+	},
+	created() {
+		if (this.signedIn) this.fetchLoads();
+	},
+};
+</script>
+
+<template>
+	<Head title="Driver Portal" />
+	<component :is="isAuthenticated ? 'AuthenticatedLayout' : 'div'" :breadcrumb="isAuthenticated ? breadcrumb : undefined">
+		<div class="dp_page" :class="{ dp_page_bare: !isAuthenticated }">
+			<h1 class="dp_title">Driver Portal</h1>
+
+			<template v-if="!signedIn">
+				<p class="dp_hint">Enter the phone number and PIN your warehouse contact gave you.</p>
+				<div class="dp_loginform">
+					<input type="tel" v-model="loginForm.phone" placeholder="Phone Number" class="ri_forminput dp_input" />
+					<input type="password" v-model="loginForm.pin" placeholder="PIN" class="ri_forminput dp_input" maxlength="5" />
+					<button class="ri_defaultbutton dp_loginbutton" :disabled="loggingIn || !loginForm.phone || !loginForm.pin" @click="login">
+						{{ loggingIn ? 'Signing In...' : 'Sign In' }}
+					</button>
+					<p v-if="loginError" class="dp_error">{{ loginError }}</p>
+				</div>
+			</template>
+
+			<template v-else>
+				<p v-if="signedInAs" class="dp_hint">
+					Signed in as <strong>{{ signedInAs }}</strong>.
+					<button class="dp_logoutlink" @click="logout">Sign Out</button>
+				</p>
+				<p v-else-if="isStaffViewer" class="dp_hint">Staff view — every load currently Ready to Ship or Shipped, across all drivers.</p>
+
+				<p v-if="loadError" class="dp_error">{{ loadError }}</p>
+				<p v-if="loading">Loading...</p>
+
+				<h2 class="dp_sectionhead">Current Loads ({{ current.length }})</h2>
+				<div v-for="order in current" :key="order.id" class="dp_card">
+					<div class="dp_cardhead">
+						<span class="dp_ordernum">Order #{{ order.id }}</span>
+						<span class="dp_status_badge">{{ order.status?.name }}</span>
+					</div>
+					<p class="dp_partner">{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</p>
+					<p class="dp_meta">{{ totals(order).lines }} line(s), {{ totals(order).qty }} item(s)<span v-if="isStaffViewer && order.driver"> — driver: {{ order.driver.name }}</span></p>
+					<p v-if="order.special_instructions" class="dp_instructions">{{ order.special_instructions }}</p>
+					<p v-if="order.bol_rejection_reason" class="dp_rejection">
+						<strong>The last upload was rejected:</strong> {{ order.bol_rejection_reason }}
+					</p>
+
+					<template v-if="!isStaffViewer">
+						<input
+							type="file"
+							accept="image/*,.pdf"
+							class="dp_hiddenfile"
+							:ref="'fileInput' + order.id"
+							@change="onFileChosen(order, $event)"
+						/>
+						<button class="ri_defaultbutton" :disabled="uploadingId === order.id" @click="triggerUpload(order)">
+							{{ uploadingId === order.id ? 'Uploading...' : 'Upload Signed BOL' }}
+						</button>
+						<p v-if="uploadError[order.id]" class="dp_error">{{ uploadError[order.id] }}</p>
+					</template>
+				</div>
+				<p v-if="!current.length && !loading" class="dp_empty">No loads currently out.</p>
+
+				<h2 class="dp_sectionhead">Recently Delivered</h2>
+				<div v-for="order in delivered" :key="order.id" class="dp_card dp_card_muted">
+					<div class="dp_cardhead">
+						<span class="dp_ordernum">Order #{{ order.id }}</span>
+						<span class="dp_status_badge dp_status_badge_done">Delivered</span>
+					</div>
+					<p class="dp_partner">{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</p>
+				</div>
+				<p v-if="!delivered.length && !loading" class="dp_empty">Nothing delivered yet.</p>
+			</template>
+		</div>
+	</component>
+</template>
+
+<style scoped>
+.dp_page {
+	max-width: 640px;
+	margin: 0 auto;
+	padding: 16px;
+}
+.dp_page_bare {
+	padding-top: 48px;
+}
+.dp_title {
+	font-size: 1.4rem;
+	margin: 0 0 12px 0;
+}
+.dp_hint {
+	color: #666;
+	margin-bottom: 16px;
+}
+.dp_loginform {
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	max-width: 320px;
+}
+.dp_input {
+	font-size: 1.1rem;
+	padding: 10px;
+}
+.dp_loginbutton {
+	font-size: 1.1rem;
+	padding: 10px;
+}
+.dp_logoutlink {
+	background: none;
+	border: none;
+	color: #4338ca;
+	text-decoration: underline;
+	cursor: pointer;
+	margin-left: 8px;
+}
+.dp_sectionhead {
+	font-size: 1rem;
+	text-transform: uppercase;
+	letter-spacing: 0.04em;
+	color: #666;
+	border-bottom: 1px solid #ccc;
+	padding-bottom: 4px;
+	margin: 24px 0 10px 0;
+}
+.dp_card {
+	border: 1px solid #ddd;
+	border-radius: 8px;
+	padding: 12px 14px;
+	margin-bottom: 10px;
+}
+.dp_card_muted {
+	opacity: 0.75;
+}
+.dp_cardhead {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	margin-bottom: 4px;
+}
+.dp_ordernum {
+	font-weight: bold;
+}
+.dp_status_badge {
+	background: #fef3c7;
+	color: #92400e;
+	font-size: 0.7rem;
+	font-weight: bold;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 2px 6px;
+	border-radius: 8px;
+}
+.dp_status_badge_done {
+	background: #dcfce7;
+	color: #166534;
+}
+.dp_partner {
+	margin: 2px 0;
+}
+.dp_meta {
+	color: #666;
+	font-size: 0.9rem;
+	margin: 2px 0 8px 0;
+}
+.dp_instructions {
+	background: #fffbeb;
+	border: 1px solid #fde68a;
+	border-radius: 4px;
+	padding: 6px 8px;
+	font-size: 0.9rem;
+	margin-bottom: 8px;
+}
+.dp_rejection {
+	background: #fef2f2;
+	border: 1px solid #fecaca;
+	color: #991b1b;
+	border-radius: 4px;
+	padding: 6px 8px;
+	font-size: 0.9rem;
+	margin-bottom: 8px;
+}
+.dp_hiddenfile {
+	display: none;
+}
+.dp_empty {
+	color: #777;
+	padding: 0.5em 0;
+}
+.dp_error {
+	color: #b91c1c;
+	margin: 6px 0;
+}
+</style>

@@ -49,7 +49,28 @@ class Transaction extends Model
 
     public const STATUS_FILLED = 'Filled';
 
+    // Ready to Ship: staff have assigned a driver (Shipping page,
+    // ShippingController::assign) to a Filled order. Shipped: staff have
+    // confirmed the load physically left the warehouse
+    // (ShippingController::markShipped) — a manual, warehouse-observed
+    // event, not something the app infers. Delivered: the driver (or
+    // staff, on their behalf) has uploaded the signed BOL through the
+    // Driver Portal — see driver-portal-and-bol-upload design notes.
+    public const STATUS_READY_TO_SHIP = 'Ready to Ship';
+
     public const STATUS_SHIPPED = 'Shipped';
+
+    // Delivered is a "pending manager review" holding state, not the
+    // terminus — added same-day (2026-08-27) once Mark asked for a
+    // sign-off step: a manager reviews the uploaded signed BOL on the
+    // Shipping page and either approves it (-> Completed, this order
+    // type's real terminus now) or rejects it, which sends the order back
+    // to Shipped so the driver sees it again in the Driver Portal and
+    // re-uploads (bol_rejection_reason carries why, shown on their load
+    // card). See ShippingController::approve()/reject().
+    public const STATUS_DELIVERED = 'Delivered';
+
+    public const STATUS_COMPLETED = 'Completed';
 
     // Define the table associated with the model
     protected $table = 'orderdonations';
@@ -98,6 +119,20 @@ class Transaction extends Model
         'contact_name',
         'contact_phone',
         'other_needs',
+        // Delivery-only instructions for the driver (gate codes, dock
+        // location, contact-on-arrival) — distinct from other_needs, which
+        // is additional requested *items*. Carried through to the BOL.
+        'special_instructions',
+        // The driver's returned signed/scanned BOL — always set server-side
+        // via an explicit ->update()/property assignment, never from a
+        // client request payload directly. See ShippingController/
+        // DriverPortalController.
+        'signed_bol_path',
+        // Manager's note on why a signed BOL was rejected, shown to the
+        // driver — set server-side by ShippingController::reject(), not
+        // from an arbitrary client payload. bol_reviewed_by_person_id is
+        // NOT fillable — it's an actor field, always set from Auth::id().
+        'bol_rejection_reason',
         // See Person::$fillable's source_system/source_ref comment.
         'source_system',
         'source_ref',
