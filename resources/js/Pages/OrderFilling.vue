@@ -65,6 +65,7 @@ export default {
 			fillError: null,
 			confirmingFillKey: null,
 			savingComplete: false,
+			palletCount: null,
 
 			// add-a-fill-record entry, per line (keyed by line id)
 			entryByLine: {},
@@ -216,6 +217,7 @@ export default {
 			this.fillError = null;
 			this.confirmingFillKey = null;
 			this.entryByLine = {};
+			this.palletCount = null;
 			try {
 				const response = await axios.get('/json/order-filling');
 				const found = [...(response.data.ready_to_fill || []), ...(response.data.filling || [])]
@@ -319,7 +321,9 @@ export default {
 			this.fillError = null;
 			this.savingComplete = true;
 			try {
-				await axios.patch('/json/order-filling/' + this.order.id + '/complete');
+				await axios.patch('/json/order-filling/' + this.order.id + '/complete', {
+					pallet_count: this.palletCount || null,
+				});
 				this.backToList();
 			} catch (error) {
 				this.fillError = error.response?.data?.message || 'Could not complete filling this order.';
@@ -485,6 +489,10 @@ export default {
 			</table></div>
 
 			<div class="of_actions">
+				<label class="of_palletlabel">
+					Pallets packed
+					<input type="number" min="1" step="1" v-model.number="palletCount" class="ri_forminput of_palletinput" placeholder="#" />
+				</label>
 				<button :disabled="!allLinesAccounted() || savingComplete" @click="completeFilling" class="ri_defaultbutton">
 					{{ savingComplete ? 'Completing…' : 'Complete Filling' }}
 				</button>
@@ -595,6 +603,16 @@ export default {
 	display: flex;
 	align-items: center;
 	gap: 12px;
+}
+.of_palletlabel {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 0.9rem;
+	color: #444;
+}
+.of_palletinput {
+	width: 60px;
 }
 .of_modal_overlay {
 	position: fixed;

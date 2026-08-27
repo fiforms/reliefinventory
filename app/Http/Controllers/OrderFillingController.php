@@ -237,7 +237,7 @@ class OrderFillingController extends Controller
      * filled 0"). Mirrors the legacy Apps Script system's isPullSheetReady()
      * rule: every line accounted for, zero counts as accounted for.
      */
-    public function completeFilling($id)
+    public function completeFilling(Request $request, $id)
     {
         $order = Transaction::where('type', 'order')->findOrFail($id);
         if ($order->status?->name !== Transaction::STATUS_FILLING) {
@@ -252,7 +252,14 @@ class OrderFillingController extends Controller
             ], 422);
         }
 
-        $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLED)]);
+        $data = $request->validate([
+            'pallet_count' => 'nullable|integer|min:1',
+        ]);
+
+        $order->update([
+            'status_id' => Transaction::statusId(Transaction::STATUS_FILLED),
+            'pallet_count' => $data['pallet_count'] ?? null,
+        ]);
 
         return response()->json(['record' => $order->load(self::QUEUE_RELATIONS)]);
     }

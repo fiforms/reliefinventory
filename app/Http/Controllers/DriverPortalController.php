@@ -27,7 +27,7 @@ use Inertia\Inertia;
  */
 class DriverPortalController extends Controller
 {
-    private const WITH_RELATIONS = ['person', 'status', 'driver', 'orderLines.itemtype.unit'];
+    private const WITH_RELATIONS = ['person', 'contactPerson', 'status', 'driver', 'orderLines.itemtype.unit'];
 
     private function currentDriver(Request $request): ?Driver
     {

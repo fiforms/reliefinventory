@@ -180,6 +180,10 @@
                 <div class="value blank">&nbsp;</div>
             </div>
             <div class="field">
+                <div class="label">Pallet Count (as packed)</div>
+                <div class="value">{{ $order->pallet_count ?? '' }}</div>
+            </div>
+            <div class="field">
                 <div class="label">Pallet Count (confirmed by driver)</div>
                 <div class="value blank">&nbsp;</div>
             </div>

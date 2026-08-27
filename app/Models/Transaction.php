@@ -123,6 +123,11 @@ class Transaction extends Model
         // location, contact-on-arrival) — distinct from other_needs, which
         // is additional requested *items*. Carried through to the BOL.
         'special_instructions',
+        // How many pallets the packed order took — staff-entered when
+        // Filling completes (OrderFillingController::completeFilling), not
+        // computed. Shown on the Driver Portal and the BOL; distinct from
+        // the BOL's own driver-confirmed pallet-count line.
+        'pallet_count',
         // The driver's returned signed/scanned BOL — always set server-side
         // via an explicit ->update()/property assignment, never from a
         // client request payload directly. See ShippingController/
