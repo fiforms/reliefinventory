@@ -223,12 +223,17 @@ promote() { # promote <tier> <stamp-prefix>
 promote monthly "$(TZ="$BACKUP_TZ" date +%Y%m)"
 promote yearly "$(TZ="$BACKUP_TZ" date +%Y)"
 
-# Per-tier rotation. Stamp names sort chronologically, so glob order is age order.
+# Per-tier rotation, oldest first by actual mtime — NOT by glob/name order.
+# Stamp names only sort chronologically as long as every stamp was generated
+# under the same BACKUP_TZ; right after that setting changes, a backup made
+# under the old TZ can sort as "newer" than one made minutes later under the
+# new one purely from the string comparison, which would prune the wrong one.
 prune_tier() { # prune_tier <dir> <keep-count>
     local dir="$1" keep="$2"
     [ -d "$dir" ] || return 0
-    local entries=( "$dir"/*/ )
-    [ -e "${entries[0]}" ] || return 0
+    local entries=()
+    mapfile -t entries < <(find "$dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' | sort -n | cut -f2-)
+    [ "${#entries[@]}" -gt 0 ] || return 0
     while [ "${#entries[@]}" -gt "$keep" ]; do
         echo "-- Pruning old backup ${entries[0]}"
         rm -rf "${entries[0]}"

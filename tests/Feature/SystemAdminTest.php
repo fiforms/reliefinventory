@@ -44,6 +44,26 @@ test('status returns version, backups, and settings for a system admin', functio
         ->and($response->json('backup_settings.hour'))->toBe(2);
 });
 
+test('backup entries are ordered by actual mtime, not by stamp-name sort order', function () {
+    // Simulates the exact scenario a BACKUP_TZ change produces: an
+    // older-named directory that was actually touched more recently than a
+    // newer-named one. A name-only sort would report the wrong one as latest.
+    $dir = sys_get_temp_dir().'/ri-test-backups-'.uniqid();
+    config(['system.backup_dir' => $dir]);
+    mkdir("$dir/daily", 0777, true);
+    mkdir("$dir/daily/20260827-070910");
+    mkdir("$dir/daily/20260827-001538");
+    touch("$dir/daily/20260827-070910", strtotime('2026-08-27 07:09:11 UTC'));
+    touch("$dir/daily/20260827-001538", strtotime('2026-08-27 07:15:38 UTC'));
+
+    $response = $this->actingAs(userWithPermissions('admin-system'))
+        ->get('/json/system/status');
+
+    $response->assertOk()
+        ->assertJsonPath('backups.tiers.daily.entries.0', '20260827-001538')
+        ->assertJsonPath('backups.tiers.daily.entries.1', '20260827-070910');
+});
+
 test('backup settings round-trip through the conf file', function () {
     config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings.conf']);
     @unlink(config('system.settings_file'));

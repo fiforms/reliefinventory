@@ -200,8 +200,18 @@ class SystemController extends Controller
         $dir = config('system.backup_dir');
         $tiers = [];
         foreach (['daily', 'monthly', 'yearly'] as $tier) {
-            $entries = is_dir("$dir/$tier")
-                ? collect(scandir("$dir/$tier"))->filter(fn ($n) => preg_match('/^\d{8}-\d{6}$/', $n))->sort()->values()
+            $path = "$dir/$tier";
+            // Sorted by actual directory mtime, not the stamp name itself — the
+            // stamp is generated in BACKUP_TZ (see update.sh), so a name-only
+            // sort briefly goes wrong whenever that setting changes: an older
+            // backup made under the previous BACKUP_TZ can sort as "newer" than
+            // one made minutes later under the new one, purely from the string
+            // comparison, for as long as both remain in the retention window.
+            $entries = is_dir($path)
+                ? collect(scandir($path))
+                    ->filter(fn ($n) => preg_match('/^\d{8}-\d{6}$/', $n))
+                    ->sortBy(fn ($n) => filemtime("$path/$n"))
+                    ->values()
                 : collect();
             $tiers[$tier] = [
                 'count' => $entries->count(),
