@@ -20,6 +20,9 @@ BACKUP_DOW=7
 BACKUP_TZ=America/Los_Angeles
 
 # Retention per tier (see scripts/BACKUPS.md for how tiers work).
+# KEEP_HOURLY counts every raw backup (scheduled or on-demand); the others
+# count only promoted, once-per-period snapshots.
+KEEP_HOURLY=48
 KEEP_DAILY=14
 KEEP_MONTHLY=12
 KEEP_YEARLY=3

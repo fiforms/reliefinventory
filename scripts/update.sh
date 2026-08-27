@@ -12,9 +12,15 @@
 #   bash scripts/update.sh --scheduled         backup only if one is due (systemd timer)
 #   bash scripts/update.sh --seed-permissions  full update + PermissionsSeeder
 #
-# Backups are tiered: every backup lands in daily/, and the first backup of a
-# month/year is also promoted (as hardlinks, so promotion costs no space) into
-# monthly/ and yearly/. Retention, schedule time, and frequency come from
+# Backups are tiered: every backup (scheduled or on-demand — a full update's
+# pre-update backup, or "Back Up Now" from the admin panel) lands in hourly/,
+# kept a short while so a bad update can be rolled back to whichever attempt
+# preceded it. Only the once-a-day *scheduled* backup is also promoted (as a
+# hardlink, so promotion costs no space) into daily/, and the first such
+# promotion of a month/year further promotes into monthly/ and yearly/ — an
+# on-demand backup never enters daily/monthly/yearly directly, so it can never
+# crowd out that history no matter how many times it's triggered in a day.
+# Retention, schedule time, and frequency come from
 # storage/app/backup-settings.conf — a www-data-writable file, so the admin
 # panel can later manage the schedule without root. See scripts/BACKUPS.md.
 #
@@ -109,6 +115,7 @@ BACKUP_FREQUENCY="$(setting BACKUP_FREQUENCY daily 'daily|weekly')"
 BACKUP_HOUR="$(setting BACKUP_HOUR 2 '[0-9]|1[0-9]|2[0-3]')"          # 0-23, in BACKUP_TZ
 BACKUP_DOW="$(setting BACKUP_DOW 7 '[1-7]')"                          # weekly only: 1=Mon..7=Sun
 BACKUP_TZ="$(setting BACKUP_TZ America/Los_Angeles '[A-Za-z0-9_/+-]+')"
+KEEP_HOURLY="$(setting KEEP_HOURLY 48 '[0-9]{1,4}')"          # every raw backup, scheduled or on-demand
 KEEP_DAILY="$(setting KEEP_DAILY 14 '[0-9]{1,3}')"
 KEEP_MONTHLY="$(setting KEEP_MONTHLY 12 '[0-9]{1,3}')"
 KEEP_YEARLY="$(setting KEEP_YEARLY 3 '[0-9]{1,2}')"
@@ -186,7 +193,10 @@ trap 'on_error $LINENO' ERR
 write_status running "Update running (started $STAMP)"
 
 # -------------------------------------------------------------------- 1. backup
-BACKUP_PATH="$BACKUP_DIR/daily/$STAMP"
+# Every backup lands here first, scheduled or on-demand — see the tiering
+# note at the top of the file for why only the scheduled one gets promoted
+# further, into daily/ and beyond.
+BACKUP_PATH="$BACKUP_DIR/hourly/$STAMP"
 mkdir -p "$BACKUP_PATH"
 echo "-- Backing up to $BACKUP_PATH"
 
@@ -208,9 +218,11 @@ fi
 chmod -R go-rwx "$BACKUP_PATH"   # dump + .env hold credentials
 echo "-- Backup complete: $(du -sh "$BACKUP_PATH" | cut -f1)"
 
-# Promotion: the first backup of a month/year is also linked into monthly/ or
+# Promotion: only the once-a-day *scheduled* backup (never an on-demand one —
+# see the tiering note at the top of the file) is linked into daily/, and the
+# first such promotion of a month/year is further linked into monthly/ or
 # yearly/. cp -al hardlinks the files, so a promoted backup costs no extra
-# space until the daily copy it shares data with is pruned.
+# space until the hourly copy it shares data with is pruned.
 promote() { # promote <tier> <stamp-prefix>
     local tier="$1" prefix="$2" existing
     mkdir -p "$BACKUP_DIR/$tier"
@@ -220,8 +232,11 @@ promote() { # promote <tier> <stamp-prefix>
         cp -al "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP"
     fi
 }
-promote monthly "$(TZ="$BACKUP_TZ" date +%Y%m)"
-promote yearly "$(TZ="$BACKUP_TZ" date +%Y)"
+if [ "$SCHEDULED" -eq 1 ]; then
+    promote daily "$TODAY"
+    promote monthly "$(TZ="$BACKUP_TZ" date +%Y%m)"
+    promote yearly "$(TZ="$BACKUP_TZ" date +%Y)"
+fi
 
 # Per-tier rotation, oldest first by actual mtime — NOT by glob/name order.
 # Stamp names only sort chronologically as long as every stamp was generated
@@ -240,6 +255,7 @@ prune_tier() { # prune_tier <dir> <keep-count>
         entries=( "${entries[@]:1}" )
     done
 }
+prune_tier "$BACKUP_DIR/hourly" "$KEEP_HOURLY"
 prune_tier "$BACKUP_DIR/daily" "$KEEP_DAILY"
 prune_tier "$BACKUP_DIR/monthly" "$KEEP_MONTHLY"
 prune_tier "$BACKUP_DIR/yearly" "$KEEP_YEARLY"

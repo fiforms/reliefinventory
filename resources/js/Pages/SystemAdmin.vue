@@ -44,6 +44,7 @@ const settings = reactive({
 	hour: 2,
 	dow: 7,
 	tz: 'America/Los_Angeles',
+	keep_hourly: 48,
 	keep_daily: 14,
 	keep_monthly: 12,
 	keep_yearly: 3,
@@ -255,8 +256,13 @@ onUnmounted(stopPolling);
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Backups</h2>
 					<p class="text-xs text-gray-500">Times below are in the configured backup timezone ({{ settings.tz }}), not your browser's local time.</p>
-					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-						<div v-for="tier in ['daily', 'monthly', 'yearly']" :key="tier" class="border rounded p-3">
+					<p class="text-xs text-gray-500">
+						Hourly holds every backup (scheduled or on-demand) for short-term rollback; only the day's
+						scheduled backup is promoted into Daily, and only that promotion can reach Monthly/Yearly —
+						so clicking "Back Up Now" repeatedly can never crowd out that history.
+					</p>
+					<div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+						<div v-for="tier in ['hourly', 'daily', 'monthly', 'yearly']" :key="tier" class="border rounded p-3">
 							<h3 class="font-medium capitalize">{{ tier }} <span class="text-gray-400 font-normal">({{ status.backups.tiers[tier].count }})</span></h3>
 							<ul class="text-xs font-mono text-gray-600 mt-1 space-y-0.5">
 								<li v-for="entry in status.backups.tiers[tier].entries" :key="entry">{{ formatStamp(entry) }}</li>
@@ -303,6 +309,10 @@ onUnmounted(stopPolling);
 							</select>
 						</label>
 						<label class="block">
+							<span class="text-gray-700">Hourly backups to keep</span>
+							<input type="number" min="1" max="500" v-model.number="settings.keep_hourly" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+						</label>
+						<label class="block">
 							<span class="text-gray-700">Daily backups to keep</span>
 							<input type="number" min="1" max="365" v-model.number="settings.keep_daily" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
 						</label>
@@ -322,8 +332,9 @@ onUnmounted(stopPolling);
 						<span v-if="settingsSavedAt" class="text-sm text-green-700">Saved {{ settingsSavedAt.toLocaleTimeString() }}</span>
 					</div>
 					<p class="text-xs text-gray-500">
-						Changes take effect at the next hourly check — no server restart needed. Monthly and yearly
-						backups are space-free copies of the first backup of the period.
+						Changes take effect at the next hourly check — no server restart needed. "Hourly backups to
+						keep" counts every raw backup, scheduled or on-demand; Daily/Monthly/Yearly are space-free
+						copies of the day's/month's/year's first scheduled backup.
 					</p>
 				</section>
 			</template>

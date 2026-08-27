@@ -35,8 +35,8 @@ test('status returns version, backups, and settings for a system admin', functio
 
     $response->assertOk()->assertJsonStructure([
         'version' => ['current', 'behind', 'pending_commits'],
-        'backup_settings' => ['frequency', 'hour', 'tz', 'keep_daily', 'keep_monthly', 'keep_yearly'],
-        'backups' => ['tiers' => ['daily', 'monthly', 'yearly'], 'last_scheduled'],
+        'backup_settings' => ['frequency', 'hour', 'tz', 'keep_hourly', 'keep_daily', 'keep_monthly', 'keep_yearly'],
+        'backups' => ['tiers' => ['hourly', 'daily', 'monthly', 'yearly'], 'last_scheduled'],
         'timezones',
     ]);
     // No settings file yet -> defaults
@@ -75,6 +75,7 @@ test('backup settings round-trip through the conf file', function () {
         'hour' => 3,
         'dow' => 1,
         'tz' => 'America/New_York',
+        'keep_hourly' => 48,
         'keep_daily' => 7,
         'keep_monthly' => 6,
         'keep_yearly' => 2,
@@ -85,6 +86,7 @@ test('backup settings round-trip through the conf file', function () {
     expect($contents)->toContain('BACKUP_FREQUENCY=weekly')
         ->toContain('BACKUP_HOUR=3')
         ->toContain('BACKUP_TZ=America/New_York')
+        ->toContain('KEEP_HOURLY=48')
         ->toContain('KEEP_DAILY=7');
 
     // And reads back through the status endpoint
@@ -149,10 +151,11 @@ test('invalid backup settings are rejected', function () {
             'hour' => 25,                  // out of range
             'dow' => 7,
             'tz' => 'Not/AZone',
+            'keep_hourly' => 0,            // must keep at least one hourly
             'keep_daily' => 0,             // must keep at least one daily
             'keep_monthly' => 12,
             'keep_yearly' => 3,
         ])
         ->assertStatus(422)
-        ->assertJsonValidationErrors(['frequency', 'hour', 'tz', 'keep_daily']);
+        ->assertJsonValidationErrors(['frequency', 'hour', 'tz', 'keep_hourly', 'keep_daily']);
 });

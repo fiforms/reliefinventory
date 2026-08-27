@@ -5,10 +5,22 @@ Backups are made by `scripts/update.sh` (every full update backs up first; the
 `/var/backups/reliefinventory/`:
 
 ```
-daily/<YYYYmmdd-HHMMSS>/     every backup           keep KEEP_DAILY   (14)
-monthly/<stamp>/             first backup of month  keep KEEP_MONTHLY (12)
-yearly/<stamp>/              first backup of year   keep KEEP_YEARLY  (3)
+hourly/<YYYYmmdd-HHMMSS>/    every backup, scheduled or on-demand  keep KEEP_HOURLY  (48)
+daily/<stamp>/               that day's scheduled backup           keep KEEP_DAILY   (14)
+monthly/<stamp>/             first daily promotion of the month    keep KEEP_MONTHLY (12)
+yearly/<stamp>/              first daily promotion of the year     keep KEEP_YEARLY  (3)
 ```
+
+`hourly/` is a flat, undeduplicated recent-backups tier — its job is to let you roll
+back to whichever attempt preceded a bad one (e.g. three "Back Up Now" clicks or
+update attempts in the same hour each get their own entry there, none of them
+collapsed into "the hour's backup"). Only the once-a-day **scheduled** backup (never
+an on-demand one — an update's pre-update backup, or a manual "Back Up Now") gets
+promoted further into `daily/`, and only that promotion can, in turn, promote into
+`monthly/`/`yearly/`. This is deliberate: an on-demand backup never enters
+daily/monthly/yearly directly, so triggering several in one day can't crowd out
+that day's (or an earlier day's) history — see `promote()`/`prune_tier()` in
+`update.sh`.
 
 The stamp is generated in `BACKUP_TZ`, not server-local time (`TZ="$BACKUP_TZ" date
 ...` in `update.sh`) — the admin panel displays it verbatim, so it has to already be
@@ -16,17 +28,17 @@ in the configured timezone or the panel would silently mislabel every backup tim
 
 Each backup contains `db.sql.gz` (integrity-checked mysqldump),
 `storage-app.tar.gz` (uploads), `env.backup`, and `git-sha.txt` (the code
-revision the data matched). Monthly/yearly copies are **hardlink promotions**
-(`cp -al`) of that day's daily backup — promotion itself costs no disk space;
-space is only held by however many distinct snapshots the tiers retain
-(worst case 29 with the defaults).
+revision the data matched). Daily/monthly/yearly copies are **hardlink
+promotions** (`cp -al`) of the underlying hourly backup — promotion itself costs
+no disk space; space is only held by however many distinct snapshots the tiers
+retain.
 
 ## Schedule settings
 
 Live settings file: `storage/app/backup-settings.conf` (copy
 `scripts/backup-settings.conf.example` to start). Keys, defaults, and valid
 values are documented in the example file; defaults are 2am
-`America/Los_Angeles`, daily, keeping 14/12/3.
+`America/Los_Angeles`, daily, keeping 48/14/12/3 (hourly/daily/monthly/yearly).
 
 The systemd timer (`reliefinventory-backup.timer`) fires **hourly**, and each
 firing runs `update.sh --scheduled`, which exits immediately unless a backup is
@@ -84,7 +96,7 @@ daemon-reload` (settings-file changes need nothing).
 ## Manual operations
 
 ```bash
-bash scripts/update.sh --backup-only          # back up right now
+bash scripts/update.sh --backup-only          # back up right now (lands in hourly/ only)
 journalctl -u reliefinventory-backup.service  # scheduled-run history
 ```
 

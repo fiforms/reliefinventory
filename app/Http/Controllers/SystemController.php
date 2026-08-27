@@ -47,6 +47,7 @@ class SystemController extends Controller
         'hour' => 2,
         'dow' => 7,
         'tz' => 'America/Los_Angeles',
+        'keep_hourly' => 48,
         'keep_daily' => 14,
         'keep_monthly' => 12,
         'keep_yearly' => 3,
@@ -57,6 +58,7 @@ class SystemController extends Controller
         'hour' => 'BACKUP_HOUR',
         'dow' => 'BACKUP_DOW',
         'tz' => 'BACKUP_TZ',
+        'keep_hourly' => 'KEEP_HOURLY',
         'keep_daily' => 'KEEP_DAILY',
         'keep_monthly' => 'KEEP_MONTHLY',
         'keep_yearly' => 'KEEP_YEARLY',
@@ -121,6 +123,7 @@ class SystemController extends Controller
             'hour' => 'required|integer|between:0,23',
             'dow' => 'required|integer|between:1,7',
             'tz' => 'required|timezone:all',
+            'keep_hourly' => 'required|integer|between:1,500',
             'keep_daily' => 'required|integer|between:1,365',
             'keep_monthly' => 'required|integer|between:0,120',
             'keep_yearly' => 'required|integer|between:0,50',
@@ -184,7 +187,7 @@ class SystemController extends Controller
                 }
             }
         }
-        foreach (['hour', 'dow', 'keep_daily', 'keep_monthly', 'keep_yearly'] as $intField) {
+        foreach (['hour', 'dow', 'keep_hourly', 'keep_daily', 'keep_monthly', 'keep_yearly'] as $intField) {
             $values[$intField] = (int) $values[$intField];
         }
 
@@ -199,7 +202,7 @@ class SystemController extends Controller
     {
         $dir = config('system.backup_dir');
         $tiers = [];
-        foreach (['daily', 'monthly', 'yearly'] as $tier) {
+        foreach (['hourly', 'daily', 'monthly', 'yearly'] as $tier) {
             $path = "$dir/$tier";
             // Sorted by actual directory mtime, not the stamp name itself — the
             // stamp is generated in BACKUP_TZ (see update.sh), so a name-only
