@@ -67,6 +67,9 @@ class ItemType extends Model
         // See Person::$fillable's source_system/source_ref comment.
         'source_system',
         'source_ref',
+        // Null = use config('inventory.low_stock_threshold'). See
+        // stock-visibility-and-fair-share-allocation (PROJECT_ANALYSIS.md Part 5).
+        'low_stock_threshold',
     ];
 
     /**
@@ -77,6 +80,7 @@ class ItemType extends Model
     protected $casts = [
         'active' => 'boolean',
         'pick_sequence' => 'integer',
+        'low_stock_threshold' => 'integer',
     ];
 
     /**

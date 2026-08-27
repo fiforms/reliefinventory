@@ -41,6 +41,11 @@ Route::get('/order-entry', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/order-entry')]);
 })->middleware(['auth', 'permission:manage-orders']);
 
+Route::get('/order-filling', function () {
+    return Inertia::render('OrderFilling',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/order-filling')]);
+})->middleware(['auth', 'permission:manage-orders']);
+
 Route::get('/receiving', function () {
     return Inertia::render('Receiving',
         ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
@@ -244,7 +249,6 @@ Route::get('/reports/sitrep', function () {
 // Roadmap pages linked from the main menu but not yet built.
 // Renders a "coming soon" placeholder instead of 404ing.
 foreach ([
-    '/order-filling' => 'Order Filling',
     '/reports/flow' => 'Inventory Flow Report',
     '/reports/donors' => 'Donor Report',
     '/reports/partners' => 'Partner Report',
@@ -321,6 +325,17 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::post('/orders/{id}/lines', [OrderController::class, 'storeLine']);
     Route::put('/orders/{id}/lines/{lineId}', [OrderController::class, 'updateLine']);
     Route::delete('/orders/{id}/lines/{lineId}', [OrderController::class, 'destroyLine']);
+
+    // Order Filling/Picking — the order (Transaction) itself is the filling
+    // session, same as donation sorting; see OrderFillingController's doc
+    // comment. Fill records are ItemLedger rows nested under an order line.
+    Route::get('/order-filling', [OrderFillingController::class, 'index']);
+    Route::patch('/order-filling/{id}/start', [OrderFillingController::class, 'start']);
+    Route::post('/order-filling/print-pick-sheets', [OrderFillingController::class, 'printPickSheets']);
+    Route::patch('/order-filling/{id}/complete', [OrderFillingController::class, 'completeFilling']);
+    Route::post('/order-filling/{id}/lines/{lineId}/fills', [OrderFillingController::class, 'storeFill']);
+    Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);
+    Route::delete('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'destroyFill']);
 
     // Dead code (no consuming Vue page — SortingSessionController owns
     // donation creation now), left routed rather than silently
@@ -428,6 +443,12 @@ Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv
 // emailed to a POD/partner, then hand-keyed back in as an order.
 Route::get('/report/order-form.pdf', [OrderController::class, 'orderFormPdf'])
     ->name('report.order-form')
+    ->middleware(['auth', 'permission:manage-orders']);
+
+// Pure render, no mutation (see OrderFillingController::printPickSheets for
+// the batch select+lock step that precedes this) — safe to reload/reprint.
+Route::get('/report/pick-sheets.pdf', [OrderFillingController::class, 'pickSheetsPdf'])
+    ->name('report.pick-sheets')
     ->middleware(['auth', 'permission:manage-orders']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {

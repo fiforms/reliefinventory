@@ -45,6 +45,11 @@ class OrderController extends Controller
         'itemtype_id' => 'required|exists:itemtypes,id',
         'qty_requested' => 'required|integer|min:1',
         'comments' => 'nullable|string',
+        // Self-reported by the partner, entered by staff on their behalf (no
+        // partner portal exists yet). Never required — decision-support
+        // context for the fair-share allocation review, not a formula
+        // input; see PROJECT_ANALYSIS.md Part 5.
+        'need_level' => 'nullable|in:critical,moderate,low',
     ];
 
     private const COMPLETE_VALIDATION = [
@@ -256,6 +261,7 @@ class OrderController extends Controller
             'itemtype_id' => 'sometimes|required|exists:itemtypes,id',
             'qty_requested' => 'sometimes|required|integer|min:1',
             'comments' => 'nullable|string',
+            'need_level' => 'nullable|in:critical,moderate,low',
         ]);
 
         $line->fill($data)->save();

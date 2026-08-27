@@ -234,6 +234,15 @@ Researched against actual FEMA/emergency-management doctrine rather than assumed
 
 ### Stock visibility & fair-share allocation
 
+**Update (2026-08-27): the single-warehouse core of this shipped early**, pulled forward into the
+Order Filling/Picking build rather than waiting on the Facility/Incident model below — see the
+`facility-network-and-allocation-model` memory's update note. What shipped: `need_level` on order
+lines (self-reported, staff-entered, never a formula input), a per-itemtype `low_stock_threshold`
+override, and a non-blocking "Review Allocation" panel computing the straight-proportional suggestion
+live/on-demand. What's still exactly as described below and NOT built: cross-facility aggregation, a
+persisted batch "allocation run," and the fuzzed three-state display for POD-type requesters (moot
+until a partner-facing/POD surface exists at all).
+
 Three honest states per item, not a fuzzed range: **Available** (above a per-item threshold, no flag) / **Limited** (below threshold but > 0, "Limited availability" flag) / **Unavailable** (zero on hand, shown honestly — never disguised as "limited"). Threshold has a global default, overridable per item. Only POD-type requesters get this fuzzing; warehouse managers always see exact counts, and coordinators requesting from a resource site see real-ish numbers since they're making sourcing decisions.
 
 Requesting is always allowed regardless of displayed availability:
@@ -498,13 +507,24 @@ one "start here" sequence. This section is that reconciliation, ordered by actua
 blindly if enough has shipped since Aug 23, 2026 that the reasoning below no longer holds — check each
 item's own memory for a more recent "Update" note first.
 
-**Tier 0 — one open decision, not a build task.** Order Filling/Picking (Phase 2 item 1 above) is the
+**Tier 0 — one open decision, not a build task.** ~~Order Filling/Picking (Phase 2 item 1 above) is the
 single biggest unblocker in the whole backlog (see Tier 1), but it's blocked on an actual undecided fork,
 not on time: scan-driven flow vs. PDF-batch entry, same real-world "paper batch → office transcription"
 pattern the Statesville SOP review found sorting already works this way at scale (`statesville-sop-review`,
 `picking-and-inventory-inference` — STALE, marked with this exact open fork). Resolve this the way
 Sorting's own scan-vs-batch question was resolved (a short design conversation, not a coin flip) before
-writing any filling code.
+writing any filling code.~~
+
+**Update (2026-08-27): resolved — build both, not either/or.** Mark's call: some warehouses have scan
+capability, some work from paper, and the two aren't mutually exclusive. Both modes share one backend (a
+single "record a filled quantity for this order line" write, same as `item_ledgers` subtraction either
+way) — live scan mirrors `DonationSorting.vue`'s per-line-autosave session pattern; paper/batch mode prints
+one PDF per filling batch (hard page-break between orders, via the weasyprint driver already used for
+`orderFormPdf`/the Inventory Report) and reconciles through a plain-number "enter actual picked qty per
+line" screen afterward (a scan-assisted re-entry option, via a barcode/QR per line on the printed sheet,
+was considered and deliberately deferred past v1). Either path locks the order into `Filling` the instant
+it starts. Full detail in the `picking-and-inventory-inference` memory. Tier 0 is no longer blocking —
+Tier 1 can now be scoped and built.
 
 **Tier 1 — build once Tier 0 is decided; unblocks everything below it.** **Order Filling/Picking**
 (Phase 2 item 1) is what actually makes `item_ledgers.qty_subtracted` real — right now nothing in the live
@@ -518,6 +538,16 @@ blocked on this:
   — meaningless without real subtraction data to compute a trailing rate from. (Parts A–D of that same
   design — `source_type` tagging, `item_kind`, the `Asset` model for equipment — are *not* blocked on this
   and can land independently; only the alerting part needs to wait.)
+
+**Update (2026-08-27): Order Filling/Picking is built.** `OrderFillingController` +
+`OrderFilling.vue` (`tests/Feature/OrderFillingTest.php`) — `item_ledgers.qty_subtracted` is now
+written for real for the first time. Both capture modes shipped together on one shared backend (live
+scan and paper/batch pick sheets — see the `picking-and-inventory-inference` memory for the full
+design and what's still deliberately out of scope: pallet/location/FEFO sourcing precision, and the
+case-vs-each unit-conversion gap). A right-sized piece of Part 5's fair-share allocation design (the
+proportional-suggestion + need-meter panel, not the full multi-facility model) was pulled forward into
+this same build — see `facility-network-and-allocation-model`'s update note. This unblocks the three
+items above; none of them are built yet.
 
 **Tier 2 — additive, no hard blockers either direction; interleave with Tier 1 or do first, whichever fits
 available time.**

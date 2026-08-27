@@ -12,8 +12,9 @@ distribution points, with full source (donor/pallet) traceability.
 `PROJECT_ANALYSIS.md` at the repo root is a detailed audit of known defects and a phased completion plan
 — read it before starting non-trivial work here. Most of Phase 0/1's original defect list is now fixed
 (source traceability, stock-on-hand, the permission model, DB transactions, RIForm error/delete UX, a real
-test suite); what's still genuinely open is order filling/picking, BOL upload, the facility-network
-expansion (Part 5), and several report pages (`/reports/flow`, `/reports/donors`, `/reports/customers` are
+test suite, order filling/picking as of 2026-08-27); what's still genuinely open is BOL upload, the
+order fulfillment lifecycle past Filled (Ready to Ship/Shipped), the facility-network expansion
+(Part 5), and several report pages (`/reports/flow`, `/reports/donors`, `/reports/customers` are
 still "Coming Soon" placeholders — `/reports/orders`, the Outstanding Orders Report, is built as of
 2026-08-22) — check the doc's own inline "Update" notes for the current state of any given item before
 assuming it's still broken.
@@ -79,8 +80,25 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   a stored, server-controlled status lifecycle (never a free-form dropdown) with `status_changed_at`
   auto-tracked on every transition (see `Transaction::booted()`): donations go
   `Received → Sorting → Complete` (or `Logged`, for non-donation intake categories); orders go
-  `New Order → Filling → Filled → Shipped`, and only `New Order` is intake-editable — order lines can't be
-  changed once filling has started (`OrderController::rejectIfLocked`). `donor_identification_pending`
+  `New Order → Ready to Fill → Filling → Filled → Shipped`, and only `New Order` is intake-editable —
+  order lines can't be changed once filling has started (`OrderController::rejectIfLocked`). Filling
+  itself (Order Filling/Picking, 2026-08-27 — `OrderFillingController` + `OrderFilling.vue`) is a
+  separate write surface layered on the same order: `Ready to Fill` → `Filling` happens either by
+  starting one order directly (the live-scan/manual path) or by printing a batch of pick sheets for
+  every `Ready to Fill` order at once (the paper path, `POST /json/order-filling/print-pick-sheets`,
+  transactional + row-locked so two staff printing at once can't double-grab an order); a fill record
+  is an `item_ledgers` row tied to the `OrderLine` it satisfies via `order_line_id`, append-only
+  (multiple fills per line are summed, never overwritten) regardless of which path produced it — both
+  ultimately call the same `POST .../lines/{lineId}/fills` endpoint. `Filling` → `Filled` requires every
+  line to have at least one fill record (a deliberate zero counts as "don't have this"). Shipped is not
+  yet reachable — see `order-fulfillment-lifecycle-design`, not built. The same build also added a
+  non-blocking "Review Allocation" panel to `OrderFilling.vue`: wherever total requested across
+  `Ready to Fill` orders exceeds on-hand for an itemtype, it shows a straight-proportional suggested
+  split per line alongside that line's optional, self-reported `need_level`
+  (critical/moderate/low, on `orderlines`) — purely informational, computed live from
+  `config('inventory.low_stock_threshold')` (overridable per itemtype via
+  `itemtypes.low_stock_threshold`); Print Pick Sheets and Start Filling both work without ever opening
+  it. `donor_identification_pending`
   (plain boolean, not a status) flags a donation whose source needs follow-up — unlike `sort_hold` on item
   types, it never gates anything downstream (the goods are real/usable regardless), it's purely a
   find-it-later reminder. A donation flagged this way stays visible in Receiving's list even past
@@ -90,7 +108,12 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   (usable/outdated/trashed/diverted) from scan-driven sorting — only `usable` counts toward stock-on-hand;
   the others feed donor-quality reporting. `WarehouseMetrics` (`app/Services`) and
   `InventoryReportController` both aggregate this ledger (usable additions − subtractions) — that used to
-  be a known gap ("nothing computes stock-on-hand"); it isn't anymore.
+  be a known gap ("nothing computes stock-on-hand"); it isn't anymore. `qty_subtracted` itself was always
+  0 in production until Order Filling/Picking (2026-08-27) — see that section below. Also carries
+  `order_line_id` (nullable, set-null on delete — links a fill record back to the `OrderLine` it
+  satisfies) and `person_id_user` (nullable, actor audit; the table had none before Order Filling added
+  it, and Sorting's own writes were updated in the same pass to stamp it too, so it isn't half-null by
+  design).
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
   unit that donation sorting scans to establish provenance. `container_type` widened over time to
   `pallet|gaylord|box|bag|tote` — a non-palletized arrival still gets a printable, trackable label.
@@ -168,17 +191,20 @@ list. Omitting the slot keeps every other RIForm page's behavior unchanged. RIFo
 `precreate`), and `saved` (with the server's record after every successful save), letting a parent reset
 its own local state (e.g. a wizard step) alongside RIForm's.
 
-**Donation sorting, order entry, and receiving are all exceptions to RIForm's single-screen pattern**,
-in two different ways. `DonationSorting.vue` + `SortingSessionController`, and `OrderEntry.vue` +
-`OrderController`, implement a scan/keyboard-driven, autosaving flow: a session/order header is created
-the moment work starts (pallet scanned / customer confirmed), and each line is POSTed to the server
-individually as it's entered (`POST /json/sorting-sessions/{id}/lines`, `POST /json/orders/{id}/lines`)
-rather than batching everything into one save at the end. This is intentional — these are long-running,
-line-heavy entry sessions that must survive a browser crash or network drop without losing entered work.
-Follow this per-line-autosave pattern (not RIForm's save-at-end model) for any other long-running,
-high-line-count workflow (e.g. future order filling/picking). `OrderEntry.vue` also splits customer
-selection/confirmation into its own screen before line entry — deliberately, so the line-entry screen
-isn't crowded with contact-detail fields.
+**Donation sorting, order entry, order filling, and receiving are all exceptions to RIForm's
+single-screen pattern**, in two different ways. `DonationSorting.vue` + `SortingSessionController`,
+`OrderEntry.vue` + `OrderController`, and `OrderFilling.vue` + `OrderFillingController` all implement a
+scan/keyboard-driven, autosaving flow: a session/order header is created the moment work starts (pallet
+scanned / customer confirmed / filling started), and each line is POSTed to the server individually as
+it's entered (`POST /json/sorting-sessions/{id}/lines`, `POST /json/orders/{id}/lines`,
+`POST /json/order-filling/{id}/lines/{lineId}/fills`) rather than batching everything into one save at
+the end. This is intentional — these are long-running, line-heavy entry sessions that must survive a
+browser crash or network drop without losing entered work. Follow this per-line-autosave pattern (not
+RIForm's save-at-end model) for any other long-running, high-line-count workflow. `OrderEntry.vue` also
+splits customer selection/confirmation into its own screen before line entry — deliberately, so the
+line-entry screen isn't crowded with contact-detail fields. None of these three introduce a separate
+"session" table — the order/donation `Transaction` row itself is the session in every case, tracked
+purely via its own status column.
 
 `Receiving.vue` takes a lighter approach on top of RIForm itself (via the `#actions` slot above) rather
 than a full custom rebuild: a local `wizardStep` (`'details' | 'photo' | 'labels'`) walks a donation

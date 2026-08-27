@@ -279,6 +279,7 @@ class SortingSessionController extends Controller
             'pallet_id' => $palletId,
             'qty_added' => $data['qty'],
             'disposition' => $data['disposition'],
+            'person_id_user' => Auth::id(),
         ]);
 
         return response()->json([

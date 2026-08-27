@@ -97,7 +97,7 @@ export default {
 			weekDays: WEEK_DAYS,
 
 			// line entry
-			entry: { itemtype_id: null, itemtype: null, qty: null, comments: '' },
+			entry: { itemtype_id: null, itemtype: null, qty: null, comments: '', need_level: null },
 			lineError: null,
 			nextTempId: -1,
 			confirmingLineKey: null,
@@ -143,6 +143,15 @@ export default {
 			if (!this.entry.itemtype_id) return null;
 			const onHand = Number(this.stockHints[this.entry.itemtype_id] ?? 0);
 			return onHand > 0 ? '~' + onHand + ' usable on hand' : 'none on hand';
+		},
+		// Three-state availability (PROJECT_ANALYSIS.md Part 5) drives whether
+		// the need-level field shows at all — never on healthy-stock items, so
+		// it stays a real signal rather than a reflexive habit.
+		entryAvailabilityLow() {
+			if (!this.entry.itemtype_id) return false;
+			const onHand = Number(this.stockHints[this.entry.itemtype_id] ?? 0);
+			const threshold = Number(this.entry.itemtype?.low_stock_threshold ?? 10);
+			return onHand <= threshold;
 		},
 		duplicateQty() {
 			return parseInt(this.entry.qty, 10) || 0;
@@ -306,7 +315,7 @@ export default {
 		openOrder(record, keepLines) {
 			this.order = record;
 			this.lines = keepLines ?? (record.order_lines || []).map((line) => ({ ...line, status: 'saved' }));
-			this.entry = { itemtype_id: null, itemtype: null, qty: null, comments: '' };
+			this.entry = { itemtype_id: null, itemtype: null, qty: null, comments: '', need_level: null };
 			this.lineError = null;
 			this.headerError = null;
 			this.duplicateOf = null;
@@ -415,6 +424,7 @@ export default {
 				itemtype: this.entry.itemtype || null,
 				qty_requested: qty,
 				comments: this.entry.comments || null,
+				need_level: this.entryAvailabilityLow ? (this.entry.need_level || null) : null,
 				status: 'saving',
 			};
 			this.lines.push(line);
@@ -457,7 +467,7 @@ export default {
 			next.focus();
 		},
 		resetEntry() {
-			this.entry = { itemtype_id: null, itemtype: null, qty: null, comments: '' };
+			this.entry = { itemtype_id: null, itemtype: null, qty: null, comments: '', need_level: null };
 			// Wait for the reactivity flush (which clears SearchSelect's search
 			// text via its modelValue watcher) before focusing — focusing first
 			// fires SearchSelect's own @focus="open" handler, which sets isOpen
@@ -477,6 +487,7 @@ export default {
 					itemtype_id: line.itemtype_id,
 					qty_requested: line.qty_requested,
 					comments: line.comments,
+					need_level: line.need_level,
 				});
 				const idx = this.findLineIndex(line);
 				if (idx !== -1) {
@@ -868,6 +879,12 @@ export default {
 						<td class="oe_entry_name">
 							{{ entry.itemtype ? entry.itemtype.name : '' }}
 							<span v-if="entryHint" class="oe_entry_hint">&mdash; {{ entryHint }}</span>
+							<select v-if="entryAvailabilityLow" v-model="entry.need_level" class="ri_forminput oe_need_level">
+								<option :value="null">Need level (optional)</option>
+								<option value="critical">Critical</option>
+								<option value="moderate">Moderate</option>
+								<option value="low">Low</option>
+							</select>
 						</td>
 						<td class="oe_entry_unit">
 							{{ entry.itemtype && entry.itemtype.unit ? entry.itemtype.unit.name : '' }}
@@ -888,7 +905,10 @@ export default {
 						:class="{ oe_line_failed: line.status === 'failed' }">
 						<td>{{ line.itemtype ? line.itemtype.display_number : '' }}</td>
 						<td>{{ line.qty_requested }}</td>
-						<td>{{ line.itemtype ? line.itemtype.name : '(item type #' + line.itemtype_id + ')' }}</td>
+						<td>
+							{{ line.itemtype ? line.itemtype.name : '(item type #' + line.itemtype_id + ')' }}
+							<span v-if="line.need_level" class="oe_entry_hint">&mdash; {{ line.need_level }} need</span>
+						</td>
 						<td>{{ line.itemtype && line.itemtype.unit ? line.itemtype.unit.name : '' }}</td>
 						<td>{{ line.comments }}</td>
 						<td class="oe_line_actions">
@@ -1151,6 +1171,12 @@ export default {
 	color: #92400e;
 	font-weight: normal;
 	font-size: 0.85rem;
+}
+.oe_need_level {
+	display: block;
+	margin-top: 4px;
+	font-size: 0.85rem;
+	max-width: 12em;
 }
 .oe_modal_backdrop {
 	position: fixed;

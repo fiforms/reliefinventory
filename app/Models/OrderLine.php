@@ -19,6 +19,7 @@ class OrderLine extends Model
         'packagetype_id',
         'qty_requested',
         'comments',
+        'need_level',
     ];
 
     /**
@@ -43,5 +44,15 @@ class OrderLine extends Model
     public function packageType()
     {
         return $this->belongsTo(PackageType::class, 'packagetype_id');
+    }
+
+    /**
+     * Fill records (Order Filling/Picking) — each is an ItemLedger row with
+     * qty_subtracted, keyed by order_line_id. Multiple allowed per line
+     * (append-only, never overwritten); "filled so far" is their qty sum.
+     */
+    public function itemLedgers()
+    {
+        return $this->hasMany(ItemLedger::class, 'order_line_id');
     }
 }
