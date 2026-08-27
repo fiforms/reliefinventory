@@ -44,6 +44,7 @@ class UnlockController extends Controller
             'deviceApproved' => $device->isApproved(),
             'people' => $people->map(fn (Person $p) => ['id' => $p->id, 'full_name' => $p->full_name])->values(),
             'requireBadgeAndPin' => $settings->require_badge_and_pin,
+            'badgeLoginEnabled' => $settings->badge_login_enabled,
         ]);
     }
 
@@ -60,7 +61,7 @@ class UnlockController extends Controller
 
         $settings = $pinLogin->settings();
         $device = $pinLogin->resolveDevice($request);
-        if (! $settings->enabled || ! $device->isApproved()) {
+        if (! $settings->enabled || ! $settings->badge_login_enabled || ! $device->isApproved()) {
             return response()->json(['message' => 'PIN unlock is not available on this device.'], 403);
         }
 

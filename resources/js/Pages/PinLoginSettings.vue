@@ -35,6 +35,7 @@ const form = reactive({
 	trust_time_of_day: '18:00',
 	trust_session_minutes: 480,
 	require_badge_and_pin: false,
+	badge_login_enabled: false,
 });
 
 async function fetchSettings() {
@@ -191,12 +192,21 @@ onMounted(() => {
 					</div>
 
 					<label class="flex items-center gap-2">
-						<input type="checkbox" v-model="form.require_badge_and_pin" />
-						<span class="text-gray-700">Require a badge scan in addition to the PIN (two-factor)</span>
+						<input type="checkbox" v-model="form.badge_login_enabled" @change="form.badge_login_enabled || (form.require_badge_and_pin = false)" />
+						<span class="text-gray-700 font-medium">Offer badge scanning on the unlock screen</span>
+					</label>
+					<p class="text-xs text-gray-500">
+						Off by default until badges are actually issued — with this off, the unlock screen only
+						shows name tiles + PIN, no badge scan step. Turn on once physical badges exist.
+					</p>
+
+					<label class="flex items-center gap-2">
+						<input type="checkbox" v-model="form.require_badge_and_pin" :disabled="!form.badge_login_enabled" />
+						<span class="text-gray-700" :class="{ 'opacity-50': !form.badge_login_enabled }">Require a badge scan in addition to the PIN (two-factor)</span>
 					</label>
 					<p class="text-xs text-gray-500">
 						When on, tapping a name tile is no longer enough — unlocking requires scanning that
-						person's badge first, then their PIN.
+						person's badge first, then their PIN. Requires badge scanning to be offered above.
 					</p>
 
 					<div class="flex items-center gap-3">

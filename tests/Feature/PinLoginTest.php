@@ -237,7 +237,7 @@ test('revoking a device deletes its grants, immediately blocking pin unlock', fu
 // ------------------------------------------------------------- badge scan
 
 test('scanning a recognized badge with an active grant identifies the person', function () {
-    enablePinLogin();
+    enablePinLogin(['badge_login_enabled' => true]);
     $device = approvedDevice();
     $user = User::factory()->create();
     $user->badge_code = 'BADGE-001';
@@ -250,7 +250,7 @@ test('scanning a recognized badge with an active grant identifies the person', f
 });
 
 test('scanning an unrecognized badge fails', function () {
-    enablePinLogin();
+    enablePinLogin(['badge_login_enabled' => true]);
     $device = approvedDevice();
 
     $response = withDeviceCookie($device)->postJson('/unlock/badge', ['badge_code' => 'NOPE']);
@@ -259,7 +259,7 @@ test('scanning an unrecognized badge fails', function () {
 });
 
 test('require_badge_and_pin blocks pin unlock until a badge was recently scanned', function () {
-    enablePinLogin(['require_badge_and_pin' => true]);
+    enablePinLogin(['require_badge_and_pin' => true, 'badge_login_enabled' => true]);
     $device = approvedDevice();
     $user = userWithPin('24680');
     $user->badge_code = 'BADGE-002';

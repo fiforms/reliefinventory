@@ -5,10 +5,13 @@
 	server-computed props (never guessed client-side):
 	  - Device not yet approved: only "Log in with email" — exactly like
 	    hitting this URL on a brand-new/unrecognized browser.
-	  - Approved, badge+PIN not required: tap a name tile OR scan a badge
-	    to pick who you are, then enter your PIN.
+	  - Approved, badge+PIN not required: tap a name tile OR (when
+	    badgeLoginEnabled) scan a badge to pick who you are, then enter
+	    your PIN.
 	  - Approved, badge+PIN required: badge scan is mandatory to identify
 	    yourself (no tile-tap shortcut) before the PIN field appears.
+	    (require_badge_and_pin can't be on without badgeLoginEnabled — see
+	    PinLoginSettingsController.)
 	A successful unlock does a real page navigation (not an Inertia visit)
 	so the freshly-authenticated session's shared props (auth.user) are
 	picked up cleanly.
@@ -25,6 +28,7 @@ const props = defineProps({
 	deviceApproved: { type: Boolean, required: true },
 	people: { type: Array, default: () => [] },
 	requireBadgeAndPin: { type: Boolean, default: false },
+	badgeLoginEnabled: { type: Boolean, default: false },
 });
 
 const selectedPerson = ref(null);
@@ -133,7 +137,7 @@ function onCameraScanned(text) {
 
 		<!-- ======================= APPROVED: PICK A PERSON ======================= -->
 		<div v-else-if="!selectedPerson" class="space-y-5">
-			<div v-if="!requireBadgeAndPin && people.length" class="space-y-2">
+			<div v-if="(!requireBadgeAndPin || !badgeLoginEnabled) && people.length" class="space-y-2">
 				<p class="text-sm text-gray-600 text-center">Select user</p>
 				<div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
 					<button v-for="person in people" :key="person.id" @click="selectPerson(person)"
@@ -143,7 +147,7 @@ function onCameraScanned(text) {
 				</div>
 			</div>
 
-			<div class="space-y-2">
+			<div v-if="badgeLoginEnabled" class="space-y-2">
 				<p class="text-sm text-gray-600 text-center">
 					{{ requireBadgeAndPin ? 'Scan your badge to continue' : 'Or scan your badge' }}
 				</p>
@@ -164,7 +168,7 @@ function onCameraScanned(text) {
 				</div>
 			</div>
 
-			<div v-if="!requireBadgeAndPin" class="text-center pt-2 border-t">
+			<div v-if="!requireBadgeAndPin || !badgeLoginEnabled" class="text-center pt-2 border-t">
 				<Link :href="route('login', { email: 1 })" class="text-sm text-gray-500 underline">
 					Log in with email
 				</Link>

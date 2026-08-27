@@ -30,6 +30,7 @@ class PinLoginSettingsController extends Controller
             'trust_time_of_day' => 'nullable|date_format:H:i',
             'trust_session_minutes' => 'nullable|integer|min:1|max:10080', // up to 7 days
             'require_badge_and_pin' => 'required|boolean',
+            'badge_login_enabled' => 'required|boolean',
         ]);
 
         if ($data['trust_mode'] === 'time_of_day' && empty($data['trust_time_of_day'])) {
@@ -37,6 +38,10 @@ class PinLoginSettingsController extends Controller
         }
         if ($data['trust_mode'] === 'session_duration' && empty($data['trust_session_minutes'])) {
             return response()->json(['errors' => ['trust_session_minutes' => ['A session duration is required for this trust mode.']]], 422);
+        }
+        if (! $data['badge_login_enabled']) {
+            // Can't require a badge scan for a feature that isn't offered at all.
+            $data['require_badge_and_pin'] = false;
         }
 
         $settings = PinLoginSetting::current();

@@ -24,11 +24,13 @@ class PinLoginSetting extends Model
         'trust_time_of_day',
         'trust_session_minutes',
         'require_badge_and_pin',
+        'badge_login_enabled',
     ];
 
     protected $casts = [
         'enabled' => 'boolean',
         'require_badge_and_pin' => 'boolean',
+        'badge_login_enabled' => 'boolean',
     ];
 
     public static function current(): self

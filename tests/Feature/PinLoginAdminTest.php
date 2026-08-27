@@ -22,6 +22,7 @@ test('an admin-system holder can view and update pin login settings', function (
         'enabled' => true,
         'trust_mode' => 'indefinite',
         'require_badge_and_pin' => false,
+        'badge_login_enabled' => false,
     ])->assertOk()->assertJsonPath('settings.enabled', true);
 });
 
@@ -33,6 +34,7 @@ test('updating to session_duration mode requires a duration', function () {
         'trust_mode' => 'session_duration',
         'trust_session_minutes' => null,
         'require_badge_and_pin' => false,
+        'badge_login_enabled' => false,
     ])->assertStatus(422);
 });
 
