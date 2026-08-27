@@ -169,7 +169,10 @@ async function saveSettings() {
 }
 
 function formatStamp(stamp) {
-	// 20260814-112703 -> 2026-08-14 11:27 (server time)
+	// 20260814-112703 -> 2026-08-14 11:27, already in the configured backup
+	// timezone (settings.tz below) — update.sh stamps backup directories
+	// with TZ="$BACKUP_TZ", not server-local time, specifically so this
+	// matches what's configured on the Backup Schedule section.
 	const m = stamp?.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/);
 	return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : stamp;
 }
@@ -251,6 +254,7 @@ onUnmounted(stopPolling);
 				<!-- Backups -->
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Backups</h2>
+					<p class="text-xs text-gray-500">Times below are in the configured backup timezone ({{ settings.tz }}), not your browser's local time.</p>
 					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
 						<div v-for="tier in ['daily', 'monthly', 'yearly']" :key="tier" class="border rounded p-3">
 							<h3 class="font-medium capitalize">{{ tier }} <span class="text-gray-400 font-normal">({{ status.backups.tiers[tier].count }})</span></h3>

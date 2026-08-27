@@ -10,6 +10,10 @@ monthly/<stamp>/             first backup of month  keep KEEP_MONTHLY (12)
 yearly/<stamp>/              first backup of year   keep KEEP_YEARLY  (3)
 ```
 
+The stamp is generated in `BACKUP_TZ`, not server-local time (`TZ="$BACKUP_TZ" date
+...` in `update.sh`) — the admin panel displays it verbatim, so it has to already be
+in the configured timezone or the panel would silently mislabel every backup time.
+
 Each backup contains `db.sql.gz` (integrity-checked mysqldump),
 `storage-app.tar.gz` (uploads), `env.backup`, and `git-sha.txt` (the code
 revision the data matched). Monthly/yearly copies are **hardlink promotions**

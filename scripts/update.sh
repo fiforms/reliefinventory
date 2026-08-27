@@ -151,7 +151,10 @@ write_status() { # write_status <state> <message>
 }
 
 mkdir -p "$BACKUP_DIR" "$LOG_DIR"
-STAMP="$(date +%Y%m%d-%H%M%S)"
+# In BACKUP_TZ, not server-local time — the admin panel displays these stamps
+# verbatim (SystemAdmin.vue's formatStamp) as if they were already in the
+# configured backup timezone, so the stamp actually has to be in it.
+STAMP="$(TZ="$BACKUP_TZ" date +%Y%m%d-%H%M%S)"
 LOG_FILE="$LOG_DIR/update-$STAMP.log"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "== Relief Inventory update $STAMP (log: $LOG_FILE) =="
@@ -217,8 +220,8 @@ promote() { # promote <tier> <stamp-prefix>
         cp -al "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP"
     fi
 }
-promote monthly "$(date +%Y%m)"
-promote yearly "$(date +%Y)"
+promote monthly "$(TZ="$BACKUP_TZ" date +%Y%m)"
+promote yearly "$(TZ="$BACKUP_TZ" date +%Y)"
 
 # Per-tier rotation. Stamp names sort chronologically, so glob order is age order.
 prune_tier() { # prune_tier <dir> <keep-count>
