@@ -52,6 +52,10 @@ const choose = (value) => {
 	<GuestLayout>
 		<Head title="Welcome" />
 
+		<div class="mb-4 text-sm font-medium text-green-600">
+			Your email is verified — you've taken the first step!
+		</div>
+
 		<div class="mb-2 text-lg font-medium text-gray-900">
 			What brings you here?
 		</div>
