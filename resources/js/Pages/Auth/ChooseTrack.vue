@@ -21,13 +21,13 @@ const tracks = [
 		value: 'donor',
 		icon: '📦',
 		label: 'Offer a Donation',
-		description: 'I have goods I\'d like to donate.',
+		description: 'I have goods or services I\'d like to donate.',
 	},
 	{
 		value: 'partner',
 		icon: '🏢',
 		label: 'Request Supplies',
-		description: 'My organization needs to receive supplies.',
+		description: 'Get approved to receive supplies.',
 	},
 ];
 
