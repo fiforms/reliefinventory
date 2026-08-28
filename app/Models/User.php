@@ -38,6 +38,7 @@ class User extends Authenticatable implements MustVerifyEmail
         'state',
         'zip',
         'county_id',
+        'requested_track',
     ];
 
     /**

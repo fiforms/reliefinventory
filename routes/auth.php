@@ -9,9 +9,11 @@ use App\Http\Controllers\Auth\PasswordController;
 use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\PinController;
 use App\Http\Controllers\Auth\RegisteredUserController;
+use App\Http\Controllers\Auth\RegistrationTrackController;
 use App\Http\Controllers\Auth\UnlockController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Support\Facades\Route;
+use Inertia\Inertia;
 
 Route::middleware('guest')->group(function () {
     Route::get('register', [RegisteredUserController::class, 'create'])
@@ -60,6 +62,24 @@ Route::middleware('auth')->group(function () {
     Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
         ->middleware('throttle:6,1')
         ->name('verification.send');
+
+    // "What brings you here?" — asked once, right after email
+    // verification, then an interim landing page until a real
+    // account-approval workflow exists. See VerifyEmailController.
+    Route::get('registration-track', [RegistrationTrackController::class, 'show'])
+        ->name('registration.track');
+    Route::post('registration-track', [RegistrationTrackController::class, 'store'])
+        ->name('registration.track.store');
+
+    Route::get('registration-pending', function (\Illuminate\Http\Request $request) {
+        if (! $request->user()->requested_track) {
+            return redirect()->route('registration.track');
+        }
+
+        return Inertia::render('Auth/RegistrationPending', [
+            'requested_track' => $request->user()->requested_track,
+        ]);
+    })->name('registration.pending');
 
     Route::get('confirm-password', [ConfirmablePasswordController::class, 'show'])
         ->name('password.confirm');
