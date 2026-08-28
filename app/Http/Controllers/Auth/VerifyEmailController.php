@@ -14,18 +14,21 @@ class VerifyEmailController extends Controller
      */
     public function __invoke(EmailVerificationRequest $request): RedirectResponse
     {
+        // Deliberately not ->intended() — a stray pre-login "intended" URL
+        // (e.g. someone bookmarked /dashboard and got bounced through
+        // login first) must not skip the track picker below.
         $nextRoute = $request->user()->requested_track
             ? route('registration.pending', absolute: false)
             : route('registration.track', absolute: false);
 
         if ($request->user()->hasVerifiedEmail()) {
-            return redirect()->intended($nextRoute);
+            return redirect($nextRoute);
         }
 
         if ($request->user()->markEmailAsVerified()) {
             event(new Verified($request->user()));
         }
 
-        return redirect()->intended($nextRoute);
+        return redirect($nextRoute);
     }
 }

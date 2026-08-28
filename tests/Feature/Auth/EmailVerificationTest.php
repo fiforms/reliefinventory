@@ -45,6 +45,26 @@ test('verifying redirects straight to pending once a track was already chosen', 
     $response->assertRedirect(route('registration.pending', absolute: false));
 });
 
+test('verifying goes to the track picker even with a stale intended URL in session', function () {
+    // Reproduces a real bug: visiting /dashboard while a guest stashes it
+    // as the post-login "intended" URL. If verification honored that, a
+    // brand-new account would land straight on the dashboard instead of
+    // ever seeing the track picker.
+    $user = User::factory()->unverified()->create();
+
+    $this->withSession(['url.intended' => route('dashboard', absolute: false)]);
+
+    $verificationUrl = URL::temporarySignedRoute(
+        'verification.verify',
+        now()->addMinutes(60),
+        ['id' => $user->id, 'hash' => sha1($user->email)]
+    );
+
+    $response = $this->actingAs($user)->get($verificationUrl);
+
+    $response->assertRedirect(route('registration.track', absolute: false));
+});
+
 test('email is not verified with invalid hash', function () {
     $user = User::factory()->unverified()->create();
 
