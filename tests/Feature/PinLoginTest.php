@@ -56,10 +56,19 @@ test('the login page does not redirect to unlock when the feature is disabled', 
     $response->assertOk()->assertInertia(fn ($page) => $page->component('Auth/Login'));
 });
 
-test('the login page redirects to unlock when the feature is enabled', function () {
+test('the login page does not redirect to unlock for an unapproved device', function () {
     enablePinLogin();
 
     $response = $this->get('/login');
+
+    $response->assertOk()->assertInertia(fn ($page) => $page->component('Auth/Login'));
+});
+
+test('the login page redirects to unlock when the feature is enabled and the device is approved', function () {
+    enablePinLogin();
+    $device = approvedDevice();
+
+    $response = $this->withCookie('pin_device_token', $device->device_token)->get('/login');
 
     $response->assertRedirect(route('unlock'));
 });

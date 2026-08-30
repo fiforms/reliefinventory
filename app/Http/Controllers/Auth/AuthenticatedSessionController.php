@@ -18,13 +18,18 @@ class AuthenticatedSessionController extends Controller
 {
     /**
      * Display the login view — deferring to the PIN-unlock screen when
-     * that feature is on, unless the caller explicitly wants the email
-     * form (the unlock screen's own "Log in with email" link sets
-     * ?email=1 to avoid redirecting straight back to itself).
+     * that feature is on AND this specific device is admin-approved for
+     * it, unless the caller explicitly wants the email form (the unlock
+     * screen's own "Log in with email" link sets ?email=1 to avoid
+     * redirecting straight back to itself). An unapproved device gains
+     * nothing from a trip through Unlock — it would just be told "not set
+     * up, log in with email" — so it goes straight to the email form
+     * instead of paying for that extra hop.
      */
     public function create(Request $request, PinLoginService $pinLogin): Response|RedirectResponse
     {
-        if ($pinLogin->settings()->enabled && ! $request->boolean('email')) {
+        if ($pinLogin->settings()->enabled && ! $request->boolean('email')
+            && $pinLogin->resolveDevice($request)->isApproved()) {
             return redirect()->route('unlock');
         }
 
