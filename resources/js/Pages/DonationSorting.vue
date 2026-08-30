@@ -634,7 +634,7 @@ export default {
 						v-else
 						v-model="session.person_id"
 						optionsource="/json/people"
-						display="organization"
+						display="search_label"
 						:searchfields="['organization', 'first_name', 'last_name']"
 						placeholder="Search donors..."
 						@selected="donorSelected"
