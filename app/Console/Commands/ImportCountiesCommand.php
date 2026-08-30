@@ -61,13 +61,8 @@ class ImportCountiesCommand extends Command
             list($state, $statefp, $countyfp, $countyns, $countyname, $classfp, $funcstat) = $columns;
 
             County::updateOrCreate(
-                [
-                    'id' => (int)$statefp * 1000 + (int)$countyfp,
-                    'state' => $state,
-                    'county' => $countyname,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]
+                ['id' => (int)$statefp * 1000 + (int)$countyfp],
+                ['state' => $state, 'county' => $countyname]
             );
 
             $bar->advance();

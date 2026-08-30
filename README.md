@@ -119,9 +119,18 @@ Download the listing of disposable domains from
     
 ** Import Listing of Counties **
 
-Download a county listing from the [census.gov website](https://www.census.gov/library/reference/code-lists/ansi.html#cou)
+A combined, ready-to-import file for all US states/territories is already bundled at
+`database/data/national_counties_2020.txt` (the census.gov site only publishes this as 57
+separate per-state/territory files now, not one national file, so this is those files
+concatenated). Re-running the import is safe — existing counties are updated in place, not
+duplicated.
 
-    php artisan counties:import /path/to/downloaded/file.txt
+    php artisan counties:import database/data/national_counties_2020.txt
+
+To refresh with newer census.gov data instead, download the per-state files linked from
+[census.gov](https://www.census.gov/library/reference/code-lists/ansi.html#cou) (pipe-delimited,
+`STATE|STATEFP|COUNTYFP|COUNTYNS|COUNTYNAME|CLASSFP|FUNCSTAT`) and concatenate them before
+importing.
 
 ** Recompile Project **
 
