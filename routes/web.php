@@ -25,6 +25,12 @@ Route::get('/', function () {
     ]);
 });
 
+// Linked from Welcome.vue's HOSTED_BY credit line — public, no auth, same
+// as Welcome itself.
+Route::get('/about', function () {
+    return Inertia::render('About');
+});
+
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');
