@@ -53,14 +53,21 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
+import ComboBox from '@/Components/ComboBox.vue';
 import TextArea from '@/Components/TextArea.vue';
+import AddressCorrectionCheck from '@/Components/AddressCorrectionCheck.vue';
 import axios from 'axios';
 
-const CONTACT_FIELDS = ['first_name', 'last_name', 'organization', 'phone', 'email', 'address', 'city', 'state', 'zip'];
+function normalizeAddr(s) {
+	return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
+const CONTACT_FIELDS = ['first_name', 'last_name', 'organization', 'phone', 'email', 'address', 'city', 'state', 'zip', 'county_id', 'address_verified_at'];
 const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const IDLE_ADDRESS_CHECK = { status: 'idle', casingOnly: false, entered: {}, suggested: {} };
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, TextArea },
+	components: { AuthenticatedLayout, Head, SearchSelect, ComboBox, TextArea, AddressCorrectionCheck },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -79,6 +86,14 @@ export default {
 			contact: null,           // editable copy of the partner's contact fields
 			contactOriginal: null,   // JSON snapshot for the dirty check
 			partnerError: null,
+			countyError: null,
+			countyLookupHint: null,
+			// Drives AddressCorrectionCheck inline (see maybeAutoLookupCounty).
+			// addressCheckTarget tells the template which of newPartner/contact
+			// this applies to, since only one form is visible at a time but
+			// both share this one piece of state.
+			addressCheck: { ...IDLE_ADDRESS_CHECK },
+			addressCheckTarget: null,
 			partnerSaving: false,
 			creatingPartner: false,
 			newPartner: {},
@@ -229,8 +244,17 @@ export default {
 			this.partner = person;
 			this.creatingPartner = false;
 			this.partnerError = null;
+			this.countyError = null;
 			if (person) {
-				this.contact = Object.fromEntries(CONTACT_FIELDS.map((f) => [f, person[f] ?? '']));
+				// county_id is a nullable FK — leave it null rather than
+				// coercing to '', or an untouched blank would fail the
+				// server's `exists:counties,id` validation on save.
+				// address_verified_at is read-only server state (never
+				// submitted as such — see verified_address in save calls).
+				const NULLABLE_FIELDS = ['county_id', 'address_verified_at'];
+				this.contact = Object.fromEntries(
+					CONTACT_FIELDS.map((f) => [f, NULLABLE_FIELDS.includes(f) ? (person[f] ?? null) : (person[f] ?? '')])
+				);
 				this.contactOriginal = JSON.stringify(this.contact);
 			} else {
 				this.contact = null;
@@ -244,7 +268,8 @@ export default {
 				first_name: parts[0] || '',
 				last_name: parts.slice(1).join(' '),
 				organization: parts.length <= 1 ? (name || '') : '',
-				phone: '', email: '', address: '', city: '', state: '', zip: '',
+				phone: '', email: '', address: '', city: '', state: '', zip: '', county_id: null,
+				verified_address: false,
 			};
 		},
 		async saveNewPartner() {
@@ -270,6 +295,166 @@ export default {
 					|| 'Could not save the new partner.';
 			} finally {
 				this.partnerSaving = false;
+			}
+		},
+		// Quick-add a county missing from the reference list — same idiom as
+		// People.vue's category quick-add. Scoped to whichever state is
+		// already entered on the form doing the asking (the same filter the
+		// picker itself uses) since the counties table has no other way to
+		// disambiguate same-named counties across states, and this is a
+		// shared, instance-wide reference list, not a per-record tag —
+		// worth keying off the one field we already trust. Shared by both
+		// the New Partner quick-add grid and the Confirm Contact grid.
+		async createCounty(name, target, selectRef) {
+			this.countyError = null;
+			const trimmed = (name || '').trim();
+			if (!trimmed) return;
+			const state = (target.state || '').trim().toUpperCase();
+			if (state.length !== 2) {
+				this.countyError = 'Enter the partner\'s 2-letter state above before adding a new county.';
+				return;
+			}
+			try {
+				const response = await axios.post('/json/counties', { county: trimmed, state });
+				invalidateOptions('/json/counties');
+				await this.$refs[selectRef]?.refresh(response.data.record.id);
+			} catch (error) {
+				this.countyError = error.response?.data?.message
+					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
+					|| 'Could not save the new county.';
+			}
+		},
+		// Looks up county/city/state/zip once there's enough to geocode —
+		// fires on blur of any field in the grid (see @blur.capture on
+		// .oe_contactgrid), but only actually calls out once address is
+		// non-blank and at least one of zip/state is present (geocod.io
+		// resolves confidently from street+zip alone even with city/state
+		// blank — tested at `rooftop` accuracy). While the request is in
+		// flight, City/State are disabled in the template (bound to
+		// `addressCheck.status === 'checking'`) — editing a field mid-flight
+		// is exactly what caused the cursor-jump race Mark found, since the
+		// response landing while still typing collided with v-model. Only
+		// the ADDRESS text itself gets a review step (AddressCorrectionCheck,
+		// rendered inline — no modal, no native <dialog>, see that
+		// component's comment for why), and only when geocod.io's version
+		// actually differs; city/state/zip are simple enough to just fill
+		// in directly once blank. County is applied directly too, since
+		// it's a separate, already-editable picker widget.
+		// `force` bypasses the dedup key — used by the manual "Verify
+		// Address" button so it always re-checks even if this exact input
+		// was already tried (e.g. tried once while offline and failed, or
+		// the record was just loaded and nothing's been retyped).
+		async maybeAutoLookupCounty(target, force = false) {
+			if (this.$page.props.offlineMode) return; // no internet — don't even attempt it
+			const address = (target.address || '').trim();
+			const zip = (target.zip || '').trim();
+			const state = (target.state || '').trim();
+			if (!address || (!zip && !state)) return;
+
+			const key = `${address}|${state}|${zip}`;
+			if (!force && target.__geocodeKey === key) return; // already tried this exact input
+			if (target.__geocodeKey !== key) target.verified_address = false; // input changed since any prior verification
+			target.__geocodeKey = key;
+
+			this.countyError = null;
+			this.countyLookupHint = null;
+			this.addressCheck = { ...IDLE_ADDRESS_CHECK, status: 'checking' };
+			this.addressCheckTarget = target;
+			try {
+				const response = await axios.post('/json/geocode/county', {
+					address: target.address, city: target.city, state: target.state, zip: target.zip,
+				});
+				const entered = { address: target.address, city: target.city, state: target.state, zip: target.zip };
+				const suggested = {
+					address: response.data.address, city: response.data.city,
+					state: response.data.state, zip: response.data.zip,
+				};
+				if (!suggested.address || entered.address === suggested.address) {
+					this.applyAddressFields(target, suggested);
+					target.verified_address = true;
+					this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+				} else {
+					this.addressCheck = {
+						status: 'ready',
+						casingOnly: normalizeAddr(entered.address) === normalizeAddr(suggested.address),
+						entered, suggested,
+					};
+				}
+				if (!target.county_id && response.data.county_id) {
+					target.county_id = response.data.county_id;
+				} else if (!target.county_id && response.data.county) {
+					this.countyLookupHint = `Geocodio suggests "${response.data.county}, ${response.data.state}" `
+						+ `— not in the county list yet. Type it above to add it.`;
+				}
+			} catch (error) {
+				this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+				// 422: geocod.io just couldn't resolve this address — not
+				// worth an alarming error. 503: lookup is unavailable
+				// (offline mode, or no API key configured) — also expected,
+				// not a fault; address entry works fine without it either way.
+				if (![422, 503].includes(error.response?.status)) {
+					this.countyError = error.response?.data?.message || 'Could not look up that address.';
+				}
+			}
+		},
+		// Fills city/state/zip from a suggestion, but only where blank —
+		// never overwrites something already typed.
+		applyAddressFields(target, suggested) {
+			if (!target.city) target.city = suggested.city || target.city;
+			if (!target.state) target.state = suggested.state || target.state;
+			if (!target.zip) target.zip = suggested.zip || target.zip;
+		},
+		acceptAddressSuggestion() {
+			const target = this.addressCheckTarget;
+			const suggested = this.addressCheck.suggested;
+			if (target) {
+				target.address = suggested.address;
+				this.applyAddressFields(target, suggested);
+				target.verified_address = true;
+			}
+			this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+			this.addressCheckTarget = null;
+		},
+		keepAddressAsEntered() {
+			const target = this.addressCheckTarget;
+			const suggested = this.addressCheck.suggested;
+			if (target) {
+				this.applyAddressFields(target, suggested);
+				// Geocod.io was still consulted and a human looked at both
+				// options — that counts as "checked," even though the
+				// as-typed version won.
+				target.verified_address = true;
+			}
+			this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+			this.addressCheckTarget = null;
+		},
+		// Manual fallback for when the automatic blur-triggered lookup never
+		// ran (offline mode was on at entry time, or this record predates
+		// the whole feature) — same underlying check, just user-initiated
+		// and forced past the dedup guard. Deliberately per-record and
+		// opt-in rather than a batch job: geocod.io's free tier is a shared
+		// daily quota, and there's no reason to spend it re-checking
+		// addresses nobody's actively working with.
+		verifyAddress(target) {
+			this.maybeAutoLookupCounty(target, true);
+		},
+		// Rapid-entry convenience for the New Partner / Confirm Contact
+		// grids: Enter behaves like Tab (advance to the next field) instead
+		// of doing nothing, matching this app's other scan/keyboard-driven
+		// entry screens. Scoped to plain <input>s only — SearchSelect's own
+		// input (the County field) already has its own Enter handling
+		// (select highlighted match / trigger quick-add) and isn't wired to
+		// this.
+		focusNextField(event) {
+			const container = event.target.closest('.oe_contactgrid');
+			if (!container) return;
+			const focusable = Array.from(container.querySelectorAll('input, textarea'))
+				.filter((el) => !el.disabled);
+			const idx = focusable.indexOf(event.target);
+			if (idx > -1 && idx < focusable.length - 1) {
+				focusable[idx + 1].focus();
+			} else {
+				event.target.blur();
 			}
 		},
 		/**
@@ -638,7 +823,7 @@ export default {
 					ref="partnerSelect"
 					v-model="partnerId"
 					optionsource="/json/people"
-					display="full_name"
+					display="search_label"
 					:searchfields="['full_name', 'organization', 'city']"
 					placeholder="Search by name or organization..."
 					:allowcreate="true"
@@ -650,29 +835,76 @@ export default {
 			<!-- quick-add: a phone-in partner who isn't in People yet -->
 			<div v-if="creatingPartner" class="oe_card">
 				<h3>New Partner</h3>
-				<div class="oe_contactgrid">
+				<!-- ZIP before Address: geocod.io resolves city/state/county
+				     confidently from street+zip alone (tested rooftop
+				     accuracy), so asking ZIP first (quick to state on a call)
+				     then the street address lets the rest auto-fill — the
+				     partner reciting their full address afterward becomes a
+				     confirmation pass over already-filled fields, not the
+				     only source of them. See maybeAutoLookupCounty(). -->
+				<div class="oe_contactgrid" @blur.capture="maybeAutoLookupCounty(newPartner)">
 					<div class="oe_field"><label>First Name:</label>
-						<input type="text" v-model="newPartner.first_name" class="ri_forminput" autofocus /></div>
+						<input type="text" v-model="newPartner.first_name" class="ri_forminput"
+							autofocus @keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Last Name:</label>
-						<input type="text" v-model="newPartner.last_name" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.last_name" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Organization:</label>
-						<input type="text" v-model="newPartner.organization" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.organization" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Phone:</label>
-						<input type="text" v-model="newPartner.phone" class="ri_forminput" /></div>
+						<input type="text" v-model="newPartner.phone" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Email:</label>
-						<input type="email" v-model="newPartner.email" class="ri_forminput" /></div>
-					<div class="oe_field"><label>Address:</label>
-						<input type="text" v-model="newPartner.address" class="ri_forminput" /></div>
-					<div class="oe_field"><label>City:</label>
-						<input type="text" v-model="newPartner.city" class="ri_forminput" /></div>
-					<div class="oe_field"><label>State:</label>
-						<input type="text" v-model="newPartner.state" maxlength="2" class="ri_forminput oe_state" /></div>
+						<input type="email" v-model="newPartner.email" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Zip:</label>
-						<input type="text" v-model="newPartner.zip" maxlength="10" class="ri_forminput oe_zip" /></div>
+						<input type="text" v-model="newPartner.zip" maxlength="10" class="ri_forminput oe_zip"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<div class="oe_field"><label>Address:</label>
+						<input type="text" v-model="newPartner.address" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<AddressCorrectionCheck v-if="addressCheckTarget === newPartner"
+						:status="addressCheck.status" :casing-only="addressCheck.casingOnly"
+						:entered="addressCheck.entered" :suggested="addressCheck.suggested"
+						@accept="acceptAddressSuggestion" @keep="keepAddressAsEntered" />
+					<p v-if="newPartner.address && !(newPartner.verified_address || newPartner.address_verified_at)
+						&& !(addressCheckTarget === newPartner && addressCheck.status !== 'idle')" class="oe_hint">
+						<button type="button" class="ri_formbutton" :disabled="$page.props.offlineMode"
+							@click="verifyAddress(newPartner)">
+							{{ $page.props.offlineMode ? "Can't verify address — offline" : 'Verify Address' }}
+						</button>
+					</p>
+					<div class="oe_field"><label>City:</label>
+						<input type="text" v-model="newPartner.city" class="ri_forminput"
+							:disabled="addressCheckTarget === newPartner && addressCheck.status === 'checking'"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<div class="oe_field"><label>State:</label>
+						<input type="text" v-model="newPartner.state" maxlength="2" class="ri_forminput oe_state"
+							:disabled="addressCheckTarget === newPartner && addressCheck.status === 'checking'"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<div class="oe_field"><label>County:</label>
+						<SearchSelect
+							ref="newPartnerCountySelect"
+							v-model="newPartner.county_id"
+							optionsource="/json/counties"
+							display="county"
+							secondary="state"
+							:searchfields="['county']"
+							:filter="(c) => !newPartner.state || c.state === newPartner.state.toUpperCase()"
+							placeholder="Search counties..."
+							:allowcreate="true"
+							@create="(name) => createCounty(name, newPartner, 'newPartnerCountySelect')"
+						/></div>
 				</div>
+				<p v-if="countyError" class="oe_error">{{ countyError }}</p>
+				<p v-if="countyLookupHint" class="oe_hint">{{ countyLookupHint }}</p>
 				<div class="oe_actions">
-					<button @click="saveNewPartner" class="ri_defaultbutton" :disabled="partnerSaving">
-						{{ partnerSaving ? 'Saving...' : 'Save Partner' }}
+					<button @click="saveNewPartner" class="ri_defaultbutton"
+						:disabled="partnerSaving || (addressCheckTarget === newPartner && addressCheck.status !== 'idle')">
+						{{ partnerSaving ? 'Saving...'
+							: (addressCheckTarget === newPartner && addressCheck.status === 'checking') ? 'Checking address…'
+							: 'Save Partner' }}
 					</button>
 					<button @click="creatingPartner = false" class="ri_formbutton">Cancel</button>
 				</div>
@@ -682,31 +914,68 @@ export default {
 			<div v-else-if="contact" class="oe_card">
 				<h3>Confirm Contact &amp; Shipping Details</h3>
 				<p class="oe_hint">Make sure this is up to date — it's where the order ships.</p>
-				<div class="oe_contactgrid">
+				<div class="oe_contactgrid" @blur.capture="maybeAutoLookupCounty(contact)">
 					<div class="oe_field"><label>First Name:</label>
-						<input type="text" v-model="contact.first_name" class="ri_forminput" /></div>
+						<input type="text" v-model="contact.first_name" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Last Name:</label>
-						<input type="text" v-model="contact.last_name" class="ri_forminput" /></div>
+						<input type="text" v-model="contact.last_name" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Organization:</label>
-						<input type="text" v-model="contact.organization" class="ri_forminput" /></div>
+						<input type="text" v-model="contact.organization" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Phone:</label>
-						<input type="text" v-model="contact.phone" class="ri_forminput" /></div>
+						<input type="text" v-model="contact.phone" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Email:</label>
-						<input type="email" v-model="contact.email" class="ri_forminput" /></div>
-					<div class="oe_field"><label>Address:</label>
-						<input type="text" v-model="contact.address" class="ri_forminput" /></div>
-					<div class="oe_field"><label>City:</label>
-						<input type="text" v-model="contact.city" class="ri_forminput" /></div>
-					<div class="oe_field"><label>State:</label>
-						<input type="text" v-model="contact.state" maxlength="2" class="ri_forminput oe_state" /></div>
+						<input type="email" v-model="contact.email" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
 					<div class="oe_field"><label>Zip:</label>
-						<input type="text" v-model="contact.zip" maxlength="10" class="ri_forminput oe_zip" /></div>
-					<div class="oe_field" v-if="partner?.county"><label>County:</label>
-						<span>{{ partner.county.county }}</span></div>
+						<input type="text" v-model="contact.zip" maxlength="10" class="ri_forminput oe_zip"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<div class="oe_field"><label>Address:</label>
+						<input type="text" v-model="contact.address" class="ri_forminput"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<AddressCorrectionCheck v-if="addressCheckTarget === contact"
+						:status="addressCheck.status" :casing-only="addressCheck.casingOnly"
+						:entered="addressCheck.entered" :suggested="addressCheck.suggested"
+						@accept="acceptAddressSuggestion" @keep="keepAddressAsEntered" />
+					<p v-if="contact.address && !(contact.verified_address || contact.address_verified_at)
+						&& !(addressCheckTarget === contact && addressCheck.status !== 'idle')" class="oe_hint">
+						<button type="button" class="ri_formbutton" :disabled="$page.props.offlineMode"
+							@click="verifyAddress(contact)">
+							{{ $page.props.offlineMode ? "Can't verify address — offline" : 'Verify Address' }}
+						</button>
+					</p>
+					<div class="oe_field"><label>City:</label>
+						<input type="text" v-model="contact.city" class="ri_forminput"
+							:disabled="addressCheckTarget === contact && addressCheck.status === 'checking'"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<div class="oe_field"><label>State:</label>
+						<input type="text" v-model="contact.state" maxlength="2" class="ri_forminput oe_state"
+							:disabled="addressCheckTarget === contact && addressCheck.status === 'checking'"
+							@keydown.enter.prevent="focusNextField($event)" /></div>
+					<div class="oe_field"><label>County:</label>
+						<SearchSelect
+							ref="countySelect"
+							v-model="contact.county_id"
+							optionsource="/json/counties"
+							display="county"
+							secondary="state"
+							:searchfields="['county']"
+							:filter="(c) => !contact.state || c.state === contact.state.toUpperCase()"
+							placeholder="Search counties..."
+							:allowcreate="true"
+							@create="(name) => createCounty(name, contact, 'countySelect')"
+						/></div>
 				</div>
+				<p v-if="countyError" class="oe_error">{{ countyError }}</p>
+				<p v-if="countyLookupHint" class="oe_hint">{{ countyLookupHint }}</p>
 				<div class="oe_actions">
-					<button @click="confirmPartner" class="ri_defaultbutton" :disabled="partnerSaving">
+					<button @click="confirmPartner" class="ri_defaultbutton"
+						:disabled="partnerSaving || (addressCheckTarget === contact && addressCheck.status !== 'idle')">
 						{{ partnerSaving ? 'Saving...'
+							: (addressCheckTarget === contact && addressCheck.status === 'checking') ? 'Checking address…'
 							: (contactDirty ? 'Save Details & ' : '')
 								+ (partnerMode === 'change' ? 'Use This Partner' : 'Start Order') }} &rarr;
 					</button>

@@ -8,6 +8,7 @@ import Checkbox from '@/Components/Checkbox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import TextArea from '@/Components/TextArea.vue';
 import SearchSelect from '@/Components/SearchSelect.vue';
+import AddressCorrectionCheck from '@/Components/AddressCorrectionCheck.vue';
 
 defineProps({
     breadcrumb: {
@@ -171,49 +172,79 @@ defineProps({
             /> 
           </div>
 
-          <div class="ri_fieldset">
-            <div class="ri_fieldlabel">Address:</div>
-            <TextArea
-              v-model="record.address"
-              :enabled="editing"
-            /> 
-          </div>
+		  <!-- ZIP first, then street address: geocod.io resolves city/state/
+		       county confidently from street+zip alone, so asking ZIP (quick
+		       to state on a call) before the street lets the rest fill in
+		       automatically once address is entered — the partner reciting
+		       their full address afterward becomes a confirmation pass over
+		       already-filled fields rather than the only source of them.
+		       @blur.capture (not @blur) because it needs to catch focus
+		       leaving TextInput/TextArea's inner <input>/<textarea> despite
+		       those components' own wrapping div sitting between here and
+		       the actual field — blur doesn't bubble, but capture-phase
+		       listeners on an ancestor still see it on the way down. -->
+		  <div class="people_address_fields" @blur.capture="maybeAutoLookupCounty(record)">
+			  <div class="ri_fieldset">
+				<div class="ri_fieldlabel">ZIP Code:</div>
+				<TextInput
+				  v-model="record.zip"
+				  maxlength="10"
+				  :enabled="editing"
+				/>
+			  </div>
 
-          <div class="ri_fieldset">
-            <div class="ri_fieldlabel">City:</div>
-            <TextInput
-              v-model="record.city"
-              :enabled="editing"
-            /> 
-          </div>
+			  <div class="ri_fieldset">
+				<div class="ri_fieldlabel">Address:</div>
+				<TextArea
+				  v-model="record.address"
+				  :enabled="editing"
+				/>
+			  </div>
 
-          <div class="ri_fieldset">
-            <div class="ri_fieldlabel">State:</div>
-            <TextInput
-              v-model="record.state"
-              maxlength="2"
-              :enabled="editing"
-            /> 
-          </div>
+			  <AddressCorrectionCheck
+				:status="addressCheck.status" :casing-only="addressCheck.casingOnly"
+				:entered="addressCheck.entered" :suggested="addressCheck.suggested"
+				@accept="acceptAddressSuggestion" @keep="keepAddressAsEntered" />
 
-          <div class="ri_fieldset">
-            <div class="ri_fieldlabel">ZIP Code:</div>
-            <TextInput
-              v-model="record.zip"
-              maxlength="10"
-              :enabled="editing"
-            /> 
-          </div>
+			  <p v-if="editing && record.address && !(record.verified_address || record.address_verified_at)
+				&& addressCheck.status === 'idle'" class="people_county_hint">
+				<button type="button" class="ri_formbutton" :disabled="$page.props.offlineMode"
+					@click="verifyAddress(record)">
+					{{ $page.props.offlineMode ? "Can't verify address — offline" : 'Verify Address' }}
+				</button>
+			  </p>
 
-		  <div class="ri_fieldset">
-		    <div class="ri_fieldlabel">County:</div>
-		    <ComboBox
-				v-model:keyValue="record.county_id"
-				v-model:updates="record.county_id"
-				optionsource="/json/counties"
-				display="county"
-			  	:enabled="editing"
-		    /> 
+			  <div class="ri_fieldset">
+				<div class="ri_fieldlabel">City:</div>
+				<TextInput
+				  v-model="record.city"
+				  :enabled="editing && addressCheck.status !== 'checking'"
+				/>
+			  </div>
+
+			  <div class="ri_fieldset">
+				<div class="ri_fieldlabel">State:</div>
+				<TextInput
+				  v-model="record.state"
+				  maxlength="2"
+				  :enabled="editing && addressCheck.status !== 'checking'"
+				/>
+			  </div>
+
+			  <div class="ri_fieldset">
+				<div class="ri_fieldlabel">County:</div>
+				<ComboBox
+					v-model:keyValue="record.county_id"
+					v-model:updates="record.county_id"
+					optionsource="/json/counties"
+					display="county"
+					secondaryDisplay="state"
+					:filter="(c) => !record.state || c.state === record.state.toUpperCase()"
+					:enabled="editing"
+				/>
+				<p v-if="countyLookupError" class="people_county_error">{{ countyLookupError }}</p>
+				<p v-if="countyLookupHint" class="people_county_hint">{{ countyLookupHint }}</p>
+			  </div>
 		  </div>
 
           <div class="ri_fieldset">
@@ -261,11 +292,20 @@ defineProps({
 import axios from 'axios';
 import { invalidateOptions } from '@/Components/SearchSelect.vue';
 
+function normalizeAddr(s) {
+  return (s || '').toString().trim().toLowerCase().replace(/\s+/g, ' ');
+}
+const IDLE_ADDRESS_CHECK = { status: 'idle', casingOnly: false, entered: {}, suggested: {} };
+
 export default {
   data() {
     return {
       peopleSearch: '',
       categoryError: null,
+      countyLookupError: null,
+      countyLookupHint: null,
+      // Drives AddressCorrectionCheck inline (see maybeAutoLookupCounty).
+      addressCheck: { status: 'idle', casingOnly: false, entered: {}, suggested: {} },
     };
   },
   computed: {
@@ -297,6 +337,116 @@ export default {
         this.categoryError = error.response?.data?.message || 'Could not save category.';
       }
     },
+    // Looks up county/city/state/zip once there's enough to geocode —
+    // fires on blur of any address field (see @blur.capture above), but
+    // only actually calls out once address is non-blank and at least one
+    // of zip/state is present (geocod.io resolves confidently from
+    // street+zip alone even with city/state blank — tested at `rooftop`
+    // accuracy). While the request is in flight, City/State are disabled
+    // in the template (bound to `addressCheck.status === 'checking'`) —
+    // editing a field mid-flight is exactly what caused the cursor-jump
+    // race Mark found, since the response landing while still typing
+    // collided with v-model. Only the ADDRESS text itself gets a review
+    // step (AddressCorrectionCheck, rendered inline — no modal, no native
+    // <dialog>), and only when geocod.io's version actually differs;
+    // city/state/zip are simple enough to just fill in directly once
+    // blank. County is applied directly too, since it's a separate,
+    // already-editable picker widget.
+    // `force` bypasses the dedup key — used by the manual "Verify Address"
+    // button so it always re-checks even if this exact input was already
+    // tried (e.g. tried once while offline and failed, or the record was
+    // just loaded and nothing's been retyped).
+    async maybeAutoLookupCounty(record, force = false) {
+      if (this.$page.props.offlineMode) return; // no internet — don't even attempt it
+      const address = (record.address || '').trim();
+      const zip = (record.zip || '').trim();
+      const state = (record.state || '').trim();
+      if (!address || (!zip && !state)) return;
+
+      const key = `${address}|${state}|${zip}`;
+      if (!force && record.__geocodeKey === key) return; // already tried this exact input
+      if (record.__geocodeKey !== key) record.verified_address = false; // input changed since any prior verification
+      record.__geocodeKey = key;
+
+      this.countyLookupError = null;
+      this.countyLookupHint = null;
+      this.addressCheck = { ...IDLE_ADDRESS_CHECK, status: 'checking' };
+      try {
+        const response = await axios.post('/json/geocode/county', {
+          address: record.address, city: record.city, state: record.state, zip: record.zip,
+        });
+        const entered = { address: record.address, city: record.city, state: record.state, zip: record.zip };
+        const suggested = {
+          address: response.data.address, city: response.data.city,
+          state: response.data.state, zip: response.data.zip,
+        };
+        if (!suggested.address || entered.address === suggested.address) {
+          this.applyAddressFields(record, suggested);
+          record.verified_address = true;
+          this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+        } else {
+          this.addressCheck = {
+            status: 'ready',
+            casingOnly: normalizeAddr(entered.address) === normalizeAddr(suggested.address),
+            entered, suggested,
+          };
+        }
+        this._addressCheckRecord = record;
+        if (!record.county_id && response.data.county_id) {
+          record.county_id = response.data.county_id;
+        } else if (!record.county_id && response.data.county) {
+          this.countyLookupHint = `Geocodio suggests "${response.data.county}, ${response.data.state}" `
+            + `— that's not in the county list above yet.`;
+        }
+      } catch (error) {
+        this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+        // 422: geocod.io just couldn't resolve this address — not worth an
+        // alarming error. 503: lookup is unavailable (offline mode, or no
+        // API key configured) — also expected, not a fault; address entry
+        // works fine without it either way.
+        if (![422, 503].includes(error.response?.status)) {
+          this.countyLookupError = error.response?.data?.message || 'Could not look up that address.';
+        }
+      }
+    },
+    // Fills city/state/zip from a suggestion, but only where blank — never
+    // overwrites something already typed.
+    applyAddressFields(record, suggested) {
+      if (!record.city) record.city = suggested.city || record.city;
+      if (!record.state) record.state = suggested.state || record.state;
+      if (!record.zip) record.zip = suggested.zip || record.zip;
+    },
+    acceptAddressSuggestion() {
+      const record = this._addressCheckRecord;
+      const suggested = this.addressCheck.suggested;
+      if (record) {
+        record.address = suggested.address;
+        this.applyAddressFields(record, suggested);
+        record.verified_address = true;
+      }
+      this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+    },
+    keepAddressAsEntered() {
+      const record = this._addressCheckRecord;
+      const suggested = this.addressCheck.suggested;
+      if (record) {
+        this.applyAddressFields(record, suggested);
+        // Geocod.io was still consulted and a human looked at both options
+        // — that counts as "checked," even though the as-typed version won.
+        record.verified_address = true;
+      }
+      this.addressCheck = { ...IDLE_ADDRESS_CHECK };
+    },
+    // Manual fallback for when the automatic blur-triggered lookup never
+    // ran (offline mode was on at entry time, or this record predates the
+    // whole feature) — same underlying check, just user-initiated and
+    // forced past the dedup guard. Deliberately per-record and opt-in
+    // rather than a batch job: geocod.io's free tier is a shared daily
+    // quota, and there's no reason to spend it re-checking addresses
+    // nobody's actively working with.
+    verifyAddress(record) {
+      this.maybeAutoLookupCounty(record, true);
+    },
   },
 };
 </script>
@@ -318,5 +468,17 @@ td.comma-separated span:not(:last-child)::after {
 
 .people_search {
   max-width: 20rem;
+}
+
+.people_county_error {
+  color: #b91c1c;
+  font-size: 0.85em;
+  margin-top: 0.3em;
+}
+
+.people_county_hint {
+  color: #4338ca;
+  font-size: 0.85em;
+  margin-top: 0.3em;
 }
 </style>

@@ -123,6 +123,7 @@ class Person extends Model
         'updated_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
+        'address_verified_at' => 'datetime',
         'is_volunteer' => 'boolean',
         'volunteer_active' => 'boolean',
         'volunteer_window_start' => 'date',
@@ -149,7 +150,7 @@ class Person extends Model
      * Combined display name for search/combo controls — there is no single
      * name column, and controls like ComboBox can only display one field.
      */
-    protected $appends = ['full_name'];
+    protected $appends = ['full_name', 'search_label'];
 
     public function getFullNameAttribute(): string
     {
@@ -157,6 +158,23 @@ class Person extends Model
 
         // Organization-only records (no personal name) still need a visible label
         return $name !== '' ? $name : ($this->organization ?? '');
+    }
+
+    /**
+     * "Person - Organization" label for search/combo controls (SearchSelect) —
+     * shows both where present, falls back to whichever one exists alone.
+     * Reintroduced after being lost in a rolled-back update.
+     */
+    public function getSearchLabelAttribute(): string
+    {
+        $name = trim(($this->first_name ?? '').' '.($this->last_name ?? ''));
+        $org = trim($this->organization ?? '');
+
+        if ($name === '') {
+            return $org;
+        }
+
+        return $org === '' ? $name : "{$name} - {$org}";
     }
 
     /**

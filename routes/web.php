@@ -648,6 +648,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-co
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:general-access']], function () {
     Route::post('/feedback-reports', [FeedbackReportController::class, 'store']);
     Route::post('/banner-dismiss', [BannerSettingController::class, 'dismiss']);
+    // Shared by People and Order Entry (manage-people / manage-orders) — gated
+    // loosely like the above since it only echoes back a geocoding result,
+    // not a resource-specific read/write.
+    Route::post('/geocode/county', [GeocodeController::class, 'lookupCounty']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-feedback']], function () {
@@ -737,6 +741,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::post('/system/update', [SystemController::class, 'update']);
     Route::post('/system/backup', [SystemController::class, 'backupNow']);
     Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
+    Route::put('/system/offline-mode', [SystemController::class, 'saveOfflineMode']);
 
     Route::get('/active-sessions', [ActiveSessionController::class, 'index']);
     Route::get('/login-history', [ActiveSessionController::class, 'history']);

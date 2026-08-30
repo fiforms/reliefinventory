@@ -19,7 +19,12 @@
 	  - `searchfields` lets one control match on several fields (e.g. search
 	    items by description OR upc).
 	  - Optional "Add new..." row (allowcreate) emits @create with the typed
-	    text so the page can open its own creation flow.
+	    text so the page can open its own creation flow. When nothing already
+	    matches and the typed text is a likely typo of an existing option
+	    (edit distance <= 2), a "Did you mean..." suggestion appears above the
+	    create row so allowcreate doesn't invite near-duplicate records.
+	  - A selected value shows a "x" clear button so a wrong pick can be
+	    backed out of without having to type over it and lose the selection.
 
 	Props:
 	  modelValue   - selected id (v-model)
@@ -39,6 +44,11 @@
 	                 popping the whole list open with the first row
 	                 pre-highlighted (which risks an accidental Enter picking
 	                 the wrong item before anything's been typed).
+	  filter       - optional (option) => boolean predicate narrowing which
+	                 options are browsable/searchable (e.g. counties scoped
+	                 to whichever state is entered elsewhere on the record).
+	                 The already-selected option is still resolved/displayed
+	                 even if it wouldn't pass the filter.
 	  placeholder, enabled, allowcreate, autofocus
 
 	Events: update:modelValue, selected(object|null), create(searchText)
@@ -53,6 +63,22 @@ const optionCache = new Map();
 
 export function invalidateOptions(url) {
 	optionCache.delete(url);
+}
+
+// Small edit-distance check used to nudge "did you mean...?" for a typo'd
+// name before letting allowcreate spawn a near-duplicate record.
+function levenshtein(a, b) {
+	const rows = a.length + 1;
+	const cols = b.length + 1;
+	const d = Array.from({ length: rows }, (_, i) => [i, ...Array(cols - 1).fill(0)]);
+	for (let j = 1; j < cols; j++) d[0][j] = j;
+	for (let i = 1; i < rows; i++) {
+		for (let j = 1; j < cols; j++) {
+			const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+			d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+		}
+	}
+	return d[rows - 1][cols - 1];
 }
 
 function loadOptions(url, force = false) {
@@ -84,6 +110,13 @@ export default {
 		allowcreate: { type: Boolean, default: false },
 		autofocus: { type: Boolean, default: false },
 		openOnFocus: { type: Boolean, default: true },
+		// Optional (option) => boolean predicate narrowing which options are
+		// browsable/searchable — e.g. counties scoped to whichever state is
+		// currently entered elsewhere on the same record. The already-
+		// selected option is always still resolved/displayed even if it
+		// wouldn't pass the filter, so a filter never silently blanks an
+		// existing selection (same contract as ComboBox's `filter` prop).
+		filter: { type: Function, default: null },
 	},
 	emits: ["update:modelValue", "selected", "create"],
 	data() {
@@ -99,6 +132,9 @@ export default {
 		fields() {
 			return this.searchfields || [this.display];
 		},
+		baseOptions() {
+			return this.filter ? this.optionlist.filter(this.filter) : this.optionlist;
+		},
 		selectedOption() {
 			return this.optionlist.find((o) => o.id === this.modelValue) || null;
 		},
@@ -106,9 +142,9 @@ export default {
 			const text = this.search.trim().toLowerCase();
 			// When the input still shows the current selection, list everything
 			if (!text || (this.selectedOption && this.search === this.selectedOption[this.display])) {
-				return this.optionlist;
+				return this.baseOptions;
 			}
-			return this.optionlist.filter((option) =>
+			return this.baseOptions.filter((option) =>
 				this.fields.some(
 					(field) =>
 						option[field] &&
@@ -120,7 +156,7 @@ export default {
 			const text = this.search.trim().toLowerCase();
 			if (!text) return null;
 			return (
-				this.optionlist.find((option) =>
+				this.baseOptions.find((option) =>
 					this.fields.some(
 						(field) =>
 							option[field] &&
@@ -131,6 +167,24 @@ export default {
 		},
 		showCreateRow() {
 			return this.allowcreate && this.search.trim() !== "" && !this.exactMatch;
+		},
+		// Typo'd near-misses ("Jon Smith" vs "John Smith") that substring
+		// search (filteredOptions) wouldn't catch — only worth surfacing
+		// when we're about to offer "+ Add ..." and nothing already matched.
+		closeMatches() {
+			if (!this.allowcreate || this.filteredOptions.length > 0) return [];
+			const text = this.search.trim().toLowerCase();
+			if (!text) return [];
+			const maxDistance = text.length <= 4 ? 1 : 2;
+			return this.baseOptions
+				.map((option) => ({
+					option,
+					distance: levenshtein(text, String(option[this.display] ?? "").toLowerCase()),
+				}))
+				.filter((entry) => entry.distance > 0 && entry.distance <= maxDistance)
+				.sort((a, b) => a.distance - b.distance)
+				.slice(0, 3)
+				.map((entry) => entry.option);
 		},
 	},
 	watch: {
@@ -208,6 +262,7 @@ export default {
 			this.search = "";
 			this.$emit("update:modelValue", null);
 			this.$emit("selected", null);
+			this.focus();
 		},
 		emitCreate() {
 			this.isOpen = false;
@@ -267,9 +322,17 @@ export default {
 				@keydown.up.prevent="onArrow(-1)"
 				@keydown.esc.prevent="close"
 				class="ri_forminput ss_input"
+				:class="{ ss_input_clearable: selectedOption }"
 				:placeholder="placeholder"
 				autocomplete="off"
 			/>
+			<button
+				v-if="selectedOption"
+				type="button"
+				class="ss_clear"
+				aria-label="Clear selection"
+				@mousedown.prevent="clearSelection"
+			>&times;</button>
 			<ul v-if="isOpen && (filteredOptions.length > 0 || showCreateRow)"
 				class="ss_dropdown" :class="{ ss_dropdown_wide: secondary }">
 				<li
@@ -278,6 +341,16 @@ export default {
 					@mousedown.prevent="selectOption(option)"
 					class="ss_option"
 					:class="{ ss_highlighted: index === highlighted }"
+				>
+					<span class="ss_primary">{{ option[display] }}</span>
+					<span v-if="secondary" class="ss_secondary">{{ option[secondary] }}</span>
+				</li>
+				<li v-if="closeMatches.length" class="ss_didyoumean_label">Did you mean:</li>
+				<li
+					v-for="option in closeMatches"
+					:key="'dym-' + option.id"
+					@mousedown.prevent="selectOption(option)"
+					class="ss_option ss_suggestion"
 				>
 					<span class="ss_primary">{{ option[display] }}</span>
 					<span v-if="secondary" class="ss_secondary">{{ option[secondary] }}</span>
@@ -306,6 +379,25 @@ export default {
 }
 .ss_input {
 	width: 100%;
+}
+.ss_input_clearable {
+	padding-right: 1.8em;
+}
+.ss_clear {
+	position: absolute;
+	right: 0.3em;
+	top: 50%;
+	transform: translateY(-50%);
+	border: none;
+	background: none;
+	cursor: pointer;
+	font-size: 1.1em;
+	line-height: 1;
+	color: #888;
+	padding: 0.2em 0.3em;
+}
+.ss_clear:hover {
+	color: #333;
 }
 .ss_dropdown {
 	position: absolute;
@@ -349,6 +441,15 @@ export default {
 	font-style: italic;
 	color: #4338ca;
 	border-top: 1px solid #eee;
+}
+.ss_didyoumean_label {
+	padding: 0.3em 0.6em 0;
+	font-size: 0.8em;
+	color: #888;
+	white-space: nowrap;
+}
+.ss_suggestion .ss_primary {
+	font-weight: 600;
 }
 .ss_error {
 	color: #b91c1c;

@@ -142,6 +142,25 @@ test('a genuinely recent running status still blocks a new update request', func
     @unlink($statusFile);
 });
 
+test('offline mode round-trips through the singleton setting and status endpoint', function () {
+    $admin = userWithPermissions('admin-system');
+
+    $this->actingAs($admin)->putJson('/json/system/offline-mode', ['enabled' => true])
+        ->assertOk()->assertJsonPath('offline_mode', true);
+
+    $this->actingAs($admin)->getJson('/json/system/status')
+        ->assertJsonPath('offline_mode', true);
+
+    $this->actingAs($admin)->putJson('/json/system/offline-mode', ['enabled' => false])
+        ->assertOk()->assertJsonPath('offline_mode', false);
+});
+
+test('saving offline mode requires the admin-system permission', function () {
+    $this->actingAs(App\Models\User::factory()->create())
+        ->putJson('/json/system/offline-mode', ['enabled' => true])
+        ->assertForbidden();
+});
+
 test('invalid backup settings are rejected', function () {
     config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings.conf']);
 

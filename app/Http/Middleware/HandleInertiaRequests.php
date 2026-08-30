@@ -5,6 +5,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
 use App\Services\PinLoginService;
 use Illuminate\Http\Request;
@@ -53,6 +54,12 @@ class HandleInertiaRequests extends Middleware
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,
             ],
+            // A single instance-wide flag for "this warehouse has no
+            // reliable internet right now" — pages that call out to
+            // Turnstile/geocod.io check this before even attempting the
+            // request, rather than firing it and eating a slow timeout or
+            // a 503. See OfflineModeSetting.
+            'offlineMode' => OfflineModeSetting::isOffline(),
         ];
     }
 }

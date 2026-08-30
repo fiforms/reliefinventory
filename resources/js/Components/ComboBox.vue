@@ -17,8 +17,13 @@
 	in the control, (default is "name")
 	
 	This implementation expects the primary key of the options list to be "id"
-	
- 
+
+	Optional filter="" prop: an (option) => boolean predicate narrowing which
+	options are offered while browsing/searching (e.g. counties scoped to
+	whichever state is currently entered elsewhere on the record). The
+	already-selected option is still resolved/displayed even if it wouldn't
+	pass the filter — only the picker's own option list is narrowed, so a
+	filter never silently blanks out an existing, unrelated selection.
  -->
 
 <template>
@@ -99,6 +104,17 @@ export default {
 		type: Array,
 		required: false,
 	},
+	// Optional (option) => boolean predicate narrowing which options are
+	// offered — e.g. counties scoped to whichever state is currently typed
+	// elsewhere on the same record. The currently *selected* option is
+	// always still shown/resolved even if it wouldn't pass the filter
+	// (stale data from before the filter existed, or a genuine cross-state
+	// pick), only the browse/search list is narrowed.
+	filter: {
+		type: Function,
+		required: false,
+		default: null,
+	},
 	placeholder: {
 		type: String,
 		required: false,
@@ -114,14 +130,25 @@ export default {
 	  highlightedIndex: -1,
     };
   },
+  computed: {
+    baseOptions() {
+      return this.filter ? this.optionlist.filter(this.filter) : this.optionlist;
+    },
+  },
   watch: {
     optionlist: {
       immediate: true,
-      handler(newOptions) {
-        this.filteredOptions = newOptions;
+      handler() {
+        this.filteredOptions = this.baseOptions;
 		this.showOptionTitle();
       },
     },
+	// A parent whose filter narrows dynamically (e.g. typing a state) should
+	// see the browse list narrow immediately, not just on the next keystroke.
+	filter() {
+		this.filteredOptions = this.baseOptions;
+		this.highlightedIndex = this.filteredOptions.length ? 0 : -1;
+	},
     keyValue: {
       immediate: true,
       handler(newValue) {
@@ -152,7 +179,7 @@ export default {
 	filterOptions() {
       const fields = this.searchFields && this.searchFields.length ? this.searchFields : [this.display];
       const term = this.search.toLowerCase();
-      this.filteredOptions = this.optionlist.filter((option) =>
+      this.filteredOptions = this.baseOptions.filter((option) =>
         fields.some((field) => option[field] && String(option[field]).toLowerCase().includes(term))
       );
 	  this.highlightedIndex = this.filteredOptions.length ? 0 : -1;

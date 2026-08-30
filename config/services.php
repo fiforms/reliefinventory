@@ -35,6 +35,13 @@ return [
         ],
     ],
 
+    'geocodio' => [
+        // Used to suggest a county from an entered address (People/Order
+        // Entry) — free tier, no key means the feature just silently
+        // stays unavailable (GeocodioService::lookup returns null).
+        'key' => env('GEOCODIO_API_KEY'),
+    ],
+
     'turnstile' => [
         // Off by default only in the testing environment (see phpunit.xml).
         // Deployments running on a closed network with no internet access

@@ -38,6 +38,7 @@ const inMaintenance = ref(false);
 const backingUp = ref(false);
 const savingSettings = ref(false);
 const settingsSavedAt = ref(null);
+const savingOfflineMode = ref(false);
 
 const settings = reactive({
 	frequency: 'daily',
@@ -169,6 +170,23 @@ async function saveSettings() {
 	}
 }
 
+async function toggleOfflineMode() {
+	const desired = status.value.offline_mode;
+	savingOfflineMode.value = true;
+	error.value = '';
+	notice.value = '';
+	try {
+		const response = await axios.put('/json/system/offline-mode', { enabled: desired });
+		status.value.offline_mode = response.data.offline_mode;
+		notice.value = response.data.offline_mode ? 'Offline mode enabled.' : 'Offline mode disabled.';
+	} catch (e) {
+		status.value.offline_mode = !desired; // revert the checkbox — save failed
+		error.value = e.response?.data?.message || 'Could not save offline mode.';
+	} finally {
+		savingOfflineMode.value = false;
+	}
+}
+
 function formatStamp(stamp) {
 	// 20260814-112703 -> 2026-08-14 11:27, already in the configured backup
 	// timezone (settings.tz below) — update.sh stamps backup directories
@@ -250,6 +268,25 @@ onUnmounted(stopPolling);
 						Installing an update backs up first, puts the site into maintenance mode, applies the update,
 						and verifies health before coming back online.
 					</p>
+				</section>
+
+				<!-- Offline Mode -->
+				<section class="bg-white shadow rounded-lg p-6 space-y-4">
+					<h2 class="text-lg font-semibold">Offline Mode</h2>
+					<p class="text-sm text-gray-600">
+						Turn this on when this warehouse has no reliable internet connection. It automatically
+						disables Cloudflare Turnstile (bot protection on login/registration/password reset) and
+						geocod.io address lookups (county/city/state auto-fill on Order Entry and People) — neither
+						is required for normal operation, they just fail slowly without a real network otherwise.
+						Nothing else changes — address, order, and inventory entry all work exactly the same either way.
+					</p>
+					<label class="flex items-center gap-3">
+						<input type="checkbox" v-model="status.offline_mode" :disabled="savingOfflineMode"
+							@change="toggleOfflineMode" class="h-5 w-5 rounded border-gray-300" />
+						<span class="text-sm font-medium text-gray-700">
+							{{ status.offline_mode ? 'Offline mode is ON' : 'Offline mode is off' }}
+						</span>
+					</label>
 				</section>
 
 				<!-- Backups -->

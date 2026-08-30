@@ -35,6 +35,9 @@ class PeopleController extends Controller
         'state' => 'nullable|string|max:2',
         'zip' => 'nullable|string|max:10',
         'county_id' => 'nullable|exists:counties,id',
+        // Not persisted directly — see applyAddressVerification(). Just an
+        // intent signal, validated here for shape only.
+        'verified_address' => 'nullable|boolean',
         'comments' => 'nullable|string',
         // A fact about the person, not a role/permission — see Person::$fillable.
         'is_volunteer' => 'nullable|boolean',
@@ -133,6 +136,7 @@ class PeopleController extends Controller
 
         $person = Person::create($data);
         $this->permissionAssignment->syncRolesAndPermissions($person, $roleData, $permissionData);
+        $this->applyAddressVerification($request, $person, addressChanged: false);
 
         return response()->json([
             'message' => 'Person added successfully.',
@@ -166,12 +170,40 @@ class PeopleController extends Controller
             return response()->json(['message' => $error], 403);
         }
 
+        $addressChanged = collect(['address', 'city', 'state', 'zip'])
+            ->contains(fn ($field) => array_key_exists($field, $data) && $data[$field] != $person->$field);
+
         $person->update($data);
         $this->permissionAssignment->syncRolesAndPermissions($person, $roleData, $permissionData);
+        $this->applyAddressVerification($request, $person, $addressChanged);
 
         return response()->json([
             'message' => 'Person updated successfully.',
+            'record' => $person->fresh(),
         ], 200);
+    }
+
+    /**
+     * `address_verified_at` is deliberately never in $fillable — trusting a
+     * raw client-supplied timestamp would make it meaningless. Instead the
+     * client sends a plain `verified_address` boolean *intent* (set once a
+     * geocode lookup has actually run and been accepted, see
+     * OrderEntry.vue/People.vue's maybeAutoLookupCounty), and this decides
+     * what to do with it: stamp `now()` if asserted, or — the case that
+     * actually matters for correctness — clear it whenever the address
+     * itself changed without that assertion, so a stale "verified" flag
+     * can never survive an edit that wasn't itself verified.
+     */
+    private function applyAddressVerification(Request $request, Person $person, bool $addressChanged): void
+    {
+        if ($request->boolean('verified_address')) {
+            $person->address_verified_at = now();
+        } elseif ($addressChanged) {
+            $person->address_verified_at = null;
+        } else {
+            return;
+        }
+        $person->save();
     }
 
     /**

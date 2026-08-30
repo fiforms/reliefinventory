@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\OfflineModeSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -72,7 +73,25 @@ class SystemController extends Controller
             'backups' => $this->backupInventory(),
             'update_status' => $this->readUpdateStatus(),
             'timezones' => \DateTimeZone::listIdentifiers(),
+            'offline_mode' => OfflineModeSetting::current()->enabled,
         ]);
+    }
+
+    /**
+     * One switch for "this warehouse has no reliable internet right now" —
+     * see OfflineModeSetting for what it turns off (Turnstile, geocod.io)
+     * and why this is a single flag rather than a per-feature checklist.
+     */
+    public function saveOfflineMode(Request $request): JsonResponse
+    {
+        $data = $request->validate(['enabled' => 'required|boolean']);
+
+        $setting = OfflineModeSetting::current();
+        $setting->update($data);
+
+        Log::info('Offline mode changed from admin panel', ['person_id_user' => Auth::id()] + $data);
+
+        return response()->json(['offline_mode' => $setting->enabled]);
     }
 
     /**

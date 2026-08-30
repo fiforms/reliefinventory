@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\BannedEmail;
+use App\Models\OfflineModeSetting;
 use App\Models\User;
 use App\Services\PinLoginService;
 use Illuminate\Auth\Events\Registered;
@@ -24,7 +25,7 @@ class RegisteredUserController extends Controller
      */
     public function create(): Response
     {
-        $turnstileEnabled = config('services.turnstile.enabled');
+        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
         $turnstileSiteKey = config('services.turnstile.site_key');
 
         if ($turnstileEnabled && empty($turnstileSiteKey)) {
@@ -44,7 +45,7 @@ class RegisteredUserController extends Controller
      */
     public function store(Request $request, PinLoginService $pinLogin): RedirectResponse
     {
-        $turnstileEnabled = config('services.turnstile.enabled');
+        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
 
         $request->validate([
             'first_name' => 'string|max:255',

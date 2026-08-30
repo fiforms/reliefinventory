@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\OfflineModeSetting;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Password;
@@ -18,7 +19,7 @@ class PasswordResetLinkController extends Controller
      */
     public function create(): Response
     {
-        $turnstileEnabled = config('services.turnstile.enabled');
+        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
         $turnstileSiteKey = config('services.turnstile.site_key');
 
         if ($turnstileEnabled && empty($turnstileSiteKey)) {
@@ -39,7 +40,7 @@ class PasswordResetLinkController extends Controller
      */
     public function store(Request $request): RedirectResponse
     {
-        $turnstileEnabled = config('services.turnstile.enabled');
+        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
 
         $request->validate([
             'email' => 'required|email',
