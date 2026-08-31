@@ -111,6 +111,16 @@ class PermissionsSeeder extends Seeder
         // fleeing a building and checking a roster from their phone, not
         // just management.
         'view-building-occupancy' => 'View who is currently in the building, and mark people safe during an active roll call',
+        // Schema-changing (question types/options, approval wiring) —
+        // Administrator-only by default, same blast-radius reasoning as
+        // manage-users/manage-import.
+        'manage-forms' => 'Build and edit survey/questionnaire forms',
+        // Deliberately separate from manage-forms, same split as
+        // manage-donation-offers/manage-receiving: reviewing/deciding on
+        // submitted answers (e.g. partner-agency applications) is a
+        // different job than building the form itself. Office by default —
+        // the team that already triages Donation Offer calls.
+        'review-form-submissions' => 'View, approve, and deny form submissions',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -142,6 +152,7 @@ class PermissionsSeeder extends Seeder
         'manage-donation-offers',
         'certify-volunteer-hours',
         'operate-volunteer-kiosk',
+        'review-form-submissions',
     ];
 
     /**

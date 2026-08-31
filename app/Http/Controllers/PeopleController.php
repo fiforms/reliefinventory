@@ -7,6 +7,8 @@ use App\Services\PersonPermissionAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
+use InvalidArgumentException;
 
 class PeopleController extends Controller
 {
@@ -58,7 +60,7 @@ class PeopleController extends Controller
      */
     public function index(Request $request)
     {
-        $query = Person::with(['people_roles', 'roles', 'county', 'person_permissions', 'parent', 'category']);
+        $query = Person::with(['people_roles', 'roles', 'county', 'person_permissions', 'parent', 'category', 'partnerStatusLogs.changedBy']);
 
         // Lets a Parent Organization picker (SearchSelect) fetch only org
         // records, via a distinct cached URL — see People.vue.
@@ -227,5 +229,36 @@ class PeopleController extends Controller
         return response()->json([
             'message' => 'Person deleted successfully.',
         ], 200);
+    }
+
+    /**
+     * Move a Partner-tagged person's ongoing partner_status (approve/deny/
+     * block/reconsider) — see Person::transitionPartnerStatus() for the
+     * legal-move table and audit log. Separate from the plain field-editing
+     * update() above since every transition needs to be logged, same
+     * reasoning as DonationOffer/FormSubmission's dedicated transition
+     * endpoints rather than a raw field write.
+     */
+    public function partnerStatus(Request $request, $id)
+    {
+        $person = Person::findOrFail($id);
+
+        $data = $request->validate([
+            'to_status' => ['required', Rule::in([
+                Person::PARTNER_STATUS_PENDING,
+                Person::PARTNER_STATUS_APPROVED,
+                Person::PARTNER_STATUS_DENIED,
+                Person::PARTNER_STATUS_BLOCKED,
+            ])],
+            'notes' => 'nullable|string',
+        ]);
+
+        try {
+            $person->transitionPartnerStatus($data['to_status'], Auth::id(), $data['notes'] ?? null);
+        } catch (InvalidArgumentException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['record' => $person->fresh(['partnerStatusLogs.changedBy'])]);
     }
 }

@@ -263,6 +263,43 @@ defineProps({
             managed from Setup &rarr; User Administration, not here.
           </p>
 
+          <div v-if="record.id && record.roles?.some((r) => r.name === 'Partner')" class="ri_fieldset">
+            <div class="ri_fieldlabel">Partner Status:</div>
+            <div>
+              <span v-if="record.partner_status" class="people_badge">{{ record.partner_status }}</span>
+              <span v-else class="text-gray-400 text-sm">Not tracked</span>
+            </div>
+          </div>
+          <div v-if="record.id && record.roles?.some((r) => r.name === 'Partner')" class="ri_fieldset">
+            <div class="ri_fieldlabel"></div>
+            <div class="flex gap-3 text-sm">
+              <button
+                v-for="action in partnerStatusActions(record)"
+                :key="action.to"
+                type="button"
+                class="text-blue-600 underline"
+                @click="startPartnerStatusChange(record, action.to)"
+              >
+                {{ action.label }}
+              </button>
+            </div>
+            <div v-if="composingPartnerStatus?.recordId === record.id" class="mt-2 space-y-2">
+              <TextArea v-model="composingPartnerStatus.notes" placeholder="Optional note" />
+              <div v-if="partnerStatusError" class="ri_error">{{ partnerStatusError }}</div>
+              <div class="flex gap-2">
+                <button type="button" class="ri_defaultbutton" @click="confirmPartnerStatusChange(record)">Confirm</button>
+                <button type="button" class="ri_formbutton" @click="composingPartnerStatus = null">Cancel</button>
+              </div>
+            </div>
+            <div v-if="record.partner_status_logs?.length" class="mt-2 text-xs text-gray-500 space-y-1">
+              <div v-for="log in record.partner_status_logs" :key="log.id">
+                {{ log.from_status || '(not tracked)' }} &rarr; {{ log.to_status }}
+                by {{ log.changed_by?.full_name }} &mdash; {{ new Date(log.created_at).toLocaleString() }}
+                <span v-if="log.notes">&mdash; {{ log.notes }}</span>
+              </div>
+            </div>
+          </div>
+
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Volunteer:</div>
             <Checkbox
@@ -306,6 +343,8 @@ export default {
       countyLookupHint: null,
       // Drives AddressCorrectionCheck inline (see maybeAutoLookupCounty).
       addressCheck: { status: 'idle', casingOnly: false, entered: {}, suggested: {} },
+      composingPartnerStatus: null, // { recordId, to, notes }
+      partnerStatusError: null,
     };
   },
   computed: {
@@ -446,6 +485,52 @@ export default {
     // nobody's actively working with.
     verifyAddress(record) {
       this.maybeAutoLookupCounty(record, true);
+    },
+    // Mirrors Person::PARTNER_STATUS_TRANSITIONS server-side — this is
+    // purely which buttons to show; the server still enforces the legal
+    // move regardless of what the UI offers.
+    partnerStatusActions(record) {
+      const options = {
+        '': [
+          { to: 'approved', label: 'Approve' },
+          { to: 'denied', label: 'Deny' },
+        ],
+        pending: [
+          { to: 'approved', label: 'Approve' },
+          { to: 'denied', label: 'Deny' },
+        ],
+        approved: [
+          { to: 'blocked', label: 'Block' },
+          { to: 'denied', label: 'Deny' },
+        ],
+        denied: [
+          { to: 'pending', label: 'Reconsider' },
+          { to: 'approved', label: 'Approve' },
+        ],
+        blocked: [
+          { to: 'approved', label: 'Unblock (Approve)' },
+          { to: 'denied', label: 'Deny' },
+        ],
+      };
+      return options[record.partner_status || ''] || [];
+    },
+    startPartnerStatusChange(record, to) {
+      this.composingPartnerStatus = { recordId: record.id, to, notes: '' };
+      this.partnerStatusError = null;
+    },
+    async confirmPartnerStatusChange(record) {
+      this.partnerStatusError = null;
+      try {
+        const response = await axios.post(`/json/people/${record.id}/partner-status`, {
+          to_status: this.composingPartnerStatus.to,
+          notes: this.composingPartnerStatus.notes.trim() || null,
+        });
+        record.partner_status = response.data.record.partner_status;
+        record.partner_status_logs = response.data.record.partner_status_logs;
+        this.composingPartnerStatus = null;
+      } catch (error) {
+        this.partnerStatusError = error.response?.data?.message || 'Could not update partner status.';
+      }
     },
   },
 };

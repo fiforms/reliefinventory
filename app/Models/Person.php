@@ -10,10 +10,37 @@ use App\Models\Concerns\HasPermissions;
 use App\Models\Concerns\HasPinLogin;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
+use InvalidArgumentException;
 
 class Person extends Model
 {
     use HasFactory, HasLoginGate, HasPermissions, HasPinLogin;
+
+    public const PARTNER_STATUS_PENDING = 'pending';
+
+    public const PARTNER_STATUS_APPROVED = 'approved';
+
+    public const PARTNER_STATUS_DENIED = 'denied';
+
+    public const PARTNER_STATUS_BLOCKED = 'blocked';
+
+    /**
+     * Legal moves for partner_status — mirrors the pending/approved/denied/
+     * blocked shape from the Facility approval design (Part 5, not yet
+     * built), applied here to the party record that actually exists today.
+     * `null` (never tracked) can move to any of the three entry points;
+     * `denied` can be reconsidered back to pending or straight to approved;
+     * `blocked` can only be lifted back to approved or converted to denied
+     * — never silently back to "never tracked".
+     */
+    private const PARTNER_STATUS_TRANSITIONS = [
+        '' => [self::PARTNER_STATUS_PENDING, self::PARTNER_STATUS_APPROVED, self::PARTNER_STATUS_DENIED],
+        self::PARTNER_STATUS_PENDING => [self::PARTNER_STATUS_APPROVED, self::PARTNER_STATUS_DENIED],
+        self::PARTNER_STATUS_APPROVED => [self::PARTNER_STATUS_BLOCKED, self::PARTNER_STATUS_DENIED],
+        self::PARTNER_STATUS_DENIED => [self::PARTNER_STATUS_PENDING, self::PARTNER_STATUS_APPROVED],
+        self::PARTNER_STATUS_BLOCKED => [self::PARTNER_STATUS_APPROVED, self::PARTNER_STATUS_DENIED],
+    ];
 
     /**
      * The table associated with the model.
@@ -350,5 +377,46 @@ class Person extends Model
     {
         $roleIds = Role::whereIn('name', $roles)->pluck('id')->toArray();
         $this->roles()->sync($roleIds);
+    }
+
+    public function partnerStatusLogs()
+    {
+        return $this->hasMany(PersonPartnerStatusLog::class)->orderBy('created_at');
+    }
+
+    /**
+     * Move partner_status to a new value, applying the legal-move check and
+     * appending an audit-log row in one transaction — the only place this
+     * column is ever written (never mass-assignable, same as disabled_at/
+     * email_verified_at). Mirrors DonationOffer::transitionTo()/
+     * FormSubmission::transitionTo(). $formSubmissionId is optional
+     * provenance for the specific case of a form-approval action driving
+     * this transition (see FormSubmissionController::resolvePartnerPerson).
+     */
+    public function transitionPartnerStatus(
+        string $toStatus,
+        ?int $changedByPersonId,
+        ?string $notes = null,
+        ?int $formSubmissionId = null
+    ): void {
+        $from = $this->partner_status ?? '';
+
+        if (! in_array($toStatus, self::PARTNER_STATUS_TRANSITIONS[$from] ?? [], true)) {
+            $fromLabel = $from === '' ? '(not tracked)' : $from;
+            throw new InvalidArgumentException("Cannot move partner_status from \"{$fromLabel}\" to \"{$toStatus}\".");
+        }
+
+        DB::transaction(function () use ($from, $toStatus, $changedByPersonId, $notes, $formSubmissionId) {
+            $this->partner_status = $toStatus;
+            $this->save();
+
+            $this->partnerStatusLogs()->create([
+                'from_status' => $from === '' ? null : $from,
+                'to_status' => $toStatus,
+                'changed_by_person_id' => $changedByPersonId,
+                'form_submission_id' => $formSubmissionId,
+                'notes' => $notes,
+            ]);
+        });
     }
 }
