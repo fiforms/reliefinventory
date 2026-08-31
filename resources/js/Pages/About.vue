@@ -32,22 +32,25 @@ import { Head } from '@inertiajs/vue3';
 
 				<div class="prose prose-lg text-gray-700 space-y-6">
 					<p>
-						Relief Inventory started as a warehouse tracking tool built alongside Adventist
-						Community Services, born out of a simple, recurring problem: goods donated after a
-						disaster arrive fast, from everywhere, with almost no record of what's actually in
-						a given pallet or box until someone opens it. Sorting that flood of donations into
-						something a distribution team can actually pick against — while still being able to
-						trace an item back to the pallet and donor it came from — was being done with paper
-						tally sheets, spreadsheets, and a lot of institutional memory carried in people's
-						heads.
+						Relief Inventory began during the response to Hurricane Helene in Western North
+						Carolina. A disaster relief warehouse needed a way to track incoming donations
+						accurately and quickly, route approval decisions, and manage outgoing shipments — and
+						nothing on the market fit the unique needs of a donations warehouse. A Google Sheets
+						system was cobbled together to keep pace, then reworked again and again as the
+						situation evolved. Its limitations soon became clear, and work began on something
+						better — starting not with a spec, but with a meeting of the minds among the people
+						actually running the warehouse. Out of that collaboration, a framework began to take
+						shape: one meant to guide a donation all the way from the initial offer through
+						delivery to a distribution point, while tracking volunteer hours along the way.
 					</p>
 					<p>
-						The software has been shaped less by a spec written in advance and more by real
-						operations. It went into use during an actual, unplanned disaster response while it
-						was still being built, and most of what exists today — from how sorting sessions
-						autosave line-by-line so a dropped connection never loses a scan, to how an order
-						moves through filling, shipping, and delivery — traces back to a specific gap someone
-						hit while the work was happening, not a feature that sounded good on paper.
+						That collaboration has continued ever since, alongside Adventist Community Services
+						and the volunteers and staff who use the system day to day. The software has been
+						shaped less by a spec written in advance and more by real operations — it went into
+						use while it was still being built, and most of what exists today — from how sorting
+						sessions autosave line-by-line so a dropped connection never loses a scan, to how an
+						order moves through filling, shipping, and delivery — traces back to a specific gap
+						someone hit while the work was happening, not a feature that sounded good on paper.
 					</p>
 
 					<h2 class="text-2xl font-semibold text-gray-800 pt-4">Where this is headed</h2>
