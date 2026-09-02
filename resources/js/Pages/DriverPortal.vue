@@ -302,14 +302,19 @@ export default {
 	text-align: center;
 }
 /* Identifies this as part of Relief Inventory — a driver has no account
-   and no site nav to otherwise tell them what app they're using. */
+   and no site nav to otherwise tell them what app they're using. Matches
+   the Welcome page header's title styling (text-xl sm:text-2xl font-bold
+   text-blue-600) for consistency across every entry point. */
 .dp_brand {
-	font-size: 0.8rem;
+	font-size: 1.25rem;
 	font-weight: 700;
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
 	color: #2563eb;
-	margin-bottom: 2px;
+	margin-bottom: 4px;
+}
+@media (min-width: 640px) {
+	.dp_brand {
+		font-size: 1.5rem;
+	}
 }
 .dp_title {
 	font-size: 1.4rem;

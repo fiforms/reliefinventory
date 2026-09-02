@@ -16,7 +16,7 @@ import { Link } from '@inertiajs/vue3';
             &larr; Home
         </Link>
 
-        <div class="text-xs font-bold uppercase tracking-wide text-blue-600">
+        <div class="text-xl sm:text-2xl font-bold text-blue-600">
             Relief Inventory
         </div>
 
