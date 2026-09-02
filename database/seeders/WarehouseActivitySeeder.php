@@ -53,25 +53,57 @@ class WarehouseActivitySeeder extends Seeder
 
     private function ensureDonors(): array
     {
+        // Org names/emails are the fictional demo identities already in
+        // place; address/phone are a real, publicly-verifiable business
+        // address in the same city — doesn't need to be literally this
+        // org's real address, just needs to be a real, geocodable place so
+        // the demo shows what full contact data actually looks like
+        // (2026-09-02, ahead of a live demo).
         $rows = [
-            ['first_name' => 'American', 'last_name' => 'Red Cross', 'organization' => 'American Red Cross', 'email' => 'donations@example-redcross.org', 'city' => 'Seattle', 'state' => 'WA'],
-            ['first_name' => 'Grace', 'last_name' => 'Community', 'organization' => 'Grace Community Church', 'email' => 'outreach@example-gracecc.org', 'city' => 'Tacoma', 'state' => 'WA'],
-            ['first_name' => 'Costco', 'last_name' => 'Wholesale', 'organization' => 'Costco Wholesale #442', 'email' => 'donations@example-costco.com', 'city' => 'Olympia', 'state' => 'WA'],
+            ['first_name' => 'American', 'last_name' => 'Red Cross', 'organization' => 'American Red Cross', 'email' => 'donations@example-redcross.org', 'address' => '1900 25th Ave S', 'city' => 'Seattle', 'state' => 'WA', 'zip' => '98144', 'phone' => '206-323-2345', 'is_organization' => true, 'contact' => ['first_name' => 'Sarah', 'last_name' => 'Whitman', 'email' => 'swhitman@example-redcross.org', 'phone' => '206-323-2346']],
+            ['first_name' => 'Grace', 'last_name' => 'Community', 'organization' => 'Grace Community Church', 'email' => 'outreach@example-gracecc.org', 'address' => '8243 S Park Ave', 'city' => 'Tacoma', 'state' => 'WA', 'zip' => '98408', 'phone' => '253-565-9567', 'is_organization' => true, 'contact' => ['first_name' => 'Marcus', 'last_name' => 'Reyes', 'email' => 'mreyes@example-gracecc.org', 'phone' => '253-565-9568']],
+            ['first_name' => 'Costco', 'last_name' => 'Wholesale', 'organization' => 'Costco Wholesale #442', 'email' => 'donations@example-costco.com', 'address' => '5500 Littlerock Rd SW', 'city' => 'Tumwater', 'state' => 'WA', 'zip' => '98512', 'phone' => '360-357-6580', 'is_organization' => true, 'contact' => ['first_name' => 'Diane', 'last_name' => 'Okafor', 'email' => 'diane.okafor@example-costco.com', 'phone' => '360-357-6581']],
         ];
 
-        return collect($rows)->map(fn ($row) => Person::firstOrCreate(['email' => $row['email']], $row))->all();
+        return $this->ensurePeopleWithContacts($rows);
     }
 
     private function ensurePartners(): array
     {
         $rows = [
-            ['first_name' => 'First', 'last_name' => 'Baptist', 'organization' => 'First Baptist Church POD', 'email' => 'pod@example-fbc.org', 'city' => 'Lacey', 'state' => 'WA'],
-            ['first_name' => 'Riverside', 'last_name' => 'Elementary', 'organization' => 'Riverside Elementary Shelter', 'email' => 'shelter@example-riverside.k12.wa.us', 'city' => 'Puyallup', 'state' => 'WA'],
-            ['first_name' => 'Community', 'last_name' => 'Response', 'organization' => 'CERT Team 4', 'email' => 'team4@example-cert.org', 'city' => 'Yelm', 'state' => 'WA'],
+            ['first_name' => 'First', 'last_name' => 'Baptist', 'organization' => 'First Baptist Church POD', 'email' => 'pod@example-fbc.org', 'address' => '4705 22nd Ave SE', 'city' => 'Lacey', 'state' => 'WA', 'zip' => '98503', 'phone' => '360-491-1440', 'is_organization' => true, 'contact' => ['first_name' => 'Robert', 'last_name' => 'Talley', 'email' => 'rtalley@example-fbc.org', 'phone' => '360-491-1441']],
+            ['first_name' => 'Riverside', 'last_name' => 'Elementary', 'organization' => 'Riverside Elementary Shelter', 'email' => 'shelter@example-riverside.k12.wa.us', 'address' => '5515 44th St E', 'city' => 'Puyallup', 'state' => 'WA', 'zip' => '98371', 'phone' => '253-841-8741', 'is_organization' => true, 'contact' => ['first_name' => 'Janet', 'last_name' => 'Ferris', 'email' => 'jferris@example-riverside.k12.wa.us', 'phone' => '253-841-8742']],
+            ['first_name' => 'Community', 'last_name' => 'Response', 'organization' => 'CERT Team 4', 'email' => 'team4@example-cert.org', 'address' => '709 Mill Rd SE', 'city' => 'Yelm', 'state' => 'WA', 'zip' => '98597', 'phone' => '360-458-2799', 'is_organization' => true, 'contact' => ['first_name' => 'Hector', 'last_name' => 'Molina', 'email' => 'hmolina@example-cert.org', 'phone' => '360-458-2800']],
             ['first_name' => 'Maria', 'last_name' => 'Santos', 'organization' => null, 'email' => 'msantos@example.com', 'city' => 'Olympia', 'state' => 'WA'],
         ];
 
-        return collect($rows)->map(fn ($row) => Person::firstOrCreate(['email' => $row['email']], $row))->all();
+        return $this->ensurePeopleWithContacts($rows);
+    }
+
+    /**
+     * Shared by donors/partners: firstOrCreate the org/individual by email,
+     * then — for rows carrying a 'contact' sub-array — firstOrCreate a
+     * linked contact Person (parent_person_id + contact_role), same
+     * org/contact pattern PeopleController uses. Matched by the contact's
+     * own email so re-running the seeder doesn't duplicate contacts either.
+     */
+    private function ensurePeopleWithContacts(array $rows): array
+    {
+        return collect($rows)->map(function ($row) {
+            $contactRow = $row['contact'] ?? null;
+            unset($row['contact']);
+
+            $person = Person::firstOrCreate(['email' => $row['email']], $row);
+
+            if ($contactRow) {
+                Person::firstOrCreate(
+                    ['email' => $contactRow['email']],
+                    array_merge($contactRow, ['parent_person_id' => $person->id, 'contact_role' => 'Primary'])
+                );
+            }
+
+            return $person;
+        })->all();
     }
 
     private function ensureLocations(Warehouse $warehouse): array
