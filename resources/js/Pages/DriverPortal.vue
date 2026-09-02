@@ -174,6 +174,7 @@ export default {
 	<component :is="isAuthenticated ? 'AuthenticatedLayout' : 'div'" :breadcrumb="isAuthenticated ? breadcrumb : undefined">
 		<div class="dp_page" :class="{ dp_page_bare: !isAuthenticated, dp_page_login: !signedIn && !isAuthenticated }">
 			<a v-if="!signedIn && !isAuthenticated" href="/" class="dp_homelink">&larr; Home</a>
+			<div class="dp_brand" :class="{ dp_title_centered: !signedIn && !isAuthenticated }">Relief Inventory</div>
 			<h1 class="dp_title" :class="{ dp_title_centered: !signedIn && !isAuthenticated }">Driver Portal</h1>
 
 			<template v-if="!signedIn">
@@ -299,6 +300,16 @@ export default {
 }
 .dp_loginwrap {
 	text-align: center;
+}
+/* Identifies this as part of Relief Inventory — a driver has no account
+   and no site nav to otherwise tell them what app they're using. */
+.dp_brand {
+	font-size: 0.8rem;
+	font-weight: 700;
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: #2563eb;
+	margin-bottom: 2px;
 }
 .dp_title {
 	font-size: 1.4rem;
