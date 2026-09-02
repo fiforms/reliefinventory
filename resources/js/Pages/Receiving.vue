@@ -508,6 +508,16 @@ const containerTypeOptions = [
 						</a>
 						<button v-if="confirmingDelete" @click="keepRecord()" class="ri_linkbutton">Keep Record</button>
 					</div>
+					<div class="ri_formactions recv_actionsrow" v-if="record.id && record.category === 'donation' && (record.pallets || []).length">
+						<button
+							@click="handleReprintClick(record)"
+							class="ri_formbutton"
+							:class="{ recv_cancel_confirming: confirmingReprint }"
+						>
+							{{ confirmingReprint ? 'Confirm — this reprints all labels, don\'t duplicate a batch already printed' : 'Re-print Labels' }}
+						</button>
+						<button v-if="confirmingReprint" @click="confirmingReprint = false" class="ri_linkbutton">Cancel</button>
+					</div>
 				</template>
 				<div class="ri_formactions recv_actionsrow" v-else-if="wizardStep === 'photo'">
 					<button @click="wizardStep = 'details'" class="ri_formbutton">Back to Details</button>
@@ -552,6 +562,7 @@ export default {
 			photoError: null,
 
 			confirmingCancel: false,
+			confirmingReprint: false,
 			arrivalMode: null, // 'pallet' | 'other' | null — derived from record.container_types on open, see onOpenRecord()
 
 			palletCount: null,
@@ -637,6 +648,7 @@ export default {
 			this.contactError = null;
 			this.photoError = null;
 			this.confirmingCancel = false;
+			this.confirmingReprint = false;
 			this.selectedDriver = record?.driver || null;
 			if (record) record.container_type_counts = record.container_type_counts || {};
 			const types = record?.container_types || [];
@@ -682,6 +694,18 @@ export default {
 			}
 			this.confirmingCancel = false;
 			cancel();
+		},
+		// Same two-step confirm pattern — reprinting a whole batch risks a
+		// warehouse ending up with duplicate labels on the floor if someone
+		// clicks it without meaning to.
+		handleReprintClick(record) {
+			if (!this.confirmingReprint) {
+				this.confirmingReprint = true;
+				return;
+			}
+			this.confirmingReprint = false;
+			this.wizardStep = 'labels';
+			this.printAllLabels(record);
 		},
 		remainingContainers(record) {
 			const target = Number(record.container_count) || 0;
