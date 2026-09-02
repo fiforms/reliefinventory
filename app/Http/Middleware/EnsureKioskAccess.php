@@ -17,14 +17,18 @@ use Illuminate\Support\Facades\Auth;
  * currently in kiosk mode (see KioskModeController/PinLoginService) —
  * nothing in the sign-in flow depends on Auth::id() (a kiosk sign-in is
  * the volunteer's own record, not staff data entry), so the guest path
- * needs no special-casing downstream.
+ * needs no special-casing downstream. admin-system also passes: the read
+ * routes here (GET /kiosk-suggestions in particular) are shared by the
+ * Kiosk Settings admin page, which is gated admin-system and doesn't
+ * necessarily grant operate-volunteer-kiosk — an admin managing kiosk
+ * config still needs to see the same lists a kiosk device reads.
  */
 class EnsureKioskAccess
 {
     public function handle(Request $request, Closure $next)
     {
         $user = Auth::user();
-        if ($user && $user->hasPermission('operate-volunteer-kiosk')) {
+        if ($user && ($user->hasPermission('operate-volunteer-kiosk') || $user->hasPermission('admin-system'))) {
             return $next($request);
         }
 

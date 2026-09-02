@@ -6,6 +6,7 @@
 namespace App\Services;
 
 use App\Models\DeviceTrustGrant;
+use App\Models\Person;
 use App\Models\PinLoginSetting;
 use App\Models\TrustedDevice;
 use Illuminate\Http\Request;
@@ -182,7 +183,10 @@ class PinLoginService
 
     /**
      * People to show as tappable tiles on the unlock screen — everyone
-     * with a currently-active grant on this device.
+     * with a currently-active grant on this device who has actually set a
+     * PIN. A grant is created on every login regardless of PIN status (see
+     * grantTrust()), so without this filter someone who's never set a PIN
+     * would still get a tile that can only ever fail to unlock.
      */
     public function peopleTrustedOnDevice(TrustedDevice $device): Collection
     {
@@ -191,6 +195,6 @@ class PinLoginService
             ->with('person')
             ->get()
             ->pluck('person')
-            ->filter();
+            ->filter(fn (?Person $person) => $person?->hasPin());
     }
 }
