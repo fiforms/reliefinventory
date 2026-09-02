@@ -181,7 +181,7 @@ export default {
 					<p class="dp_hint">Enter the phone number and PIN your warehouse contact gave you.</p>
 					<div class="dp_loginform">
 						<input type="tel" v-model="loginForm.phone" placeholder="Phone Number" class="ri_forminput dp_input" />
-						<input type="password" v-model="loginForm.pin" placeholder="PIN" class="ri_forminput dp_input" maxlength="5" />
+						<input type="password" inputmode="numeric" pattern="[0-9]*" v-model="loginForm.pin" placeholder="PIN" class="ri_forminput dp_input" maxlength="5" />
 						<button class="ri_defaultbutton dp_loginbutton" :disabled="loggingIn || !loginForm.phone || !loginForm.pin" @click="login">
 							{{ loggingIn ? 'Signing In...' : 'Sign In' }}
 						</button>
