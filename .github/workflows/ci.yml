@@ -36,6 +36,12 @@ jobs:
         with:
           node-version: "20"
 
+      - name: Install weasyprint
+        # Required by OrderFormPdfTest/InventoryReportController's PDF
+        # rendering (see CLAUDE.md's "PDF / label generation" section) —
+        # a real system dependency, not something composer/npm install.
+        run: sudo apt-get update && sudo apt-get install -y weasyprint
+
       - name: Copy .env
         run: cp .env.example .env
 
