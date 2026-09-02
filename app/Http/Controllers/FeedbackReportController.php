@@ -9,6 +9,7 @@ use App\Mail\FeedbackReportStatusUpdated;
 use App\Mail\FeedbackReportSubmitted;
 use App\Models\FeedbackReport;
 use App\Models\FeedbackReportStatusLog;
+use App\Services\FeedbackContentScanner;
 use App\Services\GitVersionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -26,7 +27,10 @@ use Illuminate\Validation\Rule;
  */
 class FeedbackReportController extends Controller
 {
-    public function __construct(private GitVersionService $gitVersion) {}
+    public function __construct(
+        private GitVersionService $gitVersion,
+        private FeedbackContentScanner $contentScanner,
+    ) {}
 
     public function index()
     {
@@ -53,6 +57,8 @@ class FeedbackReportController extends Controller
             $screenshotPath = $request->file('screenshot')->store('feedback-screenshots', 'local');
         }
 
+        $flaggedReason = $this->contentScanner->scan($data['message']);
+
         $report = FeedbackReport::create([
             'person_id' => Auth::id(),
             'type' => $data['type'],
@@ -63,6 +69,8 @@ class FeedbackReportController extends Controller
             'user_agent' => Str::limit($request->userAgent() ?? '', 255, ''),
             'screenshot_path' => $screenshotPath,
             'commit_hash' => $this->gitVersion->currentCommit(),
+            'flagged_for_review' => $flaggedReason !== null,
+            'flagged_reason' => $flaggedReason,
         ]);
 
         $this->notifyDevelopers($report);
@@ -94,8 +102,9 @@ class FeedbackReportController extends Controller
         ]);
 
         $isTransition = $data['status'] !== $feedbackReport->status;
+        $commentFlagReason = $this->contentScanner->scan($data['comment'] ?? null);
 
-        $log = DB::transaction(function () use ($feedbackReport, $data) {
+        $log = DB::transaction(function () use ($feedbackReport, $data, $commentFlagReason) {
             $log = FeedbackReportStatusLog::create([
                 'feedback_report_id' => $feedbackReport->id,
                 'status' => $data['status'],
@@ -103,7 +112,16 @@ class FeedbackReportController extends Controller
                 'person_id' => Auth::id(),
             ]);
 
-            $feedbackReport->update(['status' => $data['status']]);
+            $update = ['status' => $data['status']];
+            // A comment triggering the scanner flags the report too — never
+            // un-flags one already flagged from its original message.
+            if ($commentFlagReason !== null) {
+                $update['flagged_for_review'] = true;
+                $update['flagged_reason'] = $feedbackReport->flagged_reason
+                    ? $feedbackReport->flagged_reason.'; '.$commentFlagReason
+                    : $commentFlagReason;
+            }
+            $feedbackReport->update($update);
 
             return $log;
         });

@@ -696,7 +696,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-co
 // Any logged-in user can submit a report or dismiss the current banner —
 // this isn't tied to any specific resource.
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:general-access']], function () {
-    Route::post('/feedback-reports', [FeedbackReportController::class, 'store']);
+    // 10/minute — generous for a legitimate user submitting a real report,
+    // enough to blunt automated probing/spam of the submission endpoint.
+    Route::post('/feedback-reports', [FeedbackReportController::class, 'store'])
+        ->middleware('throttle:10,1');
     Route::post('/banner-dismiss', [BannerSettingController::class, 'dismiss']);
     // Shared by People and Order Entry (manage-people / manage-orders) — gated
     // loosely like the above since it only echoes back a geocoding result,

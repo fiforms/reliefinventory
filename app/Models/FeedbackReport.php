@@ -20,10 +20,13 @@ class FeedbackReport extends Model
         'user_agent',
         'screenshot_path',
         'commit_hash',
+        'flagged_for_review',
+        'flagged_reason',
     ];
 
     protected $casts = [
         'urgent' => 'boolean',
+        'flagged_for_review' => 'boolean',
         'status_changed_at' => 'datetime',
     ];
 

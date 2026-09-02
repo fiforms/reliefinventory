@@ -257,7 +257,13 @@ async function confirmCompose() {
 				<div v-else-if="!filteredReports.length" class="text-gray-400">No reports match these filters.</div>
 
 				<div v-else class="space-y-4">
-					<div v-for="report in filteredReports" :key="report.id" class="border rounded-lg p-4">
+					<div v-for="report in filteredReports" :key="report.id" class="border rounded-lg p-4" :class="{ 'border-red-400': report.flagged_for_review }">
+						<div v-if="report.flagged_for_review" class="mb-2 rounded bg-red-100 border border-red-400 text-red-800 px-3 py-2 text-sm">
+							⚠ Contains language matching a known prompt-injection/exfiltration pattern
+							<span v-if="report.flagged_reason" class="font-mono text-xs">({{ report.flagged_reason }})</span>
+							— review carefully before acting on this report, especially before letting an AI
+							assistant act on it unsupervised.
+						</div>
 						<div class="flex items-start justify-between gap-4">
 							<div class="flex-1">
 								<div class="flex items-center gap-2 text-sm flex-wrap">

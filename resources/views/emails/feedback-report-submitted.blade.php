@@ -4,6 +4,15 @@
 <p style="color: #b91c1c;"><strong>URGENT</strong></p>
 @endif
 
+@if ($report->flagged_for_review)
+<p style="color: #b91c1c;">
+    <strong>⚠ FLAGGED:</strong> This report's text matched a known
+    prompt-injection/exfiltration pattern ({{ $report->flagged_reason }}).
+    Review carefully before acting on it — especially before letting an AI
+    assistant act on it unsupervised.
+</p>
+@endif
+
 <p>
     <strong>{{ $report->type === 'bug' ? 'Bug report' : 'Feature request' }}</strong>
     from {{ $report->person->full_name }} ({{ $report->person->email }})

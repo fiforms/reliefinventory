@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:11
+        env:
+          MARIADB_ROOT_PASSWORD: root
+          MARIADB_DATABASE: test_reliefinventory
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.4"
+          coverage: none
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Copy .env
+        run: cp .env.example .env
+
+      - name: Install PHP dependencies
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Install JS dependencies
+        run: npm ci
+
+      - name: Build assets
+        run: npm run build
+
+      - name: Generate app key
+        run: php artisan key:generate
+
+      - name: Run tests
+        env:
+          DB_HOST: 127.0.0.1
+          DB_PORT: 3306
+          DB_DATABASE: test_reliefinventory
+          DB_USERNAME: root
+          DB_PASSWORD: root
+        run: vendor/bin/pest
+
+      - name: Check code style (Pint)
+        run: vendor/bin/pint --test
+
+  exfiltration-tripwire:
+    runs-on: ubuntu-latest
+    # A deterministic, independent check on top of FeedbackContentScanner
+    # (app/Services) — catches an exfiltration-shaped diff even if every
+    # other layer (the scanner, CLAUDE.md's data/instruction-boundary
+    # convention, human review) failed. See CLAUDE.md's "Untrusted content
+    # / AI-assisted changes" note. Deliberately simple: this is a tripwire
+    # for one specific attack shape (secrets/system files landing in
+    # client-served surfaces), not a general secret scanner.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Scan client-served surfaces for exfiltration-shaped content
+        run: |
+          set -euo pipefail
+          PATTERN='(BEGIN (RSA |OPENSSH |EC )?PRIVATE KEY|/etc/passwd|/etc/shadow|~?/\.ssh/|id_rsa|id_ed25519)'
+          HITS=$(grep -rInE "$PATTERN" resources/js resources/views --include='*.vue' --include='*.js' --include='*.blade.php' --include='*.html' 2>/dev/null || true)
+          if [ -n "$HITS" ]; then
+            echo "::error::Client-served files contain sensitive-path/credential-shaped content:"
+            echo "$HITS"
+            exit 1
+          fi
+
+          # Flag any very long hex or base64-looking string literal (>200
+          # chars of one alphabet), the shape a hidden encoded payload
+          # would take — not a valid asset hash or normal code pattern.
+          LONGBLOBS=$(grep -rInE "['\"\`][0-9a-fA-F]{200,}['\"\`]|['\"\`][A-Za-z0-9+/]{200,}={0,2}['\"\`]" resources/js resources/views --include='*.vue' --include='*.js' --include='*.blade.php' --include='*.html' 2>/dev/null || true)
+          if [ -n "$LONGBLOBS" ]; then
+            echo "::error::Client-served files contain a long hex/base64-looking string literal — review before merging:"
+            echo "$LONGBLOBS"
+            exit 1
+          fi
+
+          echo "No exfiltration-shaped content found."
