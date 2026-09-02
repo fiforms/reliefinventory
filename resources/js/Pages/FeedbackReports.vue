@@ -30,6 +30,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import axios from 'axios';
+import { uaSummary } from '@/userAgent';
 
 defineProps({
 	breadcrumb: { type: Array },
@@ -274,6 +275,7 @@ async function confirmCompose() {
 								<div class="text-xs text-gray-400 font-mono mt-1">
 									{{ report.page_url }}
 									<span v-if="report.commit_hash"> — commit {{ report.commit_hash }}</span>
+									<span v-if="report.user_agent" :title="report.user_agent"> — {{ uaSummary(report.user_agent) }}</span>
 								</div>
 							</div>
 							<a
