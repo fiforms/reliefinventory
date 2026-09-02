@@ -118,7 +118,10 @@ test('a real login does not grant device trust when the device is not yet approv
 
 test('a real login grants device trust once the device is approved, and it shows on the unlock screen', function () {
     enablePinLogin();
-    $user = User::factory()->create();
+    // Must have a PIN set to show up on the unlock screen — see
+    // PinLoginService::peopleTrustedOnDevice(), fixed 2026-09-02 so a
+    // person with no PIN doesn't get a tile that can only ever fail.
+    $user = userWithPin();
     $device = approvedDevice();
 
     withDeviceCookie($device)->post('/login', ['email' => $user->email, 'password' => 'password']);
@@ -371,7 +374,9 @@ test('switchUserAvailable is true when the feature is enabled and the device is 
 test('switching users logs out the current person and lands on the unlock screen', function () {
     enablePinLogin();
     $device = approvedDevice();
-    $user = User::factory()->create();
+    // Must have a PIN set to show up on the unlock screen — see
+    // PinLoginService::peopleTrustedOnDevice(), fixed 2026-09-02.
+    $user = userWithPin();
     DeviceTrustGrant::create(['trusted_device_id' => $device->id, 'person_id' => $user->id, 'granted_at' => now()]);
 
     $response = withDeviceCookie($device)->actingAs($user)->post('/switch-user');
