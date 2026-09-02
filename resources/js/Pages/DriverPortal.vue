@@ -172,20 +172,22 @@ export default {
 <template>
 	<Head title="Driver Portal" />
 	<component :is="isAuthenticated ? 'AuthenticatedLayout' : 'div'" :breadcrumb="isAuthenticated ? breadcrumb : undefined">
-		<div class="dp_page" :class="{ dp_page_bare: !isAuthenticated }">
-			<h1 class="dp_title">Driver Portal</h1>
+		<div class="dp_page" :class="{ dp_page_bare: !isAuthenticated, dp_page_login: !signedIn && !isAuthenticated }">
+			<a v-if="!signedIn && !isAuthenticated" href="/" class="dp_homelink">&larr; Home</a>
+			<h1 class="dp_title" :class="{ dp_title_centered: !signedIn && !isAuthenticated }">Driver Portal</h1>
 
 			<template v-if="!signedIn">
-				<p class="dp_hint">Enter the phone number and PIN your warehouse contact gave you.</p>
-				<div class="dp_loginform">
-					<input type="tel" v-model="loginForm.phone" placeholder="Phone Number" class="ri_forminput dp_input" />
-					<input type="password" v-model="loginForm.pin" placeholder="PIN" class="ri_forminput dp_input" maxlength="5" />
-					<button class="ri_defaultbutton dp_loginbutton" :disabled="loggingIn || !loginForm.phone || !loginForm.pin" @click="login">
-						{{ loggingIn ? 'Signing In...' : 'Sign In' }}
-					</button>
-					<p v-if="loginError" class="dp_error">{{ loginError }}</p>
+				<div class="dp_loginwrap">
+					<p class="dp_hint">Enter the phone number and PIN your warehouse contact gave you.</p>
+					<div class="dp_loginform">
+						<input type="tel" v-model="loginForm.phone" placeholder="Phone Number" class="ri_forminput dp_input" />
+						<input type="password" v-model="loginForm.pin" placeholder="PIN" class="ri_forminput dp_input" maxlength="5" />
+						<button class="ri_defaultbutton dp_loginbutton" :disabled="loggingIn || !loginForm.phone || !loginForm.pin" @click="login">
+							{{ loggingIn ? 'Signing In...' : 'Sign In' }}
+						</button>
+						<p v-if="loginError" class="dp_error">{{ loginError }}</p>
+					</div>
 				</div>
-				<a v-if="!isAuthenticated" href="/login" class="dp_stafflink">Staff member? Log in here</a>
 			</template>
 
 			<template v-else>
@@ -277,9 +279,40 @@ export default {
 .dp_page_bare {
 	padding-top: 48px;
 }
+/* The login screen only (bare device, nobody signed in yet) — centers the
+   title+form as one group in the available height instead of pinning them
+   to the top. dp_homelink is taken out of this flex flow (position:
+   absolute) so it stays put in the corner regardless. */
+.dp_page_login {
+	position: relative;
+	padding-top: 16px;
+	min-height: 100vh;
+	min-height: 100dvh;
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+}
+.dp_homelink {
+	position: absolute;
+	top: 16px;
+	left: 16px;
+	color: #4338ca;
+	text-decoration: none;
+	font-weight: 600;
+}
+.dp_homelink:hover {
+	text-decoration: underline;
+}
+.dp_loginwrap {
+	text-align: center;
+}
 .dp_title {
 	font-size: 1.4rem;
 	margin: 0 0 12px 0;
+}
+.dp_title_centered {
+	text-align: center;
 }
 .dp_hint {
 	color: #666;
@@ -290,6 +323,7 @@ export default {
 	flex-direction: column;
 	gap: 10px;
 	max-width: 320px;
+	margin: 0 auto;
 }
 .dp_input {
 	font-size: 1.1rem;
@@ -306,13 +340,6 @@ export default {
 	text-decoration: underline;
 	cursor: pointer;
 	margin-left: 8px;
-}
-.dp_stafflink {
-	display: block;
-	margin-top: 16px;
-	font-size: 0.85rem;
-	color: #6b7280;
-	text-decoration: underline;
 }
 .dp_sectionhead {
 	font-size: 1rem;
