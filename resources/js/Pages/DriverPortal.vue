@@ -185,6 +185,7 @@ export default {
 					</button>
 					<p v-if="loginError" class="dp_error">{{ loginError }}</p>
 				</div>
+				<a v-if="!isAuthenticated" href="/login" class="dp_stafflink">Staff member? Log in here</a>
 			</template>
 
 			<template v-else>
@@ -306,6 +307,13 @@ export default {
 	cursor: pointer;
 	margin-left: 8px;
 }
+.dp_stafflink {
+	display: block;
+	margin-top: 16px;
+	font-size: 0.85rem;
+	color: #6b7280;
+	text-decoration: underline;
+}
 .dp_sectionhead {
 	font-size: 1rem;
 	text-transform: uppercase;
@@ -328,6 +336,8 @@ export default {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
+	gap: 4px;
 	margin-bottom: 4px;
 }
 .dp_ordernum {
@@ -376,6 +386,7 @@ export default {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+	flex-wrap: wrap;
 	gap: 8px;
 	margin-top: 4px;
 }
