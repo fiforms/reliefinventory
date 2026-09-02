@@ -7,12 +7,17 @@ import { Link } from '@inertiajs/vue3';
 
 <template>
     <div
-        class="flex min-h-screen flex-col items-center bg-gray-100 pt-6 sm:justify-center sm:pt-0"
+        class="relative flex min-h-screen flex-col items-center bg-gray-100 pt-6 sm:justify-center sm:pt-0"
     >
-        <div>
-            <Link href="/">
-                Relief Inventory
-            </Link>
+        <Link
+            href="/"
+            class="absolute left-4 top-4 text-sm font-semibold text-indigo-600 hover:underline"
+        >
+            &larr; Home
+        </Link>
+
+        <div class="text-xs font-bold uppercase tracking-wide text-blue-600">
+            Relief Inventory
         </div>
 
         <div
