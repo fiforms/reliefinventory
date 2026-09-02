@@ -279,24 +279,17 @@ export default {
 .dp_page_bare {
 	padding-top: 48px;
 }
-/* The login screen only (bare device, nobody signed in yet) — centers the
-   title+form as one group in the available height instead of pinning them
-   to the top. dp_homelink is taken out of this flex flow (position:
-   absolute) so it stays put in the corner regardless. */
+/* The login screen only (bare device, nobody signed in yet) — top-aligned
+   like the rest of the bare layout (not vertically centered: centering
+   looked fine at rest, but the on-screen keyboard shrinking the viewport
+   to enter phone/PIN made it jump around). Extra top padding just clears
+   the Home link, which sits in normal flow above the title. */
 .dp_page_login {
-	position: relative;
-	padding-top: 16px;
-	min-height: 100vh;
-	min-height: 100dvh;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
+	padding-top: 48px;
 }
 .dp_homelink {
-	position: absolute;
-	top: 16px;
-	left: 16px;
+	display: inline-block;
+	margin-bottom: 16px;
 	color: #4338ca;
 	text-decoration: none;
 	font-weight: 600;
