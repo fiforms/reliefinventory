@@ -40,11 +40,9 @@ function handleImageError() {
     <!-- Header -->
     <header class="bg-white shadow-md">
       <div class="container mx-auto px-4 py-4 flex justify-between items-center">
-        <h1 class="text-2xl font-bold text-blue-600">Relief Inventory</h1>
-        <nav class="space-x-4">
+        <h1 class="text-xl sm:text-2xl font-bold text-blue-600 whitespace-nowrap">Relief Inventory</h1>
+        <nav class="whitespace-nowrap">
           <a href="/login" class="text-gray-700 hover:text-blue-600">Login</a>
-          <a href="/driver-portal" class="text-gray-700 hover:text-blue-600">Driver Portal</a>
-	  <a :href="hostedLink" class="text-gray-700 hover:text-blue-600" target="blank">{{ hostedBy }} -&gt;</a>
         </nav>
       </div>
     </header>
@@ -70,6 +68,11 @@ function handleImageError() {
                 Register
               </button>
 	    </a>
+          </div>
+          <div class="mt-6">
+            <a href="/driver-portal" class="inline-flex items-center gap-2 text-blue-700 border border-blue-300 bg-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-50">
+              🚚 Delivering or picking up? Go to the Driver Portal
+            </a>
           </div>
         </div>
         <div class="mt-8 md:mt-0 md:w-1/2 flex justify-center">
