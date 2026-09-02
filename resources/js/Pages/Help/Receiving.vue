@@ -150,6 +150,31 @@ function printGuide() {
 				</ol>
 			</section>
 
+			<section class="space-y-3">
+				<h2 class="text-lg font-semibold">What the pallet number means</h2>
+				<p>
+					Every printed label starts with a letter, then an 8-digit number — for example
+					<strong>R00000042</strong>. The number just counts up (it's never reused, even if
+					that pallet later empties out), and the letter says where in the warehouse that
+					unit currently lives, not what's on it:
+				</p>
+				<ul class="list-disc list-inside space-y-1">
+					<li><strong>R</strong> — Receiving (a fresh label from this page, not yet sorted)</li>
+					<li><strong>W</strong> — Warehouse (sorted stock, on the shelf)</li>
+					<li><strong>S</strong> — Shipping (staged and building toward an outgoing order)</li>
+					<li><strong>H</strong> — Hold (set aside for a specific order being filled)</li>
+					<li><strong>Q</strong> — Quarantine (flagged for review before it can move again)</li>
+				</ul>
+				<p>
+					A pallet record is one load's trip, not the physical pallet underneath it — the
+					letter is fixed for that trip and never changes. The tag Receiving prints (an
+					<strong>R</strong> label) is what Sorting scans to pull up this same donation; once
+					sorted stock moves onward — into the warehouse, out to Shipping, on Hold for an
+					order, or into Quarantine — that's tracked as a new pallet record with its own tag
+					and letter, not a relabel of the original.
+				</p>
+			</section>
+
 			<p class="text-xs text-gray-500">
 				Questions or something not working the way this guide describes? Use
 				<strong>Report an Issue</strong> from the profile menu.
