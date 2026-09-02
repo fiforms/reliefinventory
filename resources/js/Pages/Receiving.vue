@@ -230,16 +230,6 @@ const containerTypeOptions = [
 								</div>
 							</div>
 						</Modal>
-						<button
-							v-if="selectedDriver"
-							type="button"
-							@click="useDriverAsDonor(record)"
-							:disabled="donorSaving"
-							class="ri_linkbutton"
-						>
-							This driver is also the donor
-						</button>
-
 						<div class="ri_fieldset">
 							<div class="ri_fieldlabel">Carrier:</div>
 							<TextInput v-model="record.carrier" placeholder="Trucking company, or UPS/FedEx/Amazon, etc." :enabled="editing" />
@@ -315,6 +305,15 @@ const containerTypeOptions = [
 								</div>
 							</div>
 						</Modal>
+						<button
+							v-if="selectedDriver"
+							type="button"
+							@click="useDriverAsDonor(record)"
+							:disabled="donorSaving"
+							class="ri_linkbutton"
+						>
+							This driver is also the donor
+						</button>
 
 						<template v-if="record.person_id && record.person?.is_organization">
 							<div class="ri_fieldset">
@@ -507,7 +506,7 @@ const containerTypeOptions = [
 				<div class="ri_formactions recv_actionsrow" v-else-if="wizardStep === 'photo'">
 					<button @click="wizardStep = 'details'" class="ri_formbutton">Back to Details</button>
 					<button @click="finishPhotoStep(record, cancel)" class="ri_defaultbutton">
-						{{ record.photo_path ? 'Continue' : 'Skip' }}
+						{{ photoStepContinueLabel(record) }}
 					</button>
 				</div>
 				<div class="ri_formactions recv_actionsrow" v-else>
@@ -690,6 +689,10 @@ export default {
 			const ok = await save(true);
 			if (!ok) return;
 			this.wizardStep = 'photo';
+		},
+		photoStepContinueLabel(record) {
+			if (record.photo_path) return 'Continue';
+			return record.category === 'donation' ? 'Proceed to Labels' : 'Skip';
 		},
 		async finishPhotoStep(record, cancel) {
 			if (record.category === 'donation') {
