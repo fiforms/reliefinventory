@@ -69,14 +69,13 @@ function handleImageError() {
               </button>
 	    </a>
           </div>
-          <div class="mt-6">
-            <a href="/driver-portal" class="inline-flex items-center gap-2 text-blue-700 border border-blue-300 bg-white px-4 py-2 rounded-lg shadow-sm hover:bg-blue-50">
-              🚚 Delivering or picking up? Go to the Driver Portal
-            </a>
-          </div>
         </div>
-        <div class="mt-8 md:mt-0 md:w-1/2 flex justify-center">
+        <div class="mt-8 md:mt-0 md:w-1/2 flex flex-col items-center">
           <img src="/img/warehouse.webp" alt="Welcome Illustration" class="w-3/4 md:w-full max-w-md">
+          <a href="/driver-portal" class="welcome_driverportal mt-6">
+            <img src="/img/truck-box-icon.webp" alt="" class="welcome_driverportal_icon">
+            <span class="welcome_driverportal_label">Driver Portal</span>
+          </a>
         </div>
       </div>
     </section>
@@ -100,5 +99,33 @@ export default {
 
 <style>
 /* Add custom styles if necessary */
+
+/* Matches TileSelect.vue's icon+label tile styling (see Receiving's Truck
+   Size picker) — a plain, no-frills button so it reads as a distinct,
+   equally-weighted action next to the hero image rather than competing
+   with the Login/Register CTAs. */
+.welcome_driverportal {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 0.35em;
+	padding: 0.6em 1.2em;
+	border-radius: 10px;
+	text-decoration: none;
+}
+.welcome_driverportal:hover {
+	background: rgba(255, 255, 255, 0.6);
+}
+.welcome_driverportal_icon {
+	width: 64px;
+	height: 64px;
+	object-fit: contain;
+	border-radius: 12px;
+}
+.welcome_driverportal_label {
+	font-size: 0.9rem;
+	font-weight: bold;
+	color: #333;
+}
 </style>
 
