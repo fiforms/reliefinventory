@@ -8,6 +8,9 @@ const props = defineProps({
     status: {
         type: String,
     },
+    email_error: {
+        type: String,
+    },
 });
 
 const form = useForm({});
@@ -37,6 +40,20 @@ const verificationLinkSent = computed(
         >
             A new verification link has been sent to the email address you
             provided during registration.
+        </div>
+
+        <div
+            class="mb-4 rounded-md border border-red-300 bg-red-50 p-3 text-sm text-red-700"
+            v-if="email_error"
+        >
+            <p class="font-medium">
+                We couldn't send the verification email.
+            </p>
+            <p class="mt-1">{{ email_error }}</p>
+            <p class="mt-1">
+                Please try again in a few minutes, or contact an administrator
+                — they can activate your account without email verification.
+            </p>
         </div>
 
         <form @submit.prevent="submit">

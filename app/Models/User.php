@@ -39,6 +39,11 @@ class User extends Authenticatable implements MustVerifyEmail
         'zip',
         'county_id',
         'requested_track',
+        // Set server-side by RegisteredUserController (self-registration
+        // starts inactive), cleared by VerifyEmailController on successful
+        // verification or by UserAdminController::reactivate as an admin
+        // override — never accepted from request input.
+        'disabled_at',
     ];
 
     /**

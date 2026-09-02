@@ -26,6 +26,12 @@ class VerifyEmailController extends Controller
         }
 
         if ($request->user()->markEmailAsVerified()) {
+            // Verifying is the self-serve path to becoming active — mirrors
+            // the admin override in UserAdminController::reactivate().
+            if ($request->user()->disabled_at) {
+                $request->user()->update(['disabled_at' => null]);
+            }
+
             event(new Verified($request->user()));
         }
 

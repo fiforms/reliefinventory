@@ -86,7 +86,12 @@ const filteredUsers = computed(() => users.value.filter((record) => {
 }));
 
 function statusLabel(record) {
-    if (record.disabled_at) return 'Deactivated';
+    if (record.disabled_at) {
+        // Self-registration leaves an account disabled until email
+        // verification (or this admin override) clears it — distinct from
+        // an admin explicitly deactivating an already-verified account.
+        return record.email_verified_at ? 'Deactivated' : 'Pending — email not verified';
+    }
     if (!record.has_password) return 'Invited — pending setup';
     return 'Active';
 }

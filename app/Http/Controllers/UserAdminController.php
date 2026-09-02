@@ -195,7 +195,16 @@ class UserAdminController extends Controller
     public function reactivate($id)
     {
         $person = Person::whereNotNull('email')->findOrFail($id);
-        $person->update(['disabled_at' => null]);
+
+        $person->update([
+            'disabled_at' => null,
+            // Admin override for a self-registered account still pending
+            // email verification (offline mode, or a broken mail provider
+            // self-verification can't route around) — same vouching as
+            // store() does for a brand-new admin-created account, so this
+            // person isn't immediately re-blocked by MustVerifyEmail.
+            'email_verified_at' => $person->email_verified_at ?? now(),
+        ]);
 
         return response()->json(['message' => 'User reactivated.'], 200);
     }
