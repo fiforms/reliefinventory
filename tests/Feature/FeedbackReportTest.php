@@ -6,6 +6,7 @@
 use App\Mail\FeedbackReportStatusUpdated;
 use App\Mail\FeedbackReportSubmitted;
 use App\Models\FeedbackReport;
+use App\Models\FeedbackReportStatusLog;
 use Illuminate\Support\Facades\Mail;
 
 test('a general-access user can submit a feedback report', function () {
@@ -187,4 +188,33 @@ test('a note can be added without changing status, at any point before resolved'
     expect($report->statusLogs)->toHaveCount(3);
 
     Mail::assertSent(FeedbackReportStatusUpdated::class, 3);
+});
+
+test('a resolved report can be reopened back to an earlier status', function () {
+    Mail::fake();
+    $reporter = userWithPermissions('general-access');
+    $report = FeedbackReport::create([
+        'person_id' => $reporter->id,
+        'type' => 'bug',
+        'status' => 'resolved',
+        'message' => 'Something broke',
+        'page_url' => '/items',
+    ]);
+    FeedbackReportStatusLog::create([
+        'feedback_report_id' => $report->id,
+        'status' => 'resolved',
+        'comment' => 'Fixed and deployed.',
+        'person_id' => $reporter->id,
+    ]);
+
+    $admin = userWithPermissions('manage-feedback');
+
+    $this->actingAs($admin)->patchJson("/json/feedback-reports/{$report->id}", [
+        'status' => 'seen',
+        'comment' => 'Actually still happening, reopening.',
+    ])->assertOk();
+
+    $report->refresh();
+    expect($report->status)->toBe('seen');
+    expect($report->statusLogs)->toHaveCount(2);
 });

@@ -28,9 +28,8 @@
 import { computed, onMounted, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
-import PrimaryButton from '@/Components/PrimaryButton.vue';
+import FeedbackReportCard from '@/Components/FeedbackReportCard.vue';
 import axios from 'axios';
-import { uaSummary } from '@/userAgent';
 
 defineProps({
 	breadcrumb: { type: Array },
@@ -98,53 +97,26 @@ const filteredReports = computed(() => {
 	});
 });
 
+// Resolved reports fold into their own section, out of the way of active
+// triage, unless the status filter is explicitly set to Resolved — at
+// which point everything shown already is resolved, so there's nothing
+// left to fold.
+const activeReports = computed(() =>
+	filterStatus.value === 'resolved' ? filteredReports.value : filteredReports.value.filter((r) => r.status !== 'resolved')
+);
+const resolvedReports = computed(() =>
+	filterStatus.value === 'resolved' ? [] : filteredReports.value.filter((r) => r.status === 'resolved')
+);
+
+// Also duplicated in FeedbackReportCard.vue (the only other place status
+// labels are shown) — kept here too since the Status filter dropdown below
+// needs it and prop-drilling a label map for one <select> isn't worth it.
 const statusLabels = {
 	new: 'New',
 	seen: 'Acknowledged',
 	in_development: 'In Development',
 	resolved: 'Resolved',
 };
-
-// What the triage button says for the transition it starts, distinct from
-// the resulting status label (statusLabels) — "Acknowledge" reads far
-// clearer as an action than "Mark Acknowledged" would.
-const actionLabels = {
-	seen: 'Acknowledge',
-	in_development: 'Start Development',
-	resolved: 'Resolve',
-};
-
-const statusClasses = {
-	new: 'bg-gray-100 text-gray-800',
-	seen: 'bg-blue-100 text-blue-800',
-	in_development: 'bg-amber-100 text-amber-800',
-	resolved: 'bg-green-100 text-green-800',
-};
-
-const nextStatus = {
-	new: 'seen',
-	seen: 'in_development',
-	in_development: 'resolved',
-};
-
-function formatDateTime(value) {
-	return value ? new Date(value).toLocaleString() : '';
-}
-
-// Turns a report's flat status_logs into a display list where each entry
-// knows whether it was a real transition ("Moved to X") or a note left
-// while status stayed the same ("Note") — derived purely by comparing each
-// entry's status to the one before it (implicit start state: New).
-function historyEntries(report) {
-	let previousStatus = 'new';
-
-	return (report.status_logs || []).map((log) => {
-		const isTransition = log.status !== previousStatus;
-		previousStatus = log.status;
-
-		return { ...log, isTransition };
-	});
-}
 
 async function fetchReports() {
 	loading.value = true;
@@ -167,16 +139,26 @@ function startNote(report) {
 	error.value = null;
 }
 
+// Reopening is just another transition (the backend has no "resolved is
+// final" enforcement — see FeedbackReportController::update), but it needs
+// its own required-comment note (why this is being reopened) same as
+// resolving needs one, so it's tracked separately from startAdvance.
+function startReopen(report) {
+	composing.value = { reportId: report.id, status: 'seen', isNote: false, reopening: true };
+	comment.value = '';
+	error.value = null;
+}
+
 function cancelCompose() {
 	composing.value = null;
 	comment.value = '';
 }
 
 async function confirmCompose() {
-	const { reportId, status, isNote } = composing.value;
+	const { reportId, status, isNote, reopening } = composing.value;
 
-	if ((isNote || status === 'resolved') && !comment.value.trim()) {
-		error.value = isNote ? 'Enter a note to add.' : 'A resolution note is required.';
+	if ((isNote || status === 'resolved' || reopening) && !comment.value.trim()) {
+		error.value = isNote ? 'Enter a note to add.' : reopening ? 'Enter why this is being reopened.' : 'A resolution note is required.';
 		return;
 	}
 
@@ -257,107 +239,47 @@ async function confirmCompose() {
 				<div v-else-if="!filteredReports.length" class="text-gray-400">No reports match these filters.</div>
 
 				<div v-else class="space-y-4">
-					<div v-for="report in filteredReports" :key="report.id" class="border rounded-lg p-4" :class="{ 'border-red-400': report.flagged_for_review }">
-						<div v-if="report.flagged_for_review" class="mb-2 rounded bg-red-100 border border-red-400 text-red-800 px-3 py-2 text-sm">
-							⚠ Contains language matching a known prompt-injection/exfiltration pattern
-							<span v-if="report.flagged_reason" class="font-mono text-xs">({{ report.flagged_reason }})</span>
-							— review carefully before acting on this report, especially before letting an AI
-							assistant act on it unsupervised.
-						</div>
-						<div class="flex items-start justify-between gap-4">
-							<div class="flex-1">
-								<div class="flex items-center gap-2 text-sm flex-wrap">
-									<span class="font-semibold">{{ report.type === 'bug' ? 'Bug' : 'Feature' }}</span>
-									<span v-if="report.urgent && report.status !== 'resolved'" class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
-										URGENT
-									</span>
-									<span class="px-2 py-0.5 rounded text-xs font-medium" :class="statusClasses[report.status]">
-										{{ statusLabels[report.status] }}
-									</span>
-									<span class="text-gray-500">{{ report.person?.full_name }}</span>
-									<span class="text-gray-400 font-mono text-xs">{{ report.page_title || report.page_url }}</span>
-								</div>
-								<p class="text-sm text-gray-700 mt-1">{{ report.message }}</p>
-								<div class="text-xs text-gray-400 font-mono mt-1">
-									{{ report.page_url }}
-									<span v-if="report.commit_hash"> — commit {{ report.commit_hash }}</span>
-									<span v-if="report.user_agent" :title="report.user_agent"> — {{ uaSummary(report.user_agent) }}</span>
-								</div>
-							</div>
-							<a
-								v-if="report.screenshot_path"
-								:href="`/json/feedback-reports/${report.id}/screenshot`"
-								target="_blank"
-								class="text-xs text-blue-600 underline shrink-0"
-							>
-								Screenshot
-							</a>
-						</div>
+					<FeedbackReportCard
+						v-for="report in activeReports"
+						:key="report.id"
+						:report="report"
+						:composing="composing"
+						:comment="comment"
+						:error="error"
+						:on-start-note="startNote"
+						:on-start-advance="startAdvance"
+						:on-start-reopen="startReopen"
+						:on-confirm-compose="confirmCompose"
+						:on-cancel-compose="cancelCompose"
+						@update:comment="comment = $event"
+					/>
 
-						<!-- History: always visible, indented cards — submission first, then every log entry -->
-						<div class="mt-3 pl-4 border-l-2 border-gray-200 space-y-2">
-							<div class="rounded border bg-gray-50 px-3 py-2 text-xs">
-								<span class="font-semibold">Submitted<template v-if="report.urgent"> - URGENT</template></span>
-								by {{ report.person?.full_name }}
-								<span class="text-gray-400">— {{ formatDateTime(report.created_at) }}</span>
-							</div>
-							<div
-								v-for="log in historyEntries(report)"
-								:key="log.id"
-								class="rounded border bg-white shadow-sm px-3 py-2 text-xs"
-							>
-								<span class="font-semibold">
-									{{ log.isTransition ? `Moved to ${statusLabels[log.status]}` : `Note (${statusLabels[log.status]})` }}
-								</span>
-								by {{ log.person?.full_name }}
-								<span class="text-gray-400">— {{ formatDateTime(log.created_at) }}</span>
-								<div v-if="log.comment" class="text-gray-700 mt-1">{{ log.comment }}</div>
-							</div>
+					<!-- Resolved reports fold out of the way of active triage by default
+					     (feedback report #30) — collapsed, not hidden, so the count and
+					     history are still one click away. Not shown when the Status filter
+					     is already narrowed to Resolved, since activeReports covers that
+					     case (see the computed above) and this section would just repeat it. -->
+					<details v-if="resolvedReports.length" class="pt-2">
+						<summary class="cursor-pointer text-sm text-gray-500 select-none">
+							Resolved ({{ resolvedReports.length }})
+						</summary>
+						<div class="space-y-4 mt-4">
+							<FeedbackReportCard
+								v-for="report in resolvedReports"
+								:key="report.id"
+								:report="report"
+								:composing="composing"
+								:comment="comment"
+								:error="error"
+								:on-start-note="startNote"
+								:on-start-advance="startAdvance"
+								:on-start-reopen="startReopen"
+								:on-confirm-compose="confirmCompose"
+								:on-cancel-compose="cancelCompose"
+								@update:comment="comment = $event"
+							/>
 						</div>
-
-						<!-- Compose: either advancing status or leaving a note, same form -->
-						<div v-if="composing?.reportId === report.id" class="mt-3 pl-4 space-y-2">
-							<textarea
-								v-model="comment"
-								rows="2"
-								class="block w-full border-gray-300 rounded-md shadow-sm text-sm"
-								:placeholder="composing.isNote
-									? 'Note to add to this ticket'
-									: (composing.status === 'resolved' ? 'Required: what was done or decided' : 'Optional note to the reporter')"
-							></textarea>
-							<div v-if="error" class="text-red-700 text-xs">{{ error }}</div>
-							<div class="flex gap-2">
-								<PrimaryButton @click="confirmCompose">
-									{{ composing.isNote ? 'Add Note' : actionLabels[composing.status] }}
-								</PrimaryButton>
-								<button class="text-xs text-gray-500 underline" @click="cancelCompose">Cancel</button>
-							</div>
-						</div>
-
-						<div v-else-if="report.status !== 'resolved'" class="mt-3 pl-4 flex gap-4 text-xs">
-							<button class="text-blue-600 underline" @click="startNote(report)">
-								+ Add note
-							</button>
-							<button
-								v-if="nextStatus[report.status]"
-								class="text-blue-600 underline font-medium"
-								@click="startAdvance(report.id, nextStatus[report.status])"
-							>
-								{{ actionLabels[nextStatus[report.status]] }}
-							</button>
-							<!-- Skip straight to Resolved — not every report needs the full
-							     Acknowledge -> In Development march; a quick one-off can be
-							     resolved the moment it's looked at. Hidden when the normal
-							     next step already IS Resolved, to avoid a duplicate button. -->
-							<button
-								v-if="nextStatus[report.status] !== 'resolved'"
-								class="text-green-700 underline font-medium"
-								@click="startAdvance(report.id, 'resolved')"
-							>
-								{{ actionLabels.resolved }}
-							</button>
-						</div>
-					</div>
+					</details>
 				</div>
 			</section>
 		</div>
