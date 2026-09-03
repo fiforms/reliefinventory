@@ -620,6 +620,14 @@ Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function ()
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:operate-volunteer-kiosk']], function () {
     Route::post('/volunteer-kiosk/enable-lock', [KioskModeController::class, 'enable']);
     Route::get('/kiosk-locations/active', [KioskLocationController::class, 'active']);
+
+    // Confirming the building empty is only ever reachable after a real
+    // staff login (VolunteerKiosk.vue's "Confirm Building Empty" only
+    // appears once isAuthenticated) — there's no locked/guest path that
+    // reaches it, so it stays plain auth+permission rather than the
+    // PIN-verified kiosk-access group below (unlike roll-call start/close,
+    // which do need to work from a locked kiosk with nobody logged in).
+    Route::post('/building-safety/closeout', [BuildingSafetyController::class, 'closeout']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:certify-volunteer-hours']], function () {
@@ -637,19 +645,21 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth']], function () {
 });
 
 // Building safety (2026-08-23 design pass). kiosk-access rather than plain
-// `auth` — closeout/roll-call start/close are additionally PIN-verified
-// internally (see BuildingSafetyController), so they work from a locked
-// kiosk with nobody logged in, but reaching them at all still requires
-// either a normal operate-volunteer-kiosk session or a device already in
+// `auth` — roll-call start/close are additionally PIN-verified internally
+// (see BuildingSafetyController), so they work from a locked kiosk with
+// nobody logged in, but reaching them at all still requires either a
+// normal operate-volunteer-kiosk session or a device already in
 // kiosk-lock mode. Was briefly wide open (no middleware at all, so the
 // emergency-occupancy-list endpoint below was leaking full names to
 // anyone on the internet) until this was caught. None of this depends on
-// Auth::id() the way most of the app does.
+// Auth::id() the way most of the app does. closeout() moved out of this
+// group (see the auth+permission group above) — it's never actually
+// reached from a locked/guest kiosk today, so the PIN step it used to
+// have was pure redundancy on top of an already-authenticated session.
 Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function () {
     Route::get('/building-safety/occupancy-count', [BuildingSafetyController::class, 'kioskOccupancyCount']);
     Route::get('/building-safety/emergency-occupancy-list', [BuildingSafetyController::class, 'emergencyOccupancyList']);
     Route::get('/building-safety/kiosk-operators', [BuildingSafetyController::class, 'kioskOperatorCandidates']);
-    Route::post('/building-safety/closeout', [BuildingSafetyController::class, 'closeout']);
     Route::post('/building-safety/roll-calls', [BuildingSafetyController::class, 'startRollCall']);
     Route::post('/building-safety/roll-calls/{buildingRollCall}/close', [BuildingSafetyController::class, 'closeRollCall']);
 });

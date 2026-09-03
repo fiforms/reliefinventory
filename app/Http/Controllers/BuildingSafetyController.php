@@ -12,22 +12,28 @@ use App\Models\Person;
 use App\Models\VolunteerSignIn;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\RateLimiter;
 
 /**
  * Building-safety design pass (2026-08-23): occupancy count/roster,
  * building closeout, and fire-safety roll call.
  *
- * closeout()/startRollCall()/closeRollCall() are deliberately guest-
- * accessible (no `auth` middleware, see routes/web.php) and PIN-verified
- * internally instead — these are the actions meant to work from a locked
- * kiosk with nobody logged in (once kiosk lock mode is built; until then
- * they're only reachable through the still-auth-gated kiosk page, but
- * building them this way now avoids reworking them later). They never
- * touch login state — unlike PIN *unlock* (UnlockController), which logs
- * someone in, this only resolves "who is performing this one action" via
- * PIN + permission, mirroring UnlockController::attemptPin's checks
- * (PIN match, rate limit, not disabled) without the Auth::login() step.
+ * startRollCall()/closeRollCall() are deliberately guest-accessible (no
+ * `auth` middleware, see routes/web.php) and PIN-verified internally
+ * instead — these are meant to work from a locked kiosk with nobody
+ * logged in. They never touch login state — unlike PIN *unlock*
+ * (UnlockController), which logs someone in, this only resolves "who is
+ * performing this one action" via PIN + permission, mirroring
+ * UnlockController::attemptPin's checks (PIN match, rate limit, not
+ * disabled) without the Auth::login() step.
+ *
+ * closeout() is different: "Confirm Building Empty" is never actually
+ * reached from a locked/guest kiosk (VolunteerKiosk.vue only shows it once
+ * someone's logged in), so it stays plain auth+permission:
+ * operate-volunteer-kiosk (see routes/web.php) and uses Auth::id() — a
+ * PIN re-check on top of an already-authenticated session was pure
+ * redundancy, not an extra safety measure.
  */
 class BuildingSafetyController extends Controller
 {
@@ -112,16 +118,11 @@ class BuildingSafetyController extends Controller
 
     public function closeout(Request $request): JsonResponse
     {
-        $actor = $this->resolvePinActor($request);
-        if ($actor instanceof JsonResponse) {
-            return $actor;
-        }
-
         $data = $request->validate(['notes' => 'nullable|string']);
 
         BuildingCloseout::create([
             'closed_at' => now(),
-            'closed_by_person_id' => $actor->id,
+            'closed_by_person_id' => Auth::id(),
             'notes' => $data['notes'] ?? null,
         ]);
 

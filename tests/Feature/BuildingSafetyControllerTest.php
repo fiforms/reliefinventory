@@ -61,27 +61,31 @@ test('occupying excludes a stale open sign-in once the building has been closed 
         ->and($stale->fresh()->signed_out_at)->toBeNull();
 });
 
-test('closeout requires a correct PIN from someone holding operate-volunteer-kiosk', function () {
+test('closeout uses the logged-in session, not a PIN, and requires operate-volunteer-kiosk', function () {
     $operator = kioskOperator();
 
-    asKioskSession($operator)->postJson('/json/building-safety/closeout', ['person_id' => $operator->id, 'pin' => '00000'])
-        ->assertStatus(401);
-
-    asKioskSession($operator)->postJson('/json/building-safety/closeout', ['person_id' => $operator->id, 'pin' => '13579'])
+    asKioskSession($operator)->postJson('/json/building-safety/closeout')
         ->assertOk();
 
     expect(BuildingCloseout::count())->toBe(1)
         ->and(BuildingCloseout::first()->closed_by_person_id)->toBe($operator->id);
 });
 
-test('closeout is rejected for a correct PIN without the permission', function () {
-    $sessionOperator = kioskOperator();
-    $noPermission = Person::create(['first_name' => 'No', 'last_name' => 'Perm']);
-    $noPermission->pin_hash = Hash::make('24680');
-    $noPermission->save();
+test('closeout is rejected for a session without the permission', function () {
+    $noPermission = User::factory()->create();
 
-    asKioskSession($sessionOperator)->postJson('/json/building-safety/closeout', ['person_id' => $noPermission->id, 'pin' => '24680'])
-        ->assertStatus(401);
+    $this->actingAs($noPermission)->postJson('/json/building-safety/closeout')
+        ->assertForbidden();
+
+    expect(BuildingCloseout::count())->toBe(0);
+});
+
+test('closeout is rejected for a guest kiosk-lock session with nobody logged in', function () {
+    // The "Confirm Building Empty" action is never reached from a locked
+    // kiosk with nobody logged in — VolunteerKiosk.vue only shows it once
+    // isAuthenticated — so closeout() lives on plain auth+permission
+    // middleware, unlike roll-call start/close which do work here.
+    $this->postJson('/json/building-safety/closeout')->assertStatus(401);
 
     expect(BuildingCloseout::count())->toBe(0);
 });
@@ -125,12 +129,12 @@ test('confirming people and closing a roll call works, and reports who is still 
     expect(BuildingRollCall::find($rollCall['id'])->closed_at)->not->toBeNull();
 });
 
-test('a person with only operate-volunteer-kiosk, no other role, can still act as a closeout candidate', function () {
+test('a person with only operate-volunteer-kiosk, no other role, can still act as a roll-call PIN candidate', function () {
     // Deliberately a bare Person (no email/password) — a night security
     // officer wouldn't necessarily have a full login account. They can
-    // still be the PIN actor; the kiosk-access session gate here is
-    // satisfied by a separate already-logged-in operator, standing in for
-    // a device already in kiosk-lock mode.
+    // still be the PIN actor for roll-call start/close; the kiosk-access
+    // session gate here is satisfied by a separate already-logged-in
+    // operator, standing in for a device already in kiosk-lock mode.
     $sessionOperator = kioskOperator();
     $securityOfficer = Person::create(['first_name' => 'Sam', 'last_name' => 'Security']);
     $securityOfficer->pin_hash = Hash::make('11223');
@@ -141,6 +145,6 @@ test('a person with only operate-volunteer-kiosk, no other role, can still act a
     $matches = asKioskSession($sessionOperator)->getJson('/json/building-safety/kiosk-operators?q=Security')->assertOk()->json('records');
     expect(collect($matches)->pluck('id'))->toContain($securityOfficer->id);
 
-    asKioskSession($sessionOperator)->postJson('/json/building-safety/closeout', ['person_id' => $securityOfficer->id, 'pin' => '11223'])
-        ->assertOk();
+    asKioskSession($sessionOperator)->postJson('/json/building-safety/roll-calls', ['person_id' => $securityOfficer->id, 'pin' => '11223'])
+        ->assertCreated();
 });

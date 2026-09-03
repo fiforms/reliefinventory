@@ -408,47 +408,6 @@ defineProps({
 				</div>
 			</template>
 
-			<!-- ---------------- building safety (PIN-gated) ---------------- -->
-			<template v-else-if="view === 'safety'">
-				<div class="vk_confirm">
-					<h2 class="vk_confirm_title">{{ safetyTitle }}</h2>
-					<p class="vk_hint">Enter your PIN to confirm — this requires the building-safety permission.</p>
-
-					<div class="ri_formcontrol">
-						<InputLabel value="Your Name" />
-						<input v-model="safetyQuery" type="text" class="ri_forminput" placeholder="Start typing your name" />
-						<div v-if="safetyCandidates.length" class="vk_grid" style="margin-top: 0.5em;">
-							<button
-								v-for="candidate in safetyCandidates"
-								:key="candidate.id"
-								type="button"
-								class="vk_tile"
-								:class="{ vk_tile_active: safetyOperator?.id === candidate.id }"
-								@click="safetyOperator = candidate"
-							>
-								<span class="vk_tile_name">{{ personName(candidate) }}</span>
-							</button>
-						</div>
-					</div>
-
-					<div v-if="safetyOperator" class="ri_formcontrol">
-						<InputLabel value="PIN" />
-						<input v-model="safetyPin" type="password" inputmode="numeric" maxlength="5" class="ri_forminput" />
-					</div>
-
-					<p v-if="safetyError" class="vk_error">{{ safetyError }}</p>
-
-					<div class="ri_formactions">
-						<button
-							class="ri_defaultbutton"
-							:disabled="safetySaving || !safetyOperator || safetyPin.length !== 5"
-							@click="submitSafetyAction"
-						>Confirm</button>
-						<button class="ri_formbutton" @click="cancelSafety">Cancel</button>
-					</div>
-				</div>
-			</template>
-
 			<!-- ---------------- emergency list (no login, no PIN) ---------------- -->
 			<template v-else-if="view === 'emergency-list'">
 				<div class="vk_confirm">
@@ -528,8 +487,12 @@ defineProps({
 						that's not accurate.
 					</p>
 
+					<p v-if="closeoutConfirmError" class="vk_error">{{ closeoutConfirmError }}</p>
+
 					<div class="ri_formactions">
-						<button class="ri_defaultbutton" @click="openSafety('closeout', 'closeout-review')">Confirm Building Empty</button>
+						<button class="ri_defaultbutton" :disabled="closeoutConfirmSaving" @click="confirmBuildingEmpty">
+							{{ closeoutConfirmSaving ? 'Confirming…' : 'Confirm Building Empty' }}
+						</button>
 						<button class="ri_formbutton" @click="view = 'grid'">Back</button>
 					</div>
 				</div>
@@ -537,12 +500,14 @@ defineProps({
 
 			<!-- Footer — occupancy count + the emergency roster, present on
 			     every screen that isn't already a modal-style confirm/form
-			     (kept off the safety/emergency-list screens themselves so it
-			     doesn't compete with their own back buttons). No login
-			     needed: a firefighter sweeping the building can't be expected
-			     to know anyone's PIN. Closeout stays behind staff login,
-			     off the front screen, since it's a routine end-of-day
-			     action, not an emergency one. -->
+			     (kept off the emergency-list screen itself so it doesn't
+			     compete with its own back button). No login needed: a
+			     firefighter sweeping the building can't be expected to know
+			     anyone's PIN. Closeout stays behind staff login, off the
+			     front screen, since it's a routine end-of-day action, not
+			     an emergency one — routes into the same roster-review
+			     screen as the ?closeout=1 prompt rather than confirming
+			     straight from this one tap. -->
 			<div v-if="view === 'grid'" class="vk_footerbar">
 				<span class="vk_footerbar_count">
 					<span class="vk_footerbar_dot" aria-hidden="true"></span>
@@ -552,7 +517,7 @@ defineProps({
 					<button type="button" class="ri_formbutton vk_footerbar_btn vk_footerbar_btn_emergency" @click="openEmergencyList">
 						Emergency Roster
 					</button>
-					<button v-if="isAuthenticated" type="button" class="ri_formbutton vk_footerbar_btn" @click="openSafety('closeout')">Confirm Building Empty</button>
+					<button v-if="isAuthenticated" type="button" class="ri_formbutton vk_footerbar_btn" @click="openCloseoutReview">Confirm Building Empty</button>
 				</div>
 			</div>
 			</div>
@@ -575,7 +540,7 @@ import axios from 'axios';
 export default {
 	data() {
 		return {
-			view: 'grid', // 'grid' | 'confirm-in' | 'signin-thanks' | 'confirm-out' | 'signout-thanks' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'safety' | 'emergency-list' | 'closeout-decision' | 'closeout-review'
+			view: 'grid', // 'grid' | 'confirm-in' | 'signin-thanks' | 'confirm-out' | 'signout-thanks' | 'forgotten-sign-out' | 'add-new' | 'new-volunteer-thanks' | 'guest' | 'guest-thanks' | 'emergency-list' | 'closeout-decision' | 'closeout-review'
 
 			showKioskConfirmModal: false,
 
@@ -586,14 +551,8 @@ export default {
 
 			occupancyCount: null,
 			occupancyPollTimer: null,
-			safetyAction: null, // 'closeout'
-			safetyReturnView: 'grid',
-			safetyQuery: '',
-			safetyCandidates: [],
-			safetyOperator: null,
-			safetyPin: '',
-			safetySaving: false,
-			safetyError: null,
+			closeoutConfirmSaving: false,
+			closeoutConfirmError: null,
 
 			showFirstTimeOptions: false,
 			confirmationTimer: null,
@@ -634,11 +593,6 @@ export default {
 		tiles() {
 			return this.searchQuery.trim() ? this.searchResults : [];
 		},
-		safetyTitle() {
-			return {
-				closeout: 'Confirm Building Empty',
-			}[this.safetyAction] || '';
-		},
 	},
 	watch: {
 		searchQuery() {
@@ -649,19 +603,6 @@ export default {
 				return;
 			}
 			this.searchTimer = setTimeout(() => this.runSearch(query), 250);
-		},
-		safetyQuery() {
-			clearTimeout(this.safetySearchTimer);
-			const query = this.safetyQuery.trim();
-			this.safetyOperator = null;
-			if (!query) {
-				this.safetyCandidates = [];
-				return;
-			}
-			this.safetySearchTimer = setTimeout(async () => {
-				const response = await axios.get('/json/building-safety/kiosk-operators', { params: { q: query } });
-				this.safetyCandidates = response.data.records;
-			}, 250);
 		},
 	},
 	methods: {
@@ -888,35 +829,23 @@ export default {
 			this.view = 'grid';
 			this.emergencyList = [];
 		},
-		openSafety(action, returnView = 'grid') {
-			this.safetyAction = action;
-			this.safetyReturnView = returnView;
-			this.safetyQuery = '';
-			this.safetyCandidates = [];
-			this.safetyOperator = null;
-			this.safetyPin = '';
-			this.safetyError = null;
-			this.view = 'safety';
-		},
-		cancelSafety() {
-			// Cancelling PIN entry goes back to wherever this was opened from
-			// (the closeout review screen, or the plain grid) — a completed
-			// closeout always lands on the grid instead, see submitSafetyAction.
-			this.view = this.safetyReturnView;
-			this.loadOccupancyCount();
-		},
-		async submitSafetyAction() {
-			this.safetySaving = true;
-			this.safetyError = null;
-			const payload = { person_id: this.safetyOperator.id, pin: this.safetyPin };
+		// "Confirm Building Empty" is only ever reachable once someone's
+		// already logged in (isAuthenticated gates the footer button, and
+		// the ?closeout=1 prompt below requires it too), so this identifies
+		// the actor from the session server-side (Auth::id() in
+		// BuildingSafetyController::closeout) rather than asking for a
+		// name+PIN that would just re-confirm who's already signed in.
+		// Same landing spot as "Not Now" (dismissCloseoutPrompt) once done —
+		// Setup is where whoever's closing up came from.
+		async confirmBuildingEmpty() {
+			this.closeoutConfirmSaving = true;
+			this.closeoutConfirmError = null;
 			try {
-				await axios.post('/json/building-safety/closeout', payload);
-				this.view = 'grid';
-				this.loadOccupancyCount();
+				await axios.post('/json/building-safety/closeout', {});
+				window.location.href = '/dashboard#setup';
 			} catch (e) {
-				this.safetyError = e.response?.data?.message || 'Could not complete this action.';
-			} finally {
-				this.safetySaving = false;
+				this.closeoutConfirmError = e.response?.data?.message || 'Could not complete this action.';
+				this.closeoutConfirmSaving = false;
 			}
 		},
 		// ---------------- end-of-day closeout review (?closeout=1) ----------------
