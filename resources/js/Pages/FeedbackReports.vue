@@ -345,6 +345,17 @@ async function confirmCompose() {
 							>
 								{{ actionLabels[nextStatus[report.status]] }}
 							</button>
+							<!-- Skip straight to Resolved — not every report needs the full
+							     Acknowledge -> In Development march; a quick one-off can be
+							     resolved the moment it's looked at. Hidden when the normal
+							     next step already IS Resolved, to avoid a duplicate button. -->
+							<button
+								v-if="nextStatus[report.status] !== 'resolved'"
+								class="text-green-700 underline font-medium"
+								@click="startAdvance(report.id, 'resolved')"
+							>
+								{{ actionLabels.resolved }}
+							</button>
 						</div>
 					</div>
 				</div>
