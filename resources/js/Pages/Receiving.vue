@@ -97,7 +97,31 @@ const containerTypeOptions = [
 			@new="onOpenRecord"
 		>
 			<template #titleactions>
+				<button type="button" class="ri_defaultbutton ri_floating" @click="preprintOpen = true">Pre-print Labels</button>
 				<Link href="/receiving/offers" class="ri_defaultbutton ri_floating">Donation Offers</Link>
+
+				<Modal :show="preprintOpen" @close="preprintOpen = false" max-width="sm">
+					<div class="p-6 space-y-4">
+						<h2 class="text-lg font-semibold">Pre-print Labels</h2>
+						<p class="text-sm text-gray-600">
+							Print a batch of blank R labels now, before any donation is entered — attach them to
+							pallets as goods arrive, then key in the label numbers used when you record the intake.
+						</p>
+						<div>
+							<InputLabel value="How many?" />
+							<TextInput v-model.number="preprintCount" type="number" min="1" max="300" class="mt-1 block w-full" autofocus />
+						</div>
+						<div>
+							<InputLabel value="Container type" />
+							<ChipSelect v-model="preprintContainerType" :options="containerTypeOptions" />
+						</div>
+						<p v-if="preprintError" class="text-sm text-red-700">{{ preprintError }}</p>
+						<div class="flex justify-end gap-3">
+							<SecondaryButton :disabled="preprintSaving" @click="preprintOpen = false">Cancel</SecondaryButton>
+							<PrimaryButton :disabled="preprintSaving" @click="preprintLabels">Print Labels</PrimaryButton>
+						</div>
+					</div>
+				</Modal>
 			</template>
 
 			<template #listactions>
@@ -447,6 +471,21 @@ const containerTypeOptions = [
 					</div>
 					<p v-if="palletError" class="ri_error">{{ palletError }}</p>
 
+					<p class="recv_hint">Already have pre-printed labels on the containers? Enter or scan the numbers used:</p>
+					<div class="recv_palletline">
+						<TextInput
+							v-model="attachTagsInput"
+							placeholder="R00000042 R00000043 ..."
+							class="ri_forminput"
+							@keyup.enter="attachPreprintedPallets(record)"
+						/>
+						<button @click="attachPreprintedPallets(record)" :disabled="attachSaving" class="ri_formbutton">
+							Link Label(s)
+						</button>
+					</div>
+					<p v-if="attachError" class="ri_error">{{ attachError }}</p>
+					<p v-for="f in attachFailed" :key="f.tag" class="ri_error">{{ f.tag }}: {{ f.reason }}</p>
+
 					<template v-if="(record.pallets || []).length">
 						<div class="recv_tablewrap">
 							<table class="ri_datatable" border="1">
@@ -563,6 +602,17 @@ export default {
 			palletContainerType: 'pallet',
 			palletSaving: false,
 			palletError: null,
+
+			preprintOpen: false,
+			preprintCount: null,
+			preprintContainerType: 'pallet',
+			preprintSaving: false,
+			preprintError: null,
+
+			attachTagsInput: '',
+			attachSaving: false,
+			attachError: null,
+			attachFailed: [],
 
 			closeOutError: null,
 
@@ -934,6 +984,55 @@ export default {
 			// One PDF with every label, instead of one browser tab per pallet
 			// (popup blockers allow only the first of a burst of window.opens).
 			window.open('/report/pallets/donation/' + record.id, '_blank');
+		},
+
+		// ---------- pre-printed labels (not yet tied to a donation) ----------
+		async preprintLabels() {
+			if (!this.preprintCount || this.preprintCount < 1) {
+				this.preprintError = 'Enter how many labels to print.';
+				return;
+			}
+			this.preprintSaving = true;
+			this.preprintError = null;
+			try {
+				const response = await axios.post('/json/receiving/preprint-labels', {
+					count: this.preprintCount,
+					container_type: this.preprintContainerType,
+				});
+				const ids = response.data.records.map((p) => p.id).join(',');
+				window.open('/report/pallets/preprint?ids=' + ids, '_blank');
+				this.preprintOpen = false;
+				this.preprintCount = null;
+			} catch (error) {
+				this.preprintError = error.response?.data?.message || 'Could not print labels.';
+			} finally {
+				this.preprintSaving = false;
+			}
+		},
+		// Splits on commas/whitespace/newlines so typed or scanned entry
+		// (one per Enter, via a keyboard-wedge scanner) both work.
+		async attachPreprintedPallets(record) {
+			const tags = this.attachTagsInput.split(/[\s,]+/).map((t) => t.trim()).filter(Boolean);
+			if (!tags.length) {
+				this.attachError = 'Enter or scan at least one label number.';
+				return;
+			}
+			this.attachSaving = true;
+			this.attachError = null;
+			this.attachFailed = [];
+			try {
+				const response = await axios.post('/json/receiving/' + record.id + '/attach-pallets', { tags });
+				record.pallets = [...(record.pallets || []), ...response.data.records];
+				this.attachFailed = response.data.failed || [];
+				this.attachTagsInput = '';
+				const remaining = this.remainingContainers(record);
+				this.palletCount = remaining || null;
+				this.$refs.riform?.fetchRecords();
+			} catch (error) {
+				this.attachError = error.response?.data?.message || 'Could not link labels.';
+			} finally {
+				this.attachSaving = false;
+			}
 		},
 
 		// ---------- daily close-out ----------

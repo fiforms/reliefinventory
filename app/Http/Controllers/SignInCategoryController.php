@@ -14,7 +14,7 @@ use Illuminate\Validation\Rule;
  * The sign_in_categories lookup table — the kiosk's "Other category"/
  * Guest-type list, scoped per kiosk_location_id. `index` (kiosk-access) is
  * the read the kiosk device itself uses, filtered to its own location;
- * `forLocation` (admin-system) is the equivalent read for the Kiosk
+ * `forLocation` (manage-kiosk) is the equivalent read for the Kiosk
  * Settings page managing a specific location's list — kept as a separate
  * route/method rather than reusing `index` under both middleware groups,
  * since Laravel can't register the same URI+method twice.

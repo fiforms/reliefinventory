@@ -74,7 +74,7 @@ defineProps({
 </script>
 
 <template>
-	<Head title="Volunteer Kiosk" />
+	<Head title="Sign-in Kiosk" />
 	<!-- Guest kiosk mode (nobody logged in on this device, see
 	     EnsureKioskAccess) skips AuthenticatedLayout entirely — that layout
 	     assumes $page.props.auth.user exists (nav, profile menu), which is
@@ -865,7 +865,7 @@ export default {
 			// Landing here at all only happens because a staff login/PIN-
 			// unlock just cleared kiosk lock (see mounted()) — "Not Now"
 			// means they're not doing closeout right now either, so send
-			// them on to Setup (where the Volunteer Kiosk tile that got
+			// them on to Setup (where the Sign-in Kiosk tile that got
 			// them into kiosk mode in the first place lives) rather than
 			// leaving them sitting on the kiosk sign-in/out grid itself.
 			window.location.href = '/dashboard#setup';

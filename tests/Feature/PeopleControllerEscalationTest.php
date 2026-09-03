@@ -107,3 +107,21 @@ test('revoking is allowed once the actor holds every permission the target curre
 
     $response->assertOk();
 });
+
+test('the people list flags can_edit false for a record the actor could not save, mirroring assertNoEscalation', function () {
+    $role = Role::create(['name' => 'Flagged Role']);
+    $permission = Permission::create(['key' => 'flagged-permission', 'name' => 'Flagged']);
+    $role->permissions()->attach($permission->id);
+
+    $untouchable = Person::create(['first_name' => 'Untouchable', 'last_name' => 'Person']);
+    $untouchable->roles()->attach($role->id);
+    $touchable = Person::create(['first_name' => 'Touchable', 'last_name' => 'Person']);
+
+    $actor = userWithPermissions('manage-people'); // lacks flagged-permission
+
+    $records = $this->actingAs($actor)->getJson('/json/people')->assertOk()->json('records');
+    $records = collect($records)->keyBy('id');
+
+    expect($records[$untouchable->id]['can_edit'])->toBeFalse()
+        ->and($records[$touchable->id]['can_edit'])->toBeTrue();
+});

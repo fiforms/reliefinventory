@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\RateLimiter;
  * closeout() is different: "Confirm Building Empty" is never actually
  * reached from a locked/guest kiosk (VolunteerKiosk.vue only shows it once
  * someone's logged in), so it stays plain auth+permission:
- * operate-volunteer-kiosk (see routes/web.php) and uses Auth::id() — a
+ * operate-kiosk (see routes/web.php) and uses Auth::id() — a
  * PIN re-check on top of an already-authenticated session was pure
  * redundancy, not an extra safety measure.
  */
@@ -93,7 +93,7 @@ class BuildingSafetyController extends Controller
 
     /**
      * Guest-accessible search for the PIN picker — matches everyone who
-     * currently holds operate-volunteer-kiosk, not just whoever's logged
+     * currently holds operate-kiosk, not just whoever's logged
      * in, since the whole point is this doesn't depend on a session.
      */
     public function kioskOperatorCandidates(Request $request): JsonResponse
@@ -103,7 +103,7 @@ class BuildingSafetyController extends Controller
             return response()->json(['records' => []]);
         }
 
-        $people = Person::withPermission('operate-volunteer-kiosk')
+        $people = Person::withPermission('operate-kiosk')
             ->where(function ($q) use ($query) {
                 $q->where('first_name', 'like', "%{$query}%")
                     ->orWhere('last_name', 'like', "%{$query}%");
@@ -211,7 +211,7 @@ class BuildingSafetyController extends Controller
         }
 
         $person = Person::find($data['person_id']);
-        if (! $person || ! $person->hasPermission('operate-volunteer-kiosk') || ! $person->verifyPin($data['pin'])) {
+        if (! $person || ! $person->hasPermission('operate-kiosk') || ! $person->verifyPin($data['pin'])) {
             RateLimiter::hit($rateLimitKey, 300);
 
             return response()->json(['message' => 'Incorrect PIN.'], 401);

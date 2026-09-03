@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
  * Index+store for kiosk_suggestions (Agency/Task type-ahead lists), keyed
  * by `kind`. `index` is reachable from both the kiosk itself (kiosk-access,
  * to populate the datalist) and the Kiosk Settings admin page
- * (admin-system, to manage the lists) — see routes/web.php.
+ * (manage-kiosk, to manage the lists) — see routes/web.php.
  */
 class KioskSuggestionController extends Controller
 {

@@ -28,7 +28,7 @@
      </div>
 
      <!-- Confirming here, before ever navigating, is deliberate — see
-          KioskEnableConfirmModal's doc comment. Tapping the Volunteer Kiosk
+          KioskEnableConfirmModal's doc comment. Tapping the Sign-in Kiosk
           tile (see navigate()) opens this in place instead of loading
           VolunteerKiosk.vue's authenticated view first just to show a modal
           on top of it. -->

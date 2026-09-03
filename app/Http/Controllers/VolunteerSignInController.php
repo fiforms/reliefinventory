@@ -80,7 +80,7 @@ class VolunteerSignInController extends Controller
      * Quick-add for a first-time walk-in the kiosk search can't find — same
      * "add new" idea as SearchSelect's allowcreate, but a dedicated
      * endpoint (rather than routing through PeopleController) since kiosk
-     * operators only hold operate-volunteer-kiosk, not manage-people.
+     * operators only hold operate-kiosk, not manage-people.
      * Deliberately minimal: name only, defaults to an active volunteer.
      */
     public function quickCreatePerson(Request $request)

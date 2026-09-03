@@ -9,9 +9,10 @@ use App\Models\KioskSetting;
 use Illuminate\Http\Request;
 
 /**
- * The volunteer kiosk's behavior settings (currently just the idle-reset
+ * The Sign-in Kiosk's behavior settings (currently just the idle-reset
  * timeout — per-location banner text lives on KioskLocation instead) —
- * gated on admin-system, matching every other system-wide toggle.
+ * gated on manage-kiosk (split from admin-system 2026-09-02), individually
+ * delegable from every other system-wide toggle.
  */
 class KioskSettingController extends Controller
 {

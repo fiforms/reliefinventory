@@ -47,22 +47,22 @@ class PermissionsSeeder extends Seeder
     private const PERMISSIONS = [
         'general-access' => 'Access placeholder/non-resource pages not yet tied to a specific permission',
         'manage-people' => 'View, create, and update people (partners/donors)',
+        // Deleting a person destroys source/donor traceability — a records
+        // issue, not an access-control one — so this stays a standalone,
+        // Administrator-only-by-default key rather than folding into
+        // manage-people. Expected to be replaced by deactivate/hide as part
+        // of the Partner/Donor rework (PROJECT_ANALYSIS.md Part 12), not
+        // widened.
         'admin-people' => 'Delete people',
         'manage-orders' => 'View, update, and delete orders/donations',
         'manage-items' => 'Manage the item catalog',
         'manage-units' => 'Manage units of measure',
-        'manage-categories' => 'View and create item categories',
-        'admin-categories' => 'Update and delete item categories',
-        'manage-locations' => 'View warehouse locations',
-        'admin-locations' => 'Create, update, and delete warehouse locations',
-        'manage-warehouses' => 'View warehouses',
-        'admin-warehouses' => 'Create, update, and delete warehouses',
-        'manage-uses' => 'View location uses',
-        'admin-uses' => 'Create, update, and delete location uses',
-        'manage-itemtypes' => 'View and create item types',
-        'admin-itemtypes' => 'Update and delete item types',
-        'manage-packagetypes' => 'View package types',
-        'admin-packagetypes' => 'Create, update, and delete package types',
+        'manage-categories' => 'View, create, update, and delete item categories',
+        'manage-locations' => 'View, create, update, and delete warehouse locations',
+        'manage-warehouses' => 'View, create, update, and delete warehouses',
+        'manage-uses' => 'View, create, update, and delete location uses',
+        'manage-itemtypes' => 'View, create, update, and delete item types',
+        'manage-packagetypes' => 'View, create, update, and delete package types',
         'manage-sorting' => 'Run donation sorting sessions',
         'manage-receiving' => 'Record dock-side intake and manage donation close-out',
         // Recording a phoned-in offer stays on manage-receiving above —
@@ -74,12 +74,9 @@ class PermissionsSeeder extends Seeder
         'manage-donation-offers' => 'Approve, refuse, divert, or cancel donation offers, and match arrivals to pending offers',
         'manage-pallets' => 'Manage pallets and pallet status history',
         'manage-trucks' => 'Manage trucks',
-        'manage-containers' => 'View and manage generic containers',
-        'admin-containers' => 'Create, update, and delete container types',
-        'manage-streams' => 'View pickup streams',
-        'admin-streams' => 'Create, update, and delete pickup streams',
-        'manage-roles' => 'View roles',
-        'admin-roles' => 'Create, update, and delete roles',
+        'manage-containers' => 'View, create, update, and delete generic containers and container types',
+        'manage-streams' => 'View, create, update, and delete pickup streams',
+        'manage-roles' => 'View, create, update, and delete roles',
         'manage-counties' => 'Create, update, and delete counties',
         'admin-system' => 'System administration: software updates, backups, and the backup schedule',
         'view-reports' => 'View inventory and operational reports',
@@ -93,16 +90,28 @@ class PermissionsSeeder extends Seeder
         // wrong data quickly, given the blast radius.
         'manage-import' => 'Upload, preview, and commit external data imports',
         'admin-import' => 'View and delete import batch history',
-        // Narrowed from an earlier "broad volunteer tier" scoping (see the
-        // 2026_08_23_000007 rename migration) — this now covers declaring
-        // official building-safety state (closeout, starting/closing a
-        // roll call) on top of ordinary kiosk operation, so it's
-        // Office/Administrator by default rather than every front-line
-        // role, with per-person grants (e.g. a night security officer with
-        // no other role) for anyone else who needs it. Certifying a batch
-        // of hours is the separate FEMA-compliance-critical step (see
-        // PROJECT_ANALYSIS.md ~line 258).
-        'operate-volunteer-kiosk' => 'Operate the volunteer/visitor sign-in kiosk, and confirm building-safety state (closeout, roll call)',
+        // Configuring the Sign-in Kiosk feature itself (locations, guest
+        // types, idle-reset behavior) — deliberately separate from
+        // operate-kiosk below (see permissions-tied-to-function-not-identity
+        // memory): this is system-wide setup, operate-kiosk is day-to-day
+        // use of it. Administrator-only by default, moved off admin-system
+        // so it's individually delegable.
+        'manage-kiosk' => 'Configure Sign-in Kiosk settings: locations, guest types, and behavior',
+        // Renamed from operate-volunteer-kiosk (2026-09-02) — "volunteer" is
+        // a person status (people.is_volunteer), not a role, and permissions
+        // are tied to what someone does, not who they are; the kiosk this
+        // gates was itself renamed from "Volunteer Kiosk" to "Sign-in
+        // Kiosk" for the same reason. Narrowed from an earlier "broad
+        // volunteer tier" scoping (see the 2026_08_23_000007 rename
+        // migration) — this now covers declaring official building-safety
+        // state (closeout, starting/closing a roll call) on top of
+        // ordinary kiosk enable/disable, so it's Office/Administrator by
+        // default rather than every front-line role, with per-person
+        // grants (e.g. a night security officer with no other role) for
+        // anyone else who needs it. Certifying a batch of hours is the
+        // separate FEMA-compliance-critical step (see PROJECT_ANALYSIS.md
+        // ~line 258).
+        'operate-kiosk' => 'Put a device into or out of Sign-in Kiosk mode, and confirm building-safety state (closeout, roll call)',
         'certify-volunteer-hours' => 'Certify volunteer hours for FEMA reporting',
         // Deliberately broad (base volunteer tier, not just Office/Admin)
         // — this only grants viewing the occupancy roster and marking
@@ -151,7 +160,7 @@ class PermissionsSeeder extends Seeder
         ...self::TEAM_LEADER_EXTRA_KEYS,
         'manage-donation-offers',
         'certify-volunteer-hours',
-        'operate-volunteer-kiosk',
+        'operate-kiosk',
         'review-form-submissions',
     ];
 

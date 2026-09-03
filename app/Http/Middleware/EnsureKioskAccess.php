@@ -11,24 +11,25 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Gate for the volunteer kiosk page and its JSON endpoints: EITHER a
- * normal logged-in operator with operate-volunteer-kiosk (unchanged from
- * before kiosk mode existed), OR a guest request from a device that's
- * currently in kiosk mode (see KioskModeController/PinLoginService) —
- * nothing in the sign-in flow depends on Auth::id() (a kiosk sign-in is
- * the volunteer's own record, not staff data entry), so the guest path
- * needs no special-casing downstream. admin-system also passes: the read
- * routes here (GET /kiosk-suggestions in particular) are shared by the
- * Kiosk Settings admin page, which is gated admin-system and doesn't
- * necessarily grant operate-volunteer-kiosk — an admin managing kiosk
- * config still needs to see the same lists a kiosk device reads.
+ * Gate for the Sign-in Kiosk page and its JSON endpoints: EITHER a normal
+ * logged-in operator with operate-kiosk (unchanged from before kiosk mode
+ * existed, renamed 2026-09-02 from operate-volunteer-kiosk), OR a guest
+ * request from a device that's currently in kiosk mode (see
+ * KioskModeController/PinLoginService) — nothing in the sign-in flow
+ * depends on Auth::id() (a kiosk sign-in is the volunteer's own record,
+ * not staff data entry), so the guest path needs no special-casing
+ * downstream. manage-kiosk also passes: the read routes here (GET
+ * /kiosk-suggestions in particular) are shared by the Kiosk Settings admin
+ * page, which is gated manage-kiosk and doesn't necessarily grant
+ * operate-kiosk — someone configuring kiosk settings still needs to see
+ * the same lists a kiosk device reads.
  */
 class EnsureKioskAccess
 {
     public function handle(Request $request, Closure $next)
     {
         $user = Auth::user();
-        if ($user && ($user->hasPermission('operate-volunteer-kiosk') || $user->hasPermission('admin-system'))) {
+        if ($user && ($user->hasPermission('operate-kiosk') || $user->hasPermission('manage-kiosk'))) {
             return $next($request);
         }
 

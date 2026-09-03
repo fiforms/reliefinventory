@@ -9,12 +9,11 @@ use App\Models\KioskLocation;
 use Illuminate\Http\Request;
 
 /**
- * Index/store/update for kiosk_locations, gated admin-system (Kiosk
+ * Index/store/update for kiosk_locations, gated manage-kiosk (Kiosk
  * Settings page). No destroy — locations may be referenced by devices and
- * sign_in_categories; deactivate via `active` instead. `index` is also
- * reachable from KioskEnableConfirmModal (still admin-system, since only a
- * logged-in operator enabling kiosk mode needs the list) to offer a
- * location picker when more than one active location exists.
+ * sign_in_categories; deactivate via `active` instead. `active()` below is
+ * the separate operate-kiosk-gated read used to offer a location picker
+ * when more than one active location exists.
  */
 class KioskLocationController extends Controller
 {
@@ -32,8 +31,8 @@ class KioskLocationController extends Controller
     }
 
     /**
-     * Active locations only, gated operate-volunteer-kiosk rather than
-     * admin-system — this is what KioskEnableConfirmModal calls to offer a
+     * Active locations only, gated operate-kiosk rather than
+     * manage-kiosk — this is what KioskEnableConfirmModal calls to offer a
      * location picker to whoever's enabling kiosk mode, not just a
      * settings-page administrator.
      */

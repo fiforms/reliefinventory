@@ -4,7 +4,7 @@ use App\Models\Person;
 use App\Models\VolunteerSignIn;
 
 test('signing in creates an open record', function () {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     $volunteer = Person::create(['first_name' => 'Val', 'last_name' => 'Unteer', 'is_volunteer' => true]);
 
     $record = $this->actingAs($user)->postJson('/json/volunteer-sign-ins', [
@@ -19,7 +19,7 @@ test('signing in creates an open record', function () {
 });
 
 test('a person cannot sign in twice while already signed in', function () {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     $volunteer = Person::create(['first_name' => 'Val', 'last_name' => 'Unteer', 'is_volunteer' => true]);
     VolunteerSignIn::create([
         'person_id' => $volunteer->id,
@@ -35,7 +35,7 @@ test('a person cannot sign in twice while already signed in', function () {
 });
 
 test('signing out closes the record and writes an audit trail', function () {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     $volunteer = Person::create(['first_name' => 'Val', 'last_name' => 'Unteer', 'is_volunteer' => true]);
     $signIn = VolunteerSignIn::create([
         'person_id' => $volunteer->id,
@@ -53,7 +53,7 @@ test('signing out closes the record and writes an audit trail', function () {
 });
 
 test('the roster only lists active volunteers, alphabetically', function () {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     Person::create(['first_name' => 'Zed', 'last_name' => 'Last', 'is_volunteer' => true, 'volunteer_active' => true]);
     Person::create(['first_name' => 'Amy', 'last_name' => 'First', 'is_volunteer' => true, 'volunteer_active' => true]);
     Person::create(['first_name' => 'Ida', 'last_name' => 'Inactive', 'is_volunteer' => true, 'volunteer_active' => false]);
@@ -65,7 +65,7 @@ test('the roster only lists active volunteers, alphabetically', function () {
 });
 
 test('search finds a deactivated volunteer that the roster hides', function () {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     Person::create(['first_name' => 'Ida', 'last_name' => 'Inactive', 'is_volunteer' => true, 'volunteer_active' => false]);
 
     $records = $this->actingAs($user)->getJson('/json/volunteer-sign-ins/search?q=Ida')->assertOk()->json('records');
@@ -83,7 +83,7 @@ test('certifying a batch stamps certified_at and certified_by, gated separately 
         'status' => VolunteerSignIn::STATUS_CLOSED,
     ]);
 
-    $kioskOperator = userWithPermissions('operate-volunteer-kiosk');
+    $kioskOperator = userWithPermissions('operate-kiosk');
     $this->actingAs($kioskOperator)
         ->postJson('/json/volunteer-sign-ins/certify', ['ids' => [$signIn->id]])
         ->assertStatus(403);

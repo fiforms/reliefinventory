@@ -79,8 +79,14 @@ Route::get('/receiving', function () {
 // is fine for anyone who does intake); the decision endpoints below enforce
 // the narrower manage-donation-offers.
 Route::get('/receiving/offers', function () {
-    return Inertia::render('DonationOffers',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/receiving')]);
+    return Inertia::render('DonationOffers', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/receiving'),
+        // Whether to show the decision buttons at all — the endpoints they
+        // call are still independently gated server-side either way, this
+        // just avoids offering an action that's already known to 403 (see
+        // PROJECT_ANALYSIS.md Part 12).
+        'canDecide' => Auth::user()->hasPermission('manage-donation-offers'),
+    ]);
 })->middleware(['auth', 'permission:manage-receiving']);
 
 // kiosk-access (not auth+permission) so a device in kiosk mode can reach
@@ -172,7 +178,7 @@ Route::get('/setup/active-sessions', function () {
 Route::get('/setup/kiosk-settings', function () {
     return Inertia::render('KioskSettings',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/kiosk-settings')]);
-})->middleware(['auth', 'permission:admin-system']);
+})->middleware(['auth', 'permission:manage-kiosk']);
 
 // Gated loosely at the route level (general-access — the page itself
 // conditionally shows the Settings section for admin-system holders and
@@ -248,11 +254,6 @@ Route::get('/report/help/receiving',
     ->name('report.help.receiving')
     ->middleware(['auth']);
 
-Route::get('/reports/labels', function () {
-    return Inertia::render('PrintLabels',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/labels')]);
-})->middleware(['auth', 'permission:manage-items']);
-
 Route::get('/report/pallet/{id}',
     [PalletReportController::class, 'generateReport'])
     ->name('report.pallet')
@@ -263,6 +264,14 @@ Route::get('/report/pallet/{id}',
 Route::get('/report/pallets/donation/{id}',
     [PalletReportController::class, 'generateDonationLabels'])
     ->name('report.pallets.donation')
+    ->middleware(['auth', 'permission:manage-receiving']);
+
+// Pre-print Labels batch (PROJECT_ANALYSIS.md Part 12) — an arbitrary set
+// of just-created, not-yet-assigned pallet ids, same gate as the rest of
+// Receiving's label printing.
+Route::get('/report/pallets/preprint',
+    [PalletReportController::class, 'generatePreprintLabels'])
+    ->name('report.pallets.preprint')
     ->middleware(['auth', 'permission:manage-receiving']);
 
 Route::get('/reports/inventory', function () {
@@ -421,21 +430,30 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-un
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-categories']], function () {
     Route::get('/categories', [CategoryController::class, 'index']);
-    // Sorters may add new categories on the fly when unfamiliar goods
-    // arrive (update/delete remain admin-only below)
     Route::post('/categories', [CategoryController::class, 'store']);
+    Route::put('/categories/{id}', [CategoryController::class, 'update']);
+    Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-locations']], function () {
     Route::get('/locations', [LocationController::class, 'index']);
+    Route::post('/locations', [LocationController::class, 'store']);
+    Route::put('/locations/{id}', [LocationController::class, 'update']);
+    Route::delete('/locations/{id}', [LocationController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-warehouses']], function () {
     Route::get('/warehouses', [WarehouseController::class, 'index']);
+    Route::post('/warehouses', [WarehouseController::class, 'store']);
+    Route::put('/warehouses/{id}', [WarehouseController::class, 'update']);
+    Route::delete('/warehouses/{id}', [WarehouseController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-uses']], function () {
     Route::get('/uses', [UseController::class, 'index']);
+    Route::post('/uses', [UseController::class, 'store']);
+    Route::put('/uses/{id}', [UseController::class, 'update']);
+    Route::delete('/uses/{id}', [UseController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pallets']], function () {
@@ -458,8 +476,9 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pa
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-itemtypes']], function () {
     Route::get('/itemtypes', [ItemTypeController::class, 'index']);
     Route::get('/itemtypes/{mod}', [ItemTypeController::class, 'index']);
-    // Sorters may add new item types on the fly (update/delete remain admin-only below)
     Route::post('/itemtypes', [ItemTypeController::class, 'store']);
+    Route::put('/itemtypes/{id}', [ItemTypeController::class, 'update']);
+    Route::delete('/itemtypes/{id}', [ItemTypeController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-reports']], function () {
@@ -518,6 +537,9 @@ Route::get('/report/bol/{id}.pdf', [OrderController::class, 'bolPdf'])
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {
     Route::get('/packagetypes', [PackageTypeController::class, 'index']);
+    Route::post('/packagetypes', [PackageTypeController::class, 'store']);
+    Route::put('/packagetypes/{id}', [PackageTypeController::class, 'update']);
+    Route::delete('/packagetypes/{id}', [PackageTypeController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-sorting']], function () {
@@ -539,6 +561,13 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-re
     Route::put('/receiving/{id}', [ReceivingController::class, 'update']);
     Route::delete('/receiving/{id}', [ReceivingController::class, 'destroy']);
     Route::post('/receiving/{id}/pallets', [ReceivingController::class, 'createPallets']);
+    // Pre-print Labels (PROJECT_ANALYSIS.md Part 12, replaces the deleted
+    // /reports/labels page): print a batch of unassigned R labels ahead of
+    // a donation record existing, then attach the ones actually used to a
+    // real intake once it's entered — an alternate label-first path
+    // alongside createPallets' existing enter-then-print flow.
+    Route::post('/receiving/preprint-labels', [ReceivingController::class, 'preprintLabels']);
+    Route::post('/receiving/{id}/attach-pallets', [ReceivingController::class, 'attachPreprintedPallets']);
     Route::post('/receiving/{id}/close-out', [ReceivingController::class, 'closeOut']);
     Route::post('/receiving/{id}/photo', [ReceivingController::class, 'uploadPhoto']);
     Route::get('/receiving/{id}/photo', [ReceivingController::class, 'photo']);
@@ -590,7 +619,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:review-fo
 
 // Facility sign-in kiosk (PROJECT_ANALYSIS.md Part 5) — kiosk-access
 // (not auth+permission) so these work both for a normally logged-in
-// operate-volunteer-kiosk holder AND a guest request from a device in
+// operate-kiosk holder AND a guest request from a device in
 // kiosk mode (see EnsureKioskAccess). Nothing here depends on Auth::id():
 // a kiosk sign-in is the volunteer's own record, not staff data entry.
 Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function () {
@@ -617,7 +646,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['kiosk-access']], function ()
 // bootstrap trust from a device that isn't already in kiosk mode) — this
 // is the one kiosk-related action that stays auth+permission, not
 // kiosk-access.
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:operate-volunteer-kiosk']], function () {
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:operate-kiosk']], function () {
     Route::post('/volunteer-kiosk/enable-lock', [KioskModeController::class, 'enable']);
     Route::get('/kiosk-locations/active', [KioskLocationController::class, 'active']);
 
@@ -648,7 +677,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth']], function () {
 // `auth` — roll-call start/close are additionally PIN-verified internally
 // (see BuildingSafetyController), so they work from a locked kiosk with
 // nobody logged in, but reaching them at all still requires either a
-// normal operate-volunteer-kiosk session or a device already in
+// normal operate-kiosk session or a device already in
 // kiosk-lock mode. Was briefly wide open (no middleware at all, so the
 // emergency-occupancy-list endpoint below was leaking full names to
 // anyone on the internet) until this was caught. None of this depends on
@@ -687,14 +716,23 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-co
     Route::put('/containers/{id}', [ContainerController::class, 'update']);
     Route::delete('/containers/{id}', [ContainerController::class, 'destroy']);
     Route::get('/container-types', [ContainerTypeController::class, 'index']);
+    Route::post('/container-types', [ContainerTypeController::class, 'store']);
+    Route::put('/container-types/{id}', [ContainerTypeController::class, 'update']);
+    Route::delete('/container-types/{id}', [ContainerTypeController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-streams']], function () {
     Route::get('/streams', [StreamController::class, 'index']);
+    Route::post('/streams', [StreamController::class, 'store']);
+    Route::put('/streams/{id}', [StreamController::class, 'update']);
+    Route::delete('/streams/{id}', [StreamController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-roles']], function () {
     Route::get('/roles', [RoleController::class, 'index']);
+    Route::post('/roles', [RoleController::class, 'store']);
+    Route::put('/roles/{id}', [RoleController::class, 'update']);
+    Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-counties']], function () {
@@ -739,59 +777,12 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-imp
     Route::delete('/imports/{id}', [ImportController::class, 'destroy']);
 });
 
-// Destructive/structural ops — previously role:32768 (Administrator).
-// Administrator holds every admin-* permission by default (see
-// PermissionsSeeder), so this preserves today's effective access while
-// making each capability individually grantable/revocable per person.
-
+// Deleting a person is a records-integrity issue, not a permissions tier —
+// no bundle grants this by default; kept separate from manage-people
+// pending the Partner/Donor rework, which is expected to replace this with
+// deactivate/hide rather than a hard delete (see PROJECT_ANALYSIS.md Part 12).
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-people']], function () {
     Route::delete('/people/{id}', [PeopleController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-categories']], function () {
-    Route::put('/categories/{id}', [CategoryController::class, 'update']);
-    Route::delete('/categories/{id}', [CategoryController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-locations']], function () {
-    Route::post('/locations', [LocationController::class, 'store']);
-    Route::put('/locations/{id}', [LocationController::class, 'update']);
-    Route::delete('/locations/{id}', [LocationController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-warehouses']], function () {
-    Route::post('/warehouses', [WarehouseController::class, 'store']);
-    Route::put('/warehouses/{id}', [WarehouseController::class, 'update']);
-    Route::delete('/warehouses/{id}', [WarehouseController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-uses']], function () {
-    Route::post('/uses', [UseController::class, 'store']);
-    Route::put('/uses/{id}', [UseController::class, 'update']);
-    Route::delete('/uses/{id}', [UseController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-itemtypes']], function () {
-    Route::put('/itemtypes/{id}', [ItemTypeController::class, 'update']);
-    Route::delete('/itemtypes/{id}', [ItemTypeController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-packagetypes']], function () {
-    Route::post('/packagetypes', [PackageTypeController::class, 'store']);
-    Route::put('/packagetypes/{id}', [PackageTypeController::class, 'update']);
-    Route::delete('/packagetypes/{id}', [PackageTypeController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-roles']], function () {
-    Route::post('/roles', [RoleController::class, 'store']);
-    Route::put('/roles/{id}', [RoleController::class, 'update']);
-    Route::delete('/roles/{id}', [RoleController::class, 'destroy']);
-});
-
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-containers']], function () {
-    Route::post('/container-types', [ContainerTypeController::class, 'store']);
-    Route::put('/container-types/{id}', [ContainerTypeController::class, 'update']);
-    Route::delete('/container-types/{id}', [ContainerTypeController::class, 'destroy']);
 });
 
 // System administration: software updates, backup inventory, and the backup
@@ -810,12 +801,6 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::get('/login-history', [ActiveSessionController::class, 'history']);
 });
 
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-streams']], function () {
-    Route::post('/streams', [StreamController::class, 'store']);
-    Route::put('/streams/{id}', [StreamController::class, 'update']);
-    Route::delete('/streams/{id}', [StreamController::class, 'destroy']);
-});
-
 // PIN-login global settings (on/off, trust mode) — system-wide config,
 // same gate as every other system-wide toggle.
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
@@ -825,9 +810,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
 
 // Kiosk Settings page (2026-08-26): behavior settings, locations, guest
 // types (sign_in_categories, management side), and agency/task
-// suggestions. All system-wide config, same gate as every other
-// system-wide toggle.
-Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
+// suggestions. Individually delegable via manage-kiosk (split from
+// admin-system 2026-09-02 — see permissions-tied-to-function-not-identity
+// memory) rather than every other system-wide toggle's admin-system gate.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-kiosk']], function () {
     Route::get('/kiosk-settings', [KioskSettingController::class, 'show']);
     Route::put('/kiosk-settings', [KioskSettingController::class, 'update']);
 

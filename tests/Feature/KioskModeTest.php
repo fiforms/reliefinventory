@@ -39,7 +39,7 @@ function kioskWithDeviceCookie(TrustedDevice $device)
 
 function kioskOperatorUser(): User
 {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     $user->pin_hash = Hash::make('13579');
     $user->save();
 
@@ -171,14 +171,14 @@ test('getBreadcrumb still matches a menu item whose link_url happens to carry a 
 
     $breadcrumb = MenuItem::getBreadcrumb('/volunteers/kiosk');
 
-    expect(collect($breadcrumb)->last())->toBe(['href' => '/volunteers/kiosk', 'title' => 'Volunteer Kiosk']);
+    expect(collect($breadcrumb)->last())->toBe(['href' => '/volunteers/kiosk', 'title' => 'Sign-in Kiosk']);
 });
 
-test('a person with only operate-volunteer-kiosk can still enable kiosk mode', function () {
+test('a person with only operate-kiosk can still enable kiosk mode', function () {
     kioskEnablePinLogin();
     $device = kioskApprovedDevice();
     $user = User::factory()->create(['first_name' => 'Sam', 'last_name' => 'Security']);
-    $permission = Permission::firstOrCreate(['key' => 'operate-volunteer-kiosk'], ['name' => 'operate-volunteer-kiosk']);
+    $permission = Permission::firstOrCreate(['key' => 'operate-kiosk'], ['name' => 'operate-kiosk']);
     $user->person_permissions()->attach($permission->id, ['granted' => true]);
 
     kioskWithDeviceCookie($device)->actingAs($user)

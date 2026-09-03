@@ -4,8 +4,8 @@ use App\Models\KioskLocation;
 use App\Models\PinLoginSetting;
 use App\Models\TrustedDevice;
 
-test('kiosk locations can be listed, created, and updated by an admin-system user', function () {
-    $user = userWithPermissions('admin-system');
+test('kiosk locations can be listed, created, and updated by a manage-kiosk user', function () {
+    $user = userWithPermissions('manage-kiosk');
 
     $this->actingAs($user)->getJson('/json/kiosk-locations')->assertOk()
         ->assertJsonCount(1, 'records'); // the seeded default location
@@ -24,14 +24,14 @@ test('kiosk locations can be listed, created, and updated by an admin-system use
     expect(KioskLocation::find($record['id'])->active)->toBeFalse();
 });
 
-test('a non-admin-system user cannot manage kiosk locations', function () {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+test('a non-manage-kiosk user cannot manage kiosk locations', function () {
+    $user = userWithPermissions('operate-kiosk');
 
     $this->actingAs($user)->postJson('/json/kiosk-locations', ['name' => 'Nope'])->assertStatus(403);
 });
 
 test('sign-in categories (guest types) are scoped per location and can share a name across locations', function () {
-    $admin = userWithPermissions('admin-system');
+    $admin = userWithPermissions('manage-kiosk');
     $locationA = KioskLocation::first(); // seeded default
     $locationB = KioskLocation::create(['name' => 'Site B']);
 
@@ -45,7 +45,7 @@ test('sign-in categories (guest types) are scoped per location and can share a n
         'name' => 'FEMA',
     ])->assertCreated();
 
-    $operator = userWithPermissions('operate-volunteer-kiosk');
+    $operator = userWithPermissions('operate-kiosk');
     $records = $this->actingAs($operator)
         ->getJson("/json/sign-in-categories?kiosk_location_id={$locationB->id}")
         ->assertOk()->json('records');
@@ -54,14 +54,14 @@ test('sign-in categories (guest types) are scoped per location and can share a n
 });
 
 test('kiosk suggestions are scoped per kind and reachable by an operator', function () {
-    $admin = userWithPermissions('admin-system');
+    $admin = userWithPermissions('manage-kiosk');
 
     $this->actingAs($admin)->postJson('/json/kiosk-suggestions', ['kind' => 'agency', 'value' => 'American Red Cross'])
         ->assertCreated();
     $this->actingAs($admin)->postJson('/json/kiosk-suggestions', ['kind' => 'task', 'value' => 'Forklift Operator'])
         ->assertCreated();
 
-    $operator = userWithPermissions('operate-volunteer-kiosk');
+    $operator = userWithPermissions('operate-kiosk');
     $agency = $this->actingAs($operator)->getJson('/json/kiosk-suggestions?kind=agency')->assertOk()->json('records');
 
     expect(collect($agency)->pluck('value')->all())->toBe(['American Red Cross']);
@@ -75,7 +75,7 @@ test('enabling kiosk mode auto-assigns the sole active location', function () {
         'requested_at' => now(),
         'approved_at' => now(),
     ]);
-    $operator = userWithPermissions('operate-volunteer-kiosk');
+    $operator = userWithPermissions('operate-kiosk');
 
     $this->withCredentials()->withCookie('pin_device_token', $device->device_token)
         ->actingAs($operator)
@@ -94,7 +94,7 @@ test('enabling kiosk mode requires a location when more than one is active', fun
         'requested_at' => now(),
         'approved_at' => now(),
     ]);
-    $operator = userWithPermissions('operate-volunteer-kiosk');
+    $operator = userWithPermissions('operate-kiosk');
 
     $this->withCredentials()->withCookie('pin_device_token', $device->device_token)
         ->actingAs($operator)

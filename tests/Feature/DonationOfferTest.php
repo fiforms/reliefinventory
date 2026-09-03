@@ -16,6 +16,16 @@ function makeOffer(array $overrides = []): DonationOffer
     ], $overrides));
 }
 
+test('the offers page tells the frontend whether to show decision buttons, based on manage-donation-offers', function () {
+    $withDecide = userWithPermissions('manage-receiving', 'manage-donation-offers');
+    $this->actingAs($withDecide)->get('/receiving/offers')
+        ->assertInertia(fn ($page) => $page->where('canDecide', true));
+
+    $withoutDecide = userWithPermissions('manage-receiving');
+    $this->actingAs($withoutDecide)->get('/receiving/offers')
+        ->assertInertia(fn ($page) => $page->where('canDecide', false));
+});
+
 test('creating an offer writes an initial status log row', function () {
     $user = userWithPermissions('manage-receiving');
     $donor = Person::create(['first_name' => 'Test', 'last_name' => 'Donor']);

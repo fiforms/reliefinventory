@@ -572,3 +572,72 @@ Tiers 1–2, not alongside them.
 logging + signed BOL upload, flow/donor/customer reports, pagination) still apply as originally scoped in
 Part 3 above and aren't reordered by this section — they weren't in conflict with anything newer, just
 not yet reconciled into one list until now.
+
+## Part 12 — Menu/Permissions Audit & Permission Model Cleanup (design session, Sep 2, 2026)
+
+A tile-by-tile audit (menu tile → page route → JSON endpoint → role bundle) surfaced several places where a
+role can see a tile but can't actually complete the tile's core action, plus some dead-end/naming issues.
+Full design/rationale in the `permissions-model-rework-2026-09-02` memory; this is the punch list.
+
+**Update (2026-09-02): all five "ready to build" items below are built** (migrations
+`2026_09_02_210000_collapse_admin_manage_permissions_and_split_kiosk`,
+`2026_09_02_211000_remove_print_labels_menu_item`; full test coverage). One piece of the fifth item —
+moving Donation Offers' decision flow to its own page — was deliberately deferred, not done; see its own
+note below.
+
+- Collapsed every `admin-*`/`manage-*` duplicate-tier permission pair into the single `manage-*` key (full
+  CRUD): locations, item types, categories, roles, warehouses, uses, package types, containers, streams.
+  The `admin-*` keys for these are gone. (`admin-import`/`admin-system` were NOT part of this — those gate
+  genuinely separate, higher-blast-radius actions, not a CRUD-tier split.)
+- Deleted `/reports/labels` (Print Labels tile + `PrintLabels.vue`, which was non-functional — wrong page
+  title, undeclared template refs, no actual print action). Replaced with a "Pre-print Labels" action
+  inside Receiving (`ReceivingController::preprintLabels`/`attachPreprintedPallets`,
+  `PalletReportController::generatePreprintLabels`): enter a quantity, system auto-increments and prints a
+  batch of unassigned R labels, then key in (or scan) the tag numbers actually used once the donation is
+  entered — an alternate intake path alongside the existing enter-then-print flow (`createPallets`), not a
+  replacement for it.
+- Split the kiosk permission cleanly: **`manage-kiosk`** (new) gates the Kiosk Settings page
+  (`/setup/kiosk-settings` + its JSON endpoints), moved off `admin-system`. **`operate-kiosk`** (renamed
+  from `operate-volunteer-kiosk`) keeps its existing scope — entering/exiting kiosk mode on a device, plus
+  building-safety/closeout/roll-call — unchanged, name only. Menu tile text is "Sign-in Kiosk" (a prior
+  migration, `2026_09_02_201632`, tried this rename but matched the wrong `link_url` and silently updated
+  zero rows — fixed as part of this same pass). Motivating principle: **permissions are tied to function,
+  not identity** — "Volunteer" is a status (`people.is_volunteer`) that cuts across every role, not a role
+  itself, so a permission literally named after "volunteer" was a naming collision waiting to confuse
+  whoever assigns roles. See the `permissions-tied-to-function-not-identity` memory.
+- `PeopleController::assertNoEscalation`'s policy is now explicit and enforced client-side too: if you
+  don't hold the right permission to touch a given person's record, you get **no edit access at all** (not
+  a partial edit that then 403s on save) — `PeopleController::index` now returns a server-computed
+  `can_edit` per record, and `People.vue` renders fully read-only (all fields disabled, Save/Delete hidden,
+  only "Back to List") whenever it's false, instead of letting someone fill out a save that's already known
+  to be rejected server-side. If you do hold the right permission, every field stays editable, no
+  field-level carve-out. The escalation-prevention logic itself (can't grant a permission you don't hold;
+  can't touch someone holding a permission you lack) is unchanged — this was a client-side UX fix, not a
+  policy change.
+- Donation Offers: the Approve/Refuse/Divert/Cancel/Match buttons are now hidden client-side (`canDecide`,
+  an Inertia prop from the `/receiving/offers` route) for anyone without `manage-donation-offers` — they
+  used to be shown to everyone with the broader `manage-receiving` and only 403 on submit. **Deferred, not
+  done:** moving the decision/approval flow to its own page, separate from the general offers worklist.
+  That's a real UI restructuring (new route/page, not just a permission fix) rather than a quick follow-on
+  to the button-hiding change, and deserves its own pass — logging/accepting an offer stays on the current
+  page either way.
+
+**Records issue, not a permissions issue — no hard delete of people:** deleting a `Person` (donor/partner)
+destroys source traceability, not just an access-control concern. `admin-people` ("Delete people") is
+removed outright, not folded into `manage-people` — replace hard delete with deactivate/hide. Bundle this
+into the Partner/Donor rework below rather than doing it standalone, since the People UI needs surgery
+either way.
+
+**Deferred, flagged for later, no action now:**
+- `review-form-submissions` has no menu entry — Office holds the permission but the only route in
+  (`/setup/forms/{id}/submissions`) requires a direct URL with a known form id. Needs a real page/menu
+  entry. Separate scope from this cleanup.
+- Order Entry's menu-tile `permission_key` is `NULL` (route itself requires `manage-orders`) — currently
+  harmless since Partner/Donor roles hold zero permissions and no login accounts use them yet, but it's a
+  live trap the moment they do. Deferred until the partner-self-login/own-orders-only build (Part 5-
+  adjacent), which will need to touch this same page's access model anyway.
+- Partner/Donor roles need a full rework (not scoped yet beyond "needs one") — folds in `admin-people`'s
+  removal above, and likely interacts with `party-roles-warehouse-contacts-and-people-report-design`
+  (Part 11 Tier 2) and the eventual partner self-service login. Scope this as its own design pass before
+  building.
+- Flow/Donor/Partner Report "Coming Soon" tiles — confirmed still intentionally placeholder, no change.

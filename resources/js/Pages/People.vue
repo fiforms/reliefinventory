@@ -64,11 +64,14 @@ defineProps({
 
       <template #default="{ record, editing, templates }">
         <div class="ri_formtable">
+          <p v-if="record.id && record.can_edit === false" class="ri_error">
+            You don't have permission to edit this record — they hold a permission you don't have. Showing read-only.
+          </p>
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">First Name:</div>
             <TextInput
               v-model="record.first_name"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
 
@@ -76,7 +79,7 @@ defineProps({
             <div class="ri_fieldlabel">Last Name:</div>
             <TextInput
               v-model="record.last_name"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
 
@@ -84,7 +87,7 @@ defineProps({
             <div class="ri_fieldlabel">Organization:</div>
             <TextInput
               v-model="record.organization"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
           <p class="ri_fieldhint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
@@ -93,7 +96,7 @@ defineProps({
             <div class="ri_fieldlabel">This record is the organization itself:</div>
             <Checkbox
               v-model="record.is_organization"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
           <p class="ri_fieldhint">
@@ -109,7 +112,7 @@ defineProps({
               optionsource="/json/people?is_organization=1"
               display="full_name"
               placeholder="Search organizations..."
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
           <p class="ri_fieldhint">
@@ -122,7 +125,7 @@ defineProps({
             <TextInput
               v-model="record.contact_role"
               placeholder="e.g. Primary, Delivery, Billing"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
 
@@ -135,7 +138,7 @@ defineProps({
               display="name"
               placeholder="e.g. Donor, Supplier, Warehouse Contact..."
               :allowcreate="true"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
               @create="createCategory"
             />
           </div>
@@ -149,7 +152,7 @@ defineProps({
             <div class="ri_fieldlabel">Badge Code:</div>
             <TextInput
               v-model="record.badge_code"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
           <p class="ri_fieldhint">Scan or type the code from this person's physical badge, if issued &mdash; used for PIN-unlock badge scanning.</p>
@@ -159,7 +162,7 @@ defineProps({
             <TextInput
               v-model="record.phone"
               type="tel"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             /> 
           </div>
 
@@ -168,7 +171,7 @@ defineProps({
             <TextInput
               v-model="record.email"
               type="email"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             /> 
           </div>
 
@@ -189,7 +192,7 @@ defineProps({
 				<TextInput
 				  v-model="record.zip"
 				  maxlength="10"
-				  :enabled="editing"
+				  :enabled="canEditRecord(record, editing)"
 				/>
 			  </div>
 
@@ -197,7 +200,7 @@ defineProps({
 				<div class="ri_fieldlabel">Address:</div>
 				<TextArea
 				  v-model="record.address"
-				  :enabled="editing"
+				  :enabled="canEditRecord(record, editing)"
 				/>
 			  </div>
 
@@ -240,7 +243,7 @@ defineProps({
 					display="county"
 					secondaryDisplay="state"
 					:filter="(c) => !record.state || c.state === record.state.toUpperCase()"
-					:enabled="editing"
+					:enabled="canEditRecord(record, editing)"
 				/>
 				<p v-if="countyLookupError" class="people_county_error">{{ countyLookupError }}</p>
 				<p v-if="countyLookupHint" class="people_county_hint">{{ countyLookupHint }}</p>
@@ -253,7 +256,7 @@ defineProps({
 				v-model:records="record.people_roles"
 				:template="templates.people_roles"
 				optionsource="/json/roles?context=people"
-                :enabled="editing"
+                :enabled="canEditRecord(record, editing)"
 				fk_field="role_id"
 				display="name"
             />
@@ -304,7 +307,7 @@ defineProps({
             <div class="ri_fieldlabel">Volunteer:</div>
             <Checkbox
               v-model="record.is_volunteer"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
           <p class="ri_fieldhint">
@@ -316,9 +319,23 @@ defineProps({
             <div class="ri_fieldlabel">Comments:</div>
             <TextArea
               v-model="record.comments"
-              :enabled="editing"
+              :enabled="canEditRecord(record, editing)"
             />
           </div>
+        </div>
+      </template>
+
+      <template #actions="{ editing, record, confirmingDelete, save, cancel, delete: doDelete, keepRecord }">
+        <div class="ri_formactions" v-if="!editing || (record.id && record.can_edit === false)">
+          <button @click="cancel()" class="ri_defaultbutton">Back to List</button>
+        </div>
+        <div class="ri_formactions" v-else>
+          <button @click="save()" class="ri_defaultbutton">Save</button>
+          <button @click="cancel()" class="ri_formbutton">Cancel Changes</button>
+          <button @click="doDelete()" class="ri_deletebutton" :class="{ ri_confirming: confirmingDelete }">
+            {{ confirmingDelete ? 'Confirm Delete — cannot be undone' : 'Delete' }}
+          </button>
+          <button v-if="confirmingDelete" @click="keepRecord()" class="ri_linkbutton">Keep Record</button>
         </div>
       </template>
     </RIForm>
@@ -361,6 +378,15 @@ export default {
     },
   },
   methods: {
+    // Server-computed (PeopleController::index) mirror of assertNoEscalation:
+    // false only once the record has an id and the acting user lacks a
+    // permission this person currently holds. A brand-new record has no
+    // can_edit yet (undefined), so it's editable as soon as the page itself
+    // let you in — this only ever locks down an existing person you can't
+    // touch, never a record you're creating.
+    canEditRecord(record, editing) {
+      return editing && record.can_edit !== false;
+    },
     // Category is a small open-ended tag list (Donor/Supplier/Warehouse
     // Contact/...) — quick-added inline via SearchSelect's allowcreate,
     // same idiom Receiving.vue uses for donors, but simpler (one field).

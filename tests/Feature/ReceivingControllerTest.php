@@ -443,3 +443,70 @@ test('replacing a shipment photo deletes the old file', function () {
     Storage::disk('local')->assertMissing($firstPath);
     Storage::disk('local')->assertExists($donation->fresh()->photo_path);
 });
+
+test('pre-printed labels can be created unassigned, then attached to a donation by tag', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $preprinted = $this->actingAs($user)->postJson('/json/receiving/preprint-labels', [
+        'count' => 2,
+    ])->assertCreated()->json('records');
+
+    expect($preprinted)->toHaveCount(2);
+    foreach ($preprinted as $pallet) {
+        expect($pallet['orderdonation_id'])->toBeNull()
+            ->and($pallet['donor_person_id'])->toBeNull();
+    }
+
+    $donor = Person::create(['first_name' => 'Jane', 'last_name' => 'Doe']);
+    $donation = Transaction::create([
+        'type' => 'donation', 'category' => 'donation', 'person_id' => $donor->id,
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $tags = collect($preprinted)->map(fn ($p) => Pallet::find($p['id'])->tag)->all();
+
+    $response = $this->actingAs($user)
+        ->postJson('/json/receiving/'.$donation->id.'/attach-pallets', ['tags' => $tags])
+        ->assertOk();
+
+    expect($response->json('records'))->toHaveCount(2)
+        ->and($response->json('failed'))->toBeEmpty();
+
+    foreach ($preprinted as $pallet) {
+        $fresh = Pallet::find($pallet['id']);
+        expect($fresh->orderdonation_id)->toBe($donation->id)
+            ->and($fresh->donor_person_id)->toBe($donor->id);
+    }
+});
+
+test('attaching an unknown or already-assigned label tag is reported as failed, not a fatal error', function () {
+    $user = userWithPermissions('manage-receiving');
+
+    $donationA = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+    $donationB = Transaction::create([
+        'type' => 'donation', 'category' => 'donation',
+        'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED),
+        'order_date' => now()->toDateString(),
+    ]);
+
+    $alreadyAssigned = Pallet::create([
+        'kind' => 'R', 'status' => 'received', 'orderdonation_id' => $donationA->id,
+        'datepacked' => now()->toDateString(),
+    ]);
+
+    $response = $this->actingAs($user)
+        ->postJson('/json/receiving/'.$donationB->id.'/attach-pallets', [
+            'tags' => [$alreadyAssigned->tag, 'R99999999', 'not-a-tag'],
+        ])
+        ->assertOk();
+
+    expect($response->json('records'))->toBeEmpty()
+        ->and($response->json('failed'))->toHaveCount(3);
+
+    expect($alreadyAssigned->fresh()->orderdonation_id)->toBe($donationA->id);
+});

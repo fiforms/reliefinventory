@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Pallet;
 use App\Models\Transaction;
 use App\Support\PalletKind;
+use Illuminate\Http\Request;
 use Spatie\LaravelPdf\Facades\Pdf;
 
 class PalletReportController extends Controller
@@ -51,5 +52,31 @@ class PalletReportController extends Controller
             'labels' => $donation->pallets->map(fn (Pallet $pallet) => $this->labelData($pallet))->all(),
         ])->paperSize(4.0, 6.5, 'in')
             ->name('pallet-labels-donation-'.$donation->id.'.pdf');
+    }
+
+    /**
+     * Batch print for an arbitrary set of just-created, not-yet-assigned
+     * pallet ids — the Pre-print Labels action in Receiving (see
+     * ReceivingController::preprintLabels). Scoped to kind R and
+     * orderdonation_id null so this can't be used to reprint/leak labels
+     * that already belong to a real donation.
+     */
+    public function generatePreprintLabels(Request $request)
+    {
+        $ids = collect(explode(',', (string) $request->query('ids')))
+            ->map(fn ($id) => (int) trim($id))
+            ->filter()
+            ->all();
+
+        $pallets = Pallet::whereIn('id', $ids)->where('kind', 'R')->whereNull('orderdonation_id')->get();
+
+        if ($pallets->isEmpty()) {
+            abort(404, 'No matching pre-printed labels found.');
+        }
+
+        return Pdf::view('reports.pallet-batch', [
+            'labels' => $pallets->map(fn (Pallet $pallet) => $this->labelData($pallet))->all(),
+        ])->paperSize(4.0, 6.5, 'in')
+            ->name('pallet-labels-preprint.pdf');
     }
 }

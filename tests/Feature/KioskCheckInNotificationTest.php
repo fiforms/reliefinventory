@@ -23,7 +23,7 @@ test('a guest sign-in notifies Office/Administrator/Team Leader users', function
     Notification::fake();
 
     $office = officeUser();
-    $kioskUser = userWithPermissions('operate-volunteer-kiosk');
+    $kioskUser = userWithPermissions('operate-kiosk');
     $guest = Person::create(['first_name' => 'Gary', 'last_name' => 'Guest', 'is_volunteer' => false]);
 
     $this->actingAs($kioskUser)->postJson('/json/volunteer-sign-ins', [
@@ -39,7 +39,7 @@ test("a volunteer's first sign-in notifies, but their next sign-in does not", fu
     Notification::fake();
 
     $office = officeUser();
-    $kioskUser = userWithPermissions('operate-volunteer-kiosk');
+    $kioskUser = userWithPermissions('operate-kiosk');
     $volunteer = Person::create(['first_name' => 'Val', 'last_name' => 'Unteer', 'is_volunteer' => true]);
 
     $this->actingAs($kioskUser)->postJson('/json/volunteer-sign-ins', [
@@ -64,7 +64,7 @@ test("a volunteer's first sign-in notifies, but their next sign-in does not", fu
 
 test('the notification bell lists and marks notifications read', function () {
     $office = officeUser();
-    $kioskUser = userWithPermissions('operate-volunteer-kiosk');
+    $kioskUser = userWithPermissions('operate-kiosk');
     $guest = Person::create(['first_name' => 'Gary', 'last_name' => 'Guest', 'is_volunteer' => false]);
 
     $this->actingAs($kioskUser)->postJson('/json/volunteer-sign-ins', [

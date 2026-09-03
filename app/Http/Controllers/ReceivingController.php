@@ -296,6 +296,97 @@ class ReceivingController extends Controller
     }
 
     /**
+     * Print a batch of R labels ahead of any donation existing — grab
+     * however many you expect to need, put them straight on pallets as
+     * goods arrive, and key in which ones got used once the donation is
+     * actually entered (see attachPreprintedPallets below), instead of
+     * entering the donation first and printing after. Unassigned: no
+     * donor_person_id/orderdonation_id until attached.
+     */
+    public function preprintLabels(Request $request)
+    {
+        $data = $request->validate([
+            'count' => 'required|integer|min:1|max:300',
+            'container_type' => 'nullable|in:pallet,gaylord,box,bag,tote',
+        ]);
+
+        $pallets = DB::transaction(function () use ($data) {
+            $created = [];
+            for ($i = 0; $i < $data['count']; $i++) {
+                $pallet = Pallet::create([
+                    'kind' => 'R',
+                    'status' => 'received',
+                    'container_type' => $data['container_type'] ?? 'pallet',
+                    'donor_person_id' => null,
+                    'orderdonation_id' => null,
+                    'datepacked' => now()->toDateString(),
+                ]);
+                $pallet->statuses()->create(['status' => 'received', 'notes' => 'Pre-printed, not yet assigned to a donation.']);
+                $created[] = $pallet;
+            }
+
+            return $created;
+        });
+
+        return response()->json(['records' => $pallets], 201);
+    }
+
+    /**
+     * Link pallets that were pre-printed (preprintLabels above) and
+     * physically used on this load to the donation record now that it
+     * exists — the reverse of createPallets' create-then-print order.
+     * Tags are the printed "R00000042" strings from the label itself, so
+     * dock staff can key them in (or scan them) without knowing raw ids.
+     */
+    public function attachPreprintedPallets(Request $request, $id)
+    {
+        $donation = Transaction::where('type', 'donation')->findOrFail($id);
+        $data = $request->validate([
+            'tags' => 'required|array|min:1',
+            'tags.*' => 'string',
+        ]);
+
+        $failed = [];
+        $attached = DB::transaction(function () use ($donation, $data, &$failed) {
+            $ok = [];
+            foreach ($data['tags'] as $rawTag) {
+                $tag = strtoupper(trim($rawTag));
+                if ($tag === '') {
+                    continue;
+                }
+
+                if (! preg_match('/^R0*(\d+)$/', $tag, $matches)) {
+                    $failed[] = ['tag' => $rawTag, 'reason' => 'Not a valid R label number.'];
+
+                    continue;
+                }
+
+                $pallet = Pallet::where('id', (int) $matches[1])->where('kind', 'R')->first();
+                if (! $pallet) {
+                    $failed[] = ['tag' => $rawTag, 'reason' => 'No such label.'];
+
+                    continue;
+                }
+                if ($pallet->orderdonation_id !== null) {
+                    $failed[] = ['tag' => $rawTag, 'reason' => 'Already assigned to another donation.'];
+
+                    continue;
+                }
+
+                $pallet->orderdonation_id = $donation->id;
+                $pallet->donor_person_id = $donation->person_id;
+                $pallet->save();
+                $pallet->statuses()->create(['status' => $pallet->status, 'notes' => 'Linked to donation #'.$donation->id.' (pre-printed label).']);
+                $ok[] = $pallet;
+            }
+
+            return $ok;
+        });
+
+        return response()->json(['records' => $attached, 'failed' => $failed]);
+    }
+
+    /**
      * Daily close-out: correct the one forgotten pallet to "empty", which
      * rolls the donation to complete via the normal pallet-driven sync.
      */

@@ -79,11 +79,19 @@ class PeopleController extends Controller
 
         // Reshape the pivot-bearing relation into the flat {permission_id, granted}
         // form the frontend reads and submits, so read/write use the same shape.
-        $people->each(function ($person) {
+        // can_edit mirrors assertNoEscalation's own rule (PersonPermissionAssignment)
+        // so People.vue can render a record read-only up front instead of letting
+        // someone fill out a save that's already known to be rejected server-side —
+        // per Mark's decision (permissions-model-rework-2026-09-02 memory): binary,
+        // not partial — if you can't touch this person at all, you get no edit
+        // access, not a field-level carve-out.
+        $actingKeys = collect(Auth::user()->effectivePermissionKeys());
+        $people->each(function ($person) use ($actingKeys) {
             $person->setRelation('person_permissions', $person->person_permissions->map(fn ($p) => [
                 'permission_id' => $p->id,
                 'granted' => (bool) $p->pivot->granted,
             ])->values());
+            $person->can_edit = collect($person->effectivePermissionKeys())->diff($actingKeys)->isEmpty();
         });
 
         return response()->json([

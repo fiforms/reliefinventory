@@ -38,6 +38,13 @@ defineProps({
 	breadcrumb: {
 		type: Array,
 	},
+	// Whether to show the decision buttons at all — see routes/web.php.
+	// The endpoints are still independently gated server-side either way;
+	// this just avoids offering an action already known to 403.
+	canDecide: {
+		type: Boolean,
+		default: false,
+	},
 });
 
 const contactMethodOptions = [
@@ -310,7 +317,7 @@ const statusClasses = {
 				     always available here regardless of the record's own
 				     edit-lock toggle above, so approving/refusing/etc. doesn't
 				     require first unlocking the record for editing. -->
-				<template v-if="record.status === 'offered'">
+				<template v-if="record.status === 'offered' && canDecide">
 					<h3 class="don_subhead">Decision</h3>
 					<div class="don_decisionrow">
 						<button @click="startDecision(record, 'approve')" class="ri_defaultbutton">Approve</button>
@@ -318,8 +325,11 @@ const statusClasses = {
 						<button @click="startDecision(record, 'divert')" class="ri_formbutton">Divert</button>
 					</div>
 				</template>
+				<p v-else-if="record.status === 'offered'" class="ri_hint">
+					Deciding this offer (Approve/Refuse/Divert) requires the Donation Offers permission.
+				</p>
 
-				<template v-if="record.status === 'pending'">
+				<template v-if="record.status === 'pending' && canDecide">
 					<h3 class="don_subhead">Decision</h3>
 					<div class="don_decisionrow">
 						<button @click="startDecision(record, 'cancel')" class="ri_formbutton">Cancel Offer</button>

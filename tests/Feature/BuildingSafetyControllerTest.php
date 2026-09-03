@@ -22,7 +22,7 @@ function signInPerson(string $first, string $last, ?string $signedInAt = null): 
 
 function kioskOperator(): Person
 {
-    $user = userWithPermissions('operate-volunteer-kiosk');
+    $user = userWithPermissions('operate-kiosk');
     $person = Person::find($user->id);
     $person->pin_hash = Hash::make('13579');
     $person->save();
@@ -31,7 +31,7 @@ function kioskOperator(): Person
 }
 
 // These routes sit behind the kiosk-access middleware (either a logged-in
-// operate-volunteer-kiosk session, or a kiosk-lock-mode device — see
+// operate-kiosk session, or a kiosk-lock-mode device — see
 // EnsureKioskAccess) on top of the PIN check BuildingSafetyController does
 // internally. Tests exercise the PIN/permission check via person_id+pin in
 // the payload, but still need *some* session to get past the outer gate —
@@ -61,7 +61,7 @@ test('occupying excludes a stale open sign-in once the building has been closed 
         ->and($stale->fresh()->signed_out_at)->toBeNull();
 });
 
-test('closeout uses the logged-in session, not a PIN, and requires operate-volunteer-kiosk', function () {
+test('closeout uses the logged-in session, not a PIN, and requires operate-kiosk', function () {
     $operator = kioskOperator();
 
     asKioskSession($operator)->postJson('/json/building-safety/closeout')
@@ -129,7 +129,7 @@ test('confirming people and closing a roll call works, and reports who is still 
     expect(BuildingRollCall::find($rollCall['id'])->closed_at)->not->toBeNull();
 });
 
-test('a person with only operate-volunteer-kiosk, no other role, can still act as a roll-call PIN candidate', function () {
+test('a person with only operate-kiosk, no other role, can still act as a roll-call PIN candidate', function () {
     // Deliberately a bare Person (no email/password) — a night security
     // officer wouldn't necessarily have a full login account. They can
     // still be the PIN actor for roll-call start/close; the kiosk-access
@@ -139,7 +139,7 @@ test('a person with only operate-volunteer-kiosk, no other role, can still act a
     $securityOfficer = Person::create(['first_name' => 'Sam', 'last_name' => 'Security']);
     $securityOfficer->pin_hash = Hash::make('11223');
     $securityOfficer->save();
-    $permission = Permission::firstOrCreate(['key' => 'operate-volunteer-kiosk'], ['name' => 'operate-volunteer-kiosk']);
+    $permission = Permission::firstOrCreate(['key' => 'operate-kiosk'], ['name' => 'operate-kiosk']);
     $securityOfficer->person_permissions()->attach($permission->id, ['granted' => true]);
 
     $matches = asKioskSession($sessionOperator)->getJson('/json/building-safety/kiosk-operators?q=Security')->assertOk()->json('records');
