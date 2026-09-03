@@ -34,6 +34,7 @@ const statusLabels = {
 	new: 'New',
 	seen: 'Acknowledged',
 	in_development: 'In Development',
+	review: 'Review',
 	resolved: 'Resolved',
 };
 
@@ -43,6 +44,7 @@ const statusLabels = {
 const actionLabels = {
 	seen: 'Acknowledge',
 	in_development: 'Start Development',
+	review: 'Ready for Review',
 	resolved: 'Resolve',
 };
 
@@ -50,13 +52,15 @@ const statusClasses = {
 	new: 'bg-gray-100 text-gray-800',
 	seen: 'bg-blue-100 text-blue-800',
 	in_development: 'bg-amber-100 text-amber-800',
+	review: 'bg-purple-100 text-purple-800',
 	resolved: 'bg-green-100 text-green-800',
 };
 
 const nextStatus = {
 	new: 'seen',
 	seen: 'in_development',
-	in_development: 'resolved',
+	in_development: 'review',
+	review: 'resolved',
 };
 
 function formatDateTime(value) {
@@ -147,7 +151,7 @@ function historyEntries(report) {
 				class="block w-full border-gray-300 rounded-md shadow-sm text-sm"
 				:placeholder="composing.isNote
 					? 'Note to add to this ticket'
-					: (composing.reopening ? 'Required: why is this being reopened?' : (composing.status === 'resolved' ? 'Required: what was done or decided' : 'Optional note to the reporter'))"
+					: (composing.reopening ? 'Required: why is this being reopened?' : (['review', 'resolved'].includes(composing.status) ? 'Required: what was done or decided' : 'Optional note to the reporter'))"
 			></textarea>
 			<div v-if="error" class="text-red-700 text-xs">{{ error }}</div>
 			<div class="flex gap-2">

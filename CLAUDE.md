@@ -231,13 +231,25 @@ saves it and emails a developer address list (`config('feedback.notify_emails')`
 `FEEDBACK_NOTIFY_EMAIL` — deliberately not tied to any permission, since recipients are developers,
 not necessarily `admin-system` holders). Triage lives at `/setup/feedback` (permission:
 `manage-feedback`, Administrator-only by default): status lifecycle is
-`new → seen → in_development → resolved` (no "won't fix" — a decision not to act is still
-`resolved`, with a comment explaining why), and every transition *or* same-status note
+`new → seen → in_development → review → resolved` (no "won't fix" — a decision not to act is still
+`resolved`, with a comment explaining why); `review` (added 2026-09-03) exists specifically so a
+deployed fix isn't automatically `resolved` — only a human, through the `/setup/feedback` UI, can
+advance a report into `review` or out of it, so a fix always gets a "does this actually work" check
+before the reporter is told it's done. Every transition *or* same-status note
 (`FeedbackReportController@update` accepts a `status` equal to the report's current status,
 specifically to support adding a comment without advancing) creates an immutable
 `FeedbackReportStatusLog` row and emails the reporter. The triage page renders full history —
 every log entry, always visible, not behind a click — distinguishing "moved to X" from "note while
 at X" purely by comparing each entry's status to the one before it, no extra column needed.
+
+A local-only `feedback-triage` Claude Code skill (`.claude/skills/feedback-triage/` — gitignored,
+never committed, see that directory's own README.md if present on this machine) reviews New and
+Acknowledged reports on the demo instance over SSH and leaves `"Comment by Claude: ..."` notes,
+moving New → Acknowledged; it never writes application code and has no path to `review`,
+`in_development`, or `resolved` — those stay human-only. Its backing artisan commands
+(`feedback:agent-list`/`feedback:agent-act`) and their migration are themselves gitignored and
+hand-deployed to the demo box only, outside the normal git-based deploy pipeline — don't expect to
+find them by grepping a fresh clone of this repo.
 
 The **site banner** (`Banner.vue`, mounted once in `AuthenticatedLayout.vue` above the nav) is a
 reusable single slot: `BannerSetting` is a singleton row (same pattern as `PinLoginSetting`) with a

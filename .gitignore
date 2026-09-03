@@ -24,3 +24,12 @@ yarn-error.log
 /.vscode
 /.zed
 .DS_Store
+
+# feedback-triage: a local-only Claude Code skill for triaging /setup/feedback
+# reports on the demo unit (see .claude/skills/feedback-triage/README.md).
+# Deliberately never committed — deployed to the demo box by hand, outside
+# git and outside the normal deploy pipeline, never to wa26.
+/.claude/skills/feedback-triage/
+/app/Console/Commands/FeedbackAgentList.php
+/app/Console/Commands/FeedbackAgentAct.php
+/database/migrations/*_add_claude_agent_system_person.php

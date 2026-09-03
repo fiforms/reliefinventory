@@ -92,13 +92,15 @@ class FeedbackReportController extends Controller
      * FeedbackReports.vue's "Add note" action) through the same endpoint;
      * either way, a FeedbackReportStatusLog row is created and the reporter
      * is notified. `new` is only valid here as a same-status note (a report
-     * can't be advanced back to New), never as a forward transition.
+     * can't be advanced back to New), never as a forward transition. `review`
+     * sits between `in_development` and `resolved` — a deployed fix lands
+     * there for a human to confirm it actually works before resolving.
      */
     public function update(Request $request, FeedbackReport $feedbackReport)
     {
         $data = $request->validate([
-            'status' => ['required', Rule::in(['new', 'seen', 'in_development', 'resolved'])],
-            'comment' => ['nullable', 'string', 'max:5000', Rule::requiredIf($request->input('status') === 'resolved')],
+            'status' => ['required', Rule::in(['new', 'seen', 'in_development', 'review', 'resolved'])],
+            'comment' => ['nullable', 'string', 'max:5000', Rule::requiredIf(in_array($request->input('status'), ['review', 'resolved'], true))],
         ]);
 
         $isTransition = $data['status'] !== $feedbackReport->status;

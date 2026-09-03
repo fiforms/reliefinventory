@@ -115,6 +115,7 @@ const statusLabels = {
 	new: 'New',
 	seen: 'Acknowledged',
 	in_development: 'In Development',
+	review: 'Review',
 	resolved: 'Resolved',
 };
 
@@ -157,8 +158,8 @@ function cancelCompose() {
 async function confirmCompose() {
 	const { reportId, status, isNote, reopening } = composing.value;
 
-	if ((isNote || status === 'resolved' || reopening) && !comment.value.trim()) {
-		error.value = isNote ? 'Enter a note to add.' : reopening ? 'Enter why this is being reopened.' : 'A resolution note is required.';
+	if ((isNote || status === 'review' || status === 'resolved' || reopening) && !comment.value.trim()) {
+		error.value = isNote ? 'Enter a note to add.' : reopening ? 'Enter why this is being reopened.' : 'A note is required.';
 		return;
 	}
 
