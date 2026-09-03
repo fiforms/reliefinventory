@@ -130,6 +130,13 @@ function printGuide() {
 						they're context for whoever works this donation next.
 					</li>
 					<li>
+						Answer <strong>Quick-Sort Candidate?</strong> — a rough, visible-only dock
+						judgment call: is this shipment mostly one item (a pallet of the same donated
+						item, for example), making it eligible for Sorting's express lane? It's not a
+						promise of exact contents — opening the container and counting is still
+						Sorting's job.
+					</li>
+					<li>
 						<strong>Save.</strong> For a Donation, the record now lets you add labels.
 					</li>
 					<li>

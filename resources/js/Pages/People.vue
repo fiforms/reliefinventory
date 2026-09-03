@@ -87,7 +87,7 @@ defineProps({
               :enabled="editing"
             />
           </div>
-          <p class="ri_hint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
+          <p class="ri_fieldhint">Provide a name (first + last) and/or an organization &mdash; at least one is required.</p>
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">This record is the organization itself:</div>
@@ -96,7 +96,7 @@ defineProps({
               :enabled="editing"
             />
           </div>
-          <p class="ri_hint">
+          <p class="ri_fieldhint">
             Check this for the org's own record (e.g. "Macedonia SDA Church") so individual contacts at
             that org can be linked to it below, instead of inferring org-vs-individual from which name
             fields happen to be filled in.
@@ -112,7 +112,7 @@ defineProps({
               :enabled="editing"
             />
           </div>
-          <p class="ri_hint">
+          <p class="ri_fieldhint">
             Set this when this person is a contact at an organization already recorded above (checked
             "This record is the organization itself"), rather than a standalone donor/recipient/contact.
           </p>
@@ -140,7 +140,7 @@ defineProps({
             />
           </div>
           <p v-if="categoryError" class="ri_error">{{ categoryError }}</p>
-          <p class="ri_hint">
+          <p class="ri_fieldhint">
             An open-ended tag for filtering the People list (Donor, Supplier, Warehouse Contact, etc.) —
             type a new one to add it. Not tied to permissions and not required.
           </p>
@@ -152,7 +152,7 @@ defineProps({
               :enabled="editing"
             />
           </div>
-          <p class="ri_hint">Scan or type the code from this person's physical badge, if issued &mdash; used for PIN-unlock badge scanning.</p>
+          <p class="ri_fieldhint">Scan or type the code from this person's physical badge, if issued &mdash; used for PIN-unlock badge scanning.</p>
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Phone:</div>
@@ -258,7 +258,7 @@ defineProps({
 				display="name"
             />
           </div>
-          <p class="ri_hint">
+          <p class="ri_fieldhint">
             Staff/login access (Administrator, Office, etc.) and permission overrides are
             managed from Setup &rarr; User Administration, not here.
           </p>
@@ -307,7 +307,7 @@ defineProps({
               :enabled="editing"
             />
           </div>
-          <p class="ri_hint">
+          <p class="ri_fieldhint">
             Whether this person is a volunteer is separate from their role &mdash; a volunteer
             can be an office manager or an administrator too. Feeds volunteer hours tracking.
           </p>

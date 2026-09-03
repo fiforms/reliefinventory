@@ -247,6 +247,19 @@ button.ri_linkbutton {
     margin: 6px 0;
 }
 
+/* Explanatory text about ONE specific field above it (RIForm's "answer to
+   this question" caption, not a general-purpose note) — indented to align
+   under .ri_formcontrol, the same column the field's own input sits in,
+   rather than starting under .ri_fieldlabel like a plain paragraph would.
+   Not the same as .ri_hint, which is unindented, general-purpose hint text
+   not tied to a specific field (a "nothing found" message, help text below
+   a whole section, etc.) — pick whichever matches what the text is about. */
+.ri_fieldhint {
+    margin: 0.25rem 0 0.75rem calc(200px + 1rem);
+    color: #555;
+    font-size: 0.85rem;
+}
+
 .ri_success {
     color: #15803d;
     margin: 6px 0;
@@ -367,5 +380,11 @@ h2.text-xl {
         width: 100%; /* flex:1 only sizes height in column layout, so give
                         controls (e.g. TileSelect's grid) a real width to
                         wrap against instead of shrinking to content */
+      }
+
+      .ri_fieldhint {
+        margin-left: 0; /* .ri_fieldlabel is full-width above the field in
+                            this stacked layout, so there's no label column
+                            left to align under. */
       }
 }

@@ -385,12 +385,6 @@ const containerTypeOptions = [
 						<div class="ri_fieldset">
 							<div class="ri_fieldlabel">Quick-Sort Candidate?</div>
 							<ChipSelect v-model="record.quick_sort_candidate" :options="yesNoOptions" :enabled="editing" />
-							<p class="ri_hint">
-								A rough, visible-only dock judgment call — is this shipment mostly one item (a
-								pallet of the same donated item, for example), making it eligible for Sorting's
-								express lane? Not a promise of exact contents — opening the container and
-								counting is still Sorting's job.
-							</p>
 						</div>
 
 						<div class="ri_fieldset">
