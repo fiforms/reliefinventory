@@ -64,13 +64,30 @@ test('the login page does not redirect to unlock for an unapproved device', func
     $response->assertOk()->assertInertia(fn ($page) => $page->component('Auth/Login'));
 });
 
-test('the login page redirects to unlock when the feature is enabled and the device is approved', function () {
+test('the login page redirects to unlock when the feature is enabled, the device is approved, and someone is trusted on it', function () {
+    enablePinLogin();
+    $device = approvedDevice();
+    $user = userWithPin();
+    DeviceTrustGrant::create(['trusted_device_id' => $device->id, 'person_id' => $user->id, 'granted_at' => now()]);
+
+    $response = $this->withCookie('pin_device_token', $device->device_token)->get('/login');
+
+    $response->assertRedirect(route('unlock'));
+});
+
+test('the login page does not redirect to unlock for an approved device nobody is trusted on', function () {
+    // A device can be admin-approved for PIN login without anyone having
+    // actually logged in on it yet (or every grant since has expired) —
+    // Unlock would just render an empty tile grid with no way to log in,
+    // so this must fall straight through to the email form instead of
+    // bouncing through a dead end. Found via a real report: hitting
+    // /login on such a device landed on a blank unlock screen.
     enablePinLogin();
     $device = approvedDevice();
 
     $response = $this->withCookie('pin_device_token', $device->device_token)->get('/login');
 
-    $response->assertRedirect(route('unlock'));
+    $response->assertOk()->assertInertia(fn ($page) => $page->component('Auth/Login'));
 });
 
 test('the login page email bypass avoids redirecting back to unlock', function () {
