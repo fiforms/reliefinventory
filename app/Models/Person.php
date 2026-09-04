@@ -134,6 +134,7 @@ class Person extends Model
         // — see PeopleController/UserAdminController's VALIDATION_RULES.
         'email_verified_at',
         'disabled_at',
+        'approved_at',
         // Explicit source-system/source-ref pair for import idempotency —
         // see the 2026_08_20 import-framework migration.
         'source_system',
@@ -150,6 +151,7 @@ class Person extends Model
         'updated_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
+        'approved_at' => 'datetime',
         'address_verified_at' => 'datetime',
         'is_volunteer' => 'boolean',
         'volunteer_active' => 'boolean',

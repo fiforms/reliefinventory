@@ -70,6 +70,7 @@ class CreateUserCommand extends Command
             $user->first_name = $firstname;
             $user->last_name = $lastname;
             $user->email_verified_at = now();
+            $user->approved_at = now();
             $user->save();
             $role = new PeopleRoles;
             $role->person_id = $user->id;

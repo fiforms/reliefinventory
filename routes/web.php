@@ -360,6 +360,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
     Route::post('/users/{id}/deactivate', [UserAdminController::class, 'deactivate']);
     Route::post('/users/{id}/reactivate', [UserAdminController::class, 'reactivate']);
     Route::post('/users/{id}/resend-invite', [UserAdminController::class, 'resendInvite']);
+    Route::post('/users/{id}/approve', [UserAdminController::class, 'approve']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {

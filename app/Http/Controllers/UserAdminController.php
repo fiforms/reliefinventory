@@ -117,6 +117,10 @@ class UserAdminController extends Controller
             // password, with no way to self-resend a verification email
             // (they've never been authenticated to reach that flow).
             'email_verified_at' => now(),
+            // Same vouching covers approval too — an admin-created account
+            // was never self-registered, so it shouldn't land in the
+            // pending-approval gate EnsureAccountApproved enforces.
+            'approved_at' => now(),
         ]);
         $this->permissionAssignment->syncRolesAndPermissions($person, $roleData, $permissionData);
 
@@ -204,9 +208,37 @@ class UserAdminController extends Controller
             // store() does for a brand-new admin-created account, so this
             // person isn't immediately re-blocked by MustVerifyEmail.
             'email_verified_at' => $person->email_verified_at ?? now(),
+            // An explicit admin action here is itself an approval — don't
+            // leave a self-registered account stuck behind
+            // EnsureAccountApproved after an admin has already vouched for
+            // it via reactivate. Never overwrites an existing approval.
+            'approved_at' => $person->approved_at ?? now(),
         ]);
 
         return response()->json(['message' => 'User reactivated.'], 200);
+    }
+
+    /**
+     * Approve a self-registered account that's been reviewed — clears the
+     * pending-approval gate (EnsureAccountApproved) without granting any
+     * roles/permissions on its own; pair with update() to assign a role.
+     *
+     * @param  int  $id
+     * @return JsonResponse
+     */
+    public function approve($id)
+    {
+        $person = Person::whereNotNull('email')->findOrFail($id);
+
+        $person->update([
+            'approved_at' => $person->approved_at ?? now(),
+            // Mirrors reactivate()'s reasoning: an admin explicitly
+            // approving this account is vouching for the address too, in
+            // case mail never delivered.
+            'email_verified_at' => $person->email_verified_at ?? now(),
+        ]);
+
+        return response()->json(['message' => 'User approved.'], 200);
     }
 
     /**

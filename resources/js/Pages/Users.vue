@@ -92,6 +92,10 @@ function statusLabel(record) {
         // an admin explicitly deactivating an already-verified account.
         return record.email_verified_at ? 'Deactivated' : 'Pending — email not verified';
     }
+    // approved_at is the separate gate EnsureAccountApproved enforces — a
+    // self-registered account can be email-verified and still fully
+    // blocked from the app until an admin approves it here.
+    if (!record.approved_at) return 'Pending approval';
     if (!record.has_password) return 'Invited — pending setup';
     return 'Active';
 }
@@ -241,6 +245,10 @@ function reactivate() {
     runAccountAction('reactivate', { disabled_at: null });
 }
 
+function approve() {
+    runAccountAction('approve', { approved_at: new Date().toISOString() });
+}
+
 function resendInvite() {
     runAccountAction('resend-invite', {});
 }
@@ -330,6 +338,12 @@ function resendInvite() {
         <p v-if="!selected.id" class="text-xs text-gray-500">
           Creating a new user sends this address an email to set their own password.
         </p>
+        <div v-if="selected.id && !selected.approved_at" class="rounded bg-amber-100 border border-amber-400 text-amber-900 px-4 py-3 text-sm">
+          This is a self-registered account nobody has approved yet — it cannot access anything
+          but the pending-review screen until you approve it below, regardless of what role or
+          permissions you set here.
+          <span v-if="selected.requested_track"> They said they're here as a <strong>{{ selected.requested_track }}</strong>.</span>
+        </div>
 
         <div class="ri_fieldset" style="display:flex; align-items:center; gap:0.5rem;">
           <Checkbox v-model="selected.is_volunteer" :enabled="true" />
@@ -393,6 +407,12 @@ function resendInvite() {
         <div v-if="selected.id" class="border-t pt-4 space-y-2">
           <h3 class="text-sm font-semibold text-gray-700">Account — {{ statusLabel(selected) }}</h3>
           <div class="flex flex-wrap gap-2">
+            <PrimaryButton
+              v-if="!selected.approved_at"
+              :disabled="accountActionBusy"
+              @click="approve"
+            >Approve</PrimaryButton>
+
             <SecondaryButton
               v-if="!selected.disabled_at"
               :disabled="accountActionBusy"
