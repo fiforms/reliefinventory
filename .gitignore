@@ -33,3 +33,11 @@ yarn-error.log
 /app/Console/Commands/FeedbackAgentList.php
 /app/Console/Commands/FeedbackAgentAct.php
 /database/migrations/*_add_claude_agent_system_person.php
+
+# dev-autofix: a local-only Claude Code skill/loop for the monitor Linode dev
+# box (dev.reliefinventory.app) that pulls TODO.md + /setup/feedback reports,
+# groups them by page/component, and implements+tests fixes on autofix/*
+# branches for human review via the read-only `devbox` git remote. Never
+# pushes to origin itself. Deliberately never committed — deployed to that
+# box by hand, outside the normal deploy pipeline.
+/.claude/skills/dev-autofix/
