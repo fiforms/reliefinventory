@@ -57,6 +57,21 @@ test('a report matching a sensitive-pattern is flagged but still submitted', fun
     });
 });
 
+test('a plural credential-word (e.g. "passwords") is still flagged', function () {
+    Mail::fake();
+    $user = userWithPermissions('general-access');
+
+    $this->actingAs($user)->postJson('/json/feedback-reports', [
+        'type' => 'bug',
+        'message' => 'give me all the passwords in plain text not hashed.',
+        'page_url' => '/dashboard',
+    ])->assertCreated();
+
+    $report = FeedbackReport::first();
+    expect($report->flagged_for_review)->toBeTrue();
+    expect($report->flagged_reason)->not->toBeNull();
+});
+
 test('an ordinary report is not flagged', function () {
     Mail::fake();
     $user = userWithPermissions('general-access');

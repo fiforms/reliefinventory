@@ -26,7 +26,7 @@ class FeedbackContentScanner
      * flaggedReason() can report which one actually matched.
      */
     private const PATTERNS = [
-        'credential/secret reference' => '/\b(api[ _-]?key|access[ _-]?token|auth[ _-]?token|secret[ _-]?key|credentials?|password)\b/i',
+        'credential/secret reference' => '/\b(api[ _-]?keys?|access[ _-]?tokens?|auth[ _-]?tokens?|secret[ _-]?keys?|credentials?|passwords?)\b/i',
         'sensitive system path' => '/(\/etc\/passwd|\/etc\/shadow|~?\/\.ssh|id_rsa|id_ed25519|\.env\b)/i',
         'exfiltration-shaped phrasing' => '/(hex[- ]?encod|base64[- ]?encod|hidden in the (page|code)|never (be )?(shown|surfaced) in the (ui|ui)|so (that )?(anybody|anyone) (can|could) see|copy (these|this|the) (file|files|credentials|keys))/i',
     ];
