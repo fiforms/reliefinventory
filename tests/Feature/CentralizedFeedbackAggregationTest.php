@@ -3,6 +3,7 @@
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
+use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\OfflineModeSetting;
 use Illuminate\Support\Facades\Http;
@@ -12,15 +13,20 @@ const CENTRAL_URL = 'https://central.example.test/json/feedback/ingest';
 
 function configureAsRemote(): void
 {
-    config([
-        'feedback.instance_role' => 'remote',
-        'feedback.central_ingest_url' => CENTRAL_URL,
-        'feedback.shared_secret' => 'test-shared-secret',
+    FeedbackAggregationSetting::current()->update([
+        'instance_role' => 'remote',
+        'central_ingest_url' => CENTRAL_URL,
+        'shared_secret' => 'test-shared-secret',
     ]);
 }
 
+function configureSharedSecret(): void
+{
+    FeedbackAggregationSetting::current()->update(['shared_secret' => 'test-shared-secret']);
+}
+
 test('central ingest upserts idempotently on (instance_identifier, uuid)', function () {
-    config(['feedback.shared_secret' => 'test-shared-secret']);
+    configureSharedSecret();
 
     $uuid = (string) Str::uuid();
     $payload = [
@@ -56,7 +62,7 @@ test('central ingest upserts idempotently on (instance_identifier, uuid)', funct
 });
 
 test('central ingest is rejected without the correct shared secret', function () {
-    config(['feedback.shared_secret' => 'test-shared-secret']);
+    configureSharedSecret();
 
     $payload = ['instance_identifier' => 'wa26.reliefinventory.app', 'reports' => [[
         'uuid' => (string) Str::uuid(), 'type' => 'bug', 'message' => 'x', 'page_url' => '/x',
@@ -69,7 +75,7 @@ test('central ingest is rejected without the correct shared secret', function ()
 });
 
 test('central ingest skips a malformed report but still stores the valid ones in the same batch', function () {
-    config(['feedback.shared_secret' => 'test-shared-secret']);
+    configureSharedSecret();
 
     $goodUuid = (string) Str::uuid();
     $payload = [

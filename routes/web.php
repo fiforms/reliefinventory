@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\FeedbackAggregationSetting;
 use App\Models\KioskLocation;
 use App\Models\KioskSetting;
 use App\Models\MenuItem;
@@ -203,7 +204,7 @@ Route::get('/setup/feedback', function () {
         // Submitted/Not Sent badges + the "Send Unsent Reports" action are a
         // remote-instance-only concept — central's own local reports about
         // itself are trivially "submitted" (they don't go anywhere).
-        'instanceRole' => config('feedback.instance_role'),
+        'instanceRole' => FeedbackAggregationSetting::current()->instance_role,
     ]);
 })->middleware(['auth', 'permission:manage-feedback']);
 
@@ -770,6 +771,11 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-fe
     // 'central' instance or one with no central_ingest_url configured.
     Route::post('/feedback-reports/send-unsent', [FeedbackReportController::class, 'sendUnsent']);
     Route::put('/banner-settings', [BannerSettingController::class, 'update']);
+    // Admin-editable centralized feedback aggregation settings (instance
+    // role/identifier, central ingest URL, shared secret) — see
+    // FeedbackAggregationSetting; gated the same as this whole page.
+    Route::get('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'show']);
+    Route::put('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'update']);
 });
 
 // Central-side ingest for centralized feedback aggregation — instance-to-

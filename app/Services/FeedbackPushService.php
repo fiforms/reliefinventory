@@ -5,6 +5,7 @@
 
 namespace App\Services;
 
+use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\OfflineModeSetting;
 use Illuminate\Support\Collection;
@@ -42,9 +43,7 @@ class FeedbackPushService
      */
     public function configured(): bool
     {
-        return config('feedback.instance_role') === 'remote'
-            && filled(config('feedback.central_ingest_url'))
-            && filled(config('feedback.shared_secret'));
+        return FeedbackAggregationSetting::current()->pushConfigured();
     }
 
     /**
@@ -98,10 +97,12 @@ class FeedbackPushService
      */
     private function push(Collection $reports): int
     {
+        $settings = FeedbackAggregationSetting::current();
+
         try {
             $response = Http::timeout(10)
-                ->withHeaders(['X-Feedback-Shared-Secret' => config('feedback.shared_secret')])
-                ->post(config('feedback.central_ingest_url'), [
+                ->withHeaders(['X-Feedback-Shared-Secret' => $settings->shared_secret])
+                ->post($settings->central_ingest_url, [
                     'instance_identifier' => $this->instanceIdentifier(),
                     'reports' => $reports->map(fn (FeedbackReport $r) => $this->serialize($r))->all(),
                 ]);
@@ -149,16 +150,12 @@ class FeedbackPushService
     /**
      * Defaults to this instance's own APP_URL host — matches how page_url
      * already captures instance identity per CLAUDE.md's feedback section.
-     * Override via FEEDBACK_INSTANCE_IDENTIFIER when APP_URL isn't a
-     * stable/meaningful identifier for this instance.
+     * Override via the Instance identifier field on /setup/feedback's
+     * aggregation settings when APP_URL isn't a stable/meaningful
+     * identifier for this instance.
      */
     public function instanceIdentifier(): string
     {
-        $configured = config('feedback.instance_identifier');
-        if (filled($configured)) {
-            return $configured;
-        }
-
-        return parse_url(config('app.url'), PHP_URL_HOST) ?: config('app.url');
+        return FeedbackAggregationSetting::current()->resolvedIdentifier();
     }
 }

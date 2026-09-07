@@ -91,7 +91,8 @@ class FeedbackReportController extends Controller
      * every currently-unsubmitted local report in one batch, bypassing
      * Offline Mode by design (see FeedbackPushService::pushUnsent). A no-op,
      * not an error, when central isn't configured (e.g. this is a 'central'
-     * instance, or a remote one that hasn't set FEEDBACK_CENTRAL_INGEST_URL).
+     * instance, or a remote one with no central ingest URL set on
+     * /setup/feedback's aggregation settings).
      */
     public function sendUnsent()
     {

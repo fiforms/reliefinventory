@@ -5,6 +5,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\FeedbackAggregationSetting;
 use Closure;
 use Illuminate\Http\Request;
 
@@ -13,15 +14,16 @@ use Illuminate\Http\Request;
  * on a shared secret instead of `permission:` — this is instance-to-
  * instance traffic, not a logged-in person, so there's no Person to check a
  * permission against. Both instances in a remote/central pair must be
- * configured with the same feedback.shared_secret; if this instance has
- * none configured, ingest is refused outright (a central instance that
- * never set one hasn't opted into receiving pushes from anywhere).
+ * configured with the same shared secret (see FeedbackAggregationSetting,
+ * admin-editable at /setup/feedback); if this instance has none configured,
+ * ingest is refused outright (a central instance that never set one hasn't
+ * opted into receiving pushes from anywhere).
  */
 class VerifyFeedbackIngestSecret
 {
     public function handle(Request $request, Closure $next)
     {
-        $configured = (string) config('feedback.shared_secret');
+        $configured = (string) FeedbackAggregationSetting::current()->shared_secret;
         $provided = (string) $request->header('X-Feedback-Shared-Secret');
 
         if ($configured === '' || $provided === '' || ! hash_equals($configured, $provided)) {

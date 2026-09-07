@@ -24,7 +24,8 @@
 	large enough to need server-side filtering.
 
 	Centralized feedback aggregation (2026-09-06): on a 'remote' instance
-	(instanceRole prop, from config('feedback.instance_role')), each locally-
+	(instanceRole prop, initially from FeedbackAggregationSetting, kept in
+	sync client-side once the settings panel below loads), each locally-
 	created report shows a Submitted/Not Sent badge (FeedbackReportCard.vue),
 	and "Send Unsent Reports" sends every not-yet-submitted report in one
 	batch — the only retry mechanism; there's no background retry. Hidden
@@ -32,10 +33,20 @@
 	report ingested from a remote instance instead shows a "from: <instance>"
 	badge and falls back to a denormalized reporter name/email, since central
 	has no Person record for it.
+
+	Aggregation settings (2026-09-07): instance role/identifier, central
+	ingest URL, and shared secret used to be env-only (FEEDBACK_INSTANCE_ROLE
+	etc.) — now admin-editable here via /json/feedback-aggregation-settings
+	(FeedbackAggregationSettingsController), stored in
+	feedback_aggregation_settings (FeedbackAggregationSetting), same
+	singleton-row pattern as PinLoginSetting/BannerSetting. The shared secret
+	is never round-tripped back to the client after save — the panel only
+	ever shows whether one is currently set, and a blank field on save
+	leaves it unchanged.
 -->
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { onMounted, computed, ref } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import FeedbackReportCard from '@/Components/FeedbackReportCard.vue';
@@ -45,6 +56,59 @@ const props = defineProps({
 	breadcrumb: { type: Array },
 	instanceRole: { type: String, default: 'remote' },
 });
+
+// Local, mutable copy — the prop is just the page's initial render; once the
+// settings panel loads/saves, this is what the rest of the page (the "Send
+// Unsent Reports" button's visibility) actually follows.
+const currentInstanceRole = ref(props.instanceRole);
+
+const aggregationSettings = ref(null); // { instance_role, instance_identifier, central_ingest_url, shared_secret_set }
+const aggregationForm = ref({ instance_role: 'remote', instance_identifier: '', central_ingest_url: '', shared_secret: '' });
+const aggregationLoading = ref(true);
+const aggregationSaving = ref(false);
+const aggregationError = ref(null);
+const aggregationSaved = ref(false);
+
+async function fetchAggregationSettings() {
+	aggregationLoading.value = true;
+	try {
+		const response = await axios.get('/json/feedback-aggregation-settings');
+		aggregationSettings.value = response.data.settings;
+		aggregationForm.value = {
+			instance_role: response.data.settings.instance_role,
+			instance_identifier: response.data.settings.instance_identifier || '',
+			central_ingest_url: response.data.settings.central_ingest_url || '',
+			shared_secret: '',
+		};
+		currentInstanceRole.value = response.data.settings.instance_role;
+	} finally {
+		aggregationLoading.value = false;
+	}
+}
+
+async function saveAggregationSettings() {
+	aggregationSaving.value = true;
+	aggregationError.value = null;
+	aggregationSaved.value = false;
+	try {
+		const response = await axios.put('/json/feedback-aggregation-settings', {
+			instance_role: aggregationForm.value.instance_role,
+			instance_identifier: aggregationForm.value.instance_identifier.trim() || null,
+			central_ingest_url: aggregationForm.value.central_ingest_url.trim() || null,
+			shared_secret: aggregationForm.value.shared_secret.trim() || null,
+		});
+		aggregationSettings.value = response.data.settings;
+		aggregationForm.value.shared_secret = '';
+		currentInstanceRole.value = response.data.settings.instance_role;
+		aggregationSaved.value = true;
+	} catch (e) {
+		aggregationError.value = e.response?.data?.message || 'Could not save these settings.';
+	} finally {
+		aggregationSaving.value = false;
+	}
+}
+
+onMounted(fetchAggregationSettings);
 
 const reports = ref([]);
 const loading = ref(true);
@@ -223,10 +287,84 @@ async function confirmCompose() {
 		<div class="max-w-4xl mx-auto p-4 space-y-6">
 			<h1 class="text-2xl font-bold">Feedback & Bug Reports</h1>
 
+			<details class="bg-white shadow rounded-lg p-6">
+				<summary class="cursor-pointer text-lg font-semibold select-none">Centralized Aggregation Settings</summary>
+
+				<div class="mt-4 space-y-4">
+					<p class="text-sm text-gray-500">
+						Every instance's own feedback flow works standalone regardless of these — only set
+						these up if this instance should push its own reports to a central triage instance,
+						or should <em>be</em> that central instance.
+					</p>
+
+					<p v-if="aggregationLoading" class="text-gray-500 text-sm">Loading settings…</p>
+
+					<form v-else class="space-y-4" @submit.prevent="saveAggregationSettings">
+						<label class="block text-sm">
+							<span class="text-gray-700">Role</span>
+							<select v-model="aggregationForm.instance_role" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+								<option value="remote">Remote — pushes its reports to a central instance</option>
+								<option value="central">Central — receives pushes from remote instances</option>
+							</select>
+						</label>
+
+						<label class="block text-sm">
+							<span class="text-gray-700">Instance identifier (optional)</span>
+							<input
+								type="text"
+								v-model="aggregationForm.instance_identifier"
+								placeholder="Defaults to this instance's own URL host"
+								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+							/>
+						</label>
+
+						<label v-if="aggregationForm.instance_role === 'remote'" class="block text-sm">
+							<span class="text-gray-700">Central ingest URL</span>
+							<input
+								type="url"
+								v-model="aggregationForm.central_ingest_url"
+								placeholder="https://central.example.org/json/feedback/ingest"
+								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+							/>
+						</label>
+
+						<label class="block text-sm">
+							<span class="text-gray-700">
+								Shared secret
+								<span v-if="aggregationSettings?.shared_secret_set" class="text-green-600">(currently set)</span>
+								<span v-else class="text-gray-400">(not set)</span>
+							</span>
+							<input
+								type="password"
+								v-model="aggregationForm.shared_secret"
+								placeholder="Leave blank to keep the current secret"
+								autocomplete="new-password"
+								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
+							/>
+							<span class="text-xs text-gray-400">
+								Both instances in a remote/central pair must be configured with the same secret.
+							</span>
+						</label>
+
+						<div class="flex items-center gap-3">
+							<button
+								type="submit"
+								class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md disabled:bg-gray-400"
+								:disabled="aggregationSaving"
+							>
+								{{ aggregationSaving ? 'Saving…' : 'Save Settings' }}
+							</button>
+							<span v-if="aggregationSaved" class="text-sm text-green-600">Saved.</span>
+							<span v-if="aggregationError" class="text-sm text-red-600">{{ aggregationError }}</span>
+						</div>
+					</form>
+				</div>
+			</details>
+
 			<section class="bg-white shadow rounded-lg p-6 space-y-4">
 				<div class="flex items-center justify-between gap-4 flex-wrap">
 					<h2 class="text-lg font-semibold">Reports</h2>
-					<div v-if="instanceRole === 'remote'" class="flex items-center gap-3">
+					<div v-if="currentInstanceRole === 'remote'" class="flex items-center gap-3">
 						<button
 							class="text-xs font-medium text-blue-600 underline disabled:text-gray-400 disabled:no-underline"
 							:disabled="sendingUnsent"
@@ -295,7 +433,7 @@ async function confirmCompose() {
 						v-for="report in activeReports"
 						:key="report.id"
 						:report="report"
-						:instance-role="instanceRole"
+						:instance-role="currentInstanceRole"
 						:composing="composing"
 						:comment="comment"
 						:error="error"
@@ -321,7 +459,7 @@ async function confirmCompose() {
 								v-for="report in resolvedReports"
 								:key="report.id"
 								:report="report"
-								:instance-role="instanceRole"
+								:instance-role="currentInstanceRole"
 								:composing="composing"
 								:comment="comment"
 								:error="error"
