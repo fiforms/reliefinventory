@@ -22,6 +22,16 @@
 	`reports` list (same "no extra endpoint, derive options from what's
 	loaded" approach as People.vue's donor search) — the report list isn't
 	large enough to need server-side filtering.
+
+	Centralized feedback aggregation (2026-09-06): on a 'remote' instance
+	(instanceRole prop, from config('feedback.instance_role')), each locally-
+	created report shows a Submitted/Not Sent badge (FeedbackReportCard.vue),
+	and "Send Unsent Reports" sends every not-yet-submitted report in one
+	batch — the only retry mechanism; there's no background retry. Hidden
+	entirely on a 'central' instance, where this concept doesn't apply. A
+	report ingested from a remote instance instead shows a "from: <instance>"
+	badge and falls back to a denormalized reporter name/email, since central
+	has no Person record for it.
 -->
 
 <script setup>
@@ -31,8 +41,9 @@ import { Head } from '@inertiajs/vue3';
 import FeedbackReportCard from '@/Components/FeedbackReportCard.vue';
 import axios from 'axios';
 
-defineProps({
+const props = defineProps({
 	breadcrumb: { type: Array },
+	instanceRole: { type: String, default: 'remote' },
 });
 
 const reports = ref([]);
@@ -87,7 +98,7 @@ const filteredReports = computed(() => {
 		if (filterPage.value && (report.page_title || report.page_url) !== filterPage.value) return false;
 		if (text) {
 			const commentText = (report.status_logs || []).map((log) => log.comment).filter(Boolean);
-			const haystack = [report.message, report.page_title, report.page_url, report.person?.full_name, ...commentText]
+			const haystack = [report.message, report.page_title, report.page_url, report.person?.full_name, report.reporter_name, report.instance_identifier, ...commentText]
 				.filter(Boolean)
 				.join(' ')
 				.toLowerCase();
@@ -127,6 +138,34 @@ async function fetchReports() {
 }
 
 onMounted(fetchReports);
+
+// "Send Unsent Reports": the only retry mechanism for centralized feedback
+// aggregation. Deliberately available even when Offline Mode is on — this
+// button IS the explicit "I have a connectivity window right now" override,
+// so it doesn't check that setting client-side either.
+const sendingUnsent = ref(false);
+const sendUnsentMessage = ref(null);
+
+async function sendUnsentReports() {
+	sendingUnsent.value = true;
+	sendUnsentMessage.value = null;
+	try {
+		const response = await axios.post('/json/feedback-reports/send-unsent');
+		const { attempted, total, sent } = response.data;
+		if (!attempted) {
+			sendUnsentMessage.value = 'Central push isn\'t configured on this instance.';
+		} else if (total === 0) {
+			sendUnsentMessage.value = 'Nothing to send — every report is already submitted.';
+		} else {
+			sendUnsentMessage.value = `Sent ${sent} of ${total} report${total === 1 ? '' : 's'}.`;
+		}
+		await fetchReports();
+	} catch (e) {
+		sendUnsentMessage.value = e.response?.data?.message || 'Could not reach central — try again later.';
+	} finally {
+		sendingUnsent.value = false;
+	}
+}
 
 function startAdvance(reportId, status) {
 	composing.value = { reportId, status, isNote: false };
@@ -185,7 +224,19 @@ async function confirmCompose() {
 			<h1 class="text-2xl font-bold">Feedback & Bug Reports</h1>
 
 			<section class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Reports</h2>
+				<div class="flex items-center justify-between gap-4 flex-wrap">
+					<h2 class="text-lg font-semibold">Reports</h2>
+					<div v-if="instanceRole === 'remote'" class="flex items-center gap-3">
+						<button
+							class="text-xs font-medium text-blue-600 underline disabled:text-gray-400 disabled:no-underline"
+							:disabled="sendingUnsent"
+							@click="sendUnsentReports"
+						>
+							{{ sendingUnsent ? 'Sending…' : 'Send Unsent Reports' }}
+						</button>
+						<span v-if="sendUnsentMessage" class="text-xs text-gray-500">{{ sendUnsentMessage }}</span>
+					</div>
+				</div>
 
 				<div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm items-end">
 					<label class="block">
@@ -244,6 +295,7 @@ async function confirmCompose() {
 						v-for="report in activeReports"
 						:key="report.id"
 						:report="report"
+						:instance-role="instanceRole"
 						:composing="composing"
 						:comment="comment"
 						:error="error"
@@ -269,6 +321,7 @@ async function confirmCompose() {
 								v-for="report in resolvedReports"
 								:key="report.id"
 								:report="report"
+								:instance-role="instanceRole"
 								:composing="composing"
 								:comment="comment"
 								:error="error"

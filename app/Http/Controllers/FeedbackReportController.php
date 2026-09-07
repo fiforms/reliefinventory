@@ -10,6 +10,7 @@ use App\Mail\FeedbackReportSubmitted;
 use App\Models\FeedbackReport;
 use App\Models\FeedbackReportStatusLog;
 use App\Services\FeedbackContentScanner;
+use App\Services\FeedbackPushService;
 use App\Services\GitVersionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,6 +31,7 @@ class FeedbackReportController extends Controller
     public function __construct(
         private GitVersionService $gitVersion,
         private FeedbackContentScanner $contentScanner,
+        private FeedbackPushService $pushService,
     ) {}
 
     public function index()
@@ -75,7 +77,25 @@ class FeedbackReportController extends Controller
 
         $this->notifyDevelopers($report);
 
+        // Best-effort head start on getting this to central — a single
+        // synchronous attempt, no-op if not configured/enabled right now
+        // (see FeedbackPushService::autoPushEnabled). "Send Unsent Reports"
+        // always exists to send anything this misses.
+        $this->pushService->pushOne($report);
+
         return response()->json(['record' => $report], 201);
+    }
+
+    /**
+     * The only retry mechanism for centralized feedback aggregation — sends
+     * every currently-unsubmitted local report in one batch, bypassing
+     * Offline Mode by design (see FeedbackPushService::pushUnsent). A no-op,
+     * not an error, when central isn't configured (e.g. this is a 'central'
+     * instance, or a remote one that hasn't set FEEDBACK_CENTRAL_INGEST_URL).
+     */
+    public function sendUnsent()
+    {
+        return response()->json($this->pushService->pushUnsent());
     }
 
     public function screenshot(FeedbackReport $feedbackReport)
@@ -149,7 +169,7 @@ class FeedbackReportController extends Controller
 
     private function notifyReporter(FeedbackReportStatusLog $log, bool $isTransition): void
     {
-        $email = $log->feedbackReport->person->email ?? null;
+        $email = $log->feedbackReport->reporterEmail();
         if (! $email) {
             return;
         }

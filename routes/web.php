@@ -198,8 +198,13 @@ Route::get('/setup/pin-login', function () {
 })->middleware(['auth', 'permission:general-access']);
 
 Route::get('/setup/feedback', function () {
-    return Inertia::render('FeedbackReports',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback')]);
+    return Inertia::render('FeedbackReports', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback'),
+        // Submitted/Not Sent badges + the "Send Unsent Reports" action are a
+        // remote-instance-only concept — central's own local reports about
+        // itself are trivially "submitted" (they don't go anywhere).
+        'instanceRole' => config('feedback.instance_role'),
+    ]);
 })->middleware(['auth', 'permission:manage-feedback']);
 
 Route::get('/setup/banner', function () {
@@ -760,8 +765,18 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-fe
     Route::get('/feedback-reports', [FeedbackReportController::class, 'index']);
     Route::get('/feedback-reports/{feedbackReport}/screenshot', [FeedbackReportController::class, 'screenshot']);
     Route::patch('/feedback-reports/{feedbackReport}', [FeedbackReportController::class, 'update']);
+    // The only retry mechanism for centralized feedback aggregation — see
+    // FeedbackPushService::pushUnsent(). A no-op (but not an error) on a
+    // 'central' instance or one with no central_ingest_url configured.
+    Route::post('/feedback-reports/send-unsent', [FeedbackReportController::class, 'sendUnsent']);
     Route::put('/banner-settings', [BannerSettingController::class, 'update']);
 });
+
+// Central-side ingest for centralized feedback aggregation — instance-to-
+// instance, gated by a shared secret rather than a logged-in person's
+// permissions. See FeedbackIngestController and VerifyFeedbackIngestSecret.
+Route::post('/json/feedback/ingest', [FeedbackIngestController::class, 'store'])
+    ->middleware('feedback-ingest-secret');
 
 // Import: upload/preview/commit are manage-import; viewing/deleting batch
 // history is split into admin-import (both Administrator-only by default,
