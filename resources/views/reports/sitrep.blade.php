@@ -169,6 +169,26 @@
         @endif
     </div>
 
+    @php
+        $zipShown = count($data['zip_breakdown']['rows']);
+        $zipTotal = $data['zip_breakdown']['zip_count'];
+    @endphp
+    <div class="section">
+        <h2>Orders by Zip @if($zipShown < $zipTotal)(top {{ $zipShown }} of {{ $zipTotal }})@endif</h2>
+        @if($zipShown)
+            <table>
+                <thead><tr><th>Zip</th><th class="num">Orders</th></tr></thead>
+                <tbody>
+                    @foreach($data['zip_breakdown']['rows'] as $row)
+                        <tr><td>{{ $row['zip'] }}</td><td class="num">{{ $row['count'] }}</td></tr>
+                    @endforeach
+                </tbody>
+            </table>
+        @else
+            <p>No orders placed yet.</p>
+        @endif
+    </div>
+
     <div class="section">
         <h2>Stock on Hand</h2>
         <div class="stat_row"><span>Item types stocked</span><strong>{{ $data['inventory_summary']['item_types_with_stock'] }}</strong></div>

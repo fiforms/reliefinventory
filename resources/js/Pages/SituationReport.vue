@@ -56,6 +56,16 @@ export default {
 			if (!this.data) return [];
 			return this.data.county_breakdown.map((c) => ({ label: c.county, value: c.count }));
 		},
+		zipRows() {
+			if (!this.data) return [];
+			return this.data.zip_breakdown.rows.map((z) => ({ label: z.zip, value: z.count }));
+		},
+		zipTitle() {
+			if (!this.data) return 'Orders by Zip';
+			const total = this.data.zip_breakdown.zip_count;
+			const shown = this.data.zip_breakdown.rows.length;
+			return shown < total ? `Orders by Zip (top ${shown} of ${total})` : 'Orders by Zip';
+		},
 		categoryRows() {
 			if (!this.data) return [];
 			return this.data.inventory_summary.top_categories.map((c) => ({ label: c.category, value: c.units }));
@@ -112,6 +122,7 @@ export default {
 				<BarBreakdownCard title="Orders in Progress" :rows="orderPipelineRows" />
 
 				<BarBreakdownCard title="Orders by County" :rows="countyRows" empty-text="No orders placed yet." />
+				<BarBreakdownCard :title="zipTitle" :rows="zipRows" empty-text="No orders placed yet." />
 				<BarBreakdownCard title="Stock by Category" :rows="categoryRows" empty-text="No stock on hand yet." />
 
 				<div class="sr_card">

@@ -30,7 +30,7 @@ test('the situation report never includes names, donor quality, or anything beyo
 
     $response->assertJsonStructure([
         'orders_fulfilled', 'donations_completed', 'orders_trend', 'donations_trend',
-        'pipeline', 'county_breakdown', 'inventory_summary', 'generated_at',
+        'pipeline', 'county_breakdown', 'zip_breakdown' => ['rows', 'zip_count'], 'inventory_summary', 'generated_at',
     ]);
     $response->assertJsonMissingPath('donor_quality');
 

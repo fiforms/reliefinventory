@@ -137,3 +137,32 @@ test('order county breakdown groups by partner county without exposing names', f
         ->and($breakdown->firstWhere('county', 'Unspecified')['count'])->toBe(1)
         ->and(json_encode($breakdown->all()))->not->toContain('A')->not->toContain('B');
 });
+
+test('order zip breakdown groups by partner zip without exposing names, capped with a total count', function () {
+    $withZip = Person::create(['first_name' => 'A', 'last_name' => 'B', 'zip' => '28677']);
+    $noZip = Person::create(['first_name' => 'C', 'last_name' => 'D']);
+
+    makeOrderAt(Transaction::STATUS_NEW_ORDER, now(), $withZip);
+    makeOrderAt(Transaction::STATUS_NEW_ORDER, now(), $withZip);
+    makeOrderAt(Transaction::STATUS_NEW_ORDER, now(), $noZip);
+
+    $breakdown = (new WarehouseMetrics)->orderZipBreakdown();
+    $rows = collect($breakdown['rows']);
+
+    expect($rows->firstWhere('zip', '28677')['count'])->toBe(2)
+        ->and($rows->firstWhere('zip', 'Unspecified')['count'])->toBe(1)
+        ->and($breakdown['zip_count'])->toBe(2)
+        ->and(json_encode($rows->all()))->not->toContain('A')->not->toContain('B');
+});
+
+test('order zip breakdown caps rows to the given limit but still reports the true zip count', function () {
+    foreach (range(1, 5) as $i) {
+        $person = Person::create(['first_name' => 'P'.$i, 'zip' => sprintf('%05d', 10000 + $i)]);
+        makeOrderAt(Transaction::STATUS_NEW_ORDER, now(), $person);
+    }
+
+    $breakdown = (new WarehouseMetrics)->orderZipBreakdown(limit: 3);
+
+    expect($breakdown['rows'])->toHaveCount(3)
+        ->and($breakdown['zip_count'])->toBe(5);
+});
