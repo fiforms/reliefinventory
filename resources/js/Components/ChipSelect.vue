@@ -21,7 +21,9 @@ const props = defineProps({
 		default: null,
 	},
 	options: {
-		// [{ value, label }]
+		// [{ value, label, title? }] — title is an optional native hover
+		// tooltip for a chip whose label alone doesn't say enough (e.g.
+		// disambiguating two similarly-named categories).
 		type: Array,
 		required: true,
 	},
@@ -61,6 +63,7 @@ function select(value) {
 			class="chipselect_chip"
 			:class="{ chipselect_chip_active: isActive(option.value) }"
 			:disabled="!enabled"
+			:title="option.title"
 			@click="select(option.value)"
 		>
 			{{ option.label }}

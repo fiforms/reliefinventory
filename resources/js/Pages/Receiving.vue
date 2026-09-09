@@ -34,10 +34,21 @@ defineProps({
 	},
 });
 
+// Equipment and Supplies are both for the warehouse's own operational use
+// (never distributed to partners/recipients, unlike Donation) — the
+// distinction between the two is easy to miss, hence the hover tooltip.
 const categoryOptions = [
 	{ id: 'donation', name: 'Donation' },
-	{ id: 'equipment', name: 'Equipment' },
-	{ id: 'supplies', name: 'Supplies' },
+	{
+		id: 'equipment',
+		name: 'Equipment',
+		title: 'Durable items the warehouse itself uses long-term (shelving, pallet jacks, tools, computers) — not for distribution.',
+	},
+	{
+		id: 'supplies',
+		name: 'Supplies',
+		title: 'Consumables the warehouse itself uses up (packing tape, gloves, cleaning supplies, printer paper) — not for distribution.',
+	},
 	{ id: 'other', name: 'Other' },
 ];
 
@@ -198,7 +209,7 @@ const containerTypeOptions = [
 							<div class="ri_fieldlabel">Category:</div>
 							<ChipSelect
 								v-model="record.category"
-								:options="categoryOptions.map((o) => ({ value: o.id, label: o.name }))"
+								:options="categoryOptions.map((o) => ({ value: o.id, label: o.name, title: o.title }))"
 								:enabled="editing"
 							/>
 						</div>

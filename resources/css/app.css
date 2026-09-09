@@ -128,6 +128,16 @@ button.ri_floating, a.ri_floating {
   margin-right: 0.75em;
 }
 
+/* A page can put more than one button/link in #titleactions (e.g.
+   Receiving.vue's "Pre-print Labels" button next to its "Donation Offers"
+   link) — the adjacent-sibling button spacing rule above only covers
+   same-tag pairs (button+button, a+a), so a <button> directly followed by
+   an <a> (or vice versa) got no gap at all. This covers every pairing
+   inside the slot regardless of element type. */
+.ri_titleactions > * + * {
+  margin-left: 0.5em;
+}
+
 button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton,
 a.ri_defaultbutton, a.ri_formbutton, a.ri_deletebutton {
   display: inline-block;

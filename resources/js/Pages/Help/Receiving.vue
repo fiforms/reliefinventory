@@ -92,10 +92,14 @@ function printGuide() {
 					</li>
 					<li>
 						Pick a <strong>Category</strong> — Donation, Equipment, Supplies, or Other.
-						Equipment and supply deliveries are for items the warehouse itself will use, not
-						donations that will be distributed. Only Donations get labels tracked through
-						sorting; the others are logged for the record but don't flow into the sorting
-						queue.
+						<strong>Equipment</strong> and <strong>Supplies</strong> are both for items the
+						warehouse itself will use, not donations that will be distributed to partners or
+						recipients — hover either chip on the Receiving screen for a reminder. The
+						difference between the two: Equipment is durable stuff the warehouse keeps and
+						reuses (shelving, pallet jacks, tools, computers); Supplies are consumables the
+						warehouse uses up (packing tape, gloves, cleaning supplies, printer paper). Only
+						Donations get labels tracked through sorting; the others are logged for the
+						record but don't flow into the sorting queue.
 					</li>
 					<li>
 						Search for the <strong>Donor/Source</strong> by name or organization. If they're
