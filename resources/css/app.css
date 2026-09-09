@@ -2,6 +2,14 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Single source of truth for spacing between action buttons/links, wherever
+   they appear — RIForm's list-actions bar, its form-actions bar, its
+   title-actions slot, and the standalone adjacent-sibling fallback below all
+   read this instead of each picking their own gap, which is what let three
+   different-looking spacings (14px, 0.75rem, 0.5em) coexist across the app. */
+:root {
+  --ri-action-gap: 0.75rem;
+}
 
 /* Container Styling */
 .ri_form_container {
@@ -38,7 +46,7 @@
 .ri_listactions {
   display: flex;
   align-items: center;
-  gap: 14px;
+  gap: var(--ri-action-gap);
   flex-wrap: wrap;
   margin-bottom: 12px;
   font-size: 0.9rem;
@@ -115,17 +123,21 @@ button.ri_deletebutton.ri_confirming, a.ri_deletebutton.ri_confirming {
   background-color: #b91c1c;
 }
 
-button.ri_floating, a.ri_floating {
-	  float: right;
-}
-
-/* Wraps RIForm's #titleactions slot — floats alongside the default
-   New Record-style button with a gap between them, so a page-supplied
-   button (e.g. Receiving.vue's "Donation Offers" link) doesn't butt up
-   against it. */
+/* Title-bar action group: the default New Record-style button plus whatever
+   a page supplies via #titleactions (e.g. Receiving.vue's "Pre-print Labels"
+   and "Donation Offers") all render as children of this one span now, so
+   they share a single --ri-action-gap between every pair regardless of how
+   many there are or what tag they use — previously the New Record button
+   lived outside this container as a float:right sibling, so the gap next to
+   it came from this span's own margin-right (in em, off the h2's larger
+   font-size) rather than the gap used between buttons inside it, which is
+   why the two gaps used to look different. */
 .ri_titleactions {
   float: right;
   margin-right: 0.75em;
+  display: flex;
+  align-items: center;
+  gap: var(--ri-action-gap);
 }
 
 button.ri_defaultbutton, button.ri_formbutton, button.ri_deletebutton,
@@ -163,7 +175,7 @@ a.ri_formbutton + a.ri_deletebutton,
 a.ri_deletebutton + a.ri_defaultbutton,
 a.ri_deletebutton + a.ri_formbutton,
 a.ri_deletebutton + a.ri_deletebutton {
-  margin-left: 0.5em;
+  margin-left: var(--ri-action-gap);
 }
 
 /* Solid-color buttons have no border, so the browser's default focus
@@ -186,7 +198,7 @@ button.ri_deletebutton:focus, a.ri_deletebutton:focus {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 0.75rem;
+  gap: var(--ri-action-gap);
   margin-top: 1.25rem;
   padding-top: 1rem;
   border-top: 1px solid #e5e7eb;

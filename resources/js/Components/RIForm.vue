@@ -18,7 +18,7 @@
 
       <RIForm ... newrecordcaption="Record an Intake">
         <template #titleactions>
-          <Link href="/related-page" class="ri_defaultbutton ri_floating">Related Page</Link>
+          <Link href="/related-page" class="ri_defaultbutton">Related Page</Link>
         </template>
         ...
       </RIForm>
@@ -125,9 +125,9 @@
   <div class="ri_form_container">
     <div v-if="!record" class="ri_datatable_container">
       <h2 class="ri_datatable_head">{{ title }}
-        <button @click="newRecord()" class="ri_defaultbutton ri_floating">{{ newrecordcaption }}</button>
-        <span v-if="$slots.titleactions" class="ri_titleactions">
+        <span class="ri_titleactions">
           <slot name="titleactions"></slot>
+          <button @click="newRecord()" class="ri_defaultbutton">{{ newrecordcaption }}</button>
         </span>
       </h2>
       <div v-if="$slots.listactions" class="ri_listactions">

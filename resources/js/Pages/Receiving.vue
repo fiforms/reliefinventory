@@ -34,10 +34,21 @@ defineProps({
 	},
 });
 
+// Equipment and Supplies are both for the warehouse's own operational use
+// (never distributed to partners/recipients, unlike Donation) — the
+// distinction between the two is easy to miss, hence the hover tooltip.
 const categoryOptions = [
 	{ id: 'donation', name: 'Donation' },
-	{ id: 'equipment', name: 'Equipment' },
-	{ id: 'supplies', name: 'Supplies' },
+	{
+		id: 'equipment',
+		name: 'Equipment',
+		title: 'Durable items the warehouse itself uses long-term (shelving, pallet jacks, tools, computers) — not for distribution.',
+	},
+	{
+		id: 'supplies',
+		name: 'Supplies',
+		title: 'Consumables the warehouse itself uses up (packing tape, gloves, cleaning supplies, printer paper) — not for distribution.',
+	},
 	{ id: 'other', name: 'Other' },
 ];
 
@@ -97,8 +108,8 @@ const containerTypeOptions = [
 			@new="onOpenRecord"
 		>
 			<template #titleactions>
-				<button type="button" class="ri_defaultbutton ri_floating" @click="preprintOpen = true">Pre-print Labels</button>
-				<Link href="/receiving/offers" class="ri_defaultbutton ri_floating">Donation Offers</Link>
+				<button type="button" class="ri_defaultbutton" @click="preprintOpen = true">Pre-print Labels</button>
+				<Link href="/receiving/offers" class="ri_defaultbutton">Donation Offers</Link>
 
 				<Modal :show="preprintOpen" @close="preprintOpen = false" max-width="sm">
 					<div class="p-6 space-y-4">
@@ -162,6 +173,7 @@ const containerTypeOptions = [
 
 			<template #default="{ record, editing, templates }">
 				<template v-if="wizardStep === 'details'">
+					<a href="/help/receiving" target="_blank" class="recv_helplink recv_helplink_form">Help: Receiving Guide</a>
 					<div class="ri_formtable">
 						<div class="ri_fieldset" v-if="!record.id">
 							<div class="ri_fieldlabel">Does this match a phoned-in offer?</div>
@@ -198,7 +210,7 @@ const containerTypeOptions = [
 							<div class="ri_fieldlabel">Category:</div>
 							<ChipSelect
 								v-model="record.category"
-								:options="categoryOptions.map((o) => ({ value: o.id, label: o.name }))"
+								:options="categoryOptions.map((o) => ({ value: o.id, label: o.name, title: o.title }))"
 								:enabled="editing"
 							/>
 						</div>
@@ -1178,6 +1190,11 @@ export default {
 	text-decoration: underline;
 	font-size: 0.9em;
 	align-self: center;
+}
+.recv_helplink_form {
+	display: block;
+	text-align: right;
+	margin-bottom: 0.75rem;
 }
 
 /* Cancel (left) and Next (right), pushed to opposite ends and given real
