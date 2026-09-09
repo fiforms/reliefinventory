@@ -31,6 +31,11 @@ import { Head } from '@inertiajs/vue3';
 import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
 import QrScanner from '@/Components/QrScanner.vue';
 import TextArea from '@/Components/TextArea.vue';
+import TextInput from '@/Components/TextInput.vue';
+import Modal from '@/Components/Modal.vue';
+import InputLabel from '@/Components/InputLabel.vue';
+import PrimaryButton from '@/Components/PrimaryButton.vue';
+import SecondaryButton from '@/Components/SecondaryButton.vue';
 import axios from 'axios';
 
 const DISPOSITIONS = [
@@ -41,7 +46,7 @@ const DISPOSITIONS = [
 ];
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner, TextArea },
+	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -63,6 +68,12 @@ export default {
 			notice: null,
 			editingDonor: false,
 			confirmingComplete: false,
+
+			// donor quick-add
+			creatingDonor: false,
+			newDonor: { first_name: '', last_name: '', organization: '' },
+			donorSaving: false,
+			donorError: null,
 
 			// pallet context
 			palletTagInput: '',
@@ -188,6 +199,25 @@ export default {
 			const name = [person.first_name, person.last_name].filter(Boolean).join(' ');
 			return person.organization ? person.organization + (name ? ' - ' + name : '') : name || '(unnamed)';
 		},
+		// A completed donation's "Date" and "Completed By" come from when it
+		// actually finished sorting, not from Receiving's own order_date /
+		// entered_by (the dock clerk who logged it in, not the sorter) —
+		// status_changed_at tracks the Complete transition itself, and the
+		// per-line item_ledgers.person_user rows (stamped per line since
+		// Order Filling/Picking) name whoever actually sorted it, which may
+		// be more than one person across a session.
+		completedDateLabel(record) {
+			return record.status_changed_at ? new Date(record.status_changed_at).toLocaleString() : record.order_date;
+		},
+		completedByLabel(record) {
+			const names = [...new Set(
+				(record.item_ledgers || [])
+					.map((line) => line.person_user)
+					.filter(Boolean)
+					.map((person) => this.personLabel(person))
+			)];
+			return names.length ? names.join(', ') : this.personLabel(record.entered_by);
+		},
 
 		// ---------- session header autosave ----------
 		async patchSession(fields) {
@@ -212,6 +242,39 @@ export default {
 		},
 		donorIdPendingChanged() {
 			this.patchSession({ donor_identification_pending: this.session.donor_identification_pending });
+		},
+
+		// ---------- donor quick-add ----------
+		startNewDonor(name) {
+			this.creatingDonor = true;
+			this.donorError = null;
+			const parts = (name || '').trim().split(/\s+/);
+			this.newDonor = {
+				first_name: parts[0] || '',
+				last_name: parts.slice(1).join(' '),
+				organization: parts.length <= 1 ? (name || '') : '',
+			};
+		},
+		async saveNewDonor() {
+			this.donorError = null;
+			const hasName = this.newDonor.first_name.trim() && this.newDonor.last_name.trim();
+			const hasOrg = (this.newDonor.organization || '').trim();
+			if (!hasName && !hasOrg) {
+				this.donorError = 'Enter a name (first and last) or an organization.';
+				return;
+			}
+			this.donorSaving = true;
+			try {
+				const response = await axios.post('/json/people', this.newDonor);
+				invalidateOptions('/json/people');
+				await this.$refs.donorSelect?.refresh(response.data.record.id);
+				this.creatingDonor = false;
+				this.donorSelected(response.data.record);
+			} catch (error) {
+				this.donorError = error.response?.data?.message || 'Could not save donor.';
+			} finally {
+				this.donorSaving = false;
+			}
 		},
 		async completeSession() {
 			// Two-step inline confirm when lines haven't reached the server.
@@ -568,13 +631,13 @@ export default {
 				<p v-if="!sessions.recent.length && !listLoading">No completed sorting sessions yet.</p>
 				<div v-else class="sort_tablewrap"><table class="ri_datatable" border="1">
 					<thead>
-						<tr><th>Date</th><th>Sorted By</th><th>Donor</th><th>Lines</th><th>Items</th></tr>
+						<tr><th>Completed</th><th>Completed By</th><th>Donor</th><th>Lines</th><th>Items</th></tr>
 					</thead>
 					<tbody>
 						<tr v-for="record in sessions.recent" :key="record.id"
 							class="sort_rowlink" @click="resumeSession(record.id)">
-							<td>{{ record.order_date }}</td>
-							<td>{{ personLabel(record.entered_by) }}</td>
+							<td>{{ completedDateLabel(record) }}</td>
+							<td>{{ completedByLabel(record) }}</td>
 							<td>
 							{{ personLabel(record.person) }}
 							<span v-if="record.donor_identification_pending" class="sort_badge_id">donor ID pending</span>
@@ -632,13 +695,38 @@ export default {
 					</template>
 					<SearchSelect
 						v-else
+						ref="donorSelect"
 						v-model="session.person_id"
 						optionsource="/json/people"
 						display="search_label"
 						:searchfields="['organization', 'first_name', 'last_name']"
 						placeholder="Search donors..."
+						:allowcreate="true"
 						@selected="donorSelected"
+						@create="startNewDonor"
 					/>
+					<Modal :show="creatingDonor" @close="creatingDonor = false" max-width="sm">
+						<div class="p-6 space-y-4">
+							<h2 class="text-lg font-semibold">New Donor</h2>
+							<div>
+								<InputLabel value="First Name" />
+								<TextInput v-model="newDonor.first_name" class="mt-1 block w-full" autofocus />
+							</div>
+							<div>
+								<InputLabel value="Last Name" />
+								<TextInput v-model="newDonor.last_name" class="mt-1 block w-full" />
+							</div>
+							<div>
+								<InputLabel value="Organization" />
+								<TextInput v-model="newDonor.organization" class="mt-1 block w-full" />
+							</div>
+							<p v-if="donorError" class="text-sm text-red-700">{{ donorError }}</p>
+							<div class="flex justify-end gap-3">
+								<SecondaryButton :disabled="donorSaving" @click="creatingDonor = false">Cancel</SecondaryButton>
+								<PrimaryButton :disabled="donorSaving" @click="saveNewDonor">Save Donor</PrimaryButton>
+							</div>
+						</div>
+					</Modal>
 				</div>
 				<div class="sort_field">
 					<label>Comments:</label>

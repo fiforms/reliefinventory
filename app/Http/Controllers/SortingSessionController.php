@@ -37,6 +37,7 @@ class SortingSessionController extends Controller
         'status',
         'itemLedgers.item.itemtype',
         'itemLedgers.pallet',
+        'itemLedgers.personUser',
     ];
 
     private const LINE_VALIDATION = [
