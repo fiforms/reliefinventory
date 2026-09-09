@@ -166,6 +166,21 @@ Route::get('/setup/locations', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations')]);
 })->middleware(['auth', 'permission:manage-locations']);
 
+// TODO.md item 5: admin UI for the units table (/json/units already
+// existed, gated the same way, with no page bound to it).
+Route::get('/setup/units', function () {
+    return Inertia::render('Units',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/units')]);
+})->middleware(['auth', 'permission:manage-units']);
+
+// Feedback #43: admin UI for the packagetypes table (/json/packagetypes
+// already existed, gated the same way, with no page bound to it — see
+// PackageTypeController's fixed validation rules for the underlying bug).
+Route::get('/setup/package-types', function () {
+    return Inertia::render('PackageTypes',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/package-types')]);
+})->middleware(['auth', 'permission:manage-packagetypes']);
+
 Route::get('/setup/system', function () {
     return Inertia::render('SystemAdmin',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/system')]);

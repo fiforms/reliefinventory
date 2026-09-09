@@ -1,25 +1,30 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
 use App\Models\Unit;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Validation\Rule;
 
 class UnitController extends Controller
 {
-    private const VALIDATION_RULES = [
-        'abbreviation' => 'required|string|unique:units,abbreviation',
-        'name' => 'required|string|unique:units,name',
-        'type' => 'required|in:weight,volume,each,other',
-    ];
+    private function validationRules(?int $ignoreId = null): array
+    {
+        return [
+            'abbreviation' => ['required', 'string', Rule::unique('units', 'abbreviation')->ignore($ignoreId)],
+            'name' => ['required', 'string', Rule::unique('units', 'name')->ignore($ignoreId)],
+            'type' => 'required|in:weight,volume,each,other',
+        ];
+    }
 
     /**
      * Retrieve all units.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index()
     {
@@ -40,12 +45,11 @@ class UnitController extends Controller
     /**
      * Store a new unit.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
-        $data = $request->validate(self::VALIDATION_RULES);
+        $data = $request->validate($this->validationRules());
         Unit::create($data);
 
         return response()->json([
@@ -56,14 +60,13 @@ class UnitController extends Controller
     /**
      * Update an existing unit.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
         $unit = Unit::findOrFail($id);
-        $data = $request->validate(self::VALIDATION_RULES);
+        $data = $request->validate($this->validationRules($unit->id));
         $unit->update($data);
 
         return response()->json([
@@ -74,8 +77,8 @@ class UnitController extends Controller
     /**
      * Delete a unit.
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {

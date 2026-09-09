@@ -147,7 +147,7 @@ const itemSort = computed(() => (a, b) => {
 			  /> 
 		  </div>
 		  <div class="ri_fieldset">
-		    <div class="ri_fieldlabel">Measured By</div>
+		    <div class="ri_fieldlabel">Default Ordering Unit</div>
 		    <ComboBox
 		  		v-model:keyValue="record.unit_id"
 		  					v-model:updates="record.unit"
