@@ -8,6 +8,7 @@ use App\Http\Middleware\EnsureAccountApproved;
 use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\TrackSessionActivity;
+use App\Http\Middleware\VerifyFeedbackIngestSecret;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -30,8 +31,15 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permission' => CheckPermission::class,
             'kiosk-access' => EnsureKioskAccess::class,
+            'feedback-ingest-secret' => VerifyFeedbackIngestSecret::class,
         ]);
 
+        // Instance-to-instance feedback ingest has no session/cookie to carry
+        // a CSRF token — it's authenticated by shared secret instead (see
+        // VerifyFeedbackIngestSecret).
+        $middleware->validateCsrfTokens(except: [
+            'json/feedback/ingest',
+        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // Someone re-opening an old email-verification link from Mail hours

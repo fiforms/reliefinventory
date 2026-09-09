@@ -23,4 +23,9 @@ return [
         explode(',', env('FEEDBACK_NOTIFY_EMAIL', ''))
     ))),
 
+    // Centralized feedback aggregation (instance role, identifier, central
+    // ingest URL, shared secret) moved from env vars here to an
+    // admin-editable settings panel on /setup/feedback — see
+    // FeedbackAggregationSetting.
+
 ];

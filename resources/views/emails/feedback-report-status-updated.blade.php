@@ -5,7 +5,7 @@
     $report = $log->feedbackReport;
 @endphp
 
-<p>Hi {{ $report->person->full_name }},</p>
+<p>Hi {{ $report->reporterFullName() }},</p>
 
 @if ($isTransition)
 <p>

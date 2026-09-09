@@ -10,6 +10,14 @@
 	v-model, with the actual transition/note actions passed in as callback
 	props rather than emits, since they're plain function calls with no
 	extra event payload shaping needed.
+
+	Centralized feedback aggregation (2026-09-06): a report ingested from a
+	remote instance carries `instance_identifier` (shown as a "from:" badge)
+	and no `person` — display falls back to the denormalized reporter_name/
+	reporter_email captured at ingest. The Submitted/Not Sent badge is the
+	opposite case: a report created *locally* (no instance_identifier) on a
+	'remote' instance (instanceRole prop), showing whether central has
+	acknowledged it yet (report.submitted_at).
 -->
 
 <script setup>
@@ -18,6 +26,7 @@ import { uaSummary } from '@/userAgent';
 
 const props = defineProps({
 	report: { type: Object, required: true },
+	instanceRole: { type: String, default: 'remote' },
 	composing: { type: Object, default: null },
 	comment: { type: String, default: '' },
 	error: { type: String, default: null },
@@ -101,7 +110,17 @@ function historyEntries(report) {
 					<span class="px-2 py-0.5 rounded text-xs font-medium" :class="statusClasses[report.status]">
 						{{ statusLabels[report.status] }}
 					</span>
-					<span class="text-gray-500">{{ report.person?.full_name }}</span>
+					<span
+						v-if="instanceRole === 'remote' && !report.instance_identifier"
+						class="px-2 py-0.5 rounded text-xs font-medium"
+						:class="report.submitted_at ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-600'"
+					>
+						{{ report.submitted_at ? 'Submitted' : 'Not Sent' }}
+					</span>
+					<span v-if="report.instance_identifier" class="px-2 py-0.5 rounded text-xs font-medium bg-indigo-100 text-indigo-800">
+						from: {{ report.instance_identifier }}
+					</span>
+					<span class="text-gray-500">{{ report.person?.full_name || report.reporter_name }}</span>
 					<span class="text-gray-400 font-mono text-xs">{{ report.page_title || report.page_url }}</span>
 				</div>
 				<p class="text-sm text-gray-700 mt-1">{{ report.message }}</p>
@@ -125,7 +144,7 @@ function historyEntries(report) {
 		<div class="mt-3 pl-4 border-l-2 border-gray-200 space-y-2">
 			<div class="rounded border bg-gray-50 px-3 py-2 text-xs">
 				<span class="font-semibold">Submitted<template v-if="report.urgent"> - URGENT</template></span>
-				by {{ report.person?.full_name }}
+				by {{ report.person?.full_name || report.reporter_name }}
 				<span class="text-gray-400">— {{ formatDateTime(report.created_at) }}</span>
 			</div>
 			<div
