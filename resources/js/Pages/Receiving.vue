@@ -108,8 +108,8 @@ const containerTypeOptions = [
 			@new="onOpenRecord"
 		>
 			<template #titleactions>
-				<button type="button" class="ri_defaultbutton ri_floating" @click="preprintOpen = true">Pre-print Labels</button>
-				<Link href="/receiving/offers" class="ri_defaultbutton ri_floating">Donation Offers</Link>
+				<button type="button" class="ri_defaultbutton" @click="preprintOpen = true">Pre-print Labels</button>
+				<Link href="/receiving/offers" class="ri_defaultbutton">Donation Offers</Link>
 
 				<Modal :show="preprintOpen" @close="preprintOpen = false" max-width="sm">
 					<div class="p-6 space-y-4">
@@ -173,6 +173,7 @@ const containerTypeOptions = [
 
 			<template #default="{ record, editing, templates }">
 				<template v-if="wizardStep === 'details'">
+					<a href="/help/receiving" target="_blank" class="recv_helplink recv_helplink_form">Help: Receiving Guide</a>
 					<div class="ri_formtable">
 						<div class="ri_fieldset" v-if="!record.id">
 							<div class="ri_fieldlabel">Does this match a phoned-in offer?</div>
@@ -1189,6 +1190,11 @@ export default {
 	text-decoration: underline;
 	font-size: 0.9em;
 	align-self: center;
+}
+.recv_helplink_form {
+	display: block;
+	text-align: right;
+	margin-bottom: 0.75rem;
 }
 
 /* Cancel (left) and Next (right), pushed to opposite ends and given real

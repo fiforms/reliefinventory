@@ -515,7 +515,7 @@ export default {
 		<div v-if="view === 'list'" class="sort_container">
 			<h2 class="ri_datatable_head">
 				Donation Sorting
-				<button @click="startSession()" class="ri_defaultbutton ri_floating">Start Sorting (untagged)</button>
+				<button @click="startSession()" class="ri_defaultbutton">Start Sorting (untagged)</button>
 			</h2>
 
 			<p v-if="listError" class="sort_error">{{ listError }}</p>

@@ -21,9 +21,11 @@ const props = defineProps({
 		default: null,
 	},
 	options: {
-		// [{ value, label, title? }] — title is an optional native hover
-		// tooltip for a chip whose label alone doesn't say enough (e.g.
-		// disambiguating two similarly-named categories).
+		// [{ value, label, title? }] — title is an optional hover tooltip
+		// for a chip whose label alone doesn't say enough (e.g.
+		// disambiguating two similarly-named categories). Rendered as a
+		// custom CSS tooltip rather than the native `title` attribute,
+		// whose ~1s browser-default hover delay isn't adjustable.
 		type: Array,
 		required: true,
 	},
@@ -63,7 +65,7 @@ function select(value) {
 			class="chipselect_chip"
 			:class="{ chipselect_chip_active: isActive(option.value) }"
 			:disabled="!enabled"
-			:title="option.title"
+			:data-tooltip="option.title || null"
 			@click="select(option.value)"
 		>
 			{{ option.label }}
@@ -101,5 +103,38 @@ function select(value) {
 .chipselect_chip_active:hover:not(:disabled) {
 	background: #0056b3;
 	border-color: #0056b3;
+}
+
+/* Custom tooltip, not the native title attribute — Chrome/Firefox's default
+   hover delay before a title tooltip appears (~0.7-1s) reads as sluggish;
+   this shows in 150ms instead, via animation-delay (chosen over :hover
+   transition-delay so keyboard focus gets the same timing). */
+.chipselect_chip[data-tooltip] {
+	position: relative;
+}
+.chipselect_chip[data-tooltip]:hover::after,
+.chipselect_chip[data-tooltip]:focus-visible::after {
+	content: attr(data-tooltip);
+	position: absolute;
+	bottom: calc(100% + 8px);
+	left: 0;
+	width: max-content;
+	max-width: 240px;
+	white-space: normal;
+	background: #333;
+	color: white;
+	padding: 6px 10px;
+	border-radius: 6px;
+	font-size: 0.75rem;
+	line-height: 1.3;
+	z-index: 30;
+	opacity: 0;
+	pointer-events: none;
+	animation: chipselect_tooltip_in 0.1s ease-out 150ms forwards;
+}
+@keyframes chipselect_tooltip_in {
+	to {
+		opacity: 1;
+	}
 }
 </style>
