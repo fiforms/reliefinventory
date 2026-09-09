@@ -18,8 +18,11 @@ function orderPartner(): Person
 
 function orderItemtype(string $name = 'Bottled Water'): ItemType
 {
-    // the units table has no timestamp columns, so insert directly
-    $unitId = DB::table('units')->insertGetId(['name' => 'Case', 'abbreviation' => 'cs']);
+    // the units table has no timestamp columns, so insert directly.
+    // firstOrCreate (not insertGetId), since a "Case" unit is now
+    // real seeded/migrated data, not something only this test creates.
+    $unitId = DB::table('units')->where('name', 'Case')->value('id')
+        ?? DB::table('units')->insertGetId(['name' => 'Case', 'abbreviation' => 'cs']);
     $category = Category::firstOrCreate(['name' => 'Beverages']);
 
     return ItemType::create(['name' => $name, 'unit_id' => $unitId, 'category_id' => $category->id]);

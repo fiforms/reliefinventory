@@ -22,7 +22,10 @@ function bolPartner(): Person
 
 function bolItemtype(): ItemType
 {
-    $unitId = DB::table('units')->where('abbreviation', 'cs')->value('id')
+    // Look up by name (not abbreviation) — a "Case" unit is now real
+    // seeded/migrated data with its own abbreviation ("case"), so an
+    // abbreviation='cs' lookup would miss it and re-insert a colliding name.
+    $unitId = DB::table('units')->where('name', 'Case')->value('id')
         ?? DB::table('units')->insertGetId(['name' => 'Case', 'abbreviation' => 'cs']);
     $category = Category::firstOrCreate(['name' => 'Beverages']);
 

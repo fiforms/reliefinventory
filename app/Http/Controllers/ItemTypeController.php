@@ -7,7 +7,9 @@ namespace App\Http\Controllers;
 
 use App\Helpers\UPCGenerator;
 use App\Models\ItemType;
+use App\Models\PackageType;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class ItemTypeController extends Controller
@@ -91,7 +93,7 @@ class ItemTypeController extends Controller
                 'items' => [],
             ],
             'items' => [
-                'packagetype_id' => null,
+                'packagetypes_id' => null,
                 'pluscode' => '0000',
                 'size' => null,
                 'case_qty' => null,
@@ -143,23 +145,40 @@ class ItemTypeController extends Controller
             }
         }
 
-        $itemType = ItemType::create($data);
-
-        $genericItem = [
-            'packagetypes_id' => 1, // Assuming default package type ID
-            'pluscode' => '0000',
-            'size' => 1.0,
-            'case_qty' => 1,
-            'active' => 1,
-            'description' => $itemType->name.' GENERIC ITEM',
-        ];
-
-        // No UPC to generate until this item type has a real family.
-        if ($itemType->family) {
-            $genericItem['upc'] = UPCGenerator::makeUPC($itemType->family, $itemType->variant);
+        // Feedback #43: this used to hardcode packagetypes_id => 1
+        // ("assuming default package type ID") — if package type 1 had
+        // ever been deleted or reordered, the FK-constrained insert below
+        // would throw, and (since this wasn't wrapped in a transaction)
+        // leave a half-created ItemType with no items behind it. Resolve
+        // the lowest existing id instead of assuming one.
+        $defaultPackageTypeId = PackageType::orderBy('id')->value('id');
+        if (! $defaultPackageTypeId) {
+            return response()->json([
+                'errors' => ['items' => ['No package types exist yet — add one under Setup before creating an item type.']],
+            ], 422);
         }
 
-        $itemType->items()->create($genericItem);
+        $itemType = DB::transaction(function () use ($data, $defaultPackageTypeId) {
+            $itemType = ItemType::create($data);
+
+            $genericItem = [
+                'packagetypes_id' => $defaultPackageTypeId,
+                'pluscode' => '0000',
+                'size' => 1.0,
+                'case_qty' => 1,
+                'active' => 1,
+                'description' => $itemType->name.' GENERIC ITEM',
+            ];
+
+            // No UPC to generate until this item type has a real family.
+            if ($itemType->family) {
+                $genericItem['upc'] = UPCGenerator::makeUPC($itemType->family, $itemType->variant);
+            }
+
+            $itemType->items()->create($genericItem);
+
+            return $itemType;
+        });
 
         return response()->json($itemType, 201);
     }
