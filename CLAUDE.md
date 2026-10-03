@@ -7,7 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Relief Inventory: a Laravel 11 + Inertia.js + Vue 3 warehouse management system for tracking donated
 goods in disaster relief (originally built with Adventist Community Services). Core workflow: donations
 come in tagged to pallets, get sorted into a ledger of items, and are later picked against orders from
-distribution points, with full source (donor/pallet) traceability.
+distribution points. Source (donor/pallet) is recorded at sort time — what each donation/pallet contained and
+in what condition — but stock is pooled by item type once sorted, so a shelf item or a filled order line can't
+be traced back to a specific donor or pallet (no recall-style item tracing; don't claim it in docs or copy).
 
 `PROJECT_ANALYSIS.md` at the repo root is a detailed audit of known defects and a phased completion plan
 — read it before starting non-trivial work here. Most of Phase 0/1's original defect list is now fixed
@@ -104,7 +106,8 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   find-it-later reminder. A donation flagged this way stays visible in Receiving's list even past
   `Complete`, or it would silently age out the moment enough other donations pass through.
 - `item_ledgers` — the append-only ledger of item movement (`qty_added`/`qty_subtracted` style), the
-  source of truth for inventory. Carries `pallet_id` for source traceability and a `disposition` field
+  source of truth for inventory. Carries `pallet_id` on sorting's addition rows (per-donation/pallet provenance — fill/subtraction rows
+  don't carry it, since stock is pooled once sorted) and a `disposition` field
   (usable/outdated/trashed/diverted) from scan-driven sorting — only `usable` counts toward stock-on-hand;
   the others feed donor-quality reporting. `WarehouseMetrics` (`app/Services`) and
   `InventoryReportController` both aggregate this ledger (usable additions − subtractions) — that used to
