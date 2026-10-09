@@ -1,0 +1,3 @@
+[submodule "kiosk/reliefkiosk"]
+	path = kiosk/reliefkiosk
+	url = git@github.com:fiforms/slideannouncer.git
