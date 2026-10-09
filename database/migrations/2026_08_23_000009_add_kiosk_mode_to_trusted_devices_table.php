@@ -33,7 +33,10 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('trusted_devices', function (Blueprint $table) {
-            $table->dropColumn(['kiosk_mode', 'kiosk_mode_enabled_at', 'kiosk_mode_enabled_by_person_id']);
+            // MariaDB won't drop a column (and its backing index) while a
+            // foreign key still references it.
+            $table->dropConstrainedForeignId('kiosk_mode_enabled_by_person_id');
+            $table->dropColumn(['kiosk_mode', 'kiosk_mode_enabled_at']);
         });
     }
 };

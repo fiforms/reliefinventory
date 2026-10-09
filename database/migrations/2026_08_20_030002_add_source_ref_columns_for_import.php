@@ -32,8 +32,8 @@ return new class extends Migration
     public function down(): void
     {
         foreach (['people', 'itemtypes', 'orderdonations'] as $table) {
-            Schema::table($table, function (Blueprint $blueprint) {
-                $blueprint->dropIndex([$table.'_source_system_source_ref_index']);
+            Schema::table($table, function (Blueprint $blueprint) use ($table) {
+                $blueprint->dropIndex($table.'_source_system_source_ref_index');
                 $blueprint->dropColumn(['source_system', 'source_ref']);
             });
         }
