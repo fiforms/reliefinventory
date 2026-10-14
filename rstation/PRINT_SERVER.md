@@ -1,20 +1,20 @@
-# Print server plan (kiosk fleet)
+# Print server plan (R Station fleet)
 
 See also [IMPLEMENTATION.md](IMPLEMENTATION.md) for the wider kiosk product notes.
 
-Status: **planned, not built** (written 2026-10-08). Depends on the kiosk fleet management
+Status: **planned, not built** (written 2026-10-08). Depends on the R Station fleet management
 server half, which exists as of the same date but hasn't been run against a real device yet —
 see `app/Http/Controllers/DevicePairController.php` / `DeviceHeartbeatController.php`,
-`routes/api.php`, `/setup/devices`, and `kiosk/reliefkiosk/docs/DEVICE_CONTRACT.md`.
+`routes/api.php`, `/setup/devices`, and `rstation/platform/docs/DEVICE_CONTRACT.md`.
 
 ## Goal
 
 Let people print from the web app without ever connecting a printer to the device they're
 using (phones, tablets, laptops where drivers are difficult or unfriendly). The printer is
-attached to a reliefkiosk Pi at a physical workspace; the web app keeps a server-side print
+attached to a R Station Pi at a physical workspace; the web app keeps a server-side print
 queue, and the Pi at that workspace polls it and prints automatically.
 
-Example: a job needs a "Label Printer" at "Workspace A" → the reliefkiosk device at Workspace A
+Example: a job needs a "Label Printer" at "Workspace A" → the R Station device at Workspace A
 claims it and prints it on its attached label printer.
 
 ## Shape
@@ -66,7 +66,7 @@ interface (`http://localhost:631`) rather than a UI we build. The product shims 
 device's on-device settings shell, so staff reach it from the same Settings screens as Wi-Fi and
 audio, and we don't reimplement driver/PPD selection.
 
-- **Reaching it:** link from the product's settings pages (`kiosk/product/frontend/`) to the CUPS
+- **Reaching it:** link from the product's settings pages (`rstation/product/frontend/`) to the CUPS
   UI. The kiosk's Chromium is on the device itself, so `localhost:631` works directly; if we'd
   rather it live under the same origin/URL scheme as the rest of the settings shell, proxy it
   through the platform's nginx (e.g. `/cups/` → `127.0.0.1:631`). If proxying, CUPS checks the
@@ -75,7 +75,7 @@ audio, and we don't reimplement driver/PPD selection.
   interface, no remote printer sharing. Admin actions need a CUPS admin user (`lpadmin` group);
   provision one in the image build and gate the settings entry behind the shell's existing PIN
   lock.
-- **Our own pieces** (`kiosk/product/backend/` + `frontend/`) are the glue between CUPS and the
+- **Our own pieces** (`rstation/product/backend/` + `frontend/`) are the glue between CUPS and the
   website, not a replacement for the CUPS UI:
   - backend lists the CUPS queues (via `lpstat`/pycups) and their state (idle, offline, out of
     media) and includes them in the heartbeat as `print_printers`;
@@ -95,8 +95,8 @@ audio, and we don't reimplement driver/PPD selection.
   already defined in `config/devices.php` as headless): poll → claim → fetch → `lp`/CUPS →
   report. Keep working from local retries through network drops; never print the same job twice
   (claim ID is the idempotency key).
-- Because the platform is consumed as an unmodified submodule (`kiosk/reliefkiosk`), all of this
-  lives in `kiosk/product`, not the submodule.
+- Because the platform is consumed as an unmodified submodule (`rstation/platform`), all of this
+  lives in `rstation/product`, not the submodule.
 
 ## Open questions
 

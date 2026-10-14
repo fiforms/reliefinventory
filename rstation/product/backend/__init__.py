@@ -1,4 +1,4 @@
-"""Minimal example product: a kiosk that opens a remote portal.
+"""Minimal example product: an R Station that opens a remote portal.
 
 Shows each backend seam in a few lines — a router, a status field and data
 riding on the heartbeat. Copy this directory as a starting point; see

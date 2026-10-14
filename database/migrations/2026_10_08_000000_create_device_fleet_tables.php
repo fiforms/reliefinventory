@@ -10,8 +10,8 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Server side of the reliefkiosk device management contract
- * (kiosk/reliefkiosk/docs/DEVICE_CONTRACT.md): paired Raspberry Pi kiosks,
+ * Server side of the R Station device management contract
+ * (rstation/platform/docs/DEVICE_CONTRACT.md): paired Raspberry Pi kiosks,
  * their single-use pairing codes, and the uploaded app/OS releases offered
  * to them. Named managed_devices, not "devices"/"kiosk_*", to stay clear of
  * trusted_devices (browser PIN-login trust) and kiosk_locations (the
@@ -98,7 +98,7 @@ return new class extends Migration
         if ($kioskSettings) {
             MenuItem::create([
                 'page_id' => $kioskSettings->page_id,
-                'link_text' => 'Kiosk Devices',
+                'link_text' => 'R Station Devices',
                 'link_url' => '/setup/devices',
                 'graphic_url' => '/img/edit-users-icon.webp',
                 'order' => 65,

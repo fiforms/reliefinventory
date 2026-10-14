@@ -8,8 +8,8 @@ use App\Http\Controllers\DeviceHeartbeatController;
 use App\Http\Controllers\DevicePairController;
 use Illuminate\Support\Facades\Route;
 
-// Server half of kiosk/reliefkiosk/docs/DEVICE_CONTRACT.md. The device's
-// product sets api_base = /api/devices (kiosk/product/backend/__init__.py);
+// Server half of rstation/platform/docs/DEVICE_CONTRACT.md. The device's
+// product sets api_base = /api/devices (rstation/product/backend/__init__.py);
 // the liveness probe is the framework's /up, outside this prefix, as the
 // contract specifies.
 Route::prefix('devices')->group(function () {

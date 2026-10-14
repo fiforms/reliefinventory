@@ -864,10 +864,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ki
     Route::post('/sign-in-categories', [SignInCategoryController::class, 'store']);
 });
 
-// Kiosk device fleet (reliefkiosk, DEVICE_CONTRACT.md): the admin page and
+// R Station device fleet (DEVICE_CONTRACT.md): the admin page and
 // its JSON. The device-facing endpoints are in routes/api.php.
 Route::get('/setup/devices', function () {
-    return Inertia::render('KioskDevices',
+    return Inertia::render('RStationDevices',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/devices')]);
 })->middleware(['auth', 'permission:manage-devices']);
 

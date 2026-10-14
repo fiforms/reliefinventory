@@ -1,8 +1,8 @@
-# Kiosk implementation notes
+# R Station implementation notes
 
-Working notes (started 2026-10-08) on what the Relief Inventory kiosk product needs beyond the
-stock reliefkiosk platform. Companion to [PRINT_SERVER.md](PRINT_SERVER.md). Everything here lives
-in `kiosk/product` (or the web app), not in the `kiosk/reliefkiosk` submodule — except where a
+Working notes (started 2026-10-08) on what the Relief Inventory R Station product needs beyond the
+stock R Station platform. Companion to [PRINT_SERVER.md](PRINT_SERVER.md). Everything here lives
+in `rstation/product` (or the web app), not in the `rstation/platform` submodule — except where a
 note says the platform itself would need a change, which then goes upstream. Items are ideas and
 decisions, not built, unless marked otherwise.
 
@@ -72,7 +72,7 @@ of several sites, chosen at setup time on the device itself.
   site just sees a new device).
 - **Kiosk URL follows the site:** the browser's target page is `server_url` + the heartbeat's
   `kiosk_path` (see `config/devices.php`), not the placeholder `KIOSK_URL` baked into
-  `kiosk/product/image/product.env`. The product's frontend/launcher needs to read the
+  `rstation/product/image/product.env`. The product's frontend/launcher needs to read the
   heartbeat-cached `kiosk_path` and navigate there, falling back to the local settings home when
   none is configured or the site is unreachable (ties into §1).
 
