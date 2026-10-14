@@ -10,7 +10,7 @@ use Illuminate\Database\Eloquent\Model;
 /** Single-use, short-lived 6-digit code a staff member generates for a location and types on a new kiosk. */
 class DevicePairingCode extends Model
 {
-    protected $fillable = ['code', 'kiosk_location_id', 'created_by', 'expires_at'];
+    protected $fillable = ['code', 'kiosk_location_id', 'created_by', 'expires_at', 'used_at', 'managed_device_id'];
 
     protected $casts = [
         'expires_at' => 'datetime',

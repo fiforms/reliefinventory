@@ -9,7 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 
 /**
- * A paired reliefkiosk Raspberry Pi — see DEVICE_CONTRACT.md. The bearer
+ * A paired R Station Raspberry Pi — see DEVICE_CONTRACT.md. The bearer
  * token is only ever stored as a sha256 hash; revocation (revoked_at, or a
  * nulled hash) makes every authenticated call 401, which tells the device
  * to wipe itself and return to setup.
@@ -18,7 +18,7 @@ class ManagedDevice extends Model
 {
     protected $fillable = [
         'name', 'kiosk_location_id', 'update_channel', 'os_auto_update_enabled', 'kiosk_function',
-        'language',
+        'language', 'revoked_at',
     ];
 
     protected $casts = [
