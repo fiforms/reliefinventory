@@ -864,6 +864,27 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ki
     Route::post('/sign-in-categories', [SignInCategoryController::class, 'store']);
 });
 
+// R Station device fleet (DEVICE_CONTRACT.md): the admin page and
+// its JSON. The device-facing endpoints are in routes/api.php.
+Route::get('/setup/devices', function () {
+    return Inertia::render('RStationDevices',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/devices')]);
+})->middleware(['auth', 'permission:manage-devices']);
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-devices']], function () {
+    Route::get('/managed-devices', [ManagedDeviceController::class, 'index']);
+    Route::put('/managed-devices/{managedDevice}', [ManagedDeviceController::class, 'update']);
+    Route::post('/managed-devices/{managedDevice}/revoke', [ManagedDeviceController::class, 'revoke']);
+    Route::delete('/managed-devices/{managedDevice}', [ManagedDeviceController::class, 'destroy']);
+    Route::post('/device-pairing-codes', [ManagedDeviceController::class, 'createPairingCode']);
+
+    Route::get('/device-releases', [DeviceReleaseController::class, 'index']);
+    Route::post('/device-releases', [DeviceReleaseController::class, 'store']);
+    Route::post('/device-releases/{deviceRelease}/tag', [DeviceReleaseController::class, 'tag']);
+    Route::post('/device-releases/{deviceRelease}/untag', [DeviceReleaseController::class, 'untag']);
+    Route::delete('/device-releases/{deviceRelease}', [DeviceReleaseController::class, 'destroy']);
+});
+
 // Which specific devices may use PIN unlock — deliberately a narrower,
 // separately-delegable permission from admin-system (see PermissionsSeeder).
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trusted-devices']], function () {

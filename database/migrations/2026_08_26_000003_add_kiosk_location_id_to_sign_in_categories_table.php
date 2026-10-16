@@ -52,9 +52,17 @@ return new class extends Migration
     public function down(): void
     {
         Schema::table('sign_in_categories', function (Blueprint $table) {
+            // The FK needs an index on kiosk_location_id, and the composite
+            // unique is currently serving that role, so MariaDB refuses to
+            // drop it until the FK is gone. Drop the FK first.
+            $table->dropForeign(['kiosk_location_id']);
             $table->dropUnique(['kiosk_location_id', 'name']);
-            $table->dropConstrainedForeignId('kiosk_location_id');
-            $table->unique('name');
+            $table->dropColumn('kiosk_location_id');
+        });
+
+        // Restore under the original pre-rename name so up() can drop it again.
+        Schema::table('sign_in_categories', function (Blueprint $table) {
+            $table->unique('name', 'volunteer_sign_in_categories_name_unique');
         });
     }
 };

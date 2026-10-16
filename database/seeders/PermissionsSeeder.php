@@ -97,6 +97,8 @@ class PermissionsSeeder extends Seeder
         // use of it. Administrator-only by default, moved off admin-system
         // so it's individually delegable.
         'manage-kiosk' => 'Configure Sign-in Kiosk settings: locations, guest types, and behavior',
+        // Pi kiosk fleet (R Station device contract): pairing, channels, releases. Administrator-only by default.
+        'manage-devices' => 'Pair, configure, and revoke kiosk devices, and upload and tag their software releases',
         // Renamed from operate-volunteer-kiosk (2026-09-02) — "volunteer" is
         // a person status (people.is_volunteer), not a role, and permissions
         // are tied to what someone does, not who they are; the kiosk this

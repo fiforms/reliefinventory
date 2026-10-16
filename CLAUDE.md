@@ -383,3 +383,14 @@ with the office") was also raised and is unbuilt — idea-stage only, no design 
   session. Prefer proposing AI-authored fixes as a branch + PR over a direct push to `master` where
   practical, especially for anything triggered by feedback-report content, so there's a review
   checkpoint before deploy.
+
+### R Station (`rstation/`) — the Raspberry Pi device platform, not the sign-in kiosk
+
+Renamed 2026-10-14 from `kiosk/` / `kiosk/reliefkiosk` to avoid colliding with the volunteer sign-in
+kiosk above. `rstation/platform` is the `slideannouncer` submodule (consumed unmodified),
+`rstation/product` is our local product layer; planning docs are `rstation/IMPLEMENTATION.md` and
+`rstation/PRINT_SERVER.md`. Server side: `ManagedDevice` & friends, `/api/devices`, `/setup/devices`
+(`RStationDevices.vue`, permission `manage-devices`). Deliberately **not** renamed: the wire-contract keys
+`kiosk_function`/`kiosk_path` (and the `managed_devices.kiosk_function` column) — they're part of the
+device protocol shared with the Pi product, so changing them needs a coordinated device-side release;
+and `kiosk_location_id`, which genuinely refers to `KioskLocation` (the sign-in kiosk's sites).

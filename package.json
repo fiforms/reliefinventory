@@ -22,6 +22,9 @@
     "dependencies": {
         "html2canvas": "^1.4.1",
         "html5-qrcode": "^2.3.8",
-        "puppeteer": "^24.2.0"
+        "puppeteer": "^25.13.0"
+    },
+    "overrides": {
+        "postcss-selector-parser": "^7.1.6"
     }
 }

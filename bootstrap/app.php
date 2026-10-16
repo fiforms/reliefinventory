@@ -3,6 +3,7 @@
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
+use App\Http\Middleware\AuthenticateManagedDevice;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureAccountApproved;
 use App\Http\Middleware\EnsureKioskAccess;
@@ -18,6 +19,7 @@ use Illuminate\Routing\Exceptions\InvalidSignatureException;
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
+        api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
@@ -31,6 +33,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'permission' => CheckPermission::class,
             'kiosk-access' => EnsureKioskAccess::class,
+            'device-auth' => AuthenticateManagedDevice::class,
             'feedback-ingest-secret' => VerifyFeedbackIngestSecret::class,
         ]);
 

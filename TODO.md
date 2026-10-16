@@ -145,3 +145,20 @@ Issues identified August 17, 2026
      status forever.
  - **Any future new instance's `.env` must set these two vars explicitly** — there's no
    provisioning script yet (see item 7) to catch this automatically.
+
+Issues identified October 8, 2026
+
+11. R Station print server (planned, not built) — see `rstation/PRINT_SERVER.md`
+ - Web app keeps a server-side print queue; a R Station Pi at the right workspace (with a CUPS-
+   attached printer) polls it and prints automatically, so staff on phones/tablets never need
+   printer drivers. Needs CUPS in the Pi image, a Python print daemon in `rstation/product`, and
+   printers/print_jobs tables + device endpoints in the web app. Several design questions are
+   still open (printer registration details, workspace model, failure handling) — they're listed in the doc.
+ - Prerequisite: the R Station fleet management server half (pairing, heartbeat, releases at
+   `/setup/devices`) was written 2026-10-08 but its tests haven't run yet — this box lacks the
+   disposable test database grant (see `scripts/TESTING.md`) — and nothing has been paired with a
+   real device. The Pi product (`rstation/product`) also doesn't yet act on the heartbeat's
+   `kiosk_path`.
+ - Related kiosk notes (escape-hatch key via labwc, first-run site-URL step before pairing,
+   heartbeat extensions, and a parked "dockerized local copy of the app" idea) are in
+   `rstation/IMPLEMENTATION.md`.
