@@ -11,6 +11,9 @@ PC/Mac reference client); nothing has run against a real printer. Originally pla
 `app/Http/Controllers/DevicePairController.php` / `DeviceHeartbeatController.php`,
 `routes/api.php`, `/setup/devices`, and `rstation/platform/docs/DEVICE_CONTRACT.md`.
 
+**Building a client? Start with [PRINT_CLIENT_SPEC.md](PRINT_CLIENT_SPEC.md)** — it lists every
+document a client implementer needs and the client-side behaviour rules.
+
 A print server is any paired device (`kiosk_function = print_station`) — an R Station Pi **or** a
 PC/Mac running a software print server; the protocol below is client-agnostic. Both pair with a
 normal pairing code and report `platform` (`rstation|windows|macos|linux`) in the heartbeat.
@@ -126,11 +129,10 @@ heartbeat), throttled to 240 requests/minute per IP. Anything about another devi
 Send the *complete* list every time (an absent `print_printers` key leaves the stored snapshot
 alone; `[]` means "no queues"). A new `queue_name` creates an inactive, untyped printer row for
 staff to name/site/type on `/setup/devices`; a queue that disappears keeps its row and shows as
-unavailable. **Recommended cadence for print servers: every 30–60 s, and immediately when a
-queue's state changes** — the contract's 5-minute default means a printer error can take that
-long to reach the Print menu, and a server is shown offline after
-`config('devices.offline_after_minutes')` (15) without a heartbeat. The response also carries
-`print_realtime` (below).
+unavailable. The contract's 5-minute heartbeat is too slow for printing; recommended cadence and
+state mapping are in [PRINT_CLIENT_SPEC.md](PRINT_CLIENT_SPEC.md) §2. A server is shown offline
+after `config('devices.offline_after_minutes')` (15) without a heartbeat. The response also
+carries `print_realtime` (below).
 
 **Jobs**
 
@@ -148,8 +150,9 @@ retried automatically; staff retry or divert from `/print-queue`. The claim id i
 idempotency key: never print a job you didn't claim. Page size: `width_in` x `height_in` is the
 media the job was rendered for — print "actual size", no scaling.
 
-**Suggested loop:** poll `GET /print-jobs` every 3–5 s (or 30–60 s while the realtime socket is
-connected) → for each job, claim → download → hand to the OS print system → report.
+How a client should *behave* with these endpoints (poll cadence, error handling, crash recovery,
+what to put in `error`) is in [PRINT_CLIENT_SPEC.md](PRINT_CLIENT_SPEC.md) §3 — this section only
+defines the wire format.
 
 ## Realtime wake-ups (optional, Laravel Reverb)
 

@@ -1,0 +1,169 @@
+# Print client specification (starting point)
+
+What a **print server client** must do to work with the Relief Inventory print queue — the R Station
+Pi daemon and a PC/Mac software print server are the same thing on the wire. This document is the
+*client-behaviour* layer. It deliberately does **not** repeat wire formats that are already written
+down elsewhere; it points at them. If you extract this spec from the repo, take the documents in
+the next section with it.
+
+Status: draft, 2026-10-18. No client exists yet; nothing has been tested on real printers.
+
+## Documents this spec depends on
+
+Take these with it. Where this spec and one of them disagree, the referenced document wins for wire
+details (fix both).
+
+| # | Document | What you need from it |
+|---|---|---|
+| 1 | `rstation/platform/docs/DEVICE_CONTRACT.md` | The **core device contract**: *Conventions* (JSON, HTTPS, 10 s timeout, ignore unknown fields), *Identity and authentication* (`device_uuid`, bearer token), *`GET /up`*, *Pairing* (`POST {base}/pair`, error codes, re-pairing), *Heartbeat* (request, response, failure behaviour), *Revocation* (a `401` means "you were un-paired"), *Extensions* (how print keys ride on the heartbeat). |
+| 2 | `rstation/platform/docs/device-contract.openapi.yaml` | Machine-readable form of #1. **Does not cover the print extension** (see "Known gaps"). |
+| 3 | `rstation/PRINT_SERVER.md` — sections **"Wire protocol (as built)"** and **"Realtime wake-ups"** | The print extension itself: the heartbeat's `platform` / `print_printers` keys, the four job endpoints (`GET /print-jobs`, `claim`, `payload`, `result`) with status codes, claim expiry and retry rules, and how to listen for the optional wake-up. Authoritative for those. |
+| 4 | Server source for exact limits | `app/Http/Controllers/DeviceHeartbeatController.php` (validation of `platform` / `print_printers`: ≤100 queues, `queue_name` ≤255, `state` ∈ `idle\|printing\|error\|offline`, `state_message` ≤500), `app/Http/Controllers/DevicePrintJobController.php` (request/response shapes), `app/Services/PrintQueueService.php` (claim, expiry, idempotency), `config/printing.php` (media sizes, `claim_expires_minutes`, `max_attempts`, `retain_days`). |
+| 5 | `tests/Feature/PrintQueueDeviceApiTest.php`, `tests/Feature/PrintRealtimeTest.php` | Executable examples of every server behaviour in #3 — the closest thing to a conformance suite for the server side. |
+| 6 | `scripts/REVERB.md` | **Server operators only.** Read it to understand when `print_realtime` is `null` (realtime off). A client never needs to configure Reverb. |
+| 7 | `rstation/IMPLEMENTATION.md`, `rstation/platform/docs/PRODUCTS.md` | **Pi product only:** the first-run wizard that sets `server_url`, and the product seams (`heartbeat_payload()`, `on_heartbeat_response()`) the daemon plugs into. |
+
+`{base}` in the contract is `{server_url}/api/devices` for this app.
+
+## 1. Setup and identity
+
+- **Configuration the client needs:** `server_url` (no trailing slash), and a place to persist the
+  `device_uuid` and bearer `token`. The Pi gets `server_url` from its first-run wizard (#7); a PC/Mac
+  client needs an equivalent — a config file or a one-time setup command. Store the token readable
+  only by the service account; never log it.
+- **`device_uuid`:** generate a UUID once on first run and keep it forever (it is how the server
+  recognises the same machine across re-pairing).
+- **Pairing:** an administrator generates a 6-digit code on `/setup/devices` ("Pair a New Device or
+  Print Server"); the client exchanges it per the contract (#1, *Pairing*). Surface `422` ("invalid or
+  expired code") and `429` to whoever is setting it up. Re-pairing the same `device_uuid` replaces
+  the token.
+- **After pairing an administrator must still set the device's *Function* to "Print station"** on
+  `/setup/devices`. The pairing flow doesn't set it, and until it is set the server does not send
+  `print_realtime` (printers *are* still discovered from the heartbeat regardless). Print the
+  reminder in your setup output.
+- **On any `401`** from an authenticated call: the device was revoked. Delete the token, stop
+  printing, and return to the pairing flow (contract, *Revocation*). Do not retry a `401`.
+
+## 2. Heartbeat and printer discovery
+
+- Send the heartbeat per the contract plus the print keys in #3. Include `platform`
+  (`windows|macos|linux`; the Pi uses `rstation`).
+- **`queue_name` is the printer's identity.** The server keys a printer on `(device, queue_name)`,
+  and staff assign its name, site and paper type to that key. Use the OS's **stable queue/printer
+  name** (CUPS queue name; Windows printer name). If the user renames a queue it appears as a new,
+  untyped printer and the old one goes "unavailable" — so don't derive `queue_name` from anything
+  that drifts (model strings, driver names, "Printer (Copy 2)").
+- **Report every queue the OS exposes**, including ones staff may not use; typing and enabling is
+  done on the server. Send the *complete* list each time.
+- **Cadence:** every 30–60 s, plus **immediately when any queue's state changes** (so a "paper out"
+  reaches the Print menu quickly). The contract's 5-minute default is too slow for printing; the
+  server accepts extra beats (#3). A server with no beat for `devices.offline_after_minutes`
+  (15) is shown offline — which affects the Print menu, not job delivery.
+- **State mapping** (starting point — confirm against real hardware):
+
+  | OS signal | Report as | `state_message` |
+  |---|---|---|
+  | CUPS `printer-state` 3 (idle) | `idle` | — |
+  | CUPS `printer-state` 4 (processing) | `printing` | — |
+  | CUPS 5 (stopped) with reason `media-empty`, `media-jam`, `marker-supply-empty`, `toner-empty`, `cover-open`… | `error` | a plain-language version of the reason ("Out of labels") |
+  | CUPS 5 / `offline-report`, `connecting-to-device`, queue disabled | `offline` | "Printer offline" |
+  | Windows `Get-Printer`: `PrinterStatus` Normal | `idle` | — |
+  | Windows `WorkOffline` true / status Offline | `offline` | "Printer offline" |
+  | Windows PaperOut / PaperJam / TonerLow-not-empty… | `error` | what the status says |
+
+  `state_message` is shown to staff next to the printer — write it for a warehouse volunteer.
+
+## 3. Job loop
+
+The endpoints, shapes and status codes are in #3; this section is how a client should *behave*.
+
+1. **Wake or poll.** Poll `GET /print-jobs` every 3–5 s, or every 30–60 s while the realtime
+   socket (#3, *Realtime wake-ups*) is connected; run a poll immediately on a wake-up. Realtime is
+   optional — if `print_realtime` is `null` or the socket drops, fall back to the fast poll
+   automatically, and re-read `print_realtime` from every heartbeat response.
+2. **One job at a time per queue**, oldest first. Claim only a job you are about to print now —
+   claiming and then queueing locally is how claims expire under you.
+3. **Claim → download → print → report.** Claim with `POST …/claim`; fetch the PDF with
+   `GET …/payload`; print `copies` copies; report `printed` or `failed` with `POST …/result`.
+4. **Print "actual size":** no scaling, no fit-to-page, no margins added. The PDF is already
+   exactly `width_in` × `height_in` for the media the job was rendered for; the printer's configured
+   paper must match (the server only routes jobs to printers typed with that media).
+5. **Report what you *know*.** `failed` for anything that went wrong (printer offline, out of
+   paper, OS rejected the job), with an `error` staff can act on — what and why, not a stack trace
+   ("Printer 'Zebra ZD421' is out of labels", not "lp: exit 1"). Reported failures are never
+   retried automatically; a human retries or diverts from `/print-queue`.
+6. **Error handling by response:**
+
+   | Response | Meaning | Client action |
+   |---|---|---|
+   | `401` | revoked | wipe token, return to pairing (§1) |
+   | `404` on a job | not yours / gone | drop it; never retry |
+   | `409` on `claim` | someone/something else has it, or it was cancelled | skip it |
+   | `409` on `payload` | you don't hold the claim (it expired or was cancelled) | stop; don't print |
+   | `410` on `payload` | the file was cleaned up | report `failed` ("file no longer available") |
+   | `409` on `result` | claim already settled (expired, cancelled by staff, requeued) | log it; **do not retry** |
+   | `429` | rate limited (240/min/IP) | back off; slow the poll |
+   | `5xx` / network error | transient | retry with backoff (e.g. 2 s → 60 s cap, with jitter); keep any printed-but-unreported results (below) |
+
+7. **Never print a job twice, and never lose a result.** Keep a small local ledger (job id → state:
+   `claimed`, `printed-unreported`, `reported`) on disk. After a crash or restart: report any
+   `printed-unreported` jobs first (a `409` is fine — drop it); do not re-print a job whose ledger
+   entry says it already printed. A claim that was never reported will expire server-side (5 min
+   by default) and the job may be offered again — the ledger is what stops a second printout.
+8. **Cancellation is not pushed.** Staff can cancel a job you hold; you only find out when your
+   `result` returns `409`. Printing a cancelled job once is expected and harmless.
+
+## 4. Per-platform starting points
+
+*These are suggestions to verify on real printers, not tested facts.*
+
+- **Raspberry Pi (R Station):** CUPS in the image; list queues and state with `pycups`
+  (`getPrinters()` → `printer-state`, `printer-state-reasons`) or `lpstat -p -l`; print with
+  `lp -d <queue> -n <copies> -o print-scaling=none <file.pdf>`. Printer setup (drivers, media)
+  is done in the CUPS web UI (`PRINT_SERVER.md`, *Printer setup on the device*). The daemon lives
+  in `rstation/product/backend/` and uses the product seams (#7). Since the platform's own
+  heartbeat is every 5 minutes, the daemon should also send its own faster heartbeats directly to
+  the same endpoint with the same token.
+- **macOS / Linux software server:** same CUPS commands as above; run as a launchd job / systemd
+  service. Python with `requests` (+ `pycups` or shelling out to `lp`/`lpstat`) is enough.
+- **Windows software server:** list printers with PowerShell `Get-Printer` (name, `PrinterStatus`,
+  `WorkOffline`); print PDFs with a command-line PDF printer such as SumatraPDF
+  (`-print-to "<name>" -print-settings "noscale,<n>x" -silent`). Run as a Windows service or
+  scheduled task under an account that can see the printers.
+- **Any platform:** a websocket client is optional. Raw WebSocket + a few lines of Pusher protocol
+  is enough (#3); a Pusher client library also works.
+
+## 5. Conformance checklist
+
+A client is ready when it can demonstrate each of these (the server-side tests in #5 show the
+expected responses):
+
+- [ ] Pairs with a code, stores the token, survives a restart, and re-pairs cleanly.
+- [ ] A `401` wipes the token and returns to pairing.
+- [ ] Heartbeats include `platform` and the complete `print_printers` list, within 60 s and on any
+      state change; a queue renamed in the OS shows as new/untyped on the server.
+- [ ] A new job is printed within one poll interval — and, with realtime on, within about a second.
+- [ ] Prints at the exact page size with the right copy count.
+- [ ] Reports `printed`, and reports `failed` with a human-readable error for an offline printer, a
+      missing queue, and a rejected job.
+- [ ] Handles `404`/`409`/`410`/`429`/`5xx` as in §3.6.
+- [ ] Kill the client mid-job and restart: no duplicate printout, and the result is reported.
+- [ ] Loses the network for a few minutes mid-job: reports the result when it returns (or drops a
+      `409`).
+- [ ] With realtime off (`print_realtime: null`) or the socket blocked, still prints on polling alone.
+- [ ] Two print servers at one site never see or claim each other's jobs.
+
+## Known gaps (server side — decide before relying on them)
+
+- **No claim keep-alive.** A claim expires after `claim_expires_minutes` (5) and re-claiming a job
+  you already hold does *not* extend it. A job that takes longer than that to print (a big batch of
+  pallet labels on a slow label printer) can be reclaimed and printed a second time. Needs either
+  an extending re-claim, a per-job timeout scaled to copies/pages, or a longer default.
+- **A first-time print server has no Function set** (see §1) — the server could infer
+  `print_station` when a device with no function starts reporting `print_printers`.
+- **The print extension has no OpenAPI description**; #2 covers only the core contract.
+- **`platform` is an un-namespaced extension key.** The contract asks products to namespace theirs
+  (`print_*`); a later core key named `platform` would collide. Cheap to rename (e.g.
+  `print_platform`) now, before any client exists.
+- **Staff aren't notified** when a printer goes offline or errors; they see it only in the Print
+  menu and on `/print-queue`.

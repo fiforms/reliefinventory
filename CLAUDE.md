@@ -300,7 +300,8 @@ Everywhere something is printed there is one shared `PrintMenu.vue` ("Print ▾"
 each active printer at a site that matches the document's paper size) instead of a bare PDF link.
 Choosing a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
 and reports back. Built 2026-10-18 on branch `print-queue`; see `rstation/PRINT_SERVER.md` (wire protocol —
-what a print-server client implements) and `scripts/REVERB.md` (provisioning).
+what a print-server client implements), `rstation/PRINT_CLIENT_SPEC.md` (client behaviour rules + the list
+of documents a client implementer needs) and `scripts/REVERB.md` (provisioning).
 
 - **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
   software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
