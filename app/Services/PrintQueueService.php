@@ -9,6 +9,8 @@ use App\Models\ManagedDevice;
 use App\Models\Printer;
 use App\Models\PrintJob;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 /**
  * Device-facing side of the print queue: what a print server's heartbeat does
@@ -50,6 +52,45 @@ class PrintQueueService
                     ->save();
             }
         });
+    }
+
+    /**
+     * Create a queued job from already-rendered PDF bytes. The file is
+     * written first and removed again if the database write fails, so a
+     * failure never leaves an orphan PDF behind. requested_by comes from the
+     * caller (Auth::id()), never from request input.
+     */
+    public function enqueue(Printer $printer, string $document, string $title, string $pdfBytes, int $copies, ?int $personId): PrintJob
+    {
+        $disk = Storage::disk(config('printing.disk'));
+        $path = trim(config('printing.directory'), '/').'/'.Str::uuid().'.pdf';
+        $disk->put($path, $pdfBytes);
+
+        try {
+            return DB::transaction(function () use ($printer, $document, $title, $path, $copies, $personId) {
+                $job = PrintJob::create([
+                    'printer_id' => $printer->id,
+                    'kiosk_location_id' => $printer->kiosk_location_id,
+                    'media' => $printer->media,
+                    'title' => $title,
+                    'document' => $document,
+                    'pdf_path' => $path,
+                    'copies' => $copies,
+                    'requested_by' => $personId,
+                ]);
+                $job->statusLogs()->create([
+                    'from_status' => null,
+                    'to_status' => PrintJob::STATUS_QUEUED,
+                    'changed_by_person_id' => $personId,
+                    'notes' => "Sent to {$printer->name}",
+                ]);
+
+                return $job;
+            });
+        } catch (\Throwable $e) {
+            $disk->delete($path);
+            throw $e;
+        }
     }
 
     /**

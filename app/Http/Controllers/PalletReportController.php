@@ -7,6 +7,7 @@ use App\Models\Transaction;
 use App\Support\PalletKind;
 use Illuminate\Http\Request;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 class PalletReportController extends Controller
 {
@@ -29,10 +30,25 @@ class PalletReportController extends Controller
      */
     public function generateReport($id)
     {
+        return $this->singleLabelBuilder($id);
+    }
+
+    /** Large-label paper size, from the same media definition printers are typed with. */
+    private function labelPaper(PdfBuilder $pdf): PdfBuilder
+    {
+        $media = config('printing.media.label_large');
+
+        return $pdf->paperSize($media['width'], $media['height'], 'in');
+    }
+
+    // The *Builder methods return the unrendered PDF so the same code feeds
+    // both the browser download routes above/below and the print queue
+    // (see App\Services\Printing\DocumentRegistry).
+    public function singleLabelBuilder($id): PdfBuilder
+    {
         $pallet = Pallet::with('contentItem')->findOrFail($id);
 
-        return Pdf::view('reports.pallet', ['label' => $this->labelData($pallet)])
-            ->paperSize(4.0, 6.5, 'in')
+        return $this->labelPaper(Pdf::view('reports.pallet', ['label' => $this->labelData($pallet)]))
             ->name('pallet-label-'.$pallet->tag.'.pdf');
     }
 
@@ -42,16 +58,20 @@ class PalletReportController extends Controller
      */
     public function generateDonationLabels($id)
     {
+        return $this->donationLabelsBuilder($id);
+    }
+
+    public function donationLabelsBuilder($id): PdfBuilder
+    {
         $donation = Transaction::where('type', 'donation')->with('pallets.contentItem')->findOrFail($id);
 
         if ($donation->pallets->isEmpty()) {
             abort(404, 'No pallets have been created for this donation.');
         }
 
-        return Pdf::view('reports.pallet-batch', [
+        return $this->labelPaper(Pdf::view('reports.pallet-batch', [
             'labels' => $donation->pallets->map(fn (Pallet $pallet) => $this->labelData($pallet))->all(),
-        ])->paperSize(4.0, 6.5, 'in')
-            ->name('pallet-labels-donation-'.$donation->id.'.pdf');
+        ]))->name('pallet-labels-donation-'.$donation->id.'.pdf');
     }
 
     /**
@@ -68,15 +88,19 @@ class PalletReportController extends Controller
             ->filter()
             ->all();
 
+        return $this->preprintLabelsBuilder($ids);
+    }
+
+    public function preprintLabelsBuilder(array $ids): PdfBuilder
+    {
         $pallets = Pallet::whereIn('id', $ids)->where('kind', 'R')->whereNull('orderdonation_id')->get();
 
         if ($pallets->isEmpty()) {
             abort(404, 'No matching pre-printed labels found.');
         }
 
-        return Pdf::view('reports.pallet-batch', [
+        return $this->labelPaper(Pdf::view('reports.pallet-batch', [
             'labels' => $pallets->map(fn (Pallet $pallet) => $this->labelData($pallet))->all(),
-        ])->paperSize(4.0, 6.5, 'in')
-            ->name('pallet-labels-preprint.pdf');
+        ]))->name('pallet-labels-preprint.pdf');
     }
 }

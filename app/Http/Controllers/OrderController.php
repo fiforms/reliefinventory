@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 /**
  * Order intake sessions.
@@ -301,6 +302,12 @@ class OrderController extends Controller
      */
     public function orderFormPdf()
     {
+        return $this->orderFormBuilder();
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function orderFormBuilder(): PdfBuilder
+    {
         $generatedAt = now();
 
         return Pdf::view('reports.order-form', ['categories' => $this->buildOrderFormRecords(), 'generatedAt' => $generatedAt])
@@ -351,6 +358,12 @@ class OrderController extends Controller
      * never changes the number on an already-printed BOL.
      */
     public function bolPdf($id)
+    {
+        return $this->bolBuilder($id);
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function bolBuilder($id): PdfBuilder
     {
         $order = Transaction::where('type', 'order')
             ->with(['person', 'driver', 'orderLines.itemtype.unit', 'orderLines.itemLedgers'])

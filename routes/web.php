@@ -352,6 +352,12 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth']], function () {
 
 });
 
+// Send a document to a site printer (renders it and queues it for a print
+// server). The document's own permission (the one its download route needs)
+// is also enforced inside PrintController — see DocumentRegistry.
+Route::post('/json/print', [PrintController::class, 'store'])
+    ->middleware(['auth', 'permission:print-documents']);
+
 // Below: routes grouped by the permission they require rather than a
 // single flat "volunteer tier" — see granular-permissions-model.md.
 // Every group here was previously role:4; splitting by resource is

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Services\WarehouseMetrics;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 /**
  * External Situation Report — a restricted subset of WarehouseMetrics
@@ -44,6 +45,12 @@ class SitrepController extends Controller
     }
 
     public function pdf(WarehouseMetrics $metrics)
+    {
+        return $this->pdfBuilder($metrics);
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function pdfBuilder(WarehouseMetrics $metrics): PdfBuilder
     {
         return Pdf::view('reports.sitrep', ['data' => $this->buildData($metrics)])
             ->format('letter')
