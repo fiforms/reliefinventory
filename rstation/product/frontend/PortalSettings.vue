@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import { api } from '@core/api.js'
+import EscapeHint from './EscapeHint.vue'
 
 const portal = ref(null)
 
@@ -14,6 +15,9 @@ onMounted(async () => {
     <section class="tile panel">
       <div class="panel-title"><h2>Portal</h2></div>
       <p>Mode: {{ portal?.mode ?? '…' }}</p>
+    </section>
+    <section class="tile panel">
+      <EscapeHint />
     </section>
   </div>
 </template>

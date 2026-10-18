@@ -4,6 +4,7 @@ import Main from './Main.vue'
 import PortalSettings from './PortalSettings.vue'
 import PrintersSettings from './PrintersSettings.vue'
 import SetupServer from './SetupServer.vue'
+import EscapeHint from './EscapeHint.vue'
 
 export default {
   name: 'portal',
@@ -23,6 +24,9 @@ export default {
   // First-run wizard: confirm which server this device belongs to, after the
   // network is up and before pairing (platform/docs/SERVER_URL.md).
   setupSteps: [{ key: 'server', after: 'network', path: 'server', component: SetupServer }],
+  // Tells the person setting the device up how to get back to Settings once it
+  // has handed the screen to the website (platform/docs/ESCAPE_HATCH.md).
+  setupDoneNote: EscapeHint,
   // Merged over the core locale files (docs/PRODUCTS.md).
   messages: {
     en: {
@@ -30,6 +34,10 @@ export default {
         opening: 'Opening Relief Inventory…',
         noServer: 'No server has been set up on this device.',
         settings: 'Open Settings',
+      },
+      escapeHint: {
+        title: 'Getting back to Settings',
+        body: 'Once this device shows the Relief Inventory site, press Ctrl+Alt+Home on a keyboard (Ctrl+Alt+S if it has no Home key), or hold the remote’s Home button for 3 seconds.',
       },
       setup: {
         steps: { server: 'Server' },
@@ -82,6 +90,10 @@ export default {
         opening: 'Abriendo Relief Inventory…',
         noServer: 'No se ha configurado ningún servidor en este dispositivo.',
         settings: 'Abrir Configuración',
+      },
+      escapeHint: {
+        title: 'Volver a Configuración',
+        body: 'Cuando este dispositivo muestre el sitio de Relief Inventory, pulse Ctrl+Alt+Inicio en un teclado (Ctrl+Alt+S si no tiene tecla Inicio), o mantenga pulsado el botón Inicio del control remoto durante 3 segundos.',
       },
       setup: {
         steps: { server: 'Servidor' },
