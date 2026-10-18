@@ -9,6 +9,7 @@ import Dropdown from '@/Components/Dropdown.vue';
 import DropdownLink from '@/Components/DropdownLink.vue';
 import FeedbackReportModal from '@/Components/FeedbackReportModal.vue';
 import NavLink from '@/Components/NavLink.vue';
+import PrintToast from '@/Components/PrintToast.vue';
 import ResponsiveNavLink from '@/Components/ResponsiveNavLink.vue';
 import { Link, usePage } from '@inertiajs/vue3';
 
@@ -48,6 +49,7 @@ async function markAllNotificationsRead() {
     <div>
         <div class="min-h-screen bg-gray-100">
             <Banner @open-feedback="showingFeedbackModal = true" />
+            <PrintToast />
 
             <nav
                 class="border-b border-gray-100 bg-white"

@@ -21,13 +21,14 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PeriodStatCard from '@/Components/Dashboard/PeriodStatCard.vue';
 import BarBreakdownCard from '@/Components/Dashboard/BarBreakdownCard.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
 const DONATION_STAGE_LABELS = { Received: 'Received', Sorting: 'Sorting', Complete: 'Complete' };
 const ORDER_STAGE_LABELS = { 'New Order': 'New Order', Filling: 'Filling', Filled: 'Filled', Shipped: 'Shipped' };
 
 export default {
-	components: { AuthenticatedLayout, Head, PeriodStatCard, BarBreakdownCard },
+	components: { AuthenticatedLayout, Head, PeriodStatCard, BarBreakdownCard, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -92,7 +93,7 @@ export default {
 					<span v-if="data" class="sr_generated">
 						As of {{ new Date(data.generated_at).toLocaleString() }}
 					</span>
-					<a href="/report/sitrep.pdf" class="ri_defaultbutton" target="_blank">Download PDF</a>
+					<PrintMenu document-key="sitrep" media="report" label="Print / PDF" download-href="/report/sitrep.pdf" />
 				</div>
 			</div>
 			<p class="sr_note">

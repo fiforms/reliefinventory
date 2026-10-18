@@ -207,3 +207,28 @@ test('pick sheets for several orders are queued as one job', function () {
 
     expect(PrintJob::first()->title)->toBe('Pick sheets (2 orders)');
 });
+
+test('the printer list offers only usable printers, filtered by media, with status', function () {
+    $report = docPrinter('report', ['name' => 'Office']);
+    docPrinter('label_large', ['name' => 'Front Gate']);
+    docPrinter('report', ['name' => 'Retired', 'active' => false]);
+    docPrinter('report', ['name' => 'Untyped', 'media' => null]);
+    docPrinter('report', ['name' => 'Down'], online: false);
+
+    $user = userWithPermissions('print-documents');
+
+    $reports = $this->actingAs($user)->getJson('/json/printers?media=report')->assertOk()->json('printers');
+    expect(collect($reports)->pluck('name')->sort()->values()->all())->toBe(['Down', 'Office'])
+        ->and(collect($reports)->firstWhere('name', 'Office'))->toMatchArray([
+            'id' => $report->id, 'media' => 'report', 'status' => 'idle', 'ready' => true,
+        ])
+        ->and(collect($reports)->firstWhere('name', 'Down'))->toMatchArray(['status' => 'unavailable', 'ready' => false]);
+
+    $all = $this->actingAs($user)->getJson('/json/printers')->assertOk()->json('printers');
+    expect($all)->toHaveCount(3);
+});
+
+test('the printer list rejects unknown media and requires print-documents', function () {
+    $this->actingAs(userWithPermissions('print-documents'))->getJson('/json/printers?media=bogus')->assertUnprocessable();
+    $this->actingAs(userWithPermissions('general-access'))->getJson('/json/printers')->assertForbidden();
+});

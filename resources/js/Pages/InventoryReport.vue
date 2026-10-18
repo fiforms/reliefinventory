@@ -17,12 +17,12 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import ReportDownloadButton from '@/Components/ReportDownloadButton.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 
 export default {
-	components: { AuthenticatedLayout, Head, ReportDownloadButton },
+	components: { AuthenticatedLayout, Head, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -96,10 +96,9 @@ export default {
 		<div class="inv_container">
 			<h2 class="ri_datatable_head inv_head">
 				Inventory Report
-				<ReportDownloadButton :options="[
-					{ label: 'CSV', href: '/report/inventory.csv' },
-					{ label: 'PDF', href: '/report/inventory.pdf', target: '_blank' },
-				]" />
+				<a href="/report/inventory.csv" class="ri_defaultbutton">Download CSV</a>
+				<PrintMenu document-key="inventory-report" media="report" label="Print / PDF"
+					download-href="/report/inventory.pdf" />
 			</h2>
 
 			<p v-if="error" class="inv_error">{{ error }}</p>

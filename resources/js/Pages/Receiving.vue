@@ -27,6 +27,7 @@ import Modal from '@/Components/Modal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 
 defineProps({
 	breadcrumb: {
@@ -129,7 +130,11 @@ const containerTypeOptions = [
 						<p v-if="preprintError" class="text-sm text-red-700">{{ preprintError }}</p>
 						<div class="flex justify-end gap-3">
 							<SecondaryButton :disabled="preprintSaving" @click="preprintOpen = false">Cancel</SecondaryButton>
-							<PrimaryButton :disabled="preprintSaving" @click="preprintLabels">Print Labels</PrimaryButton>
+							<PrintMenu
+								document-key="preprint-pallet-labels" media="label_large" label="Print Labels" placement="up"
+								:prepare="preparePreprint" :disabled="preprintSaving"
+								@sent="onPreprintDone" @downloaded="onPreprintDone"
+							/>
 						</div>
 					</div>
 				</Modal>
@@ -509,14 +514,15 @@ const containerTypeOptions = [
 										<td class="recv_mono">{{ pallet.tag }}</td>
 										<td>{{ pallet.container_type }}</td>
 										<td>{{ pallet.status }}</td>
-										<td><a :href="'/report/pallet/' + pallet.id" target="_blank">Label</a></td>
+										<td><PrintMenu document-key="pallet-label" media="label_large" variant="link" label="Label"
+											:params="{ id: pallet.id }" :download-href="'/report/pallet/' + pallet.id" /></td>
 									</tr>
 								</tbody>
 							</table>
 						</div>
-						<button @click="printAllLabels(record)" class="ri_formbutton">
-							Print All Labels ({{ (record.pallets || []).length }})
-						</button>
+						<PrintMenu document-key="donation-pallet-labels" media="label_large" variant="form"
+							:label="'Print All Labels (' + (record.pallets || []).length + ')'"
+							:params="{ id: record.id }" :download-href="'/report/pallets/donation/' + record.id" />
 					</template>
 					<p v-else>No labels created for this intake yet.</p>
 				</template>
@@ -554,13 +560,17 @@ const containerTypeOptions = [
 						<button v-if="confirmingDelete" @click="keepRecord()" class="ri_linkbutton">Keep Record</button>
 					</div>
 					<div class="ri_formactions recv_actionsrow" v-if="record.id && record.category === 'donation' && (record.pallets || []).length">
-						<button
-							@click="handleReprintClick(record)"
-							class="ri_formbutton"
-							:class="{ recv_cancel_confirming: confirmingReprint }"
-						>
-							{{ confirmingReprint ? 'Confirm — this reprints all labels, don\'t duplicate a batch already printed' : 'Re-print Labels' }}
+						<button v-if="!confirmingReprint" @click="confirmingReprint = true" class="ri_formbutton">
+							Re-print Labels
 						</button>
+						<PrintMenu
+							v-else
+							document-key="donation-pallet-labels" media="label_large" variant="form"
+							extra-class="recv_cancel_confirming"
+							label="Confirm — this reprints all labels, don't duplicate a batch already printed"
+							:params="{ id: record.id }" :download-href="'/report/pallets/donation/' + record.id"
+							@sent="onLabelsReprinted" @downloaded="onLabelsReprinted"
+						/>
 						<button v-if="confirmingReprint" @click="confirmingReprint = false" class="ri_linkbutton">Cancel</button>
 					</div>
 				</template>
@@ -754,14 +764,9 @@ export default {
 		// Same two-step confirm pattern — reprinting a whole batch risks a
 		// warehouse ending up with duplicate labels on the floor if someone
 		// clicks it without meaning to.
-		handleReprintClick(record) {
-			if (!this.confirmingReprint) {
-				this.confirmingReprint = true;
-				return;
-			}
+		onLabelsReprinted() {
 			this.confirmingReprint = false;
 			this.wizardStep = 'labels';
-			this.printAllLabels(record);
 		},
 		remainingContainers(record) {
 			const target = Number(record.container_count) || 0;
@@ -992,17 +997,13 @@ export default {
 				this.palletSaving = false;
 			}
 		},
-		printAllLabels(record) {
-			// One PDF with every label, instead of one browser tab per pallet
-			// (popup blockers allow only the first of a burst of window.opens).
-			window.open('/report/pallets/donation/' + record.id, '_blank');
-		},
-
 		// ---------- pre-printed labels (not yet tied to a donation) ----------
-		async preprintLabels() {
+		// Run by PrintMenu on any choice (download or a printer): creates the
+		// batch of blank R pallets, then hands back their ids to render.
+		async preparePreprint() {
 			if (!this.preprintCount || this.preprintCount < 1) {
 				this.preprintError = 'Enter how many labels to print.';
-				return;
+				return null;
 			}
 			this.preprintSaving = true;
 			this.preprintError = null;
@@ -1011,15 +1012,18 @@ export default {
 					count: this.preprintCount,
 					container_type: this.preprintContainerType,
 				});
-				const ids = response.data.records.map((p) => p.id).join(',');
-				window.open('/report/pallets/preprint?ids=' + ids, '_blank');
-				this.preprintOpen = false;
-				this.preprintCount = null;
+				const ids = response.data.records.map((p) => p.id);
+				return { params: { ids }, downloadHref: '/report/pallets/preprint?ids=' + ids.join(',') };
 			} catch (error) {
-				this.preprintError = error.response?.data?.message || 'Could not print labels.';
+				this.preprintError = error.response?.data?.message || 'Could not create the labels.';
+				return null;
 			} finally {
 				this.preprintSaving = false;
 			}
+		},
+		onPreprintDone() {
+			this.preprintOpen = false;
+			this.preprintCount = null;
 		},
 		// Splits on commas/whitespace/newlines so typed or scanned entry
 		// (one per Enter, via a keyboard-wedge scanner) both work.

@@ -11,6 +11,7 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
+import PrintMenu from '@/Components/PrintMenu.vue';
 
 defineProps({
 	breadcrumb: {
@@ -18,9 +19,6 @@ defineProps({
 	},
 });
 
-function printGuide() {
-	window.open('/report/help/receiving', '_blank');
-}
 </script>
 
 <template>
@@ -37,13 +35,14 @@ function printGuide() {
 						anything else arriving at the warehouse — before it's sorted into inventory.
 					</p>
 				</div>
-				<button
-					type="button"
-					@click="printGuide"
-					class="shrink-0 px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
-				>
-					Print these instructions
-				</button>
+				<PrintMenu
+					document-key="help-receiving"
+					media="report"
+					variant="plain"
+					label="Print these instructions"
+					download-href="/report/help/receiving"
+					extra-class="shrink-0 px-3 py-2 text-sm rounded bg-blue-600 text-white hover:bg-blue-700"
+				/>
 			</div>
 
 			<section class="bg-white shadow rounded-lg p-6 space-y-4">

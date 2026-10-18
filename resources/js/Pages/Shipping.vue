@@ -24,10 +24,11 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import Modal from '@/Components/Modal.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
 export default {
-	components: { AuthenticatedLayout, Head, TextInput, Modal },
+	components: { AuthenticatedLayout, Head, TextInput, Modal, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -323,7 +324,8 @@ export default {
 						<td>{{ order.id }}</td>
 						<td>{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</td>
 						<td>{{ order.driver?.name }}<span v-if="order.driver?.phone"> — {{ order.driver.phone }}</span></td>
-						<td><a :href="'/report/bol/' + order.id + '.pdf'" target="_blank">View BOL</a></td>
+						<td><PrintMenu document-key="bol" media="report" variant="link" label="View BOL" :params="{ id: order.id }"
+							:download-href="'/report/bol/' + order.id + '.pdf'" /></td>
 						<td>
 							<button
 								class="ri_defaultbutton"
@@ -347,7 +349,8 @@ export default {
 						<td>{{ order.id }}</td>
 						<td>{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</td>
 						<td>{{ order.driver?.name }}<span v-if="order.driver?.phone"> — {{ order.driver.phone }}</span></td>
-						<td><a :href="'/report/bol/' + order.id + '.pdf'" target="_blank">View BOL</a></td>
+						<td><PrintMenu document-key="bol" media="report" variant="link" label="View BOL" :params="{ id: order.id }"
+							:download-href="'/report/bol/' + order.id + '.pdf'" /></td>
 					</tr>
 					<tr v-if="!shipped.length && !loading"><td colspan="4" class="ship_empty">Nothing currently Shipped.</td></tr>
 				</tbody>

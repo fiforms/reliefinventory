@@ -357,6 +357,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth']], function () {
 // is also enforced inside PrintController — see DocumentRegistry.
 Route::post('/json/print', [PrintController::class, 'store'])
     ->middleware(['auth', 'permission:print-documents']);
+Route::get('/json/printers', [PrinterController::class, 'index'])
+    ->middleware(['auth', 'permission:print-documents']);
 
 // Below: routes grouped by the permission they require rather than a
 // single flat "volunteer tier" — see granular-permissions-model.md.

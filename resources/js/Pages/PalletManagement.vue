@@ -5,6 +5,7 @@ import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
 import RISubform from '@/Components/RISubform.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 
 defineProps({
     breadcrumb: {
@@ -58,7 +59,8 @@ const kindOptions = [
 		  <div class="ri_fieldset" v-if="record.id">
 			<div class="ri_fieldlabel">  </div>
 			<p>
-			<button @click="printLabel(record.id)" class="ri_defaultbutton">Print Pallet Label</button>
+			<PrintMenu document-key="pallet-label" media="label_large" label="Print Pallet Label"
+				:params="{ id: record.id }" :download-href="'/report/pallet/' + record.id" />
 			</p>
 		  </div>
 		  <div class="ri_formtable">
@@ -183,15 +185,3 @@ const kindOptions = [
     </RIForm>
   </AuthenticatedLayout>
 </template>
-
-<script>
-
-export default {
-
-	methods: {
-		printLabel(palletId) {
-		    window.open("/report/pallet/" + palletId,"_blank");
-		},
-    }
-}
-</script>

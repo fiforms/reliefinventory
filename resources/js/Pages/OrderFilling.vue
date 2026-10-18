@@ -37,13 +37,14 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import SearchSelect from '@/Components/SearchSelect.vue';
 import QrScanner from '@/Components/QrScanner.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
 const LOW_STOCK_THRESHOLD_DEFAULT = 10; // mirrors config('inventory.low_stock_threshold')
 const NEED_LEVEL_LABELS = { critical: 'Critical', moderate: 'Moderate', low: 'Low' };
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner },
+	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -54,7 +55,6 @@ export default {
 			filling: [],
 			listLoading: false,
 			listError: null,
-			printing: false,
 			showAllocation: false,
 
 			// stock-on-hand per itemtype, reused from Order Entry's own endpoint
@@ -180,36 +180,25 @@ export default {
 				this.listError = error.response?.data?.message || 'Could not start filling that order.';
 			}
 		},
-		async printPickSheets() {
+		// Run by PrintMenu on any choice (download or a printer): locks every
+		// Ready-to-Fill order into Filling in one transaction, then hands back
+		// the ids to render. PrintMenu opens the download tab itself before this
+		// awaits, so the popup blocker doesn't eat it.
+		async preparePickSheets() {
 			this.listError = null;
-			this.printing = true;
-			// Open the tab synchronously, in direct response to the click — opening it
-			// after the await below would no longer count as user-gesture-initiated and
-			// gets silently popup-blocked in Chrome, even though the POST itself succeeds.
-			const pdfWindow = window.open('', '_blank');
 			try {
 				const response = await axios.post('/json/order-filling/print-pick-sheets');
 				const ids = response.data.order_ids || [];
-				if (ids.length) {
-					const query = ids.map((id) => 'ids[]=' + id).join('&');
-					if (pdfWindow) {
-						pdfWindow.location = '/report/pick-sheets.pdf?' + query;
-					} else {
-						window.open('/report/pick-sheets.pdf?' + query, '_blank');
-					}
-				} else if (pdfWindow) {
-					pdfWindow.close();
-				}
 				await this.fetchQueue();
+				if (!ids.length) return null;
+				return { params: { ids }, downloadHref: this.pickSheetsHref(ids) };
 			} catch (error) {
-				if (pdfWindow) pdfWindow.close();
 				this.listError = error.response?.data?.message || 'Could not print pick sheets.';
-			} finally {
-				this.printing = false;
+				return null;
 			}
 		},
-		reprintOrder(order) {
-			window.open('/report/pick-sheets.pdf?ids[]=' + order.id, '_blank');
+		pickSheetsHref(ids) {
+			return '/report/pick-sheets.pdf?' + ids.map((id) => 'ids[]=' + id).join('&');
 		},
 
 		// ---------- fill screen ----------
@@ -352,9 +341,8 @@ export default {
 					<button @click="showAllocation = !showAllocation" class="ri_formbutton">
 						{{ showAllocation ? 'Hide' : 'Review' }} Allocation
 					</button>
-					<button :disabled="printing || !readyToFill.length" @click="printPickSheets" class="ri_defaultbutton">
-						{{ printing ? 'Printing…' : 'Print Pick Sheets' }}
-					</button>
+					<PrintMenu document-key="pick-sheets" media="report" label="Print Pick Sheets"
+						:disabled="!readyToFill.length" :prepare="preparePickSheets" />
 				</span>
 			</h2>
 
@@ -421,7 +409,8 @@ export default {
 							<td>{{ orderProgress(order).filled }} of {{ orderProgress(order).total }} lines filled</td>
 							<td>
 								<button @click="continueFilling(order)" class="ri_formbutton">Continue</button>
-								<button @click="reprintOrder(order)" class="ri_formbutton">Print</button>
+								<PrintMenu document-key="pick-sheets" media="report" variant="form" label="Print"
+									:params="{ ids: [order.id] }" :download-href="pickSheetsHref([order.id])" />
 							</td>
 						</tr>
 					</tbody>
