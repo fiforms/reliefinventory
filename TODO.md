@@ -173,9 +173,12 @@ Issues identified October 8, 2026
    offline threshold is fleet-wide (`devices.offline_after_minutes`, 15) and print servers heartbeat every
    30–60 s, so a per-function (print_station) threshold of a few minutes would make the Print menu's
    "offline" honest sooner.
- - Upstream, in the `rstation/platform` submodule (not ours to edit here): its
-   `docs/device-contract.openapi.yaml` fails `swagger-cli validate` on the `/pair` 422 response — an
-   unquoted comma inside a YAML flow mapping (`{ description: Invalid, expired or already-used code }`).
+ - Upstream, in the `rstation/platform` submodule: its `docs/device-contract.openapi.yaml` failed
+   `swagger-cli validate` on the `/pair` 422 response — an unquoted comma inside a YAML flow mapping
+   (`{ description: Invalid, expired or already-used code }`). Fix is committed on the submodule branch
+   `fix-openapi-pair-422-yaml` (one line, quoted); **push that upstream and merge it before committing a
+   superproject change that bumps the `rstation/platform` pointer**, or other clones won't be able to fetch
+   that commit. Delete this note once the pointer has been bumped to a commit containing the fix.
  - Related kiosk notes (escape-hatch key via labwc, first-run site-URL step before pairing,
    heartbeat extensions, and a parked "dockerized local copy of the app" idea) are in
    `rstation/IMPLEMENTATION.md`.
