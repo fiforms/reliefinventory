@@ -179,6 +179,16 @@ test('devices can be pointed at a different public address than the app publishe
     ]);
 });
 
+test('a freshly paired print server with no Function still gets its wake channel on its first heartbeat', function () {
+    [$device, $token] = rtPair('rt-fresh', null);
+    expect($device->kiosk_function)->toBeNull();
+
+    $response = rtBeat($token)->assertOk();
+
+    expect($response->json('print_realtime.channel'))->toStartWith('wake.')
+        ->and($device->fresh()->kiosk_function)->toBe('print_station');
+});
+
 test('every print server gets its own wake channel', function () {
     [, $tokenA] = rtPair('rt-a');
     [, $tokenB] = rtPair('rt-b');

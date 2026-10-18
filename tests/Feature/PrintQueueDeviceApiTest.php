@@ -47,7 +47,7 @@ test('heartbeat records platform and queues, creating inactive untyped printers'
     beat($token, [
         ['queue_name' => 'Zebra', 'state' => 'idle'],
         ['queue_name' => 'Laser', 'state' => 'error', 'state_message' => 'Toner low'],
-    ], ['platform' => 'windows'])->assertOk();
+    ], ['print_platform' => 'windows'])->assertOk();
 
     $device->refresh();
     expect($device->platform)->toBe('windows')
@@ -57,6 +57,45 @@ test('heartbeat records platform and queues, creating inactive untyped printers'
     $zebra = $device->printers()->where('queue_name', 'Zebra')->first();
     expect($zebra->active)->toBeFalse()->and($zebra->media)->toBeNull()
         ->and($zebra->kiosk_location_id)->toBe($device->kiosk_location_id);
+});
+
+test('print_platform is validated, and the old un-namespaced key is ignored', function () {
+    [$device, $token] = pairPrintServer();
+
+    $this->withToken($token)->postJson('/api/devices/heartbeat', ['print_platform' => 'amiga'])->assertUnprocessable();
+    $this->withToken($token)->postJson('/api/devices/heartbeat', ['platform' => 'macos'])->assertOk();
+    expect($device->fresh()->platform)->toBeNull();
+
+    $this->withToken($token)->postJson('/api/devices/heartbeat', ['print_platform' => 'linux'])->assertOk();
+    expect($device->fresh()->platform)->toBe('linux');
+});
+
+test('a device reporting print queues with no Function set becomes a print station', function () {
+    [$device, $token] = pairPrintServer();
+    expect($device->kiosk_function)->toBeNull();
+
+    $response = beat($token, [['queue_name' => 'Zebra']])->assertOk();
+
+    expect($device->fresh()->kiosk_function)->toBe('print_station')
+        ->and($response->json('kiosk_function'))->toBe('print_station');
+});
+
+test('an empty queue list, or no list at all, does not set a Function', function () {
+    [$device, $token] = pairPrintServer();
+
+    beat($token, [])->assertOk();
+    $this->withToken($token)->postJson('/api/devices/heartbeat', [])->assertOk();
+
+    expect($device->fresh()->kiosk_function)->toBeNull();
+});
+
+test('an admin-chosen Function is never overridden by reporting print queues', function () {
+    [$device, $token] = pairPrintServer();
+    $device->forceFill(['kiosk_function' => 'volunteer_checkin'])->save();
+
+    beat($token, [['queue_name' => 'Zebra']])->assertOk();
+
+    expect($device->fresh()->kiosk_function)->toBe('volunteer_checkin');
 });
 
 test('a repeat heartbeat does not duplicate printers or clobber staff settings', function () {
@@ -208,6 +247,55 @@ test('double claim: only one wins, the same device re-claiming is idempotent', f
     // Once printed it can't be claimed again.
     $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/result", ['status' => 'printed'])->assertOk();
     $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertStatus(409);
+});
+
+test('re-claiming a held job extends its claim without a new attempt or log row', function () {
+    [$device, $token] = pairPrintServer();
+    beat($token, [['queue_name' => 'Zebra']]);
+    $job = queuedJobOn($device);
+    $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertOk();
+    $job->forceFill(['claim_expires_at' => now()->addMinute()])->save();
+
+    $response = $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertOk();
+
+    expect($job->fresh()->claim_expires_at->isAfter(now()->addMinutes(config('printing.claim_expires_minutes') - 1)))->toBeTrue()
+        ->and($response->json('claim_expires_at'))->toBe($job->fresh()->claim_expires_at->toIso8601String())
+        ->and($job->fresh()->attempts)->toBe(1)
+        ->and($job->statusLogs()->where('to_status', 'claimed')->count())->toBe(1);
+});
+
+test('a keep-alive saves a long-running job from being reclaimed and printed twice', function () {
+    [$device, $token] = pairPrintServer();
+    beat($token, [['queue_name' => 'Zebra']]);
+    $job = queuedJobOn($device);
+    $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertOk();
+
+    // The claim is about to lapse; the print server is still printing and checks in.
+    $job->forceFill(['claim_expires_at' => now()->addSeconds(5)])->save();
+    $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertOk();
+
+    // Time passes past the original expiry; a poll must leave it alone.
+    $this->travel(config('printing.claim_expires_minutes') - 1)->minutes();
+    $this->withToken($token)->getJson('/api/devices/print-jobs')->assertJsonCount(0, 'jobs');
+    expect($job->fresh()->status)->toBe('claimed');
+
+    // Whereas without any further keep-alive it does lapse back to the queue.
+    $this->travel(2)->minutes();
+    $this->withToken($token)->getJson('/api/devices/print-jobs')->assertJsonCount(1, 'jobs');
+    expect($job->fresh()->status)->toBe('queued');
+});
+
+test('another device cannot keep a job\'s claim alive', function () {
+    [$device, $token] = pairPrintServer('ps-1');
+    [, $otherToken] = pairPrintServer('ps-2');
+    beat($token, [['queue_name' => 'Zebra']]);
+    $job = queuedJobOn($device);
+    $this->withToken($token)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertOk();
+    $expires = $job->fresh()->claim_expires_at;
+
+    $this->withToken($otherToken)->postJson("/api/devices/print-jobs/{$job->id}/claim")->assertNotFound();
+
+    expect($job->fresh()->claim_expires_at->equalTo($expires))->toBeTrue();
 });
 
 test('repeating a result is idempotent but a contradicting one conflicts', function () {

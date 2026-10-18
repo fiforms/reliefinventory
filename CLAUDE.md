@@ -305,7 +305,8 @@ of documents a client implementer needs) and `scripts/REVERB.md` (provisioning).
 
 - **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
   software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
-  `print_printers` reports its OS print queues; each becomes a `printers` row (inactive, untyped) that staff
+  `print_printers` reports its OS print queues (a device with no Function set that reports any is made a
+  `print_station` automatically; the platform goes in `print_platform`, namespaced per the device contract); each becomes a `printers` row (inactive, untyped) that staff
   name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
   A printer's status (`idle|printing|error|offline|unavailable`) is **derived on read** from its device's
   heartbeat — the app has no scheduler to flip a stored column. `media` is a plain string key into
@@ -314,7 +315,8 @@ of documents a client implementer needs) and `scripts/REVERB.md` (provisioning).
 - **`print_jobs` + `print_job_status_log`**: `queued → claimed → printed | failed`, plus `cancelled`;
   every status write goes through `PrintJob::transitionTo()` (legal-move check + audit row, same pattern
   as `DonationOffer`). `divertTo()` re-routes a queued/failed job to another printer of the *same media*.
-  Claims are row-locked and idempotent; a claim that never reports back is reclaimed **lazily** (on a
+  Claims are row-locked and idempotent (re-claiming a held job is also the keep-alive for long prints —
+  it extends the expiry without a new attempt); a claim that never reports back is reclaimed **lazily** (on a
   server's poll or when someone opens the queue) back to `queued`, or `failed` after
   `printing.max_attempts`. A failure a server *reports* is never auto-retried. Finished jobs' PDFs are
   purged after `printing.retain_days` (lazily, hourly, via cache); the job rows stay as history.

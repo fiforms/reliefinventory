@@ -16,7 +16,9 @@ document a client implementer needs and the client-side behaviour rules.
 
 A print server is any paired device (`kiosk_function = print_station`) — an R Station Pi **or** a
 PC/Mac running a software print server; the protocol below is client-agnostic. Both pair with a
-normal pairing code and report `platform` (`rstation|windows|macos|linux`) in the heartbeat.
+normal pairing code and report `print_platform` (`rstation|windows|macos|linux`) in the heartbeat. A paired
+device whose Function is still unset becomes `print_station` automatically the first time it reports
+print queues (an admin-chosen Function is never overridden).
 
 ## Goal
 
@@ -118,10 +120,11 @@ All under `/api/devices`, `Authorization: Bearer <device token>` (the same token
 heartbeat), throttled to 240 requests/minute per IP. Anything about another device's job is a
 `404`, never `403`.
 
-**Heartbeat** — `POST /heartbeat`. Print servers additionally send:
+**Heartbeat** — `POST /heartbeat`. Print servers additionally send these keys (namespaced `print_*`, per
+the contract's extension rules):
 
 ```json
-{ "platform": "windows",
+{ "print_platform": "windows",
   "print_printers": [ { "queue_name": "Zebra ZD421", "state": "idle|printing|error|offline",
                         "state_message": "Out of labels" } ] }
 ```
@@ -139,12 +142,12 @@ carries `print_realtime` (below).
 | Call | Result |
 |---|---|
 | `GET /print-jobs` | `{jobs:[{id, queue_name, title, copies, media, width_in, height_in, created_at}]}` — queued jobs on this device's *active* printers, oldest first. Also reclaims expired claims and purges old files. |
-| `POST /print-jobs/{id}/claim` | `200 {id, queue_name, copies, claim_expires_at}`, atomic. Re-claiming a job you already hold is idempotent. `409` if it's no longer claimable. |
+| `POST /print-jobs/{id}/claim` | `200 {id, queue_name, copies, claim_expires_at}`, atomic. Re-claiming a job you already hold is idempotent **and extends the claim** (no new attempt, no log entry) — call it periodically while a long job prints. `409` if it's no longer claimable. |
 | `GET /print-jobs/{id}/payload` | The PDF (`application/pdf`). `409` unless you hold the claim; `410` if the file was cleaned up. |
 | `POST /print-jobs/{id}/result` | `{status: "printed"|"failed", error?}` (error ≤ 2000 chars — make it useful to the person reading the queue). Idempotent for the same result; `409` otherwise. |
 
-Claims expire after `config('printing.claim_expires_minutes')` (5); a claim that never reports
-back returns to the queue (up to `max_attempts`, then it shows as failed). Report `failed` for
+Claims expire after `config('printing.claim_expires_minutes')` (5) unless kept alive by re-claiming
+(see above); a claim that never reports back returns to the queue (up to `max_attempts`, then it shows as failed). Report `failed` for
 anything you *know* went wrong (out of paper, printer offline) — reported failures are never
 retried automatically; staff retry or divert from `/print-queue`. The claim id is the
 idempotency key: never print a job you didn't claim. Page size: `width_in` x `height_in` is the

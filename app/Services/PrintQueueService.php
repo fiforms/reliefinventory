@@ -181,7 +181,10 @@ class PrintQueueService
      * Atomically claim a job for a device. Returns [job, error] where error is
      * null on success, 'not_found' if the job isn't one of this device's, or
      * 'conflict' if it's no longer claimable. Re-claiming a job the same
-     * device already holds is idempotent (a retry after a lost response).
+     * device already holds is idempotent (a retry after a lost response) and
+     * doubles as a keep-alive: it pushes claim_expires_at out again, so a long
+     * job (a big label batch on a slow printer) isn't reclaimed and printed a
+     * second time while it is still printing. No new log row, no attempt.
      *
      * @return array{0: ?PrintJob, 1: ?string}
      */
@@ -193,6 +196,9 @@ class PrintQueueService
                 return [null, 'not_found'];
             }
             if ($job->status === PrintJob::STATUS_CLAIMED && $job->claimed_by_device_id === $device->id) {
+                $job->claim_expires_at = now()->addMinutes((int) config('printing.claim_expires_minutes'));
+                $job->save();
+
                 return [$job, null];
             }
             if ($job->status !== PrintJob::STATUS_QUEUED) {

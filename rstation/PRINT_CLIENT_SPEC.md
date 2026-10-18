@@ -17,8 +17,8 @@ details (fix both).
 |---|---|---|
 | 1 | `rstation/platform/docs/DEVICE_CONTRACT.md` | The **core device contract**: *Conventions* (JSON, HTTPS, 10 s timeout, ignore unknown fields), *Identity and authentication* (`device_uuid`, bearer token), *`GET /up`*, *Pairing* (`POST {base}/pair`, error codes, re-pairing), *Heartbeat* (request, response, failure behaviour), *Revocation* (a `401` means "you were un-paired"), *Extensions* (how print keys ride on the heartbeat). |
 | 2 | `rstation/platform/docs/device-contract.openapi.yaml` | Machine-readable form of #1. **Does not cover the print extension** (see "Known gaps"). |
-| 3 | `rstation/PRINT_SERVER.md` — sections **"Wire protocol (as built)"** and **"Realtime wake-ups"** | The print extension itself: the heartbeat's `platform` / `print_printers` keys, the four job endpoints (`GET /print-jobs`, `claim`, `payload`, `result`) with status codes, claim expiry and retry rules, and how to listen for the optional wake-up. Authoritative for those. |
-| 4 | Server source for exact limits | `app/Http/Controllers/DeviceHeartbeatController.php` (validation of `platform` / `print_printers`: ≤100 queues, `queue_name` ≤255, `state` ∈ `idle\|printing\|error\|offline`, `state_message` ≤500), `app/Http/Controllers/DevicePrintJobController.php` (request/response shapes), `app/Services/PrintQueueService.php` (claim, expiry, idempotency), `config/printing.php` (media sizes, `claim_expires_minutes`, `max_attempts`, `retain_days`). |
+| 3 | `rstation/PRINT_SERVER.md` — sections **"Wire protocol (as built)"** and **"Realtime wake-ups"** | The print extension itself: the heartbeat's `print_platform` / `print_printers` keys, the four job endpoints (`GET /print-jobs`, `claim`, `payload`, `result`) with status codes, claim expiry and retry rules, and how to listen for the optional wake-up. Authoritative for those. |
+| 4 | Server source for exact limits | `app/Http/Controllers/DeviceHeartbeatController.php` (validation of `print_platform` / `print_printers`: ≤100 queues, `queue_name` ≤255, `state` ∈ `idle\|printing\|error\|offline`, `state_message` ≤500), `app/Http/Controllers/DevicePrintJobController.php` (request/response shapes), `app/Services/PrintQueueService.php` (claim, expiry, idempotency), `config/printing.php` (media sizes, `claim_expires_minutes`, `max_attempts`, `retain_days`). |
 | 5 | `tests/Feature/PrintQueueDeviceApiTest.php`, `tests/Feature/PrintRealtimeTest.php` | Executable examples of every server behaviour in #3 — the closest thing to a conformance suite for the server side. |
 | 6 | `scripts/REVERB.md` | **Server operators only.** Read it to understand when `print_realtime` is `null` (realtime off). A client never needs to configure Reverb. |
 | 7 | `rstation/IMPLEMENTATION.md`, `rstation/platform/docs/PRODUCTS.md` | **Pi product only:** the first-run wizard that sets `server_url`, and the product seams (`heartbeat_payload()`, `on_heartbeat_response()`) the daemon plugs into. |
@@ -37,16 +37,17 @@ details (fix both).
   Print Server"); the client exchanges it per the contract (#1, *Pairing*). Surface `422` ("invalid or
   expired code") and `429` to whoever is setting it up. Re-pairing the same `device_uuid` replaces
   the token.
-- **After pairing an administrator must still set the device's *Function* to "Print station"** on
-  `/setup/devices`. The pairing flow doesn't set it, and until it is set the server does not send
-  `print_realtime` (printers *are* still discovered from the heartbeat regardless). Print the
-  reminder in your setup output.
+- **No Function to set by hand.** The first heartbeat that reports a non-empty `print_printers`
+  list makes the server mark the device a print station (if an administrator hasn't already chosen
+  a different Function), and that same response carries `print_realtime`. So report your queues in
+  the very first heartbeat after pairing. An *empty* list doesn't count — a machine with no printers
+  yet stays unset until it has some.
 - **On any `401`** from an authenticated call: the device was revoked. Delete the token, stop
   printing, and return to the pairing flow (contract, *Revocation*). Do not retry a `401`.
 
 ## 2. Heartbeat and printer discovery
 
-- Send the heartbeat per the contract plus the print keys in #3. Include `platform`
+- Send the heartbeat per the contract plus the print keys in #3. Include `print_platform`
   (`windows|macos|linux`; the Pi uses `rstation`).
 - **`queue_name` is the printer's identity.** The server keys a printer on `(device, queue_name)`,
   and staff assign its name, site and paper type to that key. Use the OS's **stable queue/printer
@@ -83,6 +84,12 @@ The endpoints, shapes and status codes are in #3; this section is how a client s
    automatically, and re-read `print_realtime` from every heartbeat response.
 2. **One job at a time per queue**, oldest first. Claim only a job you are about to print now —
    claiming and then queueing locally is how claims expire under you.
+   **Keep long jobs alive:** a claim lasts `claim_expires_minutes` (5). While a job is still
+   printing, re-`POST …/claim` at least every half of that (every ~2 minutes) — it extends the
+   claim without counting as a new attempt. Without it, a job that takes longer than the window
+   (a large label batch on a slow printer) is reclaimed and printed again. Use the
+   `claim_expires_at` in each response to schedule the next keep-alive, and stop when the job
+   is done or a keep-alive returns `404`/`409`.
 3. **Claim → download → print → report.** Claim with `POST …/claim`; fetch the PDF with
    `GET …/payload`; print `copies` copies; report `printed` or `failed` with `POST …/result`.
 4. **Print "actual size":** no scaling, no fit-to-page, no margins added. The PDF is already
@@ -140,7 +147,7 @@ expected responses):
 
 - [ ] Pairs with a code, stores the token, survives a restart, and re-pairs cleanly.
 - [ ] A `401` wipes the token and returns to pairing.
-- [ ] Heartbeats include `platform` and the complete `print_printers` list, within 60 s and on any
+- [ ] Heartbeats include `print_platform` and the complete `print_printers` list, within 60 s and on any
       state change; a queue renamed in the OS shows as new/untyped on the server.
 - [ ] A new job is printed within one poll interval — and, with realtime on, within about a second.
 - [ ] Prints at the exact page size with the right copy count.
@@ -148,22 +155,20 @@ expected responses):
       missing queue, and a rejected job.
 - [ ] Handles `404`/`409`/`410`/`429`/`5xx` as in §3.6.
 - [ ] Kill the client mid-job and restart: no duplicate printout, and the result is reported.
+- [ ] A job that prints for longer than the claim window (test with a delay) is **not** reprinted:
+      the client keeps its claim alive.
+- [ ] A first heartbeat after pairing (no Function chosen) already receives `print_realtime` when
+      the server has realtime on.
 - [ ] Loses the network for a few minutes mid-job: reports the result when it returns (or drops a
       `409`).
 - [ ] With realtime off (`print_realtime: null`) or the socket blocked, still prints on polling alone.
 - [ ] Two print servers at one site never see or claim each other's jobs.
 
-## Known gaps (server side — decide before relying on them)
+## Known gaps (server side)
 
-- **No claim keep-alive.** A claim expires after `claim_expires_minutes` (5) and re-claiming a job
-  you already hold does *not* extend it. A job that takes longer than that to print (a big batch of
-  pallet labels on a slow label printer) can be reclaimed and printed a second time. Needs either
-  an extending re-claim, a per-job timeout scaled to copies/pages, or a longer default.
-- **A first-time print server has no Function set** (see §1) — the server could infer
-  `print_station` when a device with no function starts reporting `print_printers`.
-- **The print extension has no OpenAPI description**; #2 covers only the core contract.
-- **`platform` is an un-namespaced extension key.** The contract asks products to namespace theirs
-  (`print_*`); a later core key named `platform` would collide. Cheap to rename (e.g.
-  `print_platform`) now, before any client exists.
+- **The print extension has no OpenAPI description**; #2 covers only the core contract. Until one
+  exists, #3 and the tests in #5 are the reference.
 - **Staff aren't notified** when a printer goes offline or errors; they see it only in the Print
   menu and on `/print-queue`.
+- **Unverified on hardware:** the state mappings and per-OS print commands in §2 and §4 haven't been
+  tried on real printers.

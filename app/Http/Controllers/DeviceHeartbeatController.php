@@ -31,7 +31,8 @@ class DeviceHeartbeatController extends Controller
             'architecture' => 'nullable|string|max:255',
             'cpu_temp_c' => 'nullable|numeric',
             'hostname' => 'nullable|string|max:255',
-            'platform' => 'nullable|in:rstation,windows,macos,linux',
+            // Print servers (namespaced per the device contract's extension rules): what the client runs on.
+            'print_platform' => 'nullable|in:rstation,windows,macos,linux',
             // Print servers: the OS print queues visible to this device (see PrintQueueService).
             'print_printers' => 'nullable|array|max:100',
             'print_printers.*.queue_name' => 'required|string|max:255',
@@ -44,11 +45,21 @@ class DeviceHeartbeatController extends Controller
 
         // A missing field leaves the stored value alone rather than blanking it.
         $snapshot = array_filter(
-            collect($data)->only(['app_version', 'os_version', 'architecture', 'cpu_temp_c', 'hostname', 'platform'])->all(),
+            collect($data)->only(['app_version', 'os_version', 'architecture', 'cpu_temp_c', 'hostname'])->all(),
             fn ($value) => $value !== null
         );
         foreach ($snapshot as $column => $value) {
             $device->{$column} = $value;
+        }
+        if (! empty($data['print_platform'])) {
+            $device->platform = $data['print_platform'];
+        }
+        // A device that reports print queues is a print server. If an admin hasn't
+        // chosen its Function yet (a freshly paired PC/Mac client can't), set it
+        // here so it gets its realtime wake-up details on this very response —
+        // but never override a Function an admin picked. An empty list doesn't count.
+        if ($device->kiosk_function === null && ! empty($data['print_printers'])) {
+            $device->kiosk_function = 'print_station';
         }
         $device->last_ip = $request->ip();
         $device->last_seen_at = now();
