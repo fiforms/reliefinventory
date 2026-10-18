@@ -53,28 +53,29 @@ Today the platform reads `server_url` from `/boot/firmware/slideannouncer.yaml`
 for pairing, heartbeat and updates. For Relief Inventory we want one kiosk image to work for any
 of several sites, chosen at setup time on the device itself.
 
-- **Extend the on-device setup wizard** (`local-app/frontend/src/views/setup/`, via the product
-  frontend seam) with a step *before* pairing: enter or pick the remote site's URL
-  (e.g. `https://relief.example.org`). Validate it — normalize the scheme, strip the trailing
-  slash, and check it by hitting `{server_url}/up` (the contract's liveness probe, which the web
-  app already serves) before accepting it.
-- **Persist it** somewhere the backend's `read_server_url()` will see — either by writing the
-  same yaml key the platform already reads, or (if that file is read-only/boot-partition
-  territory) by adding a product-level override that takes precedence. Decide which when
-  implementing; it may need a small upstream change so the platform's `read_server_url()` honors
-  a runtime-set value.
-- **Multiple sites / switching:** the device should be re-pointable later from the on-device
-  settings (change site → clears pairing state → re-runs the pairing step), and a revoked or
-  re-paired device shouldn't lose the chosen URL unless the user changes it. A remembered list
-  of recent sites would make hopping between sites faster.
+- **Built (2026-10-18):** a "Server" wizard step (`product/frontend/SetupServer.vue`, between
+  Network and Name, supplied through the platform's new `setupSteps` seam) pre-fills the boot
+  yaml's `server_url` if there is one, checks the address with `{server_url}/up` (with a "use it
+  anyway" option when the site is merely down), and saves it to `/data/status/server-url`. The
+  platform's `read_server_url()` and the update CLI prefer that file, so pairing, heartbeat, OTA
+  and print jobs all follow it. Design, rules and what changed in the platform:
+  `platform/docs/SERVER_URL.md` (platform branch `server-url-first-run`).
+- **No switching, by decision:** once the device is paired or set up the address is fixed;
+  moving to another site is a factory reset (which wipes `/data` and re-runs the wizard,
+  offering the yaml's value again). The yaml's comment says editing it does not move a set-up
+  device. An unpair or revocation keeps the chosen address. (Dropped: an in-place "change site"
+  and a remembered list of recent sites.)
+- **Nothing baked into the image:** `product.env` no longer sets `KIOSK_URL`, so Chromium
+  always starts on the local app (which runs the wizard on a fresh device and then hands the
+  browser to the site — `product/frontend/Main.vue`); the build seeds the default only into the
+  boot partition's yaml, not the rootfs.
 - **Pairing is per site:** the 6-digit code comes from that site's `/setup/devices` page, so the
   URL has to be set first; the device's `device_uuid` stays the same across sites (a different
   site just sees a new device).
 - **Kiosk URL follows the site:** the browser's target page is `server_url` + the heartbeat's
-  `kiosk_path` (see `config/devices.php`), not the placeholder `KIOSK_URL` baked into
-  `rstation/product/image/product.env`. The product's frontend/launcher needs to read the
-  heartbeat-cached `kiosk_path` and navigate there, falling back to the local settings home when
-  none is configured or the site is unreachable (ties into §1).
+  `kiosk_path` (see `config/devices.php`). Today `Main.vue` navigates to `server_url` + `/login`;
+  reading the heartbeat-cached `kiosk_path` instead, and falling back to the local settings home
+  when the site is unreachable, is still to do (ties into §1).
 
 ## 3. Heartbeat extensions the product needs
 

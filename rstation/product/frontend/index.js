@@ -3,11 +3,13 @@
 import Main from './Main.vue'
 import PortalSettings from './PortalSettings.vue'
 import PrintersSettings from './PrintersSettings.vue'
+import SetupServer from './SetupServer.vue'
 
 export default {
   name: 'portal',
-  // Mounted at /kiosk. For a remote-portal product the browser opens
-  // KIOSK_URL instead (image/product.env), so this is only a fallback.
+  // Mounted at /kiosk, the page Chromium always starts on (the image has no
+  // KIOSK_URL): a launcher that hands the browser to the confirmed server once
+  // the first-run wizard is done — see Main.vue.
   mainView: Main,
   // An extra Settings page and its rail entry.
   settingsRoutes: [
@@ -18,9 +20,28 @@ export default {
     { path: '/settings/portal', label: 'Portal' },
     { path: '/settings/printers', label: t('settings.printers.title') },
   ],
+  // First-run wizard: confirm which server this device belongs to, after the
+  // network is up and before pairing (platform/docs/SERVER_URL.md).
+  setupSteps: [{ key: 'server', after: 'network', path: 'server', component: SetupServer }],
   // Merged over the core locale files (docs/PRODUCTS.md).
   messages: {
     en: {
+      launcher: {
+        opening: 'Opening Relief Inventory…',
+        noServer: 'No server has been set up on this device.',
+        settings: 'Open Settings',
+      },
+      setup: {
+        steps: { server: 'Server' },
+        server: {
+          title: 'Relief Inventory server',
+          intro: 'Enter the web address of the Relief Inventory site this device belongs to.',
+          label: 'Server address',
+          hint: 'For example https://relief.example.org. This can’t be changed later without a factory reset.',
+          locked: 'This device is set up for this server. To use a different one, do a factory reset.',
+          useAnyway: 'Use this address anyway',
+        },
+      },
       settings: {
         printers: {
           title: 'Printers',
@@ -57,6 +78,22 @@ export default {
       },
     },
     es: {
+      launcher: {
+        opening: 'Abriendo Relief Inventory…',
+        noServer: 'No se ha configurado ningún servidor en este dispositivo.',
+        settings: 'Abrir Configuración',
+      },
+      setup: {
+        steps: { server: 'Servidor' },
+        server: {
+          title: 'Servidor de Relief Inventory',
+          intro: 'Ingrese la dirección web del sitio de Relief Inventory al que pertenece este dispositivo.',
+          label: 'Dirección del servidor',
+          hint: 'Por ejemplo https://relief.example.org. No se puede cambiar después sin un restablecimiento de fábrica.',
+          locked: 'Este dispositivo está configurado para este servidor. Para usar otro, haga un restablecimiento de fábrica.',
+          useAnyway: 'Usar esta dirección de todos modos',
+        },
+      },
       settings: {
         printers: {
           title: 'Impresoras',

@@ -458,3 +458,14 @@ kiosk above. `rstation/platform` is the `slideannouncer` submodule (consumed unm
 `kiosk_function`/`kiosk_path` (and the `managed_devices.kiosk_function` column) — they're part of the
 device protocol shared with the Pi product, so changing them needs a coordinated device-side release;
 and `kiosk_location_id`, which genuinely refers to `KioskLocation` (the sign-in kiosk's sites).
+
+**The R Station's server address is chosen on the device, not baked into the image** (2026-10-18).
+`product/image/product.env` deliberately has no `KIOSK_URL` — Chromium always starts on the local app,
+whose `/kiosk` launcher (`Main.vue`) sends the browser to the confirmed server once the first-run wizard
+is done (a remote `KIOSK_URL` would skip the wizard, Wi-Fi setup included). The wizard's Server step
+pre-fills the boot yaml's `server_url` (seeded at build time into the *boot partition's* yaml only, never
+the rootfs), checks `{url}/up`, and saves the result to `/data/status/server-url`, which the platform's
+`read_server_url()` and update CLI prefer from then on; it can't change from the device once set up
+(factory reset clears it) and editing the yaml doesn't move a set-up device. This needed platform changes
+on the `rstation/platform` submodule's `server-url-first-run` branch — see `rstation/platform/docs/SERVER_URL.md`;
+the parent repo's submodule pointer must be at that branch's commit or later.

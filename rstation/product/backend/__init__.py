@@ -30,6 +30,10 @@ product = Product(
     name="portal",
     # Where this product's server implements docs/DEVICE_CONTRACT.md.
     api_base="/api/devices",
+    # The first-run wizard confirms which server this device belongs to (the
+    # frontend's `setupSteps` supplies the step); the boot yaml's server_url is
+    # only its default. See platform/docs/SERVER_URL.md.
+    confirm_server_url=True,
     routers=[router, printers_router(station.cups)],
     # Claims print jobs from the website and prints them (see print_station.py).
     background_tasks=[station.run],
