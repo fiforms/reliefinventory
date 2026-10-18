@@ -8,6 +8,7 @@ namespace App\Services;
 use App\Models\ManagedDevice;
 use App\Models\Printer;
 use App\Models\PrintJob;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -129,6 +130,29 @@ class PrintQueueService
                 $count++;
             });
         }
+
+        return $count;
+    }
+
+    /**
+     * Delete the stored PDFs of finished jobs past the retention window. The
+     * job rows stay as history; only the (large) files go. Throttled to once
+     * an hour through the cache, since the app has no scheduler — it piggybacks
+     * on print-server polls.
+     */
+    public function purgeExpiredFiles(): int
+    {
+        if (! Cache::add('print-jobs:purge', true, now()->addHour())) {
+            return 0;
+        }
+        $count = 0;
+        PrintJob::whereNotNull('pdf_path')
+            ->whereIn('status', [PrintJob::STATUS_PRINTED, PrintJob::STATUS_FAILED, PrintJob::STATUS_CANCELLED])
+            ->where('updated_at', '<', now()->subDays((int) config('printing.retain_days')))
+            ->each(function (PrintJob $job) use (&$count) {
+                $job->purgeFile();
+                $count++;
+            });
 
         return $count;
     }

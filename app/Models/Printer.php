@@ -36,6 +36,9 @@ class Printer extends Model
 
     protected $appends = ['status', 'status_message', 'media_label'];
 
+    // status is derived from the device; don't serialize the whole device with each printer.
+    protected $hidden = ['device'];
+
     public function device()
     {
         return $this->belongsTo(ManagedDevice::class, 'managed_device_id');

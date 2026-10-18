@@ -55,7 +55,6 @@ class HandleInertiaRequests extends Middleware
             // all (without print-documents it falls back to download only).
             'printing' => [
                 'canPrint' => (bool) $request->user()?->hasPermission('print-documents'),
-                'canManageQueue' => (bool) $request->user()?->hasPermission('manage-print-queue'),
             ],
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,

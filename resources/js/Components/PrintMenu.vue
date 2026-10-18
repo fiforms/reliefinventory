@@ -78,9 +78,6 @@ export default {
 		canPrint() {
 			return !!this.$page.props.printing?.canPrint;
 		},
-		canManageQueue() {
-			return !!this.$page.props.printing?.canManageQueue;
-		},
 		buttonClass() {
 			return { button: 'ri_defaultbutton', form: 'ri_formbutton', link: 'pm_link', plain: '' }[this.variant] ?? 'ri_defaultbutton';
 		},

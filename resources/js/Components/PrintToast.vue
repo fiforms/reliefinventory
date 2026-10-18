@@ -15,8 +15,9 @@ export default {
 		return { notice: null, timer: null };
 	},
 	computed: {
-		canManageQueue() {
-			return !!this.$page.props.printing?.canManageQueue;
+		// The queue page is open to anyone who can print (their own jobs).
+		canViewQueue() {
+			return !!this.$page.props.printing?.canPrint;
 		},
 	},
 	mounted() {
@@ -39,7 +40,7 @@ export default {
 <template>
 	<div v-if="notice" class="pt_toast" :class="'pt_' + notice.type" role="status">
 		<span>{{ notice.text }}</span>
-		<a v-if="canManageQueue && notice.type !== 'error'" href="/print-queue" class="pt_link">View queue</a>
+		<a v-if="canViewQueue && notice.type !== 'error'" href="/print-queue" class="pt_link">View queue</a>
 		<button type="button" class="pt_close" aria-label="Dismiss" @click="notice = null">&times;</button>
 	</div>
 </template>

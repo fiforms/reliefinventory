@@ -24,6 +24,7 @@ class DevicePrintJobController extends Controller
     {
         $device = $request->attributes->get('managed_device');
         $this->queue->reclaimExpiredClaims();
+        $this->queue->purgeExpiredFiles();
 
         return response()->json([
             'jobs' => $this->queue->queuedJobsFor($device)->map(fn (PrintJob $job) => [
