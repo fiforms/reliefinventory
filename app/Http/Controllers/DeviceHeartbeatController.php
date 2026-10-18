@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\DeviceReleaseResolver;
+use App\Services\PrintQueueService;
 use Illuminate\Http\Request;
 
 /**
@@ -16,7 +17,7 @@ use Illuminate\Http\Request;
  */
 class DeviceHeartbeatController extends Controller
 {
-    public function heartbeat(Request $request, DeviceReleaseResolver $resolver)
+    public function heartbeat(Request $request, DeviceReleaseResolver $resolver, PrintQueueService $queue)
     {
         $device = $request->attributes->get('managed_device');
 
@@ -26,6 +27,12 @@ class DeviceHeartbeatController extends Controller
             'architecture' => 'nullable|string|max:255',
             'cpu_temp_c' => 'nullable|numeric',
             'hostname' => 'nullable|string|max:255',
+            'platform' => 'nullable|in:rstation,windows,macos,linux',
+            // Print servers: the OS print queues visible to this device (see PrintQueueService).
+            'print_printers' => 'nullable|array|max:100',
+            'print_printers.*.queue_name' => 'required|string|max:255',
+            'print_printers.*.state' => 'nullable|in:idle,printing,error,offline',
+            'print_printers.*.state_message' => 'nullable|string|max:500',
             'language_change' => 'nullable|array',
             'language_change.code' => 'nullable|string|max:10',
             'language_change.base_revision' => 'nullable|integer',
@@ -33,7 +40,7 @@ class DeviceHeartbeatController extends Controller
 
         // A missing field leaves the stored value alone rather than blanking it.
         $snapshot = array_filter(
-            collect($data)->only(['app_version', 'os_version', 'architecture', 'cpu_temp_c', 'hostname'])->all(),
+            collect($data)->only(['app_version', 'os_version', 'architecture', 'cpu_temp_c', 'hostname', 'platform'])->all(),
             fn ($value) => $value !== null
         );
         foreach ($snapshot as $column => $value) {
@@ -48,6 +55,12 @@ class DeviceHeartbeatController extends Controller
             $device->language_revision++;
         }
         $device->save();
+
+        // Absent key = this device isn't reporting printers (leave the snapshot
+        // alone); an empty array is a real report of "no queues".
+        if (array_key_exists('print_printers', $data) && $data['print_printers'] !== null) {
+            $queue->syncReportedPrinters($device, $data['print_printers']);
+        }
 
         $app = $resolver->offerFor($device, 'app');
         $os = $resolver->offerFor($device, 'os');
