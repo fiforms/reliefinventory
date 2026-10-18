@@ -27,6 +27,8 @@ class ManagedDevice extends Model
         'last_seen_at' => 'datetime',
         'paired_at' => 'datetime',
         'cpu_temp_c' => 'float',
+        'reported_printers' => 'array',
+        'printers_reported_at' => 'datetime',
     ];
 
     protected $appends = ['online', 'revoked'];
@@ -34,6 +36,12 @@ class ManagedDevice extends Model
     public function location()
     {
         return $this->belongsTo(KioskLocation::class, 'kiosk_location_id');
+    }
+
+    /** The print queues this device (as a print server) owns — see Printer. */
+    public function printers()
+    {
+        return $this->hasMany(Printer::class);
     }
 
     public static function hashToken(string $token): string

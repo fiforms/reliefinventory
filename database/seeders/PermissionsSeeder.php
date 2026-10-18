@@ -132,6 +132,12 @@ class PermissionsSeeder extends Seeder
         // different job than building the form itself. Office by default —
         // the team that already triages Donation Offer calls.
         'review-form-submissions' => 'View, approve, and deny form submissions',
+        // Print queue: sending a document to a site printer is part of
+        // ordinary work (base tier); seeing/diverting everyone's jobs is
+        // Office/Administrator. Registering and typing printers themselves
+        // stays under manage-devices (they hang off a paired print server).
+        'print-documents' => 'Send documents to a site printer and see your own print jobs',
+        'manage-print-queue' => 'See, cancel, retry, and divert any print job in the print queue',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -140,6 +146,7 @@ class PermissionsSeeder extends Seeder
         'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
         'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
         'manage-roles', 'manage-counties', 'view-reports', 'view-building-occupancy',
+        'print-documents',
     ];
 
     private const TEAM_LEADER_EXTRA_KEYS = [
@@ -164,6 +171,7 @@ class PermissionsSeeder extends Seeder
         'certify-volunteer-hours',
         'operate-kiosk',
         'review-form-submissions',
+        'manage-print-queue',
     ];
 
     /**
@@ -178,6 +186,7 @@ class PermissionsSeeder extends Seeder
         'manage-itemtypes', 'manage-packagetypes', 'manage-sorting', 'manage-receiving',
         'manage-pallets', 'manage-trucks', 'manage-containers', 'manage-streams',
         'manage-counties', 'view-reports', 'view-building-occupancy',
+        'print-documents',
     ];
 
     public function run(): void
