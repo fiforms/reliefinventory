@@ -301,7 +301,8 @@ each active printer at a site that matches the document's paper size) instead of
 Choosing a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
 and reports back. Built 2026-10-18 on branch `print-queue`; see `rstation/PRINT_SERVER.md` (wire protocol —
 what a print-server client implements), `rstation/PRINT_CLIENT_SPEC.md` (client behaviour rules + the list
-of documents a client implementer needs) and `scripts/REVERB.md` (provisioning).
+of documents a client implementer needs), `rstation/print-extension.openapi.yaml` (machine-readable wire format; a
+drift test fails if it stops matching the server) and `scripts/REVERB.md` (provisioning).
 
 - **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
   software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
@@ -344,8 +345,9 @@ of documents a client implementer needs) and `scripts/REVERB.md` (provisioning).
   real Reverb; tests that need it switch it on and fake the events. Requires its own server provisioning
   (systemd unit, nginx WebSocket proxy) — see `scripts/REVERB.md`; `update.sh` restarts it on deploy if the
   unit exists.
-- **Still open:** the print-server clients (Pi daemon, PC/Mac reference client) are unwritten, so nothing has
-  printed on real hardware; staff notification when a printer goes offline; a shorter offline threshold for
+- **Still open** (tracked in `TODO.md` item 11): the print-server clients (Pi daemon, PC/Mac reference client)
+  are unwritten, so nothing has printed on real hardware and the client-side state mappings/print commands in
+  the spec are unverified; staff notification when a printer goes offline; a shorter offline threshold for
   print servers than the fleet-wide 15 minutes.
 
 ### Volunteer hours kiosk — active-window sync needs a systemd timer

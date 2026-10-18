@@ -148,17 +148,34 @@ Issues identified August 17, 2026
 
 Issues identified October 8, 2026
 
-11. R Station print server (planned, not built) — see `rstation/PRINT_SERVER.md`
- - Web app keeps a server-side print queue; a R Station Pi at the right workspace (with a CUPS-
-   attached printer) polls it and prints automatically, so staff on phones/tablets never need
-   printer drivers. Needs CUPS in the Pi image, a Python print daemon in `rstation/product`, and
-   printers/print_jobs tables + device endpoints in the web app. Several design questions are
-   still open (printer registration details, workspace model, failure handling) — they're listed in the doc.
- - Prerequisite: the R Station fleet management server half (pairing, heartbeat, releases at
-   `/setup/devices`) was written 2026-10-08 but its tests haven't run yet — this box lacks the
-   disposable test database grant (see `scripts/TESTING.md`) — and nothing has been paired with a
-   real device. The Pi product (`rstation/product`) also doesn't yet act on the heartbeat's
-   `kiosk_path`.
+11. Print queue / R Station print server — web-app half built 2026-10-18 (branch `print-queue`); clients and hardware still open
+ - Built: per-site printers and a job queue (`/print-queue`), a shared "Print ▾" menu on every
+   print point, the device API, printer setup on `/setup/devices`, optional realtime (Reverb), an
+   OpenAPI description of the print extension (`rstation/print-extension.openapi.yaml`) and a client
+   spec (`rstation/PRINT_CLIENT_SPEC.md`). See `CLAUDE.md`'s "Print queue" section, `rstation/PRINT_SERVER.md`
+   (wire protocol) and `scripts/REVERB.md` (provisioning). The fleet pairing/heartbeat tests now run and
+   pass; nothing has been paired with a real device yet, and the Pi product (`rstation/product`) still
+   doesn't act on the heartbeat's `kiosk_path`.
+ - **Open: the print-server clients** — the Pi daemon (CUPS in the image, `rstation/product/backend/`)
+   and a PC/Mac reference client. Nothing has printed on real hardware yet.
+ - **Open: verify the client-side assumptions on real printers.** The state mappings (CUPS
+   `printer-state` / `printer-state-reasons`, Windows `Get-Printer` status) and the per-OS print commands
+   in `PRINT_CLIENT_SPEC.md` §2 and §4 (`lp -o print-scaling=none`, SumatraPDF `-print-settings`, ...) are
+   written from knowledge, not tested. Also unexercised: the `label_address` paper size (no document
+   uses it yet — there are no address labels), real label-printer page-size/margin behaviour, and the
+   claim keep-alive timing with a genuinely slow printer. Update the spec with whatever turns out wrong.
+ - **Open: tell staff when a printer goes offline or errors.** Today it only shows as a dot in the
+   Print menu and on `/print-queue`. Needs a design: who is told (by site? by role — e.g.
+   `manage-print-queue` holders), through what (email, the existing notifications bell, a site banner),
+   how to avoid flapping/spam (debounce; one "recovered" notice), and how to *detect* it — a print
+   server that simply stops heartbeating produces no event, and the app has no scheduler, so this
+   needs either lazy detection on page loads or a systemd timer like `volunteer-sync`. Related: the
+   offline threshold is fleet-wide (`devices.offline_after_minutes`, 15) and print servers heartbeat every
+   30–60 s, so a per-function (print_station) threshold of a few minutes would make the Print menu's
+   "offline" honest sooner.
+ - Upstream, in the `rstation/platform` submodule (not ours to edit here): its
+   `docs/device-contract.openapi.yaml` fails `swagger-cli validate` on the `/pair` 422 response — an
+   unquoted comma inside a YAML flow mapping (`{ description: Invalid, expired or already-used code }`).
  - Related kiosk notes (escape-hatch key via labwc, first-run site-URL step before pairing,
    heartbeat extensions, and a parked "dockerized local copy of the app" idea) are in
    `rstation/IMPLEMENTATION.md`.

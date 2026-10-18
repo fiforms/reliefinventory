@@ -116,6 +116,9 @@ audio, and we don't reimplement driver/PPD selection.
 
 ## Wire protocol (as built)
 
+Machine-readable form: [print-extension.openapi.yaml](print-extension.openapi.yaml) (checked against the
+server by `tests/Feature/PrintExtensionOpenApiTest.php`); the prose below is normative for behaviour.
+
 All under `/api/devices`, `Authorization: Bearer <device token>` (the same token as the
 heartbeat), throttled to 240 requests/minute per IP. Anything about another device's job is a
 `404`, never `403`.

@@ -16,10 +16,11 @@ details (fix both).
 | # | Document | What you need from it |
 |---|---|---|
 | 1 | `rstation/platform/docs/DEVICE_CONTRACT.md` | The **core device contract**: *Conventions* (JSON, HTTPS, 10 s timeout, ignore unknown fields), *Identity and authentication* (`device_uuid`, bearer token), *`GET /up`*, *Pairing* (`POST {base}/pair`, error codes, re-pairing), *Heartbeat* (request, response, failure behaviour), *Revocation* (a `401` means "you were un-paired"), *Extensions* (how print keys ride on the heartbeat). |
-| 2 | `rstation/platform/docs/device-contract.openapi.yaml` | Machine-readable form of #1. **Does not cover the print extension** (see "Known gaps"). |
+| 2 | `rstation/platform/docs/device-contract.openapi.yaml` | Machine-readable form of #1 (core only). |
+| 2b | `rstation/print-extension.openapi.yaml` | Machine-readable form of the **print extension** (#3): the heartbeat's print keys and the four job endpoints, with status codes and limits. Written to merge with #2. Kept honest by `tests/Feature/PrintExtensionOpenApiTest.php`. |
 | 3 | `rstation/PRINT_SERVER.md` — sections **"Wire protocol (as built)"** and **"Realtime wake-ups"** | The print extension itself: the heartbeat's `print_platform` / `print_printers` keys, the four job endpoints (`GET /print-jobs`, `claim`, `payload`, `result`) with status codes, claim expiry and retry rules, and how to listen for the optional wake-up. Authoritative for those. |
 | 4 | Server source for exact limits | `app/Http/Controllers/DeviceHeartbeatController.php` (validation of `print_platform` / `print_printers`: ≤100 queues, `queue_name` ≤255, `state` ∈ `idle\|printing\|error\|offline`, `state_message` ≤500), `app/Http/Controllers/DevicePrintJobController.php` (request/response shapes), `app/Services/PrintQueueService.php` (claim, expiry, idempotency), `config/printing.php` (media sizes, `claim_expires_minutes`, `max_attempts`, `retain_days`). |
-| 5 | `tests/Feature/PrintQueueDeviceApiTest.php`, `tests/Feature/PrintRealtimeTest.php` | Executable examples of every server behaviour in #3 — the closest thing to a conformance suite for the server side. |
+| 5 | `tests/Feature/PrintQueueDeviceApiTest.php`, `tests/Feature/PrintRealtimeTest.php`, `tests/Feature/PrintExtensionOpenApiTest.php` | Executable examples of every server behaviour in #3 — the closest thing to a conformance suite for the server side. |
 | 6 | `scripts/REVERB.md` | **Server operators only.** Read it to understand when `print_realtime` is `null` (realtime off). A client never needs to configure Reverb. |
 | 7 | `rstation/IMPLEMENTATION.md`, `rstation/platform/docs/PRODUCTS.md` | **Pi product only:** the first-run wizard that sets `server_url`, and the product seams (`heartbeat_payload()`, `on_heartbeat_response()`) the daemon plugs into. |
 
@@ -164,11 +165,11 @@ expected responses):
 - [ ] With realtime off (`print_realtime: null`) or the socket blocked, still prints on polling alone.
 - [ ] Two print servers at one site never see or claim each other's jobs.
 
-## Known gaps (server side)
+## Known gaps
 
-- **The print extension has no OpenAPI description**; #2 covers only the core contract. Until one
-  exists, #3 and the tests in #5 are the reference.
+Tracked in `TODO.md` item 11 — repeated here only so a client implementer sees them:
+
 - **Staff aren't notified** when a printer goes offline or errors; they see it only in the Print
   menu and on `/print-queue`.
 - **Unverified on hardware:** the state mappings and per-OS print commands in §2 and §4 haven't been
-  tried on real printers.
+  tried on real printers. Treat them as a starting point and correct this document as you learn.
