@@ -1,0 +1,16 @@
+# Extra apt packages for the R Station print server (see ../../PRINT_SERVER.md).
+# Appended to the platform's package list at build time. Hotfix bundles can't
+# install packages, so adding or changing anything here means a full image.
+
+# The print system. The print server talks to it over IPP on localhost:631
+# (backend/cups_client.py) — no other client library is needed.
+cups
+
+# The PDF -> printer filters CUPS uses to print the PDFs the website renders.
+cups-filters
+
+# Printer drivers are deliberately not listed: which ones are needed depends on
+# the printers actually used (e.g. printer-driver-all, hplip, or a vendor
+# package for label printers). Network and USB printers that speak IPP
+# Everywhere / AirPrint need none. Add them here once the first real printers
+# are known.
