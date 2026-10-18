@@ -4,7 +4,10 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "test:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/run-tests.sh -q",
+        "package:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/package.sh",
+        "build:rstation": "npm run test:rstation && PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/image-builder/build.sh --virt"
     },
     "devDependencies": {
         "@inertiajs/vue3": "^2.0.3",
