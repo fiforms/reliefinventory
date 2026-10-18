@@ -1,0 +1,2 @@
+# Units to enable, one per line (docs/PRODUCTS.md).
+rstation-printer-admin.service

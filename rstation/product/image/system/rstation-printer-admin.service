@@ -1,0 +1,14 @@
+[Unit]
+Description=Let the local admin account administer CUPS (lpadmin)
+# Group membership is read when the account logs in, and cupsd reads group
+# membership per request, so this only has to precede any login; ordering it
+# before cups.service keeps the first boot tidy.
+Before=cups.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rstation-printer-admin
+
+[Install]
+WantedBy=multi-user.target

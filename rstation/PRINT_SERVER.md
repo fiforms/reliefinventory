@@ -101,8 +101,26 @@ audio, and we don't reimplement driver/PPD selection.
   - backend lists the CUPS queues (via `lpstat`/pycups) and their state (idle, offline, out of
     media) and includes them in the heartbeat as `print_printers`;
   - backend prints jobs for the daemon (`lp`/pycups) and reads back job completion/failure;
-  - frontend adds a small "Printers" page to the settings shell: the CUPS link, the detected
-    queues and their status, and a "print test page" button.
+  - frontend adds a small "Printers" page to the settings shell (**built** — `frontend/
+    PrintersSettings.vue`, `backend/printers_api.py`): the detected queues with status, device and
+    queue length (refreshed every 5 s), a "print test page" button per queue, and an "Open printer
+    setup" button that navigates the kiosk tab to `http://localhost:631/admin` (the remote's Back
+    key returns, same as the captive-portal sign-in). Adding/removing queues, pause/resume and media
+    size stay in CUPS: those need a CUPS admin login, which the backend deliberately doesn't hold.
+    The CUPS UI's login is the device's local `slideadmin` account (password set at image build);
+    `image/system/rstation-printer-admin.service` adds it to `lpadmin` on every boot.
+    **The password is set from the same page** — on a first-run or factory-reset device no old
+    password is needed; after that the current one is. The rule is enforced by a root helper, not
+    the UI: the backend (`admin_password.py`) drops a request file in `/run/slide-announcer/
+    admin-password` and starts `slide-announcer-admin-password.service` (the platform's polkit rule
+    already lets it start `slide-announcer-*` units); the helper
+    (`image/system/scripts/slide-announcer-admin-password`, root-owned, self-contained) checks the
+    current password against `/etc/shadow`, throttles wrong guesses (3 s each, 5 in a row = 5 min
+    lockout, persisted), and sets it with `chpasswd`. "Is a password set?" is a marker in `/etc/rstation`,
+    which lives on the `/data` overlay — so a factory reset clears the marker and restores the
+    build-time password together, and a lost password can always be recovered that way. Until a
+    password is set the page hides "Open printer setup". Not yet exercised on a real device (polkit
+    start, `chpasswd` under the unit's sandboxing, CUPS accepting the new password).
 - **Naming/typing happens in the web app:** the Pi only reports what CUPS has; staff assign each
   reported queue a type ("Label Printer") and workspace on the `/setup/devices` side, which
   creates/updates the `printers` rows. So a queue is unusable for jobs until it's been typed.

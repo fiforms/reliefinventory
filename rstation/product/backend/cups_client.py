@@ -70,6 +70,20 @@ class CupsError(Exception):
 
 
 @dataclass
+class PrinterDetails:
+    """What the on-device Printers page shows for one queue (PrinterInfo plus
+    the descriptive attributes the print server itself has no use for)."""
+    name: str
+    state: str
+    message: str | None
+    model: str | None  # the driver's make-and-model, e.g. "Zebra ZD421 (EPL2)"
+    device: str | None  # where it prints to, credentials stripped (usb://..., ipp://host/...)
+    location: str | None
+    accepting: bool
+    jobs: int  # jobs waiting or printing
+
+
+@dataclass
 class PrinterInfo:
     name: str
     state: str  # idle | printing | error | offline
@@ -143,6 +157,18 @@ def classify_printer(state: int | None, reasons, accepting: bool | None = True, 
     return IDLE, None
 
 
+def _without_credentials(uri) -> str | None:
+    """A device URI can carry a password (ipp://user:secret@host/...,
+    smb://...); the page is shown on a kiosk screen, so drop it."""
+    if not isinstance(uri, str) or not uri:
+        return None
+    scheme, sep, rest = uri.partition("://")
+    if not sep:
+        return uri
+    authority, slash, path = rest.partition("/")
+    return f"{scheme}://{authority.rpartition('@')[2]}{slash}{path}"
+
+
 class CupsClient:
     def __init__(self, base_url: str = DEFAULT_URL, user: str = USER, transport: httpx.AsyncBaseTransport | None = None):
         self.base_url = base_url.rstrip("/")
@@ -202,6 +228,33 @@ class CupsClient:
                 printer.get("printer-state"), printer.get("printer-state-reasons"),
                 printer.get("printer-is-accepting-jobs", True), printer.get("printer-state-message") or None)
             found.append(PrinterInfo(name=name, state=state, message=message))
+        return sorted(found, key=lambda p: p.name)
+
+    async def printer_details(self) -> list[PrinterDetails]:
+        """Every queue with the descriptive attributes the Printers page shows."""
+        attributes = self._base_attributes()
+        attributes["requested-attributes"] = [ipp.keyword(a) for a in (
+            "printer-name", "printer-state", "printer-state-reasons", "printer-state-message", "printer-is-accepting-jobs",
+            "printer-make-and-model", "device-uri", "printer-location", "queued-job-count")]
+        response = await self._call("/", ipp.CUPS_GET_PRINTERS, attributes)
+        if not response.ok:
+            if response.status == 0x0406:
+                return []
+            raise self._failure(response, "Could not list printers")
+        found = []
+        for printer in response.group_attributes(ipp.PRINTER_ATTRIBUTES):
+            name = printer.get("printer-name")
+            if not name:
+                continue
+            accepting = printer.get("printer-is-accepting-jobs", True)
+            state, message = classify_printer(
+                printer.get("printer-state"), printer.get("printer-state-reasons"), accepting,
+                printer.get("printer-state-message") or None)
+            jobs = printer.get("queued-job-count")
+            found.append(PrinterDetails(
+                name=name, state=state, message=message, model=printer.get("printer-make-and-model") or None,
+                device=_without_credentials(printer.get("device-uri")), location=printer.get("printer-location") or None,
+                accepting=accepting is not False, jobs=jobs if isinstance(jobs, int) else 0))
         return sorted(found, key=lambda p: p.name)
 
     async def submit(self, queue: str, pdf: bytes, title: str, copies: int = 1, job_options: dict | None = None) -> int:

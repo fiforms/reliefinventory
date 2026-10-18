@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from product import Product
 
 from .print_station import default_station
+from .printers_api import build_router as printers_router
 
 router = APIRouter()
 station = default_station()
@@ -29,7 +30,7 @@ product = Product(
     name="portal",
     # Where this product's server implements docs/DEVICE_CONTRACT.md.
     api_base="/api/devices",
-    routers=[router],
+    routers=[router, printers_router(station.cups)],
     # Claims print jobs from the website and prints them (see print_station.py).
     background_tasks=[station.run],
     # Appears as `portal` and `print_station` in GET /api/local/status.
