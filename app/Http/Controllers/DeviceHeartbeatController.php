@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\DeviceReleaseResolver;
+use App\Services\PrintBroadcaster;
 use App\Services\PrintQueueService;
 use Illuminate\Http\Request;
 
@@ -20,6 +21,9 @@ class DeviceHeartbeatController extends Controller
     public function heartbeat(Request $request, DeviceReleaseResolver $resolver, PrintQueueService $queue)
     {
         $device = $request->attributes->get('managed_device');
+        // Before last_seen_at is bumped below: lets a print server's return from
+        // offline refresh the Print menu's status dots.
+        $wasOnline = $device->online;
 
         $data = $request->validate([
             'app_version' => 'nullable|string|max:255',
@@ -59,7 +63,7 @@ class DeviceHeartbeatController extends Controller
         // Absent key = this device isn't reporting printers (leave the snapshot
         // alone); an empty array is a real report of "no queues".
         if (array_key_exists('print_printers', $data) && $data['print_printers'] !== null) {
-            $queue->syncReportedPrinters($device, $data['print_printers']);
+            $queue->syncReportedPrinters($device, $data['print_printers'], $wasOnline);
         }
 
         $app = $resolver->offerFor($device, 'app');
@@ -86,6 +90,9 @@ class DeviceHeartbeatController extends Controller
             'kiosk_function' => $device->kiosk_function,
             'kiosk_path' => $function['path'] ?? null,
             'kiosk_location_id' => $device->kiosk_location_id,
+            // Print servers: where to listen for instant wake-ups (null when
+            // realtime is off — keep polling). See PrintBroadcaster::connectionFor().
+            'print_realtime' => PrintBroadcaster::connectionFor($device),
         ]);
     }
 }

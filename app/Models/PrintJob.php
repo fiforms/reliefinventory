@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Services\PrintBroadcaster;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -117,6 +118,8 @@ class PrintJob extends Model
                 'notes' => $notes,
             ]);
         });
+
+        PrintBroadcaster::jobChanged($this);
     }
 
     /**
@@ -157,6 +160,7 @@ class PrintJob extends Model
                 'changed_by_person_id' => $personId,
                 'notes' => $note,
             ]);
+            PrintBroadcaster::jobChanged($this);
         });
     }
 

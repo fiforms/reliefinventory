@@ -28,8 +28,9 @@ class PrintQueueService
      * just read as unavailable (see Printer::getStatusAttribute()).
      *
      * @param  array<int, array{queue_name: string, state?: string, state_message?: string|null}>  $queues
+     * @param  bool  $wasOnline  whether the device was online before this heartbeat (a return from offline counts as a change)
      */
-    public function syncReportedPrinters(ManagedDevice $device, array $queues): void
+    public function syncReportedPrinters(ManagedDevice $device, array $queues, bool $wasOnline = true): void
     {
         $clean = collect($queues)
             ->map(fn ($q) => [
@@ -39,6 +40,10 @@ class PrintQueueService
             ])
             ->unique('queue_name')
             ->values();
+
+        // A server coming back online, a queue changing state, or a queue
+        // appearing/vanishing all change what the Print menu should show.
+        $changed = ! $wasOnline || $device->reported_printers !== $clean->all();
 
         DB::transaction(function () use ($device, $clean) {
             $device->reported_printers = $clean->all();
@@ -53,6 +58,10 @@ class PrintQueueService
                     ->save();
             }
         });
+
+        if ($changed) {
+            PrintBroadcaster::printersChanged();
+        }
     }
 
     /**
@@ -85,6 +94,7 @@ class PrintQueueService
                     'changed_by_person_id' => $personId,
                     'notes' => "Sent to {$printer->name}",
                 ]);
+                PrintBroadcaster::jobChanged($job);
 
                 return $job;
             });

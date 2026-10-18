@@ -28,6 +28,18 @@ return [
     // Rendered job PDFs older than this are deleted (days).
     'retain_days' => 14,
 
+    // Where *print servers* reach the realtime server (Laravel Reverb) for
+    // instant wake-ups. Leave unset and they use the same address the app
+    // publishes to (REVERB_HOST/PORT/SCHEME). Set these only when the app
+    // publishes to Reverb locally (e.g. http://127.0.0.1:8080) while devices
+    // connect through the public proxy (wss://your.host:443). Browsers use the
+    // VITE_REVERB_* values instead. See scripts/REVERB.md.
+    'realtime' => [
+        'host' => env('REVERB_PUBLIC_HOST'),
+        'port' => env('REVERB_PUBLIC_PORT'),
+        'scheme' => env('REVERB_PUBLIC_SCHEME'),
+    ],
+
     // Storage disk + directory holding queued job PDFs (never public).
     'disk' => 'local',
     'directory' => 'print-jobs',

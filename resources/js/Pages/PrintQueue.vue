@@ -7,8 +7,10 @@
 	their own jobs read-only; manage-print-queue sees everyone's and can
 	cancel, retry, divert to another printer of the same paper type, and clear
 	a printer's waiting jobs. Printer health (online / error / offline) comes
-	from each print server's heartbeat. Refreshes itself every few seconds —
-	see rstation/PRINT_SERVER.md. Panel-style page per the admin-page-style
+	from each print server's heartbeat. With realtime (Reverb) on it updates the
+	instant something happens and polls only as a minute-long safety net; with
+	it off, or if the socket drops, it polls every few seconds — see
+	rstation/PRINT_SERVER.md. Panel-style page per the admin-page-style
 	skill, not RIForm.
 -->
 
@@ -17,6 +19,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { onPrintEvent, realtime, startQueueRealtime } from '@/realtime';
 
 defineProps({
 	breadcrumb: {
@@ -24,7 +27,8 @@ defineProps({
 	},
 });
 
-const POLL_MS = 5000;
+const POLL_MS = 5000; // fallback cadence when there is no live socket
+const SAFETY_POLL_MS = 60000; // belt-and-braces refresh while the socket is healthy
 
 const error = ref('');
 const notice = ref('');
@@ -45,6 +49,9 @@ const expanded = ref(null); // job id whose history is open
 const history = ref([]);
 
 let pollTimer = null;
+let reloadTimer = null;
+let lastLoadAt = 0;
+const unsubscribers = [];
 
 async function load() {
 	try {
@@ -55,6 +62,8 @@ async function load() {
 		printers.value = data.printers;
 		canManage.value = data.can_manage;
 		updatedAt.value = new Date();
+		lastLoadAt = Date.now();
+		if (data.can_manage) startQueueRealtime();
 		if (expanded.value) await loadHistory(expanded.value);
 	} catch (e) {
 		// A failed refresh shouldn't wipe the screen or nag every 5 seconds.
@@ -211,14 +220,29 @@ function age(iso) {
 	return `${Math.floor(hours / 24)} d ago`;
 }
 
+// A burst of events (a batch printing) becomes one refresh.
+function scheduleReload() {
+	clearTimeout(reloadTimer);
+	reloadTimer = setTimeout(load, 150);
+}
+
 onMounted(() => {
 	load();
+	unsubscribers.push(onPrintEvent('print-job.changed', scheduleReload));
+	unsubscribers.push(onPrintEvent('printers.changed', scheduleReload));
 	pollTimer = setInterval(() => {
-		if (!document.hidden) load();
+		if (document.hidden) return;
+		// Healthy socket: events do the work. Otherwise poll fast.
+		if (realtime.connected && Date.now() - lastLoadAt < SAFETY_POLL_MS) return;
+		load();
 	}, POLL_MS);
 });
 
-onUnmounted(() => clearInterval(pollTimer));
+onUnmounted(() => {
+	clearInterval(pollTimer);
+	clearTimeout(reloadTimer);
+	unsubscribers.forEach((off) => off());
+});
 </script>
 
 <template>
@@ -392,7 +416,7 @@ onUnmounted(() => clearInterval(pollTimer));
 
 					<p class="text-xs text-gray-500">
 						<template v-if="updatedAt">Updated {{ updatedAt.toLocaleTimeString() }}. </template>
-						This page refreshes every few seconds.
+						{{ realtime.connected ? 'Updating live.' : 'This page refreshes every few seconds.' }}
 						<template v-if="canManage">Cancelling a job that is already printing doesn't stop paper that has started.</template>
 						Finished jobs' files are removed after a couple of weeks; the record stays.
 					</p>

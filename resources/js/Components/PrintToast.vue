@@ -7,9 +7,15 @@
 	in AuthenticatedLayout and driven by a window event, so the message
 	outlives whatever menu/modal triggered it. Event: 'ri:print-notice' with
 	detail { type: 'ok' | 'warn' | 'error', text }.
+
+	Also, when realtime (Reverb) is on, announces when one of *my* jobs
+	finishes: "printed on Office" or "failed: out of labels". This is also the
+	one place the page-wide realtime subscription for printing is started.
 -->
 
 <script>
+import { onPrintEvent, startPrintRealtime } from '@/realtime';
+
 export default {
 	data() {
 		return { notice: null, timer: null };
@@ -22,12 +28,28 @@ export default {
 	},
 	mounted() {
 		window.addEventListener('ri:print-notice', this.onNotice);
+		const userId = this.$page.props.auth?.user?.id;
+		if (this.$page.props.printing?.canPrint && userId) {
+			startPrintRealtime(userId);
+			this.offJob = onPrintEvent('print-job.changed', this.onJobChanged);
+		}
 	},
 	beforeUnmount() {
 		window.removeEventListener('ri:print-notice', this.onNotice);
+		this.offJob?.();
 		clearTimeout(this.timer);
 	},
 	methods: {
+		// Managers also receive everyone's jobs on the queue channel; only announce mine.
+		onJobChanged(job) {
+			if (job.requested_by !== this.$page.props.auth?.user?.id) return;
+			const where = job.printer_name ? ` on ${job.printer_name}` : '';
+			if (job.status === 'printed') {
+				this.onNotice({ detail: { type: 'ok', text: `“${job.title}” printed${where}.` } });
+			} else if (job.status === 'failed') {
+				this.onNotice({ detail: { type: 'error', text: `“${job.title}” failed${where}${job.error_message ? ': ' + job.error_message : '.'}` } });
+			}
+		},
 		onNotice(event) {
 			this.notice = event.detail;
 			clearTimeout(this.timer);

@@ -44,6 +44,8 @@
 -->
 
 <script>
+import { onPrintEvent } from '@/realtime';
+
 // Printer lists are small and shared by every menu on a page, so cache them
 // briefly per media type rather than refetching on every open.
 const CACHE_MS = 30000;
@@ -93,6 +95,11 @@ export default {
 	},
 	mounted() {
 		document.addEventListener('click', this.onDocumentClick);
+		// A print server's status changed: drop the cached list (and refresh it if the menu is open).
+		this.offPrinters = onPrintEvent('printers.changed', () => {
+			delete printerCache[this.media];
+			if (this.open) this.loadPrinters();
+		});
 		try {
 			const saved = localStorage.getItem(this.storageKey());
 			this.lastUsedId = saved ? parseInt(saved, 10) : null;
@@ -102,6 +109,7 @@ export default {
 	},
 	beforeUnmount() {
 		document.removeEventListener('click', this.onDocumentClick);
+		this.offPrinters?.();
 	},
 	methods: {
 		storageKey() {

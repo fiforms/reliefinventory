@@ -22,7 +22,9 @@
     "dependencies": {
         "html2canvas": "^1.4.1",
         "html5-qrcode": "^2.3.8",
-        "puppeteer": "^25.13.0"
+        "laravel-echo": "^2.6.1",
+        "puppeteer": "^25.13.0",
+        "pusher-js": "^8.6.0"
     },
     "overrides": {
         "postcss-selector-parser": "^7.1.6"

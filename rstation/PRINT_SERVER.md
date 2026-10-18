@@ -2,10 +2,18 @@
 
 See also [IMPLEMENTATION.md](IMPLEMENTATION.md) for the wider kiosk product notes.
 
-Status: **planned, not built** (written 2026-10-08). Depends on the R Station fleet management
-server half, which exists as of the same date but hasn't been run against a real device yet —
-see `app/Http/Controllers/DevicePairController.php` / `DeviceHeartbeatController.php`,
+Status: **web-app half built** (2026-10-18, branch `print-queue`): printers/jobs, the queue and
+`/print-queue` screen, the "Print ▾" menu on every print point, the device API, and optional
+realtime (Reverb) — see "Wire protocol (as built)" below, which is what a print-server client
+implements. **Not built yet:** the print-server clients themselves (the Pi daemon and the
+PC/Mac reference client); nothing has run against a real printer. Originally planned
+2026-10-08; depends on the R Station fleet pairing/heartbeat in
+`app/Http/Controllers/DevicePairController.php` / `DeviceHeartbeatController.php`,
 `routes/api.php`, `/setup/devices`, and `rstation/platform/docs/DEVICE_CONTRACT.md`.
+
+A print server is any paired device (`kiosk_function = print_station`) — an R Station Pi **or** a
+PC/Mac running a software print server; the protocol below is client-agnostic. Both pair with a
+normal pairing code and report `platform` (`rstation|windows|macos|linux`) in the heartbeat.
 
 ## Goal
 
@@ -23,7 +31,10 @@ claims it and prints it on its attached label printer.
 web app (queue)  <--poll/claim/report--  Pi print daemon  --CUPS-->  printer
 ```
 
-The server never pushes (same constraint as the rest of the device contract): the daemon polls.
+HTTP polling is always authoritative (same constraint as the rest of the device contract). An
+optional realtime channel (Laravel Reverb) can *wake* the daemon the instant a job is waiting, but
+it is only a hint — the daemon must keep a slow fallback poll, and everything works with realtime
+off. See "Realtime wake-ups".
 
 ### Web app
 
@@ -98,22 +109,94 @@ audio, and we don't reimplement driver/PPD selection.
 - Because the platform is consumed as an unmodified submodule (`rstation/platform`), all of this
   lives in `rstation/product`, not the submodule.
 
+## Wire protocol (as built)
+
+All under `/api/devices`, `Authorization: Bearer <device token>` (the same token as the
+heartbeat), throttled to 240 requests/minute per IP. Anything about another device's job is a
+`404`, never `403`.
+
+**Heartbeat** — `POST /heartbeat`. Print servers additionally send:
+
+```json
+{ "platform": "windows",
+  "print_printers": [ { "queue_name": "Zebra ZD421", "state": "idle|printing|error|offline",
+                        "state_message": "Out of labels" } ] }
+```
+
+Send the *complete* list every time (an absent `print_printers` key leaves the stored snapshot
+alone; `[]` means "no queues"). A new `queue_name` creates an inactive, untyped printer row for
+staff to name/site/type on `/setup/devices`; a queue that disappears keeps its row and shows as
+unavailable. **Recommended cadence for print servers: every 30–60 s, and immediately when a
+queue's state changes** — the contract's 5-minute default means a printer error can take that
+long to reach the Print menu, and a server is shown offline after
+`config('devices.offline_after_minutes')` (15) without a heartbeat. The response also carries
+`print_realtime` (below).
+
+**Jobs**
+
+| Call | Result |
+|---|---|
+| `GET /print-jobs` | `{jobs:[{id, queue_name, title, copies, media, width_in, height_in, created_at}]}` — queued jobs on this device's *active* printers, oldest first. Also reclaims expired claims and purges old files. |
+| `POST /print-jobs/{id}/claim` | `200 {id, queue_name, copies, claim_expires_at}`, atomic. Re-claiming a job you already hold is idempotent. `409` if it's no longer claimable. |
+| `GET /print-jobs/{id}/payload` | The PDF (`application/pdf`). `409` unless you hold the claim; `410` if the file was cleaned up. |
+| `POST /print-jobs/{id}/result` | `{status: "printed"|"failed", error?}` (error ≤ 2000 chars — make it useful to the person reading the queue). Idempotent for the same result; `409` otherwise. |
+
+Claims expire after `config('printing.claim_expires_minutes')` (5); a claim that never reports
+back returns to the queue (up to `max_attempts`, then it shows as failed). Report `failed` for
+anything you *know* went wrong (out of paper, printer offline) — reported failures are never
+retried automatically; staff retry or divert from `/print-queue`. The claim id is the
+idempotency key: never print a job you didn't claim. Page size: `width_in` x `height_in` is the
+media the job was rendered for — print "actual size", no scaling.
+
+**Suggested loop:** poll `GET /print-jobs` every 3–5 s (or 30–60 s while the realtime socket is
+connected) → for each job, claim → download → hand to the OS print system → report.
+
+## Realtime wake-ups (optional, Laravel Reverb)
+
+When the app has realtime on (`scripts/REVERB.md`), the heartbeat response contains
+`print_realtime`; otherwise it is `null` and the client just polls.
+
+```json
+"print_realtime": { "driver": "reverb", "key": "<public app key>", "host": "ri.example.org",
+                    "port": 443, "scheme": "https", "path": "",
+                    "channel": "wake.<random 40 chars>", "event": "print-job.available" }
+```
+
+Connect a WebSocket speaking the Pusher protocol to
+`{wss|ws}://{host}:{port}{path}/app/{key}?protocol=7&client=...&version=...`, and on
+`pusher:connection_established` send
+`{"event":"pusher:subscribe","data":{"channel":"<channel>"}}`. The channel is **public** (no
+signing handshake): its unguessable name is the only secret, unique to this device, rotated on
+re-pair and cleared on revoke. When the `print-job.available` event arrives (empty payload), run
+the polling loop immediately. It means only "poll now" — claiming and downloading still need the
+bearer token. Handle `pusher:ping` with `pusher:pong`, reconnect with backoff, and re-read
+`print_realtime` from each heartbeat response (the channel can change). Any Pusher client library
+works; so does a few lines of raw WebSocket (verified against a live Reverb with plain Node).
+
 ## Open questions
 
-1. **Printer registration details:** how a reported CUPS queue gets claimed/typed in the web
-   app, and what happens to `printers` rows when a queue disappears from the heartbeat (mark
-   offline, don't delete). Approach is decided — see "Printer setup on the device".
-2. **Workspace model:** is `KioskLocation` enough, or do we need workspaces within a site?
-3. **Trust:** the claim/payload endpoints reuse the device token, and payload URLs should be
-   unguessable like release artifacts; decide whether jobs ever carry sensitive content.
-4. **Failure UX:** retry policy, who gets notified when a printer is offline or out of labels.
+1. ~~**Printer registration details**~~ — *decided and built:* reported queues become inactive,
+   untyped `printers` rows; staff name, site, type and switch them on at `/setup/devices`; a
+   vanished queue keeps its row and reads as unavailable.
+2. ~~**Workspace model**~~ — *decided:* `KioskLocation` is the site; no finer "workspace".
+3. ~~**Trust**~~ — *decided:* payloads need the claiming device's bearer token (no public URLs);
+   the realtime wake channel carries no data.
+4. **Failure UX:** *partly built:* reported failures stay visible (not auto-retried) in
+   `/print-queue`, the requester gets a "failed: …" notice when realtime is on, and staff can
+   retry/divert. Still open: who is *notified* (email/banner) when a printer goes offline or
+   runs out of labels, and a per-function offline threshold shorter than 15 minutes for print
+   servers that heartbeat every 30–60 s.
 5. **Dual role:** can one Pi be both a display kiosk and a print station, or is print_station
    always headless? (The `kiosk_function` is currently a single value per device.)
 
 ## Suggested build order
 
-1. Run the fleet pairing/heartbeat end to end on a real Pi first.
-2. `printers` + `print_jobs` tables, queue API, and the device-side claim/result endpoints, with
-   tests (claim atomicity, wrong-device access, stale-claim expiry).
-3. Pi daemon + CUPS in the product image; test against a real printer.
-4. "Print to…" integration, starting with pallet labels; then the queue page.
+1. Run the fleet pairing/heartbeat end to end on a real Pi first. *(not done)*
+2. ~~`printers` + `print_jobs` tables, queue API, and the device-side claim/result endpoints,
+   with tests~~ *(done: claim atomicity, wrong-device access, stale-claim expiry, idempotent
+   results)*
+3. Print-server clients — the Pi daemon + CUPS in the product image, and a PC/Mac reference
+   client — tested against a real printer. *(not done)*
+4. ~~"Print to…" integration on every print point, then the queue page~~ *(done)*
+5. ~~Realtime wake-ups and live queue updates (optional Reverb)~~ *(server and browser side
+   done; the clients' side is part of step 3)*

@@ -294,6 +294,57 @@ setup above: the `weasyprint` binary (Python, with native Pango/Cairo deps — `
 2026-08-17) — same historical trap as browsershot above, where a package sits as a driver's "suggest"
 and silently never gets pulled in.
 
+### Print queue — per-site printers, print servers, optional realtime
+
+Everywhere something is printed there is one shared `PrintMenu.vue` ("Print ▾": **Download PDF** plus
+each active printer at a site that matches the document's paper size) instead of a bare PDF link.
+Choosing a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
+and reports back. Built 2026-10-18 on branch `print-queue`; see `rstation/PRINT_SERVER.md` (wire protocol —
+what a print-server client implements) and `scripts/REVERB.md` (provisioning).
+
+- **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
+  software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
+  `print_printers` reports its OS print queues; each becomes a `printers` row (inactive, untyped) that staff
+  name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
+  A printer's status (`idle|printing|error|offline|unavailable`) is **derived on read** from its device's
+  heartbeat — the app has no scheduler to flip a stored column. `media` is a plain string key into
+  `config/printing.php` (`report`, `label_large`, `label_address`), deliberately not a DB enum, so
+  user-defined sizes later means moving that config into a table without touching printers/jobs/the API.
+- **`print_jobs` + `print_job_status_log`**: `queued → claimed → printed | failed`, plus `cancelled`;
+  every status write goes through `PrintJob::transitionTo()` (legal-move check + audit row, same pattern
+  as `DonationOffer`). `divertTo()` re-routes a queued/failed job to another printer of the *same media*.
+  Claims are row-locked and idempotent; a claim that never reports back is reclaimed **lazily** (on a
+  server's poll or when someone opens the queue) back to `queued`, or `failed` after
+  `printing.max_attempts`. A failure a server *reports* is never auto-retried. Finished jobs' PDFs are
+  purged after `printing.retain_days` (lazily, hourly, via cache); the job rows stay as history.
+- **Rendering is shared with downloads.** Each PDF controller exposes an unrendered `*Builder()`
+  (`PalletReportController::singleLabelBuilder`, `OrderController::bolBuilder`, …) that both its GET download
+  route and the print queue use, so a printed copy can't drift from a downloaded one.
+  `App\Services\Printing\DocumentRegistry` maps document keys → builder + media + the permission that
+  document's own download route needs + param rules. `POST /json/print` (permission `print-documents`)
+  validates the printer is usable and its media matches the document, re-checks the document's permission,
+  renders at submit time, stores the PDF (never public) and queues a job. When adding a new print point:
+  add a `*Builder()`, a registry entry, and drop a `<PrintMenu>` in place of the link.
+- **Permissions:** `print-documents` (use the menu, see your own jobs — base tier) and
+  `manage-print-queue` (see/cancel/retry/divert/clear anyone's — Office/Administrator). Printer setup is
+  `manage-devices`. `/print-queue` is `print-documents` for viewing; mutations are `manage-print-queue`.
+- **Realtime (Laravel Reverb) is an optional accelerator, never a dependency.** With
+  `BROADCAST_CONNECTION=log` (the default) everything polls (browsers every ~5 s, print servers on their
+  own interval). With `reverb`, `App\Services\PrintBroadcaster` publishes after the transaction commits,
+  only when enabled, with 1–2 s timeouts, swallowing errors — a Reverb outage can never break a print.
+  Browsers use **private** channels authorised via the session (`routes/channels.php`: `print-queue`,
+  `print-printers`, `print-user.{id}`) and `resources/js/realtime.js`; events carry no more than the user
+  could already fetch. Print servers get a **per-device public wake channel** whose unguessable name is the
+  only secret, delivered in their authenticated heartbeat response (`print_realtime`), rotated on re-pair,
+  cleared on revoke, never serialized to the admin UI (`ManagedDevice::$hidden`); the message carries no
+  data — it only means "poll now". `phpunit.xml` pins `BROADCAST_CONNECTION=null` so tests never publish to a
+  real Reverb; tests that need it switch it on and fake the events. Requires its own server provisioning
+  (systemd unit, nginx WebSocket proxy) — see `scripts/REVERB.md`; `update.sh` restarts it on deploy if the
+  unit exists.
+- **Still open:** the print-server clients (Pi daemon, PC/Mac reference client) are unwritten, so nothing has
+  printed on real hardware; staff notification when a printer goes offline; a shorter offline threshold for
+  print servers than the fleet-wide 15 minutes.
+
 ### Volunteer hours kiosk — active-window sync needs a systemd timer
 
 `people.volunteer_active` (gates the kiosk's default tile grid) is flipped automatically for volunteers
