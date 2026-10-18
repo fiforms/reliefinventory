@@ -156,14 +156,29 @@ Issues identified October 8, 2026
    (wire protocol) and `scripts/REVERB.md` (provisioning). The fleet pairing/heartbeat tests now run and
    pass; nothing has been paired with a real device yet, and the Pi product (`rstation/product`) still
    doesn't act on the heartbeat's `kiosk_path`.
- - **Open: the print-server clients** — the Pi daemon (CUPS in the image, `rstation/product/backend/`)
-   and a PC/Mac reference client. Nothing has printed on real hardware yet.
- - **Open: verify the client-side assumptions on real printers.** The state mappings (CUPS
-   `printer-state` / `printer-state-reasons`, Windows `Get-Printer` status) and the per-OS print commands
-   in `PRINT_CLIENT_SPEC.md` §2 and §4 (`lp -o print-scaling=none`, SumatraPDF `-print-settings`, ...) are
-   written from knowledge, not tested. Also unexercised: the `label_address` paper size (no document
-   uses it yet — there are no address labels), real label-printer page-size/margin behaviour, and the
-   claim keep-alive timing with a genuinely slow printer. Update the spec with whatever turns out wrong.
+ - **Pi print daemon — built 2026-10-18** in `rstation/product/backend/` (`print_station.py`; uses IPP to the
+   local CUPS, `cups_client.py` + `ipp.py`), with `image/packages` adding `cups` + `cups-filters`. Tested in
+   virtual time against fakes, against a real CUPS with throwaway loopback queues (opt-in:
+   `RI_CUPS_INTEGRATION=1`), and end to end against the real web app + Reverb on the disposable test DB
+   (job queued -> printed in ~1 s via the wake-up; an unreachable printer fails with CUPS' real message).
+   Run the tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/run-tests.sh`.
+ - **Open: run the Pi daemon on a real Pi with real printers.** Build the image, pair a Pi, add a real
+   printer in CUPS, and print. Nothing has run off this dev machine. Product `VERSION` / `image/VERSION`
+   have not been bumped for this change (the `packages` change needs a full image, not a hotfix).
+ - **Open: Pi on-device UX.** A "Printers" page in the settings shell (`rstation/product/frontend/`: the
+   detected queues and their state, a test-page button, a link to CUPS' admin UI) and making CUPS' web UI
+   reachable and administrable from there (the `lpadmin` account, PIN-gated) — see `PRINT_SERVER.md`,
+   *Printer setup on the device*. None of it is built; for now queues must be added over SSH
+   (`lpadmin`) or CUPS' UI on `localhost:631`.
+ - **Open: the PC/Mac client.** `cups_client.py` + `ipp.py` are reusable on macOS/Linux as they are; Windows
+   needs its own printer discovery/printing (`PRINT_CLIENT_SPEC.md` §4, unverified).
+ - **Open: verify the remaining client-side assumptions on real printers.** The CUPS 2.4 state behaviour is
+   now verified on Linux loopback queues (including that an unreachable *network* printer looks "idle" in
+   `lpstat` and only shows in `printer-state-message` while a job is attempted — `PRINT_CLIENT_SPEC.md` §2).
+   Still unexercised: USB and driver-based label printers (a USB backend fails differently), the
+   `print-scaling=none` effect on a real label's page size, the Windows commands, macOS, the `label_address`
+   paper size (no document uses it yet — there are no address labels), and the claim keep-alive with a
+   genuinely slow printer. Update the spec with whatever turns out wrong.
  - **Open: tell staff when a printer goes offline or errors.** Today it only shows as a dot in the
    Print menu and on `/print-queue`. Needs a design: who is told (by site? by role — e.g.
    `manage-print-queue` holders), through what (email, the existing notifications bell, a site banner),

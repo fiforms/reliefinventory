@@ -348,10 +348,18 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   real Reverb; tests that need it switch it on and fake the events. Requires its own server provisioning
   (systemd unit, nginx WebSocket proxy) — see `scripts/REVERB.md`; `update.sh` restarts it on deploy if the
   unit exists.
-- **Still open** (tracked in `TODO.md` item 11): the print-server clients (Pi daemon, PC/Mac reference client)
-  are unwritten, so nothing has printed on real hardware and the client-side state mappings/print commands in
-  the spec are unverified; staff notification when a printer goes offline; a shorter offline threshold for
-  print servers than the fleet-wide 15 minutes.
+- **The Pi print server** is `rstation/product/backend/` (`print_station.py` — read its docstring): a
+  `Product.background_tasks` loop that talks to the local CUPS over **IPP** (`ipp.py`, `cups_client.py`; no
+  `pycups`/`lp`, deliberately — see `PRINT_CLIENT_SPEC.md` §4), sends its own faster heartbeats beside the
+  platform's, claims one job per queue at a time, keeps the claim alive, and records every job in a ledger under
+  `/data/print-station` so a restart never prints twice or loses a result. Real CUPS facts it relies on (an
+  unreachable network printer reads "idle" until a job is attempted; only the printer message gives it away) are
+  in the spec §2. Run its tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal
+  rstation/platform/local-app/run-tests.sh -q` (virtual-time fakes; `RI_CUPS_INTEGRATION=1` adds the real-CUPS
+  ones, which create and remove throwaway loopback queues).
+- **Still open** (tracked in `TODO.md` item 11): nothing has run on a real Pi or real printers; the Pi's
+  on-device Printers page and CUPS admin access; the PC/Mac client; staff notification when a printer goes
+  offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
 ### Volunteer hours kiosk — active-window sync needs a systemd timer
 

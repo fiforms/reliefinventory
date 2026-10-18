@@ -68,12 +68,37 @@ details (fix both).
   | CUPS `printer-state` 3 (idle) | `idle` | — |
   | CUPS `printer-state` 4 (processing) | `printing` | — |
   | CUPS 5 (stopped) with reason `media-empty`, `media-jam`, `marker-supply-empty`, `toner-empty`, `cover-open`… | `error` | a plain-language version of the reason ("Out of labels") |
-  | CUPS 5 / `offline-report`, `connecting-to-device`, queue disabled | `offline` | "Printer offline" |
+  | CUPS 5 with reason `paused` (queue disabled, `cupsdisable`) | `offline` | "Printer paused" |
+  | CUPS `printer-is-accepting-jobs` false (`cupsreject`) | `offline` | "Printer is not accepting jobs" |
+  | CUPS 4 (processing) while the printer message says it can't be reached (see below) | `offline` | CUPS' own message, e.g. "Printer not reachable: …" |
+  | CUPS 5 with reason `offline-report` | `offline` | "Printer offline" |
   | Windows `Get-Printer`: `PrinterStatus` Normal | `idle` | — |
   | Windows `WorkOffline` true / status Offline | `offline` | "Printer offline" |
   | Windows PaperOut / PaperJam / TonerLow-not-empty… | `error` | what the status says |
 
   `state_message` is shown to staff next to the printer — write it for a warehouse volunteer.
+
+  **What real CUPS 2.4 does** (checked against throwaway loopback queues on Linux; the Pi
+  implementation is `rstation/product/backend/cups_client.py`, and its opt-in
+  `test_cups_integration.py` reproduces all of this):
+
+  * `paused` and "not accepting jobs" appear exactly as in the table.
+  * **An unreachable *network* printer does not look stopped or offline.** For a socket queue whose
+    host refuses the connection, or can't be resolved, CUPS keeps the queue in `processing`, leaves the
+    reasons at `none` (or `connecting-to-device`), and never gives up: the job sits in `job-printing`
+    forever and `lpstat` still says "idle, Alerts: none". The *only* signal is the free-text
+    `printer-state-message` — `The printer may not exist or is unavailable at this time.` for a refused
+    connection, `Unable to locate printer "<host>".` for an unresolvable host — and it is only visible
+    **while a job is being attempted**; an idle dead printer reads as healthy until something is sent
+    to it. So a client must (a) treat those messages, while processing, as `offline`, (b) give up on a
+    job whose printer looks offline/errored for more than a short grace period or that makes no progress
+    for several minutes — **cancel the CUPS job** (or it prints later when the printer returns, a
+    duplicate) and report `failed` with that message — and (c) hold the printer as offline for a couple
+    of minutes after such a failure instead of failing the next job the same way. The Pi client does all three.
+  * Job states are exact: `completed` (9, reason `job-completed-successfully`), `canceled` (7,
+    `job-canceled-by-user`), `aborted` (8), and progress counters (`job-impressions-completed`) are
+    reported even for a raw queue. A job CUPS has purged is "not found" — report it failed with advice,
+    don't guess it printed.
 
 ## 3. Job loop
 
@@ -123,17 +148,21 @@ The endpoints, shapes and status codes are in #3; this section is how a client s
 
 ## 4. Per-platform starting points
 
-*These are suggestions to verify on real printers, not tested facts.*
+*The CUPS behaviour on Linux is verified (above); the Windows commands, USB and real label printers
+are not — treat those as suggestions to confirm on real hardware.*
 
-- **Raspberry Pi (R Station):** CUPS in the image; list queues and state with `pycups`
-  (`getPrinters()` → `printer-state`, `printer-state-reasons`) or `lpstat -p -l`; print with
-  `lp -d <queue> -n <copies> -o print-scaling=none <file.pdf>`. Printer setup (drivers, media)
-  is done in the CUPS web UI (`PRINT_SERVER.md`, *Printer setup on the device*). The daemon lives
-  in `rstation/product/backend/` and uses the product seams (#7). Since the platform's own
-  heartbeat is every 5 minutes, the daemon should also send its own faster heartbeats directly to
-  the same endpoint with the same token.
-- **macOS / Linux software server:** same CUPS commands as above; run as a launchd job / systemd
-  service. Python with `requests` (+ `pycups` or shelling out to `lp`/`lpstat`) is enough.
+- **Raspberry Pi (R Station) — built:** `rstation/product/backend/` (`print_station.py` is the
+  entry point; read its module docstring). It talks to CUPS over **IPP** on `localhost:631` using
+  `httpx`, which the platform already ships — `cups_client.py` + `ipp.py`, no `pycups` (not in the
+  platform's requirements) and no parsing of `lpstat` text (which can't tell a completed job from an
+  aborted one). It runs as a `Product.background_tasks` loop, sends its own faster heartbeats beside
+  the platform's 5-minute one (merging the same print keys into that one too), and keeps its
+  crash-recovery ledger under `/data/print-station`. Printer setup (drivers, media) is done in the
+  CUPS web UI (`PRINT_SERVER.md`, *Printer setup on the device*).
+- **macOS / Linux software server:** CUPS runs there too, so `cups_client.py` and `ipp.py` are
+  reusable as they are (they depend only on `httpx`); the rest of `print_station.py` only needs the
+  pairing/token plumbing swapped. Shelling out to `lp`/`lpstat` works for a first cut but loses the
+  job-state precision above. Run as a launchd job / systemd service.
 - **Windows software server:** list printers with PowerShell `Get-Printer` (name, `PrinterStatus`,
   `WorkOffline`); print PDFs with a command-line PDF printer such as SumatraPDF
   (`-print-to "<name>" -print-settings "noscale,<n>x" -silent`). Run as a Windows service or
@@ -171,5 +200,7 @@ Tracked in `TODO.md` item 11 — repeated here only so a client implementer sees
 
 - **Staff aren't notified** when a printer goes offline or errors; they see it only in the Print
   menu and on `/print-queue`.
-- **Unverified on hardware:** the state mappings and per-OS print commands in §2 and §4 haven't been
-  tried on real printers. Treat them as a starting point and correct this document as you learn.
+- **Partly verified:** the CUPS 2.4 behaviour in §2 was checked on Linux against loopback queues.
+  Still untried: USB and driver-based label printers (a USB backend fails differently from the
+  network socket backend), the `print-scaling=none` effect on a real label's page size, the Windows
+  state/print commands, and macOS. Correct this document as you learn.

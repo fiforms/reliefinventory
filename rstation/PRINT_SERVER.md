@@ -2,14 +2,19 @@
 
 See also [IMPLEMENTATION.md](IMPLEMENTATION.md) for the wider kiosk product notes.
 
-Status: **web-app half built** (2026-10-18, branch `print-queue`): printers/jobs, the queue and
-`/print-queue` screen, the "Print ▾" menu on every print point, the device API, and optional
-realtime (Reverb) — see "Wire protocol (as built)" below, which is what a print-server client
-implements. **Not built yet:** the print-server clients themselves (the Pi daemon and the
-PC/Mac reference client); nothing has run against a real printer. Originally planned
-2026-10-08; depends on the R Station fleet pairing/heartbeat in
-`app/Http/Controllers/DevicePairController.php` / `DeviceHeartbeatController.php`,
-`routes/api.php`, `/setup/devices`, and `rstation/platform/docs/DEVICE_CONTRACT.md`.
+Status (2026-10-18, branch `print-queue`):
+
+- **Web app — built:** printers/jobs, the queue and `/print-queue` screen, the "Print ▾" menu on
+  every print point, the device API, and optional realtime (Reverb). "Wire protocol (as built)"
+  below is what a print-server client implements.
+- **Pi daemon — built** (`rstation/product/backend/`, see "Pi image / product" below), tested
+  against fakes and a real CUPS with loopback queues, and end to end against the real web app and
+  Reverb — but **never run on a real Pi or a real printer**.
+- **Not built:** the PC/Mac client, the Pi's on-device Printers settings page, and getting the CUPS
+  admin UI reachable from the settings shell. Originally planned 2026-10-08; depends on the R
+  Station fleet pairing/heartbeat in `app/Http/Controllers/DevicePairController.php` /
+  `DeviceHeartbeatController.php`, `routes/api.php`, `/setup/devices`, and
+  `rstation/platform/docs/DEVICE_CONTRACT.md`.
 
 **Building a client? Start with [PRINT_CLIENT_SPEC.md](PRINT_CLIENT_SPEC.md)** — it lists every
 document a client implementer needs and the client-side behaviour rules.
@@ -104,13 +109,18 @@ audio, and we don't reimplement driver/PPD selection.
 
 ### Pi image / product
 
-- Install **CUPS** in the image (product-level `image/` packages, not the platform), enabled at
-  boot, with printer setup handled either on-device in the settings shell or via the web app's
-  device page (open question below).
-- A Python daemon in the product's `backend/` (this is the `print_station` kiosk function,
-  already defined in `config/devices.php` as headless): poll → claim → fetch → `lp`/CUPS →
-  report. Keep working from local retries through network drops; never print the same job twice
-  (claim ID is the idempotency key).
+- **CUPS in the image — done:** `rstation/product/image/packages` lists `cups` and `cups-filters`
+  (Debian enables CUPS on install). Printer *drivers* are not listed — they depend on the printers
+  actually used. Printer setup is through CUPS' own web UI (above); making that reachable from the
+  settings shell, and the admin account it needs, is **not built**.
+- **The daemon — built** (2026-10-18), in `rstation/product/backend/`: poll → claim → fetch → CUPS
+  → follow the job → report, with claim keep-alive, a persistent ledger so a restart never prints a
+  job twice or loses a result, and the failure handling in `PRINT_CLIENT_SPEC.md`. It uses IPP to the
+  local CUPS (`ipp.py`, `cups_client.py`) rather than `lp`/pycups — see the spec §4. Tested in virtual
+  time against fakes (`test_print_station.py`, run with the platform's
+  `local-app/run-tests.sh`), and against a real CUPS with throwaway loopback queues
+  (`test_cups_integration.py`, opt-in: `RI_CUPS_INTEGRATION=1`). Never run on a real Pi or real
+  printers yet.
 - Because the platform is consumed as an unmodified submodule (`rstation/platform`), all of this
   lives in `rstation/product`, not the submodule.
 
