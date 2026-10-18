@@ -19,32 +19,18 @@ Two facts shape most of this:
    strand the screen with no way back. The device has to be able to recover to a local page
    without help from the site it's showing.
 
-## 1. "Escape hatch" key daemon (labwc)
+## 1. "Escape hatch" key daemon
 
-A small daemon that plugs into the labwc compositor, listens for one or several designated
-"special" keys, and returns the kiosk's browser to a local `http://localhost/` page (the
-on-device settings shell/home) regardless of what the remote page is doing.
-
-- **Why a compositor-level hook, not page JS:** a hung or crashed remote page can't be trusted to
-  handle a key itself. labwc sees the key first.
-- **Mechanism (to investigate):** labwc supports global keybindings in its `rc.xml`
-  (`<keyboard><keybind key="…"><action name="Execute" command="…"/>`), which can run a script on
-  the chosen key. That script navigates the already-running Chromium back to localhost — the
-  platform already has a precedent for driving Chromium out-of-band over the DevTools protocol
-  (`cdp_navigate()` in the `slide-announcer-revelation-peer` hotfix script) — or restarts it
-  against the local URL if the browser itself is wedged. A separate daemon is only needed if
-  `rc.xml` keybindings prove too limited (e.g. for chords, long-press, or reading raw evdev
-  keys); otherwise the keybind + a small script is enough.
-- **Which keys:** configurable list. The platform's remote already reports Home as
-  `BrowserHome` (keyCode 172) and has Back/Compose buttons (see `local-app/frontend/src/remoteNav.js`);
-  a physical-keyboard fallback (e.g. a rarely-hit combo like Ctrl+Alt+Home) is needed for
-  kiosks without the remote. The platform's Settings → Key Debug screen is the tool for finding
-  what a given key actually reports.
-- **Also consider:** an automatic watchdog (no page heartbeat for N seconds → bounce to the
-  local page), in addition to the manual key, so an unattended device self-recovers.
-- **Where it ships:** product `image/` seam (labwc config + script + any unit), since labwc's
-  session is assembled by the platform's `kiosk-start.sh`. If labwc's `rc.xml` is platform-owned,
-  the product may need an overlay hook from upstream — check `docs/PRODUCTS.md` first.
+**Built (2026-10-18), in the platform core rather than the product** (it is useful to any product
+with a remote main screen): `platform/docs/ESCAPE_HATCH.md`. An evdev daemon (not a labwc
+keybinding — it sees keys even when Chromium is hung) redirects the browser to `/settings` on
+**Ctrl+Alt+Home**, **Ctrl+Alt+S** (keyboards without a Home key) or **holding the remote's Home
+for 3 s**, via the reusable `slide-announcer-kiosk-navigate` (DevTools Protocol). If the browser
+doesn't answer it restarts the kiosk and the launcher (`product/frontend/Main.vue`) opens
+Settings once instead of going back to the site. The product opts in by listing
+`slide-announcer-escape-hatch.service` in `product/image/enable`. Not yet run on a real Pi or the
+real remote. Still to do from the original idea: the automatic watchdog (no page heartbeat → bounce
+to the local page), and a Chromium URL allow-list.
 
 ## 2. First-run wizard: choose the site URL before pairing
 

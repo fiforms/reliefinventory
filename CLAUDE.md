@@ -469,3 +469,9 @@ the rootfs), checks `{url}/up`, and saves the result to `/data/status/server-url
 (factory reset clears it) and editing the yaml doesn't move a set-up device. This needed platform changes
 on the `rstation/platform` submodule's `server-url-first-run` branch — see `rstation/platform/docs/SERVER_URL.md`;
 the parent repo's submodule pointer must be at that branch's commit or later.
+
+**Escape hatch** (2026-10-18, same platform branch; `rstation/platform/docs/ESCAPE_HATCH.md`): because the kiosk
+hands its one Chromium tab to the remote site, a core daemon (`slide-announcer-escape-hatch.service`, enabled
+by `product/image/enable`) returns it to local Settings on Ctrl+Alt+Home, Ctrl+Alt+S, or holding the remote's
+Home for 3 s, redirecting via `slide-announcer-kiosk-navigate` (DevTools) and falling back to a kiosk restart
+plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Never run on a real Pi yet.
