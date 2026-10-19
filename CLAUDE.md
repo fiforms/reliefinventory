@@ -29,11 +29,9 @@ php artisan migrate                 # run migrations
 php artisan db:seed                 # seed essential data (run after creating a user)
 php artisan db:seed --class=WarehouseActivitySeeder   # optional realistic demo data (donations/pallets/
                                      # orders across every lifecycle stage) — demo instances only, never
-                                     # run against an instance with real operational data. The old
-                                     # Test*Seeder classes (TestDataSeeder, TestItemTypesSeeder, etc.) are
-                                     # dead/broken — they predate the family/variant item numbering,
-                                     # permission model, and pallet-kind model, and reference a dropped
-                                     # itemtypes.number column.
+                                     # run against an instance with real operational data. (The old
+                                     # Test*Seeder classes were deleted — they predated the family/variant
+                                     # item numbering and permission model.)
 composer run dev                    # run server + queue listener + pail logs + vite, concurrently
 npm run dev                         # vite only
 npm run build                       # production asset build

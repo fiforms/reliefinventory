@@ -61,8 +61,9 @@ Install prerequisite packages:
     
 *This is a great place to import site-specific data. Refer to site-specific documentation outside of GitHub*
     
-    # (Optional) Load additional test data, if you aren't importing site-specific data
-    php artisan db:seed --class=TestDataSeeder
+    # (Optional) Load realistic demo data (donations, pallets and orders at every lifecycle stage).
+    # Demo instances only -- never run this against an instance with real operational data.
+    php artisan db:seed --class=WarehouseActivitySeeder
 
 # Updating
 
