@@ -30,6 +30,8 @@ export default {
   // Merged over the core locale files (docs/PRODUCTS.md).
   messages: {
     en: {
+      settingsLayout: { backToSlideshow: '← Back to R Station' },
+      pinGate: { countdown: 'Returning to R Station in {seconds}s…' },
       launcher: {
         opening: 'Opening Relief Inventory…',
         noServer: 'No server has been set up on this device.',
@@ -40,6 +42,10 @@ export default {
         body: 'Once this device shows the Relief Inventory site, press Ctrl+Alt+Home on a keyboard (Ctrl+Alt+S if it has no Home key), or hold the remote’s Home button for 3 seconds.',
       },
       setup: {
+        welcome: { title: 'Welcome to R Station' },
+        name: { intro: 'Give this device a name that says where it is — or keep the default.' },
+        pairing: { title: 'Pair with your site' },
+        done: { start: 'Launch R Station' },
         steps: { server: 'Server' },
         server: {
           title: 'Relief Inventory server',
@@ -51,6 +57,11 @@ export default {
         },
       },
       settings: {
+        pairing: {
+          goToSlideshow: 'Go to R Station',
+          generateHint: 'Log in to the Relief Inventory Portal, open R Station Devices, choose your site and generate a pairing code. Then enter the code below.',
+          generateHintUrl: 'Log in to the Relief Inventory Portal, open R Station Devices, choose your site and generate a pairing code. Then enter the code below. Your Relief Inventory Portal is at:',
+        },
         printers: {
           title: 'Printers',
           loading: 'Looking for printers…',
@@ -86,6 +97,8 @@ export default {
       },
     },
     es: {
+      settingsLayout: { backToSlideshow: '← Volver a R Station' },
+      pinGate: { countdown: 'Volviendo a R Station en {seconds}s…' },
       launcher: {
         opening: 'Abriendo Relief Inventory…',
         noServer: 'No se ha configurado ningún servidor en este dispositivo.',
@@ -96,6 +109,10 @@ export default {
         body: 'Cuando este dispositivo muestre el sitio de Relief Inventory, pulse Ctrl+Alt+Inicio en un teclado (Ctrl+Alt+S si no tiene tecla Inicio), o mantenga pulsado el botón Inicio del control remoto durante 3 segundos.',
       },
       setup: {
+        welcome: { title: 'Bienvenido a R Station' },
+        name: { intro: 'Dele a este dispositivo un nombre que indique dónde está — o mantenga el predeterminado.' },
+        pairing: { title: 'Emparejar con su sitio' },
+        done: { start: 'Iniciar R Station' },
         steps: { server: 'Servidor' },
         server: {
           title: 'Servidor de Relief Inventory',
@@ -107,6 +124,11 @@ export default {
         },
       },
       settings: {
+        pairing: {
+          goToSlideshow: 'Ir a R Station',
+          generateHint: 'Inicie sesión en el Portal de Relief Inventory, abra R Station Devices, elija su sitio y genere un código de emparejamiento. Luego escriba el código abajo.',
+          generateHintUrl: 'Inicie sesión en el Portal de Relief Inventory, abra R Station Devices, elija su sitio y genere un código de emparejamiento. Luego escriba el código abajo. Su Portal de Relief Inventory está en:',
+        },
         printers: {
           title: 'Impresoras',
           loading: 'Buscando impresoras…',

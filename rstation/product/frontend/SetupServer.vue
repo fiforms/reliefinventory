@@ -49,7 +49,7 @@ const next = () => (status.value?.server_url_locked ? router.push(nextPath('serv
 </script>
 
 <template>
-  <div>
+  <div class="setup-card">
     <h1>{{ t('setup.server.title') }}</h1>
 
     <template v-if="status?.server_url_locked">
