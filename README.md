@@ -1,158 +1,95 @@
-# About Relief Inventory
+# Relief Inventory
 
-Relief Inventory is a collaborative open source software project to facilitate tracking of donated goods in disaster response scenarios. 
-It was originally developed in cooperation with Adventist Community Services to facilitate warehouse management.
+**Warehouse management for donated goods in disaster response.**
 
-You can find the latest information about the Relief Inventory project at our [website](https://reliefinventory.fiforms.net)
+Relief Inventory is a free, open-source web application that helps relief organizations keep track of what
+comes in, what's on the shelf, and what goes out. It was built with, and for, a disaster-response warehouse
+operation, originally in cooperation with Adventist Community Services, where donations arrive in volume and
+unpredictably, volunteers do most of the work, and the paperwork has to keep up with the trucks.
 
-# Setup 
+A donation's life in the system:
 
-This software utilizes the Laravel Open Source PHP Framework and related software. The following brief list of steps
-should help you to get an instance up and running in your environment:
+- **Receive** a donation at the dock: log the donor, the driver and what arrived (pallets, boxes, bags, totes),
+  take a photo, and print a barcode label for every container. A donor who isn't known yet can be flagged for
+  follow-up without holding anything up.
+- **Sort** it. Scan a pallet's label and enter what's inside, item by item, by keyboard or camera. Each item is
+  recorded with its condition (usable, outdated, trashed or diverted), and only usable goods count as stock.
+- **Know what you have.** A ledger of every movement is the source of truth, with stock-on-hand and inventory
+  reports computed from it.
+- **Take requests and fill them.** Partner agencies request what they need. Staff fill those requests from
+  stock, on paper pick sheets or by scanning at the shelf, and the ledger is updated as items are picked.
+  When there isn't enough to go around, a review panel suggests a fair split.
+- **Offers and visitors.** Track donations offered by phone before they ship, and sign volunteers and guests in
+  on a kiosk.
 
-Install prerequisite packages:
+It also handles role-based permissions, a print queue that sends labels and reports to the right printer at each
+site, an in-app way for users to report problems, and an outstanding-orders report. Some things aren't built
+yet. The order lifecycle past "Filled" (ready to ship, shipped, and uploading a bill of lading) and several
+reports are still open; [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md) keeps the honest list.
 
-** Use your package manager to install relevant packages, i.e. **
+Stock is pooled by item type once it's sorted, so a shelf item can't be traced back to a specific donor or
+pallet. Source is recorded when donations are sorted, but it isn't recall-style item tracing.
 
-    sudo apt install php php-cli composer mariadb-server php-mysql php-redis php-gd git php-xml npm
+More at the project [website](https://reliefinventory.fiforms.net).
 
-** Clone the Repository (or see below for using the Eclipse editor instead) **
+## Quick start (Docker)
 
-    git clone https://path/to/reliefinventory
+The easiest way to run Relief Inventory is the prebuilt Docker image, published for both `amd64` (PCs,
+servers) and `arm64` (Raspberry Pi, Apple silicon, ARM cloud servers). You need only
+[Docker](https://docs.docker.com/get-docker/) with the Compose plugin. Nothing else is installed on the host:
+the database, PHP and the PDF renderer are all part of the stack.
 
-** Create a database to hold data (change YourPasswordHere accordingly) **
+```bash
+curl -O https://raw.githubusercontent.com/fiforms/reliefinventory/master/docker/compose.yaml
+```
 
-    mysql
-    create user reliefinventory@localhost identified by 'YourPasswordHere';
-    create database reliefinventory;
-    grant all on reliefinventory.* to reliefinventory@localhost;
-    exit
+1. Open `compose.yaml` and set `APP_URL` in the "YOUR SETTINGS" block at the top to the address people will type
+   into a browser. The default, `http://localhost:8080`, is fine for trying it out on the same machine.
+2. Start it:
+   ```bash
+   docker compose up -d
+   ```
+3. Open `APP_URL` in a browser. A setup wizard asks for the administrator's name, email and password, and
+   whether to load example data. Then you're signed in.
 
-** Create your local configuration, and edit .env, adding the database info and password you created above **
+On first start the stack creates its own database, generates random database passwords, runs the migrations and
+loads the essential lookup data. A daily database dump is written to a `backups/` folder next to
+`compose.yaml`.
 
-    cd reliefinventory
-    cp .env.example .env
-    nano .env
+**To upgrade:**
 
-** Install Laravel packages using composer **
+```bash
+docker compose pull
+docker compose up -d
+```
 
-    composer install
-    php artisan key:generate
-    
-  
-** Install node packages **
+Putting it on the internet? Read [docker/README.md](docker/README.md) first. It covers HTTPS behind a reverse
+proxy, email, backups and restore, the optional realtime service, and the setup code that stops a stranger from
+claiming the administrator account before you do.
 
-    npm install
+## Companion apps
 
-** Create datastructures **
+The web app works on its own, but two optional pieces extend it to the warehouse floor. Prebuilt downloads will
+be published on the project's [GitHub Releases](https://github.com/fiforms/reliefinventory/releases) page.
 
-*(If you have a database backup, this would be the point to restore it instead)*
+- **R Station** is a Raspberry Pi device image. A Pi running it works as a standalone kiosk for tasks in the
+  warehouse, booting straight into a dedicated screen for your server, and doubles as a print server, so labels
+  and reports print on a printer at the dock or in the office. You pair it with your server once and manage it
+  from **Setup > Devices**. Source and notes are in [rstation/](rstation/). *Planned, not yet implemented:* the
+  R Station acting as a local Docker host, so a site could keep running Relief Inventory from the Pi in an
+  emergency with no Internet connection.
+- **RI Print** is a desktop print server for Windows, macOS and Linux. Install it on any computer that has a
+  printer attached, pair it once with a 6-digit code, and that computer's printers show up in the web app's
+  **Print** menu. It does the same job as the R Station's print server without any special hardware. See
+  [print-client/README.md](print-client/README.md).
 
-    php artisan migrate
-  
-** Finish setup in the browser **
+## Building from source
 
-Start the app (`composer run dev`, or your web server) and open it in a browser. A first-run setup wizard asks
-for the administrator's name, email and password, seeds the essential data (statuses, units, categories, item
-catalog, permissions) and optionally loads example data (fictional donations, pallets and orders at every
-lifecycle stage -- demo instances only, never a real operation). It closes for good once used.
+Building from source, running a development instance and running the tests are covered in
+[BUILDING.md](BUILDING.md). The architecture, conventions and current state of the code are in
+[CLAUDE.md](CLAUDE.md) and [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md).
 
-If the server is reachable from the internet before you finish, set `RI_SETUP_CODE` in `.env` so completing the
-wizard also requires that code (otherwise whoever opens the page first becomes the administrator).
-
-*This is a great place to import site-specific data. Refer to site-specific documentation outside of GitHub*
-
-Prefer the command line? These do the same job without the wizard:
-
-    php artisan setup:seed-essentials          # essential data; no-op if already seeded
-    php artisan user:create                    # interactive; or, non-interactively:
-    php artisan admin:bootstrap --email=you@example.com [--password=...]   # random password printed if omitted
-    php artisan db:seed --class=WarehouseActivitySeeder   # optional demo data
-
-# Updating
-
-After updating (git pull, etc) you may need to run some or all of these commands:
-
-    php artisan migrate
-    composer install
-    npm install
-
-
-# Running in a testing environment 
-
-** Spin up the instance from the command line **
-
-    composer run dev
-  
-# Running in Production
-
-(These steps are still incomplete)
-
-** If you're going to run this in a server environment, you'll need a webserver like Apache or nginx, as well as a cache server **
-
-    sudo apt install apache2 redis
-
-** Setup SMTP Server **
-
-Modify these values in .env to point to a working SMTP server, e.g. you can 
-use an app password from Gmail and relay through a gmail account:
-
-    MAIL_MAILER=smtp
-    MAIL_HOST=smtp.gmail.com
-    MAIL_PORT=587
-    MAIL_USERNAME=my_email_address@example.com
-    MAIL_PASSWORD=apppasswordhere
-    MAIL_ENCRYPTION=tls
-    MAIL_FROM_ADDRESS="my_email_address@example.com"
-    MAIL_FROM_NAME="${APP_NAME}"
-    
-** Setup Cloudflare Turnstile for User Registration **
-
-Get a Turnstile Site Key and Secret Key from [Cloudflare](https://www.cloudflare.com/application-services/products/turnstile/)
-
-Put them into .env:
-
-    CLOUDFLARE_TURNSTILE_SITE_KEY=
-    CLOUDFLARE_TURNSTILE_SECRET_KEY=
-
-** Ban User Signups from Disposable Email Domains **
-
-Download the listing of disposable domains from 
-[this GitHub Project](https://github.com/disposable-email-domains/disposable-email-domains)
-
-    php artisan user:import-banned /path/to/disposable_email_blocklist.conf
-    
-** Import Listing of Counties **
-
-A combined, ready-to-import file for all US states/territories is already bundled at
-`database/data/national_counties_2020.txt` (the census.gov site only publishes this as 57
-separate per-state/territory files now, not one national file, so this is those files
-concatenated). Re-running the import is safe — existing counties are updated in place, not
-duplicated.
-
-    php artisan counties:import database/data/national_counties_2020.txt
-
-To refresh with newer census.gov data instead, download the per-state files linked from
-[census.gov](https://www.census.gov/library/reference/code-lists/ansi.html#cou) (pipe-delimited,
-`STATE|STATEFP|COUNTYFP|COUNTYNS|COUNTYNAME|CLASSFP|FUNCSTAT`) and concatenate them before
-importing.
-
-** Recompile Project **
-
-    composer dump-autoload --optimize
-    npm run build
-  
-  
-# Eclipse IDE
-
-The Eclipse IDE is a helpful editor that can streamline your workflow. You can download [Eclipse IDE for PHP Developers](https://www.eclipse.org/downloads/packages/)
-
-# MySQL Workbench
-
-A helpful graphical tool for working directly with the MySQL Database is MySQL Workbench from Oracle. (If you're using MariaDB as suggested above, you'll get a warning about compatibility but it does work well with MariaDB). You can [download MySQL Workbench here](https://www.mysql.com/products/workbench/)
-
-
-# LICENSE
+# License
 
 ## Relief Inventory - Open Source Software
 
@@ -184,6 +121,4 @@ To ensure that this software remains open and freely available to all, the proje
 Please see [LICENSE.md](LICENSE.md) for details
 
 ## Attributions, Disclaimers and Additional Free Licenses
-Much of the code in this project has been generated by the "artisan" command in [Laravel](https://laravel.com/), with modifications made to fit the requirements of this project. Additonal code has been generated or modified through the use of Large Language Models such as ChatGPT in order to accelerate the development process. However, it is the belief of the developers that such use of existing tools should not influence the licensing terms set forth above. 
-
-
+Much of the code in this project has been generated by the "artisan" command in [Laravel](https://laravel.com/), with modifications made to fit the requirements of this project. Additional code has been generated or modified through the use of Large Language Models such as ChatGPT in order to accelerate the development process. However, it is the belief of the developers that such use of existing tools should not influence the licensing terms set forth above.
