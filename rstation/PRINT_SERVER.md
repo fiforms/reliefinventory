@@ -159,7 +159,8 @@ audio, and we don't reimplement driver/PPD selection.
 ### Pi image / product
 
 - **CUPS in the image — done:** `rstation/product/image/packages` lists `cups` and `cups-filters`
-  (Debian enables CUPS on install). Printer *drivers* are not listed — they depend on the printers
+  (Debian enables CUPS on install); the image upgrades both to a backported CUPS 2.4.20 — see `CUPS_BACKPORT.md`.
+  Printer *drivers* are not listed — they depend on the printers
   actually used. Printer setup is through CUPS' own web UI (above); making that reachable from the
   settings shell, and the admin account it needs, is **not built**.
 - **The daemon — built** (2026-10-18), in `rstation/product/backend/`: poll → claim → fetch → CUPS
