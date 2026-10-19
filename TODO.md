@@ -199,3 +199,9 @@ Issues identified October 8, 2026
  - Related kiosk notes (escape-hatch key via labwc, first-run site-URL step before pairing,
    heartbeat extensions, and a parked "dockerized local copy of the app" idea) are in
    `rstation/IMPLEMENTATION.md`.
+
+12. Docker distribution (x64 + arm64) — assessed 2026-10-19, not started
+ - Package the web app + MariaDB as a multi-arch compose stack others can run. Feasible with no app changes;
+   the real work is bundling Chromium (arm64 needs Debian's `chromium`) and `weasyprint` into the image, a
+   first-run entrypoint, volumes, and replacing the systemd timers with a scheduler sidecar.
+   Plan and estimate (~2–4 days to working, ~1 more week to distributable) in `scripts/DOCKER_PLAN.md`.
