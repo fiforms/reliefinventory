@@ -56,3 +56,9 @@ __pycache__/
 
 # Docker stack: daily DB dumps written by the scheduler container
 /docker/backups
+
+# Local-only working files, never committed
+/.claude/hours-log.txt
+/DiscussionPoints/
+/ShoppingList/
+/landing/
