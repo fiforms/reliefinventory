@@ -171,8 +171,15 @@ Issues identified October 8, 2026
    reachable and administrable from there (the `lpadmin` account, PIN-gated) — see `PRINT_SERVER.md`,
    *Printer setup on the device*. None of it is built; for now queues must be added over SSH
    (`lpadmin`) or CUPS' UI on `localhost:631`.
- - **Open: the PC/Mac client.** `cups_client.py` + `ipp.py` are reusable on macOS/Linux as they are; Windows
-   needs its own printer discovery/printing (`PRINT_CLIENT_SPEC.md` §4, unverified).
+ - **Desktop client — built 2026-10-19** in `print-client/` (Rust core + Tauri shell + Vue UI; Windows, macOS, Linux; see
+   its README). Core tested against a mock server, real CUPS loopback queues, and end to end against the real app +
+   Reverb on Linux. **Still open:** (1) install the Tauri build deps on a dev machine
+   (`sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
+   libayatana-appindicator3-dev librsvg2-dev cups-client`) and compile/run the shell — it was written against the
+   Tauri 2.12 sources but never built, because webkit2gtk wasn't installed; (2) run it on real Windows and macOS
+   machines (the Windows backend has only seen sample PowerShell output); (3) an IPP backend for macOS/Linux so a
+   CUPS-aborted job isn't reported as printed (`lpstat` can't tell); (4) code signing (Windows cert, Apple
+   Developer ID + notarization) and the Tauri updater's signing key; (5) log file, token in the OS keychain.
  - **Open: verify the remaining client-side assumptions on real printers.** The CUPS 2.4 state behaviour is
    now verified on Linux loopback queues (including that an unreachable *network* printer looks "idle" in
    `lpstat` and only shows in `printer-state-message` while a job is attempted — `PRINT_CLIENT_SPEC.md` §2).

@@ -1,0 +1,35 @@
+name: Print client (macOS)
+
+# Manual only — run from the Actions tab. Tests the core, then builds an UNSIGNED .dmg
+# (Gatekeeper will warn until we have an Apple Developer ID + notarization).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: print-client
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            print-client
+            print-client/src-tauri
+      - name: Test core
+        run: cargo test -p ri-print-core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: print-client/package-lock.json
+      - run: npm ci
+      - name: Build installer
+        run: npm run tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ri-print-macos
+          path: print-client/src-tauri/target/release/bundle/dmg/*.dmg

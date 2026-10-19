@@ -12,7 +12,9 @@ Status (2026-10-18, branch `print-queue`):
   Reverb, and **verified on a real Pi with a real printer on 2026-10-18** (pair, heartbeat, printer
   discovered, enabled in `/setup/devices`, report printed from the browser). Not yet verified on
   hardware: adding printers from the Pi's Settings page, USB/label printers.
-- **Not built:** the PC/Mac client, the Pi's on-device Printers settings page, and getting the CUPS
+- **Desktop client — built 2026-10-19** (`print-client/`, Rust + Tauri; Windows/macOS/Linux): verified end to end against the
+  real app and Reverb on Linux; Windows and macOS not yet run on real machines. See `print-client/README.md`.
+- **Not built:** the Pi's on-device Printers settings page, and getting the CUPS
   admin UI reachable from the settings shell. Originally planned 2026-10-08; depends on the R
   Station fleet pairing/heartbeat in `app/Http/Controllers/DevicePairController.php` /
   `DeviceHeartbeatController.php`, `routes/api.php`, `/setup/devices`, and

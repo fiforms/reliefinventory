@@ -6,7 +6,7 @@ Pi daemon and a PC/Mac software print server are the same thing on the wire. Thi
 down elsewhere; it points at them. If you extract this spec from the repo, take the documents in
 the next section with it.
 
-Status: draft, 2026-10-18. The Pi client exists and printed on a real printer end to end on 2026-10-18; USB/label printers, macOS and Windows remain untested.
+Status: draft, 2026-10-19. The Pi client exists and printed on a real printer end to end on 2026-10-18. A desktop client (`print-client/`, Rust + Tauri) was built 2026-10-19 and verified against the real web app and real CUPS on Linux; USB/label printers, macOS and Windows remain untested on hardware.
 
 ## Documents this spec depends on
 
@@ -159,7 +159,15 @@ are not — treat those as suggestions to confirm on real hardware.*
   the platform's 5-minute one (merging the same print keys into that one too), and keeps its
   crash-recovery ledger under `/data/print-station`. Printer setup (drivers, media) is done in the
   CUPS web UI (`PRINT_SERVER.md`, *Printer setup on the device*).
-- **macOS / Linux software server:** CUPS runs there too, so `cups_client.py` and `ipp.py` are
+- **Desktop app for Windows / macOS / Linux — built 2026-10-19:** `print-client/` (see its README). A Rust core
+  (`print-client/core`, also the headless `ri-print` command) implements this whole spec — pairing, the heartbeat
+  and state mapping, the claim/keep-alive/ledger job loop, the optional Pusher wake-up — behind a small
+  `PrintBackend` trait; a thin Tauri shell adds the tray icon, window and start-at-login. macOS/Linux shell out to
+  `lp`/`lpstat` (so the §2 caveat applies: a job CUPS *aborts* looks like a completed one unless the printer
+  also shows a fault — an IPP backend would close that); Windows uses PowerShell + a bundled SumatraPDF. Tested
+  against a mock server (the §5 checklist), real CUPS loopback queues, and end to end against the real Laravel
+  app including Reverb (claim ~0.1 s after enqueue). **Windows and macOS are untested on real machines.**
+- **macOS / Linux software server (alternative, not what the desktop app does):** CUPS runs there too, so `cups_client.py` and `ipp.py` are
   reusable as they are (they depend only on `httpx`); the rest of `print_station.py` only needs the
   pairing/token plumbing swapped. Shelling out to `lp`/`lpstat` works for a first cut but loses the
   job-state precision above. Run as a launchd job / systemd service.

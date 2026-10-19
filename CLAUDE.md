@@ -355,8 +355,17 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   in the spec §2. Run its tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal
   rstation/platform/local-app/run-tests.sh -q` (virtual-time fakes; `RI_CUPS_INTEGRATION=1` adds the real-CUPS
   ones, which create and remove throwaway loopback queues).
+- **The desktop print server** (2026-10-19) is `print-client/` — read its README. A Rust core (`print-client/core`:
+  pairing, heartbeat, job loop, ledger, realtime, and a `PrintBackend` trait with a Unix `lp`/`lpstat` impl and a
+  Windows PowerShell + SumatraPDF impl) also builds as the headless `ri-print` command; `print-client/src-tauri`
+  (Tauri v2: tray, window, start-at-login) and `print-client/ui` (Vue) are a thin shell over it. It is **not** in
+  the root Vite/Composer build — it has its own `Cargo.toml`/`package.json`. Tests: `cargo test -p ri-print-core`
+  (mock server + fakes), `RI_CUPS_INTEGRATION=1 …--test cups_integration` (real CUPS), `print-client/e2e/run.sh
+  [--realtime]` (real Laravel app on the disposable test DB; its PHP helpers refuse any other database).
+  Verified on Linux only; the Tauri shell has not yet been compiled on a machine with the webview libraries,
+  and Windows/macOS are untested on hardware.
 - **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
-  on-device Printers page and CUPS admin access; the PC/Mac client; staff notification when a printer goes
+  on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
 ### Volunteer hours kiosk — active-window sync needs a systemd timer

@@ -1,0 +1,36 @@
+[package]
+name = "ri-print-core"
+version = "0.1.0"
+edition = "2021"
+description = "Relief Inventory print server client: pairing, heartbeat, job loop, OS printing"
+license = "UNLICENSED"
+
+[lib]
+name = "ri_print_core"
+
+[[bin]]
+name = "ri-print"
+path = "src/bin/ri-print.rs"
+
+[dependencies]
+async-trait = "0.1"
+chrono = { version = "0.4", features = ["serde"] }
+clap = { version = "4", features = ["derive"] }
+dirs = "5"
+futures-util = "0.3"
+gethostname = "0.5"
+rand = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "fs", "signal"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+
+[dev-dependencies]
+axum = "0.7"
+tempfile = "3"

@@ -1,0 +1,28 @@
+[package]
+name = "ri-print-desktop"
+version = "0.1.0"
+edition = "2021"
+description = "RI Print — desktop print server for Relief Inventory"
+license = "UNLICENSED"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+ri-print-core = { path = "../core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+# small installer: this is a background utility, not a hot path
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

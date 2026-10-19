@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "resources": [
+      "resources/SumatraPDF.exe",
+      "resources/SumatraPDF-LICENSE.txt"
+    ]
+  }
+}
