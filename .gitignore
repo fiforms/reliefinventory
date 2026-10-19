@@ -49,3 +49,7 @@ yarn-error.log
 /print-client/ui/dist
 /print-client/src-tauri/gen
 /print-client/src-tauri/resources/SumatraPDF*
+
+# Python bytecode (the Pi print-server tests import the extensionless helper scripts, which writes caches next to them)
+__pycache__/
+*.pyc
