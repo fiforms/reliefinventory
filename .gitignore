@@ -53,3 +53,9 @@ yarn-error.log
 # Python bytecode (the Pi print-server tests import the extensionless helper scripts, which writes caches next to them)
 __pycache__/
 *.pyc
+
+# Local-only working files, never committed
+/.claude/hours-log.txt
+/DiscussionPoints/
+/ShoppingList/
+/landing/
