@@ -6,6 +6,8 @@
 namespace App\Http\Controllers;
 
 use App\Services\DeviceReleaseResolver;
+use App\Services\PrintBroadcaster;
+use App\Services\PrintQueueService;
 use Illuminate\Http\Request;
 
 /**
@@ -16,9 +18,12 @@ use Illuminate\Http\Request;
  */
 class DeviceHeartbeatController extends Controller
 {
-    public function heartbeat(Request $request, DeviceReleaseResolver $resolver)
+    public function heartbeat(Request $request, DeviceReleaseResolver $resolver, PrintQueueService $queue)
     {
         $device = $request->attributes->get('managed_device');
+        // Before last_seen_at is bumped below: lets a print server's return from
+        // offline refresh the Print menu's status dots.
+        $wasOnline = $device->online;
 
         $data = $request->validate([
             'app_version' => 'nullable|string|max:255',
@@ -26,6 +31,13 @@ class DeviceHeartbeatController extends Controller
             'architecture' => 'nullable|string|max:255',
             'cpu_temp_c' => 'nullable|numeric',
             'hostname' => 'nullable|string|max:255',
+            // Print servers (namespaced per the device contract's extension rules): what the client runs on.
+            'print_platform' => 'nullable|in:rstation,windows,macos,linux',
+            // Print servers: the OS print queues visible to this device (see PrintQueueService).
+            'print_printers' => 'nullable|array|max:100',
+            'print_printers.*.queue_name' => 'required|string|max:255',
+            'print_printers.*.state' => 'nullable|in:idle,printing,error,offline',
+            'print_printers.*.state_message' => 'nullable|string|max:500',
             'language_change' => 'nullable|array',
             'language_change.code' => 'nullable|string|max:10',
             'language_change.base_revision' => 'nullable|integer',
@@ -39,6 +51,16 @@ class DeviceHeartbeatController extends Controller
         foreach ($snapshot as $column => $value) {
             $device->{$column} = $value;
         }
+        if (! empty($data['print_platform'])) {
+            $device->platform = $data['print_platform'];
+        }
+        // A device that reports print queues is a print server. If an admin hasn't
+        // chosen its Function yet (a freshly paired PC/Mac client can't), set it
+        // here so it gets its realtime wake-up details on this very response —
+        // but never override a Function an admin picked. An empty list doesn't count.
+        if ($device->kiosk_function === null && ! empty($data['print_printers'])) {
+            $device->kiosk_function = 'print_station';
+        }
         $device->last_ip = $request->ip();
         $device->last_seen_at = now();
 
@@ -48,6 +70,12 @@ class DeviceHeartbeatController extends Controller
             $device->language_revision++;
         }
         $device->save();
+
+        // Absent key = this device isn't reporting printers (leave the snapshot
+        // alone); an empty array is a real report of "no queues".
+        if (array_key_exists('print_printers', $data) && $data['print_printers'] !== null) {
+            $queue->syncReportedPrinters($device, $data['print_printers'], $wasOnline);
+        }
 
         $app = $resolver->offerFor($device, 'app');
         $os = $resolver->offerFor($device, 'os');
@@ -73,6 +101,9 @@ class DeviceHeartbeatController extends Controller
             'kiosk_function' => $device->kiosk_function,
             'kiosk_path' => $function['path'] ?? null,
             'kiosk_location_id' => $device->kiosk_location_id,
+            // Print servers: where to listen for instant wake-ups (null when
+            // realtime is off — keep polling). See PrintBroadcaster::connectionFor().
+            'print_realtime' => PrintBroadcaster::connectionFor($device),
         ]);
     }
 }

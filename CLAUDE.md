@@ -29,11 +29,9 @@ php artisan migrate                 # run migrations
 php artisan db:seed                 # seed essential data (run after creating a user)
 php artisan db:seed --class=WarehouseActivitySeeder   # optional realistic demo data (donations/pallets/
                                      # orders across every lifecycle stage) — demo instances only, never
-                                     # run against an instance with real operational data. The old
-                                     # Test*Seeder classes (TestDataSeeder, TestItemTypesSeeder, etc.) are
-                                     # dead/broken — they predate the family/variant item numbering,
-                                     # permission model, and pallet-kind model, and reference a dropped
-                                     # itemtypes.number column.
+                                     # run against an instance with real operational data. (The old
+                                     # Test*Seeder classes were deleted — they predated the family/variant
+                                     # item numbering and permission model.)
 composer run dev                    # run server + queue listener + pail logs + vite, concurrently
 npm run dev                         # vite only
 npm run build                       # production asset build
@@ -297,6 +295,79 @@ setup above: the `weasyprint` binary (Python, with native Pango/Cairo deps — `
 2026-08-17) — same historical trap as browsershot above, where a package sits as a driver's "suggest"
 and silently never gets pulled in.
 
+### Print queue — per-site printers, print servers, optional realtime
+
+Everywhere something is printed there is one shared `PrintMenu.vue` ("Print ▾": **Download PDF** plus
+each active printer at a site that matches the document's paper size) instead of a bare PDF link.
+Choosing a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
+and reports back. Built 2026-10-18 on branch `print-queue`; see `rstation/PRINT_SERVER.md` (wire protocol —
+what a print-server client implements), `rstation/PRINT_CLIENT_SPEC.md` (client behaviour rules + the list
+of documents a client implementer needs), `rstation/print-extension.openapi.yaml` (machine-readable wire format; a
+drift test fails if it stops matching the server) and `scripts/REVERB.md` (provisioning).
+
+- **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
+  software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
+  `print_printers` reports its OS print queues (a device with no Function set that reports any is made a
+  `print_station` automatically; the platform goes in `print_platform`, namespaced per the device contract); each becomes a `printers` row (inactive, untyped) that staff
+  name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
+  A printer's status (`idle|printing|error|offline|unavailable`) is **derived on read** from its device's
+  heartbeat — the app has no scheduler to flip a stored column. `media` is a plain string key into
+  `config/printing.php` (`report`, `label_large`, `label_address`), deliberately not a DB enum, so
+  user-defined sizes later means moving that config into a table without touching printers/jobs/the API.
+- **`print_jobs` + `print_job_status_log`**: `queued → claimed → printed | failed`, plus `cancelled`;
+  every status write goes through `PrintJob::transitionTo()` (legal-move check + audit row, same pattern
+  as `DonationOffer`). `divertTo()` re-routes a queued/failed job to another printer of the *same media*.
+  Claims are row-locked and idempotent (re-claiming a held job is also the keep-alive for long prints —
+  it extends the expiry without a new attempt); a claim that never reports back is reclaimed **lazily** (on a
+  server's poll or when someone opens the queue) back to `queued`, or `failed` after
+  `printing.max_attempts`. A failure a server *reports* is never auto-retried. Finished jobs' PDFs are
+  purged after `printing.retain_days` (lazily, hourly, via cache); the job rows stay as history.
+- **Rendering is shared with downloads.** Each PDF controller exposes an unrendered `*Builder()`
+  (`PalletReportController::singleLabelBuilder`, `OrderController::bolBuilder`, …) that both its GET download
+  route and the print queue use, so a printed copy can't drift from a downloaded one.
+  `App\Services\Printing\DocumentRegistry` maps document keys → builder + media + the permission that
+  document's own download route needs + param rules. `POST /json/print` (permission `print-documents`)
+  validates the printer is usable and its media matches the document, re-checks the document's permission,
+  renders at submit time, stores the PDF (never public) and queues a job. When adding a new print point:
+  add a `*Builder()`, a registry entry, and drop a `<PrintMenu>` in place of the link.
+- **Permissions:** `print-documents` (use the menu, see your own jobs — base tier) and
+  `manage-print-queue` (see/cancel/retry/divert/clear anyone's — Office/Administrator). Printer setup is
+  `manage-devices`. `/print-queue` is `print-documents` for viewing; mutations are `manage-print-queue`.
+- **Realtime (Laravel Reverb) is an optional accelerator, never a dependency.** With
+  `BROADCAST_CONNECTION=log` (the default) everything polls (browsers every ~5 s, print servers on their
+  own interval). With `reverb`, `App\Services\PrintBroadcaster` publishes after the transaction commits,
+  only when enabled, with 1–2 s timeouts, swallowing errors — a Reverb outage can never break a print.
+  Browsers use **private** channels authorised via the session (`routes/channels.php`: `print-queue`,
+  `print-printers`, `print-user.{id}`) and `resources/js/realtime.js`; events carry no more than the user
+  could already fetch. Print servers get a **per-device public wake channel** whose unguessable name is the
+  only secret, delivered in their authenticated heartbeat response (`print_realtime`), rotated on re-pair,
+  cleared on revoke, never serialized to the admin UI (`ManagedDevice::$hidden`); the message carries no
+  data — it only means "poll now". `phpunit.xml` pins `BROADCAST_CONNECTION=null` so tests never publish to a
+  real Reverb; tests that need it switch it on and fake the events. Requires its own server provisioning
+  (systemd unit, nginx WebSocket proxy) — see `scripts/REVERB.md`; `update.sh` restarts it on deploy if the
+  unit exists.
+- **The Pi print server** is `rstation/product/backend/` (`print_station.py` — read its docstring): a
+  `Product.background_tasks` loop that talks to the local CUPS over **IPP** (`ipp.py`, `cups_client.py`; no
+  `pycups`/`lp`, deliberately — see `PRINT_CLIENT_SPEC.md` §4), sends its own faster heartbeats beside the
+  platform's, claims one job per queue at a time, keeps the claim alive, and records every job in a ledger under
+  `/data/print-station` so a restart never prints twice or loses a result. Real CUPS facts it relies on (an
+  unreachable network printer reads "idle" until a job is attempted; only the printer message gives it away) are
+  in the spec §2. Run its tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal
+  rstation/platform/local-app/run-tests.sh -q` (virtual-time fakes; `RI_CUPS_INTEGRATION=1` adds the real-CUPS
+  ones, which create and remove throwaway loopback queues).
+- **The desktop print server** (2026-10-19) is `print-client/` — read its README. A Rust core (`print-client/core`:
+  pairing, heartbeat, job loop, ledger, realtime, and a `PrintBackend` trait with a Unix `lp`/`lpstat` impl and a
+  Windows PowerShell + SumatraPDF impl) also builds as the headless `ri-print` command; `print-client/src-tauri`
+  (Tauri v2: tray, window, start-at-login) and `print-client/ui` (Vue) are a thin shell over it. It is **not** in
+  the root Vite/Composer build — it has its own `Cargo.toml`/`package.json`. Tests: `cargo test -p ri-print-core`
+  (mock server + fakes), `RI_CUPS_INTEGRATION=1 …--test cups_integration` (real CUPS), `print-client/e2e/run.sh
+  [--realtime]` (real Laravel app on the disposable test DB; its PHP helpers refuse any other database).
+  Verified on Linux only; the Tauri shell has not yet been compiled on a machine with the webview libraries,
+  and Windows/macOS are untested on hardware.
+- **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
+  on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
+  offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
+
 ### Volunteer hours kiosk — active-window sync needs a systemd timer
 
 `people.volunteer_active` (gates the kiosk's default tile grid) is flipped automatically for volunteers
@@ -394,3 +465,20 @@ kiosk above. `rstation/platform` is the `slideannouncer` submodule (consumed unm
 `kiosk_function`/`kiosk_path` (and the `managed_devices.kiosk_function` column) — they're part of the
 device protocol shared with the Pi product, so changing them needs a coordinated device-side release;
 and `kiosk_location_id`, which genuinely refers to `KioskLocation` (the sign-in kiosk's sites).
+
+**The R Station's server address is chosen on the device, not baked into the image** (2026-10-18).
+`product/image/product.env` deliberately has no `KIOSK_URL` — Chromium always starts on the local app,
+whose `/kiosk` launcher (`Main.vue`) sends the browser to the confirmed server once the first-run wizard
+is done (a remote `KIOSK_URL` would skip the wizard, Wi-Fi setup included). The wizard's Server step
+pre-fills the boot yaml's `server_url` (seeded at build time into the *boot partition's* yaml only, never
+the rootfs), checks `{url}/up`, and saves the result to `/data/status/server-url`, which the platform's
+`read_server_url()` and update CLI prefer from then on; it can't change from the device once set up
+(factory reset clears it) and editing the yaml doesn't move a set-up device. This needed platform changes
+on the `rstation/platform` submodule's `server-url-first-run` branch — see `rstation/platform/docs/SERVER_URL.md`;
+the parent repo's submodule pointer must be at that branch's commit or later.
+
+**Escape hatch** (2026-10-18, same platform branch; `rstation/platform/docs/ESCAPE_HATCH.md`): because the kiosk
+hands its one Chromium tab to the remote site, a core daemon (`slide-announcer-escape-hatch.service`, enabled
+by `product/image/enable`) returns it to local Settings on Ctrl+Alt+Home, Ctrl+Alt+S, or holding the remote's
+Home for 3 s, redirecting via `slide-announcer-kiosk-navigate` (DevTools) and falling back to a kiosk restart
+plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Confirmed working on a real Pi (2026-10-18).

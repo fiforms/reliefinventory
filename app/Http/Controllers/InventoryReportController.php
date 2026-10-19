@@ -9,6 +9,7 @@ use App\Models\ItemType;
 use Illuminate\Support\Facades\DB;
 use League\Csv\Writer;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 /**
  * Stock-on-hand rollup — the ledger (item_ledgers) never gets aggregated
@@ -37,6 +38,12 @@ class InventoryReportController extends Controller
      * is the plumbing.
      */
     public function pdf()
+    {
+        return $this->pdfBuilder();
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function pdfBuilder(): PdfBuilder
     {
         $records = $this->buildRecords()->filter(
             fn ($r) => $r['on_hand'] !== 0 || $r['outdated'] !== 0 || $r['trashed'] !== 0 || $r['diverted'] !== 0

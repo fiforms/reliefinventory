@@ -1,0 +1,19 @@
+[Unit]
+Description=Relief Inventory realtime server (Laravel Reverb — see scripts/REVERB.md)
+After=network.target
+
+[Service]
+# Same user as the queue worker / PHP-FPM pool that owns the app directory.
+User=www-data
+WorkingDirectory=/var/www/reliefinventory-demo
+# Binds REVERB_SERVER_HOST:REVERB_SERVER_PORT from .env (set these to
+# 127.0.0.1:8080 and let nginx terminate TLS and proxy to it).
+ExecStart=/usr/bin/php8.4 artisan reverb:start
+Restart=always
+RestartSec=3
+# One open file per connected browser/print server; the default (1024) is
+# plenty for a site, but cheap to raise.
+LimitNOFILE=10000
+
+[Install]
+WantedBy=multi-user.target

@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 /**
  * Order Filling/Picking — the first place item_ledgers.qty_subtracted ever
@@ -144,11 +145,17 @@ class OrderFillingController extends Controller
             'ids.*' => 'integer|exists:orderdonations,id',
         ]);
 
+        return $this->pickSheetsBuilder($data['ids']);
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function pickSheetsBuilder(array $ids): PdfBuilder
+    {
         $orders = Transaction::where('type', 'order')
-            ->whereIn('id', $data['ids'])
+            ->whereIn('id', $ids)
             ->with(['person', 'orderLines.itemtype.unit'])
             ->get()
-            ->sortBy(fn ($order) => array_search($order->id, $data['ids']))
+            ->sortBy(fn ($order) => array_search($order->id, $ids))
             ->values();
 
         $generatedAt = now();

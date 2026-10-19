@@ -4,7 +4,10 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "test:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/run-tests.sh -q",
+        "package:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/package.sh",
+        "build:rstation": "npm run test:rstation && PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/image-builder/build.sh --virt"
     },
     "devDependencies": {
         "@inertiajs/vue3": "^2.0.3",
@@ -22,7 +25,9 @@
     "dependencies": {
         "html2canvas": "^1.4.1",
         "html5-qrcode": "^2.3.8",
-        "puppeteer": "^25.13.0"
+        "laravel-echo": "^2.6.1",
+        "puppeteer": "^25.13.0",
+        "pusher-js": "^8.6.0"
     },
     "overrides": {
         "postcss-selector-parser": "^7.1.6"

@@ -80,6 +80,7 @@ LOG_DIR="${LOG_DIR:-/var/log/reliefinventory}"
 PHP="${PHP:-php8.4}"
 BRANCH="${BRANCH:-master}"
 QUEUE_SERVICE="${QUEUE_SERVICE:-$(basename "$APP_DIR")-queue}"
+REVERB_SERVICE="${REVERB_SERVICE:-$(basename "$APP_DIR")-reverb}"
 FPM_SERVICE="${FPM_SERVICE:-php8.4-fpm}"
 # Health checks default to APP_URL from .env; override if that isn't reachable
 # from the box itself: HEALTH_URL=http://127.0.0.1 bash scripts/update.sh
@@ -314,6 +315,12 @@ as_app "$PHP" artisan config:cache
 as_app "$PHP" artisan route:cache
 as_app "$PHP" artisan view:cache
 systemctl restart "$QUEUE_SERVICE"
+# Reverb (realtime) is long-running and holds the old code in memory; bounce it
+# too, but only on boxes that actually run it (see scripts/REVERB.md). Clients
+# reconnect on their own.
+if systemctl cat "$REVERB_SERVICE.service" >/dev/null 2>&1; then
+    systemctl restart "$REVERB_SERVICE"
+fi
 systemctl reload "$FPM_SERVICE"
 
 # -------------------------------------------------- 7. health check, then go up

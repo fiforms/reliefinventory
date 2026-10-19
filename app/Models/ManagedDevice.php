@@ -27,13 +27,24 @@ class ManagedDevice extends Model
         'last_seen_at' => 'datetime',
         'paired_at' => 'datetime',
         'cpu_temp_c' => 'float',
+        'reported_printers' => 'array',
+        'printers_reported_at' => 'datetime',
     ];
 
     protected $appends = ['online', 'revoked'];
 
+    // The wake-up channel name is a capability: never serialize it to the admin UI.
+    protected $hidden = ['wake_channel'];
+
     public function location()
     {
         return $this->belongsTo(KioskLocation::class, 'kiosk_location_id');
+    }
+
+    /** The print queues this device (as a print server) owns — see Printer. */
+    public function printers()
+    {
+        return $this->hasMany(Printer::class);
     }
 
     public static function hashToken(string $token): string
@@ -41,11 +52,29 @@ class ManagedDevice extends Model
         return hash('sha256', $token);
     }
 
+    /**
+     * Name of this device's private wake-up channel (App\Events\PrintJobAvailable).
+     * Unguessable on purpose — knowing it is the only "auth" the public channel
+     * has — and generated on first use. Handed to the device inside its
+     * authenticated heartbeat response.
+     */
+    public function wakeChannel(): string
+    {
+        if (! $this->wake_channel) {
+            $this->wake_channel = 'wake.'.Str::random(40);
+            $this->save();
+        }
+
+        return $this->wake_channel;
+    }
+
     /** Issues a fresh token, replacing any earlier one; returns the plaintext (shown once, never stored). */
     public function issueToken(): string
     {
         $token = Str::random(60);
         $this->token_hash = self::hashToken($token);
+        // A re-pair also rotates the wake-up channel, so a previous holder can't keep listening.
+        $this->wake_channel = null;
 
         return $token;
     }

@@ -21,6 +21,7 @@
         <env name="APP_ENV" value="testing"/>
         <env name="APP_MAINTENANCE_DRIVER" value="file"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
+        <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
         <env name="CLOUDFLARE_TURNSTILE_ENABLED" value="false"/>
         <!-- Real MariaDB, not sqlite: this app has MySQL-specific migration/query

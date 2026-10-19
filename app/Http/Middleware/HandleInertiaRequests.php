@@ -51,6 +51,11 @@ class HandleInertiaRequests extends Middleware
             'buildingSafety' => [
                 'canView' => (bool) $request->user()?->hasPermission('view-building-occupancy'),
             ],
+            // Lets the shared Print menu decide whether to offer printers at
+            // all (without print-documents it falls back to download only).
+            'printing' => [
+                'canPrint' => (bool) $request->user()?->hasPermission('print-documents'),
+            ],
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,
             ],

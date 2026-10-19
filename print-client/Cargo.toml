@@ -1,0 +1,7 @@
+# The protocol/printing core is a plain crate so it builds and tests without a webview.
+# src-tauri (the desktop shell) is deliberately NOT a workspace member: it needs the platform
+# webview libraries to build, and has its own Cargo.lock like any Tauri app.
+[workspace]
+members = ["core"]
+exclude = ["src-tauri"]
+resolver = "2"

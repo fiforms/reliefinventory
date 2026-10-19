@@ -1,0 +1,7 @@
+# Units to enable, one per line (docs/PRODUCTS.md).
+rstation-printer-admin.service
+# Starts cupsd at boot and turns on its web interface.
+rstation-cups-setup.service
+# The way back to Settings from the remote site: Ctrl+Alt+Home, Ctrl+Alt+S, or hold the
+# remote's Home (platform/docs/ESCAPE_HATCH.md).
+slide-announcer-escape-hatch.service

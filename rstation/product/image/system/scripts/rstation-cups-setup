@@ -1,0 +1,21 @@
+#!/bin/sh
+# Prepares CUPS for the R Station on every boot (the root is a read-only overlay,
+# so a one-time edit would not be trusted to stick; this is idempotent):
+#
+#  * Turns the CUPS web interface on. Debian ships `WebInterface No`, which makes
+#    the printer setup page Settings > Printers opens (http://localhost:631/admin)
+#    show "Web Interface Disabled" even after a successful login.
+#
+# Edits cupsd.conf directly because `cupsctl` needs a running cupsd, and this runs
+# before cups.service. Does nothing if CUPS isn't installed.
+#
+# CUPSD_CONF exists for tests only.
+CUPSD_CONF="${CUPSD_CONF:-/etc/cups/cupsd.conf}"
+
+[ -f "$CUPSD_CONF" ] || exit 0
+if grep -qE '^[[:space:]]*WebInterface[[:space:]]+' "$CUPSD_CONF"; then
+    grep -qiE '^[[:space:]]*WebInterface[[:space:]]+yes[[:space:]]*$' "$CUPSD_CONF" && exit 0
+    sed -i -E 's/^[[:space:]]*WebInterface[[:space:]]+.*$/WebInterface Yes/' "$CUPSD_CONF"
+else
+    printf '\nWebInterface Yes\n' >> "$CUPSD_CONF"
+fi

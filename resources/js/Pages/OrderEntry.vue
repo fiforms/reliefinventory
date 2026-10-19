@@ -56,6 +56,7 @@ import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import TextArea from '@/Components/TextArea.vue';
 import AddressCorrectionCheck from '@/Components/AddressCorrectionCheck.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
 function normalizeAddr(s) {
@@ -67,7 +68,7 @@ const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const IDLE_ADDRESS_CHECK = { status: 'idle', casingOnly: false, entered: {}, suggested: {} };
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, ComboBox, TextArea, AddressCorrectionCheck },
+	components: { AuthenticatedLayout, Head, SearchSelect, ComboBox, TextArea, AddressCorrectionCheck, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -757,7 +758,8 @@ export default {
 			<h2 class="ri_datatable_head">
 				Order Entry
 				<span class="oe_headeractions">
-					<a href="/report/order-form.pdf" class="ri_formbutton" target="_blank">Offline Order Form</a>
+					<PrintMenu document-key="order-form" media="report" variant="form" label="Offline Order Form"
+						download-href="/report/order-form.pdf" />
 					<button @click="startNewOrder" class="ri_defaultbutton">New Order</button>
 				</span>
 			</h2>

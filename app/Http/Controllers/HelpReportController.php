@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 /**
  * Printable PDF versions of the in-app Help guides (resources/js/Pages/Help/*.vue).
@@ -17,6 +18,12 @@ use Spatie\LaravelPdf\Facades\Pdf;
 class HelpReportController extends Controller
 {
     public function receiving()
+    {
+        return $this->receivingBuilder();
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function receivingBuilder(): PdfBuilder
     {
         return Pdf::view('reports.help.receiving')
             ->format('letter')

@@ -3,10 +3,12 @@
 
 <!-- RStationDevices.vue
 
-	Fleet admin for R Station Raspberry Pi devices (permission:
-	manage-devices): generate a pairing code, configure each device (name,
-	site, what it does, update channel), revoke it, and upload/tag the app
-	and OS releases offered to devices on their next heartbeat. Server half
+	Fleet admin for R Station Raspberry Pi devices and PC/Mac print servers
+	(permission: manage-devices): generate a pairing code, configure each
+	device (name, site, what it does, update channel), set up the printers a
+	print server reports (name, site, paper type, on/off), revoke it, and
+	upload/tag the app and OS releases offered to devices on their next
+	heartbeat. Server half
 	of rstation/platform/docs/DEVICE_CONTRACT.md. Panel-style page per the
 	admin-page-style skill — not RIForm.
 -->
@@ -30,6 +32,7 @@ const notice = ref('');
 const devices = ref([]);
 const functions = ref([]);
 const channels = ref([]);
+const media = ref([]);
 const locations = ref([]);
 const releases = ref([]);
 const savingId = ref(null);
@@ -43,6 +46,7 @@ async function fetchAll() {
 	devices.value = d.data.records;
 	functions.value = d.data.functions;
 	channels.value = d.data.channels;
+	media.value = d.data.media;
 	locations.value = l.data.records.filter((loc) => loc.active);
 	releases.value = r.data.records;
 	if (!pairLocationId.value && locations.value.length) pairLocationId.value = locations.value[0].id;
@@ -78,6 +82,53 @@ async function saveDevice(device) {
 		fail(e, 'Could not save that device.');
 	} finally {
 		savingId.value = null;
+	}
+}
+
+// ---- Printers (queues a print server reported) ----
+const savingPrinterId = ref(null);
+const confirmingPrinterRemove = ref(null);
+
+function printerDot(printer) {
+	if (printer.status === 'idle' || printer.status === 'printing') return 'bg-green-500';
+	if (printer.status === 'error') return 'bg-red-500';
+	return 'bg-amber-500';
+}
+
+function printerState(printer) {
+	if (printer.status === 'unavailable') return printer.status_message || 'unavailable';
+	return printer.status_message ? `${printer.status}: ${printer.status_message}` : printer.status;
+}
+
+async function savePrinter(printer) {
+	savingPrinterId.value = printer.id;
+	error.value = '';
+	notice.value = '';
+	try {
+		const { data } = await axios.put(`/json/printers/${printer.id}`, printer);
+		Object.assign(printer, data.record);
+		notice.value = `Saved ${printer.name}.`;
+	} catch (e) {
+		fail(e, 'Could not save that printer.');
+	} finally {
+		savingPrinterId.value = null;
+	}
+}
+
+async function removePrinter(printer) {
+	if (confirmingPrinterRemove.value !== printer.id) {
+		confirmingPrinterRemove.value = printer.id;
+		return;
+	}
+	confirmingPrinterRemove.value = null;
+	error.value = '';
+	notice.value = '';
+	try {
+		const { data } = await axios.delete(`/json/printers/${printer.id}`);
+		notice.value = data.message;
+		await fetchAll();
+	} catch (e) {
+		fail(e, 'Could not remove that printer.');
 	}
 }
 
@@ -168,7 +219,7 @@ onMounted(fetchAll);
 
 			<!-- Pairing -->
 			<section class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Pair a New Device</h2>
+				<h2 class="text-lg font-semibold">Pair a New Device or Print Server</h2>
 				<div class="flex gap-3 items-end text-sm">
 					<label class="block">
 						<span class="text-gray-700">Site</span>
@@ -180,7 +231,7 @@ onMounted(fetchAll);
 				</div>
 				<div v-if="pairingCode" class="rounded bg-blue-50 border border-blue-300 px-4 py-3">
 					<span class="text-3xl font-mono tracking-widest">{{ pairingCode.code }}</span>
-					<span class="ml-3 text-sm text-gray-600">Enter this on the kiosk's setup screen. Single use; expires {{ new Date(pairingCode.expires_at).toLocaleTimeString() }}.</span>
+					<span class="ml-3 text-sm text-gray-600">Enter this on the device's (or print server's) setup screen. Single use; expires {{ new Date(pairingCode.expires_at).toLocaleTimeString() }}.</span>
 				</div>
 			</section>
 
@@ -197,7 +248,7 @@ onMounted(fetchAll);
 						</span>
 					</div>
 					<div class="text-xs text-gray-500">
-						app {{ device.app_version || '?' }} · OS {{ device.os_version || '?' }} · {{ device.architecture || '?' }}
+						<template v-if="device.platform">{{ device.platform }} · </template>app {{ device.app_version || '?' }} · OS {{ device.os_version || '?' }} · {{ device.architecture || '?' }}
 						<template v-if="device.hostname"> · {{ device.hostname }}.local</template>
 						<template v-if="device.cpu_temp_c != null"> · {{ device.cpu_temp_c }}°C</template>
 					</div>
@@ -237,6 +288,68 @@ onMounted(fetchAll);
 						</PrimaryButton>
 						<button v-if="!device.revoked" type="button" class="text-sm text-red-700 underline" @click="revokeDevice(device)">Revoke</button>
 						<button type="button" class="text-sm text-gray-600 underline" @click="removeDevice(device)">Remove</button>
+					</div>
+
+					<!-- Printers this print server reports -->
+					<div v-if="device.kiosk_function === 'print_station' || device.printers?.length" class="border-t pt-3 space-y-3">
+						<h3 class="font-medium text-sm">Printers</h3>
+						<p v-if="!device.printers?.length" class="text-sm text-gray-400">
+							No printers reported yet. Once the print server is running it lists the printers it can see here at its next check-in.
+						</p>
+						<div v-for="printer in device.printers" :key="printer.id" class="border rounded p-3 space-y-3 bg-gray-50">
+							<div class="flex items-center gap-2 text-sm">
+								<span class="inline-block w-3 h-3 rounded-full" :class="printerDot(printer)"></span>
+								<span class="font-mono text-xs text-gray-600">{{ printer.queue_name }}</span>
+								<span class="text-gray-500">{{ printerState(printer) }}</span>
+								<span v-if="!printer.active" class="text-xs text-gray-400">· off</span>
+							</div>
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+								<label class="block">
+									<span class="text-gray-700">Name</span>
+									<input type="text" maxlength="255" v-model="printer.name" placeholder="e.g. Shipping Floor" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+								</label>
+								<label class="block">
+									<span class="text-gray-700">Site</span>
+									<select v-model="printer.kiosk_location_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+										<option :value="null">— none —</option>
+										<option v-for="location in locations" :key="location.id" :value="location.id">{{ location.name }}</option>
+									</select>
+								</label>
+								<label class="block">
+									<span class="text-gray-700">Paper type</span>
+									<select v-model="printer.media" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+										<option :value="null">— not set —</option>
+										<option v-for="m in media" :key="m.key" :value="m.key">{{ m.label }}</option>
+									</select>
+								</label>
+								<label class="block">
+									<span class="text-gray-700">Menu order</span>
+									<input type="number" min="0" max="9999" v-model.number="printer.sort_order" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+								</label>
+								<label class="flex items-center gap-2 sm:col-span-2">
+									<input type="checkbox" v-model="printer.active" class="rounded border-gray-300" />
+									<span class="text-gray-700">Offer this printer in Print menus</span>
+								</label>
+							</div>
+							<div class="flex gap-3 items-center">
+								<PrimaryButton :disabled="savingPrinterId === printer.id" @click="savePrinter(printer)">
+									{{ savingPrinterId === printer.id ? 'Saving…' : 'Save Printer' }}
+								</PrimaryButton>
+								<button
+									type="button"
+									class="text-sm underline"
+									:class="confirmingPrinterRemove === printer.id ? 'text-red-700 font-semibold' : 'text-gray-600'"
+									@click="removePrinter(printer)"
+								>
+									{{ confirmingPrinterRemove === printer.id ? 'Confirm — it returns if the server still reports it' : 'Remove' }}
+								</button>
+								<button v-if="confirmingPrinterRemove === printer.id" type="button" class="text-sm text-gray-600 underline" @click="confirmingPrinterRemove = null">Cancel</button>
+							</div>
+						</div>
+						<p class="text-xs text-gray-500">
+							A printer is only offered in Print menus once it has a site and a paper type and is switched on.
+							Changing a paper type needs the printer's queue to be empty.
+						</p>
 					</div>
 				</div>
 				<p class="text-xs text-gray-500">

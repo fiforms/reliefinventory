@@ -1,0 +1,16 @@
+[Unit]
+Description=Prepare CUPS for the R Station (web interface on) and start it at boot
+# Stock cups.service is only socket-activated, and the socket is a Unix socket
+# only — nothing listens on TCP 631 until cupsd runs, which is where the print
+# server and Settings > Printers connect. Wants= makes cupsd start at boot;
+# Before= makes the config edit land first.
+Before=cups.service
+Wants=cups.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/rstation-cups-setup
+
+[Install]
+WantedBy=multi-user.target

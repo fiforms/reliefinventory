@@ -148,17 +148,54 @@ Issues identified August 17, 2026
 
 Issues identified October 8, 2026
 
-11. R Station print server (planned, not built) — see `rstation/PRINT_SERVER.md`
- - Web app keeps a server-side print queue; a R Station Pi at the right workspace (with a CUPS-
-   attached printer) polls it and prints automatically, so staff on phones/tablets never need
-   printer drivers. Needs CUPS in the Pi image, a Python print daemon in `rstation/product`, and
-   printers/print_jobs tables + device endpoints in the web app. Several design questions are
-   still open (printer registration details, workspace model, failure handling) — they're listed in the doc.
- - Prerequisite: the R Station fleet management server half (pairing, heartbeat, releases at
-   `/setup/devices`) was written 2026-10-08 but its tests haven't run yet — this box lacks the
-   disposable test database grant (see `scripts/TESTING.md`) — and nothing has been paired with a
-   real device. The Pi product (`rstation/product`) also doesn't yet act on the heartbeat's
-   `kiosk_path`.
+11. Print queue / R Station print server — web-app half built 2026-10-18 (branch `print-queue`); clients and hardware still open
+ - Built: per-site printers and a job queue (`/print-queue`), a shared "Print ▾" menu on every
+   print point, the device API, printer setup on `/setup/devices`, optional realtime (Reverb), an
+   OpenAPI description of the print extension (`rstation/print-extension.openapi.yaml`) and a client
+   spec (`rstation/PRINT_CLIENT_SPEC.md`). See `CLAUDE.md`'s "Print queue" section, `rstation/PRINT_SERVER.md`
+   (wire protocol) and `scripts/REVERB.md` (provisioning). The fleet pairing/heartbeat tests now run and
+   pass; nothing has been paired with a real device yet, and the Pi product (`rstation/product`) still
+   doesn't act on the heartbeat's `kiosk_path`.
+ - **Pi print daemon — built 2026-10-18** in `rstation/product/backend/` (`print_station.py`; uses IPP to the
+   local CUPS, `cups_client.py` + `ipp.py`), with `image/packages` adding `cups` + `cups-filters`. Tested in
+   virtual time against fakes, against a real CUPS with throwaway loopback queues (opt-in:
+   `RI_CUPS_INTEGRATION=1`), and end to end against the real web app + Reverb on the disposable test DB
+   (job queued -> printed in ~1 s via the wake-up; an unreachable printer fails with CUPS' real message).
+   Run the tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/run-tests.sh`.
+ - **Done 2026-10-18: ran the Pi daemon on a real Pi with a real printer.** Paired a Pi, added a printer in
+   CUPS (by hand), set it up on `/setup/devices`, and printed a report from the browser — it spooled and
+   printed instantly. Not yet exercised: adding the queue through the Settings > Printers GUI. Product `VERSION` / `image/VERSION`
+   have not been bumped for this change (the `packages` change needs a full image, not a hotfix).
+ - **Open: Pi on-device UX.** A "Printers" page in the settings shell (`rstation/product/frontend/`: the
+   detected queues and their state, a test-page button, a link to CUPS' admin UI) and making CUPS' web UI
+   reachable and administrable from there (the `lpadmin` account, PIN-gated) — see `PRINT_SERVER.md`,
+   *Printer setup on the device*. None of it is built; for now queues must be added over SSH
+   (`lpadmin`) or CUPS' UI on `localhost:631`.
+ - **Desktop client — built 2026-10-19** in `print-client/` (Rust core + Tauri shell + Vue UI; Windows, macOS, Linux; see
+   its README). Core tested against a mock server, real CUPS loopback queues, and end to end against the real app +
+   Reverb on Linux. **Still open:** (1) install the Tauri build deps on a dev machine
+   (`sudo apt install build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev
+   libayatana-appindicator3-dev librsvg2-dev cups-client`) and compile/run the shell — it was written against the
+   Tauri 2.12 sources but never built, because webkit2gtk wasn't installed; (2) run it on real Windows and macOS
+   machines (the Windows backend has only seen sample PowerShell output); (3) an IPP backend for macOS/Linux so a
+   CUPS-aborted job isn't reported as printed (`lpstat` can't tell); (4) code signing (Windows cert, Apple
+   Developer ID + notarization) and the Tauri updater's signing key; (5) log file, token in the OS keychain.
+ - **Open: verify the remaining client-side assumptions on real printers.** The CUPS 2.4 state behaviour is
+   now verified on Linux loopback queues (including that an unreachable *network* printer looks "idle" in
+   `lpstat` and only shows in `printer-state-message` while a job is attempted — `PRINT_CLIENT_SPEC.md` §2).
+   Still unexercised: USB and driver-based label printers (a USB backend fails differently), the
+   `print-scaling=none` effect on a real label's page size, the Windows commands, macOS, the `label_address`
+   paper size (no document uses it yet — there are no address labels), and the claim keep-alive with a
+   genuinely slow printer. Update the spec with whatever turns out wrong.
+ - **Open: tell staff when a printer goes offline or errors.** Today it only shows as a dot in the
+   Print menu and on `/print-queue`. Needs a design: who is told (by site? by role — e.g.
+   `manage-print-queue` holders), through what (email, the existing notifications bell, a site banner),
+   how to avoid flapping/spam (debounce; one "recovered" notice), and how to *detect* it — a print
+   server that simply stops heartbeating produces no event, and the app has no scheduler, so this
+   needs either lazy detection on page loads or a systemd timer like `volunteer-sync`. Related: the
+   offline threshold is fleet-wide (`devices.offline_after_minutes`, 15) and print servers heartbeat every
+   30–60 s, so a per-function (print_station) threshold of a few minutes would make the Print menu's
+   "offline" honest sooner.
  - Related kiosk notes (escape-hatch key via labwc, first-run site-URL step before pairing,
    heartbeat extensions, and a parked "dockerized local copy of the app" idea) are in
    `rstation/IMPLEMENTATION.md`.

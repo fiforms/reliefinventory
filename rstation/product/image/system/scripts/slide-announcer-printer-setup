@@ -1,0 +1,261 @@
+#!/usr/bin/env python3
+"""Root helper: find, add and remove CUPS printers for Settings > Printers.
+
+Started on demand as slide-announcer-printer-setup.service by the backend
+(products/portal/backend/printer_setup.py). CUPS only lets an administrator
+discover devices (CUPS-Get-Devices) and add or delete queues, and the backend
+deliberately holds no CUPS credential and never runs as root — so it asks this
+script, and this script (not the backend or the UI) decides what is acceptable:
+
+  * `discover`  lists what CUPS can find (`lpinfo -l -v`): network and USB devices.
+  * `add`       creates a queue for one device URI — driverless (IPP Everywhere) by
+                default, or with one of a short fixed list of generic drivers for
+                printers that don't speak IPP Everywhere. The queue name and the URI's
+                scheme are validated here, the driver is chosen from DRIVERS (never a
+                free-form model string), and an existing queue is never touched
+                (lpadmin would silently overwrite it).
+  * `remove`    deletes a queue by name.
+
+Nothing else is reachable: no arbitrary command, option or URI scheme (so no
+`file:` or `pipe:` backends) can be passed through.
+
+Conversation with the backend, in /run/slide-announcer/printer-setup (a tmpfs
+directory the backend owns, so everything in it is untrusted input):
+    request   {"op": "discover"}
+              {"op": "add", "name": str, "uri": str, "driver": "everywhere" (default) | "generic-postscript" | "generic-pcl"}
+              {"op": "remove", "name": str}              deleted as soon as it is read
+    result    {"code": "ok" | "invalid_request" | "invalid_name" | "invalid_uri" |
+               "invalid_driver" | "exists" | "not_found" | "add_failed" | "error",
+               "devices": [...]   (discover only)
+               "detail": str      (add_failed / error only: CUPS's own message, truncated)}
+Files there are opened relative to the directory with O_NOFOLLOW and checked for
+owner/type/size, since root must not be steered by what the backend's user plants
+(symlinks, FIFOs, huge files).
+
+Installed root-owned into /usr/local/sbin and deliberately self-contained: it
+must not import anything from /data/local-app, which the backend's user can write.
+"""
+import fcntl
+import json
+import os
+import pwd
+import re
+import stat
+import subprocess
+import sys
+from urllib.parse import urlsplit
+
+SERVICE_USER = "slideannouncer"
+EXCHANGE_DIR = "/run/slide-announcer/printer-setup"
+LOCK_FILE = "/run/slide-announcer-printer-setup.lock"  # root's own /run, not the backend's directory
+MAX_REQUEST_BYTES = 4096
+DISCOVER_TIMEOUT_SECONDS = 15  # how long lpinfo listens for network printers to answer
+DISCOVER_LIMIT_SECONDS = 60  # hard stop on the whole command
+ADD_LIMIT_SECONDS = 100  # `-m everywhere` asks the printer for its capabilities over the network
+DETAIL_LIMIT = 300
+
+# Only schemes a driverless queue can sensibly use. Notably not file:, pipe:, smb:, or
+# anything that runs a program or writes a file.
+ALLOWED_SCHEMES = ("ipp", "ipps", "dnssd", "socket", "lpd", "usb")
+# Driver choice -> the -m value. Everything but "everywhere" comes from cups-common's sample.drv
+# (compiled by cups-ppdc), which the image already has; the image ships no other drivers.
+DRIVERS = {
+    "everywhere": "everywhere",
+    "generic-postscript": "drv:///sample.drv/generic.ppd",
+    "generic-pcl": "drv:///sample.drv/laserjet.ppd",
+}
+NAME_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$")
+ENV = {"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C.UTF-8"}
+
+
+class Failure(Exception):
+    def __init__(self, code, detail=None):
+        super().__init__(code)
+        self.code = code
+        self.detail = detail
+
+
+def parse_devices(text):
+    """Parses `lpinfo -l -v`: blocks of "Device: uri = X" followed by indented "key = value" lines."""
+    devices, current = [], None
+    for line in text.splitlines():
+        key, _, value = line.strip().partition("=")
+        key, value = key.strip(), value.strip()
+        if line.startswith("Device:"):
+            # "Device: uri = ipp://..." — the key is "Device: uri".
+            current = {"uri": value}
+            devices.append(current)
+        elif current is not None and key:
+            current[key] = value
+    return devices
+
+
+def validate_name(name):
+    if not isinstance(name, str) or not NAME_PATTERN.match(name):
+        raise Failure("invalid_name")
+    return name
+
+
+def validate_uri(uri):
+    if not isinstance(uri, str) or not (3 < len(uri) <= 512) or any(ord(c) <= 32 or ord(c) == 127 for c in uri):
+        raise Failure("invalid_uri")
+    try:
+        parts = urlsplit(uri)
+    except ValueError:
+        raise Failure("invalid_uri")
+    if parts.scheme not in ALLOWED_SCHEMES or "://" not in uri:
+        raise Failure("invalid_uri")
+    # usb://Make/Model?serial=...: the "host" is the make, so only a non-empty remainder is required.
+    if not (parts.netloc or parts.path):
+        raise Failure("invalid_uri")
+    return uri
+
+
+def _text(value):
+    return value.decode(errors="replace") if isinstance(value, bytes) else (value or "")
+
+
+def run_command(args, timeout):
+    """(returncode, stdout, stderr). A command that overruns `timeout` is killed and reported as 124."""
+    try:
+        done = subprocess.run(args, capture_output=True, env=ENV, timeout=timeout)
+    except subprocess.TimeoutExpired as expired:
+        return 124, _text(expired.stdout), _text(expired.stderr) or "timed out"
+    except OSError as exc:
+        return 127, "", str(exc)
+    return done.returncode, _text(done.stdout), _text(done.stderr)
+
+
+def _short(text):
+    return " ".join(text.split())[:DETAIL_LIMIT]
+
+
+class Helper:
+    def __init__(self, run=run_command):
+        self._run = run
+
+    def _queue_exists(self, name):
+        code, _, _ = self._run(["lpstat", "-p", name], 20)
+        return code == 0
+
+    def handle(self, request):
+        """Applies one request and returns the result dict; raises Failure for a refusal."""
+        if not isinstance(request, dict):
+            raise Failure("invalid_request")
+        op = request.get("op")
+        if op == "discover":
+            return self.discover()
+        if op == "add":
+            return self.add(request.get("name"), request.get("uri"), request.get("driver", "everywhere"))
+        if op == "remove":
+            return self.remove(request.get("name"))
+        raise Failure("invalid_request")
+
+    def discover(self):
+        code, out, err = self._run(["lpinfo", "--timeout", str(DISCOVER_TIMEOUT_SECONDS), "-l", "-v"], DISCOVER_LIMIT_SECONDS)
+        devices = parse_devices(out)
+        if code != 0 and not devices:
+            raise Failure("error", _short(err))
+        return {"code": "ok", "devices": devices}
+
+    def add(self, name, uri, driver="everywhere"):
+        validate_name(name)
+        validate_uri(uri)
+        if not isinstance(driver, str) or driver not in DRIVERS:
+            raise Failure("invalid_driver")
+        if self._queue_exists(name):
+            raise Failure("exists")
+        code, _, err = self._run(
+            ["lpadmin", "-p", name, "-E", "-v", uri, "-m", DRIVERS[driver], "-o", "printer-is-shared=false"], ADD_LIMIT_SECONDS)
+        if code != 0:
+            # lpadmin normally fails before creating anything; if it did leave a queue, take it back
+            # so a failed attempt never leaves a broken printer behind.
+            if self._queue_exists(name):
+                self._run(["lpadmin", "-x", name], 30)
+            raise Failure("add_failed", _short(err))
+        return {"code": "ok"}
+
+    def remove(self, name):
+        validate_name(name)
+        if not self._queue_exists(name):
+            raise Failure("not_found")
+        code, _, err = self._run(["lpadmin", "-x", name], 30)
+        if code != 0:
+            raise Failure("error", _short(err))
+        return {"code": "ok"}
+
+
+def _open_exchange(path, service_uid):
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    if os.fstat(fd).st_uid != service_uid:
+        os.close(fd)
+        raise Failure("error")
+    return fd
+
+
+def read_request(dir_fd, service_uid):
+    try:
+        fd = os.open("request", os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
+    except OSError:
+        raise Failure("error")
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != service_uid or info.st_nlink != 1 or info.st_size > MAX_REQUEST_BYTES:
+            raise Failure("error")
+        data = os.read(fd, MAX_REQUEST_BYTES + 1)
+    finally:
+        os.close(fd)
+        try:
+            os.unlink("request", dir_fd=dir_fd)
+        except OSError:
+            pass
+    try:
+        return json.loads(data)
+    except ValueError:
+        raise Failure("invalid_request")
+
+
+def write_result(dir_fd, body):
+    try:
+        os.unlink("result", dir_fd=dir_fd)  # removes a planted symlink itself, never follows it
+    except OSError:
+        pass
+    fd = os.open("result", os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=dir_fd)
+    with os.fdopen(fd, "w") as f:
+        json.dump(body, f)
+
+
+def main():
+    if os.geteuid() != 0:
+        print("must run as root", file=sys.stderr)
+        return 2
+    service_uid = pwd.getpwnam(SERVICE_USER).pw_uid
+    # One request at a time: concurrent lpadmin/lpinfo runs would only fight over the queue list.
+    lock = os.open(LOCK_FILE, os.O_WRONLY | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            dir_fd = _open_exchange(EXCHANGE_DIR, service_uid)
+        except (OSError, Failure):
+            print("no usable exchange directory", file=sys.stderr)
+            return 1
+        try:
+            try:
+                body = Helper().handle(read_request(dir_fd, service_uid))
+            except Failure as failure:
+                body = {"code": failure.code}
+                if failure.detail:
+                    body["detail"] = failure.detail
+            except Exception as exc:  # never let a surprise leave the backend waiting
+                print(f"unexpected failure: {type(exc).__name__}", file=sys.stderr)
+                body = {"code": "error"}
+            write_result(dir_fd, body)
+        finally:
+            os.close(dir_fd)
+    finally:
+        os.close(lock)  # releases the flock
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

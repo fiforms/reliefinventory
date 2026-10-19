@@ -14,12 +14,12 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import ReportDownloadButton from '@/Components/ReportDownloadButton.vue';
+import PrintMenu from '@/Components/PrintMenu.vue';
 import { Head } from '@inertiajs/vue3';
 import axios from 'axios';
 
 export default {
-	components: { AuthenticatedLayout, Head, ReportDownloadButton },
+	components: { AuthenticatedLayout, Head, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -86,10 +86,9 @@ export default {
 		<div class="oor_container">
 			<h2 class="ri_datatable_head oor_head">
 				Outstanding Orders Report
-				<ReportDownloadButton :options="[
-					{ label: 'CSV', href: '/report/orders.csv' },
-					{ label: 'PDF', href: '/report/orders.pdf', target: '_blank' },
-				]" />
+				<a href="/report/orders.csv" class="ri_defaultbutton">Download CSV</a>
+				<PrintMenu document-key="outstanding-orders" media="report" label="Print / PDF"
+					download-href="/report/orders.pdf" />
 			</h2>
 
 			<p v-if="error" class="oor_error">{{ error }}</p>
@@ -139,7 +138,8 @@ export default {
 							<td></td>
 							<td colspan="8">
 								<p v-if="record.status === 'Filled'" class="oor_bollink">
-									<a :href="'/report/bol/' + record.id + '.pdf'" target="_blank" @click.stop class="ri_defaultbutton">Generate BOL</a>
+									<PrintMenu document-key="bol" media="report" label="Generate BOL" :params="{ id: record.id }"
+										:download-href="'/report/bol/' + record.id + '.pdf'" />
 								</p>
 								<table class="oor_subtable" v-if="record.lines.length">
 									<thead>

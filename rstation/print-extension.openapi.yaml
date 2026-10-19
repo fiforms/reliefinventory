@@ -1,0 +1,331 @@
+openapi: 3.0.3
+info:
+  title: Print queue extension to the device contract
+  version: "1"
+  description: |
+    Machine-readable form of the **print extension** a print server speaks, layered on the core
+    device contract. It covers only what the core contract
+    (`rstation/platform/docs/device-contract.openapi.yaml`, an unmodified submodule) does not:
+
+      * the print keys a print server adds to the **heartbeat** request, and the keys the server
+        adds to the heartbeat response;
+      * the four **job endpoints** (`/print-jobs`).
+
+    Pairing, the heartbeat's core fields, revocation and updates are in the core file and are not
+    repeated here. `/heartbeat` below is the *same operation* as the core one: its schemas list
+    only the print additions, and an implementation merges them with the core schemas (both allow
+    extra properties, as the contract requires).
+
+    The prose is normative for behaviour: `rstation/PRINT_SERVER.md` ("Wire protocol (as built)" and
+    "Realtime wake-ups") and `rstation/PRINT_CLIENT_SPEC.md` (what a client must do with these
+    endpoints). The optional realtime wake-up is a Pusher-protocol WebSocket and cannot be
+    expressed in OpenAPI; this file only describes the `print_realtime` object that points at it.
+    If this file and the prose disagree, fix both.
+
+    **Common to every authenticated call:** `Authorization: Bearer <device token>`. A `401` means
+    the device was revoked — wipe the token and return to pairing (core contract, *Revocation*).
+    Print endpoints are throttled to 240 requests per minute per IP (`429`). A job that belongs to
+    another device is always `404`, never `403`.
+servers:
+  - url: https://example.org/api/devices
+    description: "{server_url}{api_base}; api_base is /api/devices for this app"
+security:
+  - bearer: []
+paths:
+  /heartbeat:
+    post:
+      summary: Print additions to the core heartbeat
+      description: |
+        Same operation as the core `POST /heartbeat`. Print servers add `print_platform` and
+        `print_printers`; the response adds `print_realtime` (and carries the existing
+        `kiosk_function` / `kiosk_path` / `kiosk_location_id` extension keys).
+
+        Send the **complete** `print_printers` list every time. An absent key leaves the stored
+        snapshot alone; `[]` means "no queues". A queue name the server hasn't seen creates an
+        inactive, untyped printer for staff to name, site and type; a queue that disappears keeps
+        its row and shows as unavailable. The first heartbeat that reports a non-empty list
+        makes a device with no Function a `print_station`.
+        Recommended cadence is 30-60 s and immediately on a state change (see
+        `PRINT_CLIENT_SPEC.md` section 2).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PrintHeartbeatRequest" }
+      responses:
+        "200":
+          description: OK (core fields omitted here; see the core contract)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrintHeartbeatResponse" }
+        "401": { $ref: "#/components/responses/Revoked" }
+        "422":
+          description: Validation failed (e.g. an unknown `state`, a `print_platform` outside the list, more than 100 queues)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationError" }
+  /print-jobs:
+    get:
+      summary: Jobs waiting for this print server
+      description: |
+        Queued jobs on this device's **active** printers, oldest first. Also reclaims claims that
+        expired without a result (back to the queue, or failed once attempts run out) and purges
+        expired job files, so polling is what keeps the queue healthy.
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PrintJobList" }
+        "401": { $ref: "#/components/responses/Revoked" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /print-jobs/{id}/claim:
+    post:
+      summary: Claim a job (atomic), or keep a held claim alive
+      description: |
+        Atomic and row-locked, so a job can't be claimed twice. **Re-claiming a job this device
+        already holds is idempotent and extends the claim** (new `claim_expires_at`; no new attempt
+        and no log entry) — call it periodically, at least every half of the claim window, while a
+        long job prints. A claim that is not kept alive and never reports a result expires after
+        the claim window (5 minutes by default) and the job returns to the queue.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: Claimed (or claim extended)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ClaimResponse" }
+        "401": { $ref: "#/components/responses/Revoked" }
+        "404": { $ref: "#/components/responses/JobNotFound" }
+        "409":
+          description: The job is no longer claimable (already printed, failed, cancelled, or re-queued elsewhere). Skip it.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /print-jobs/{id}/payload:
+    get:
+      summary: Download the job's PDF
+      description: |
+        Only the device holding the claim may download. The PDF is already the exact size of the
+        job's media (`width_in` x `height_in` from the job listing): print actual size, no scaling.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      responses:
+        "200":
+          description: The PDF
+          content:
+            application/pdf:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Revoked" }
+        "404": { $ref: "#/components/responses/JobNotFound" }
+        "409":
+          description: This device does not hold the claim (it expired, or the job was cancelled). Do not print.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "410":
+          description: The file was cleaned up after the retention period. Report the job as failed.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+  /print-jobs/{id}/result:
+    post:
+      summary: Report the outcome of a claimed job
+      description: |
+        Idempotent: repeating the same result for a job already in that state succeeds. A failure
+        that is *reported* is never retried automatically — staff retry or divert it from the print
+        queue screen — so make `error` useful to the person who reads it.
+      parameters:
+        - $ref: "#/components/parameters/JobId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResultRequest" }
+      responses:
+        "200":
+          description: Recorded
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ResultResponse" }
+        "401": { $ref: "#/components/responses/Revoked" }
+        "404": { $ref: "#/components/responses/JobNotFound" }
+        "409":
+          description: |
+            The claim is already settled — it expired, staff cancelled the job, or it was re-queued
+            — or a different result was already recorded. Log it and do not retry.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "422":
+          description: Validation failed (`status` not printed/failed, or `error` over 2000 characters)
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ValidationError" }
+        "429": { $ref: "#/components/responses/RateLimited" }
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+  parameters:
+    JobId:
+      name: id
+      in: path
+      required: true
+      schema: { type: integer }
+  responses:
+    Revoked:
+      description: The device was revoked. Wipe the token and return to the pairing flow; never retry.
+    RateLimited:
+      description: Throttled (240 requests per minute per IP). Back off and slow the poll.
+    JobNotFound:
+      description: Not one of this device's jobs, or gone. Drop it; never retry.
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+  schemas:
+    Error:
+      type: object
+      properties:
+        message: { type: string }
+    ValidationError:
+      type: object
+      properties:
+        message: { type: string }
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+    PrintHeartbeatRequest:
+      type: object
+      additionalProperties: true
+      description: Print additions to the core HeartbeatRequest.
+      properties:
+        print_platform:
+          type: string
+          nullable: true
+          enum: [rstation, windows, macos, linux]
+          description: What the print server runs on (the Pi uses `rstation`).
+        print_printers:
+          type: array
+          nullable: true
+          maxItems: 100
+          description: The complete list of OS print queues this device can see.
+          items: { $ref: "#/components/schemas/ReportedPrinter" }
+    ReportedPrinter:
+      type: object
+      required: [queue_name]
+      properties:
+        queue_name:
+          type: string
+          maxLength: 255
+          description: |
+            The OS queue/printer name — **the printer's identity** on the server (keyed with the
+            device). Use a stable name; renaming it creates a new, untyped printer.
+        state:
+          type: string
+          nullable: true
+          enum: [idle, printing, error, offline]
+          description: Treated as `idle` when omitted.
+        state_message:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: Shown to staff next to the printer — write it for a warehouse volunteer ("Out of labels").
+    PrintHeartbeatResponse:
+      type: object
+      additionalProperties: true
+      description: Print additions to the core HeartbeatResponse.
+      properties:
+        kiosk_function:
+          type: string
+          nullable: true
+          description: "`print_station` for a print server (set automatically on first reporting queues if unset)."
+        kiosk_path:
+          type: string
+          nullable: true
+          description: Always null for a print station (headless).
+        kiosk_location_id:
+          type: integer
+          nullable: true
+          description: The site this device belongs to.
+        print_realtime:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/PrintRealtime"
+          description: Where to listen for instant wake-ups; **null when realtime is off** (just poll).
+    PrintRealtime:
+      type: object
+      required: [driver, key, host, port, scheme, channel, event]
+      description: |
+        How to reach the optional realtime server. Connect a WebSocket speaking the Pusher protocol
+        to `{ws|wss}://{host}:{port}{path}/app/{key}` and subscribe to the **public** `channel`;
+        when `event` arrives (empty payload) poll `GET /print-jobs` immediately. See
+        `PRINT_SERVER.md`, *Realtime wake-ups*. The channel name is the only secret: unique to this
+        device, rotated on re-pair, cleared on revoke — never log or display it. Re-read this
+        object from every heartbeat response, since the channel can change.
+      properties:
+        driver: { type: string, enum: [reverb] }
+        key: { type: string, description: Public application key. }
+        host: { type: string }
+        port: { type: integer }
+        scheme: { type: string, enum: [http, https] }
+        path: { type: string, description: "Usually empty." }
+        channel: { type: string, example: "wake.0123456789abcdefghijklmnopqrstuvwxyzABCD" }
+        event: { type: string, enum: [print-job.available] }
+    PrintJobList:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items: { $ref: "#/components/schemas/PrintJob" }
+    PrintJob:
+      type: object
+      required: [id, queue_name, copies, media, width_in, height_in]
+      properties:
+        id: { type: integer }
+        queue_name: { type: string, description: The OS queue to print on (one of the names this device reported). }
+        title: { type: string, description: "Human description of the document; untrusted text — display only." }
+        copies: { type: integer, minimum: 1, maximum: 99 }
+        media:
+          type: string
+          description: |
+            Paper-type key (server configuration, so the set can grow). Currently `report`
+            (letter), `label_large` (4 x 6.5 in) and `label_address` (3.5 x 1.125 in).
+          example: label_large
+        width_in: { type: number, description: Page width in inches. }
+        height_in: { type: number, description: Page height in inches. }
+        created_at: { type: string, format: date-time }
+    ClaimResponse:
+      type: object
+      required: [id, queue_name, copies, claim_expires_at]
+      properties:
+        id: { type: integer }
+        queue_name: { type: string }
+        copies: { type: integer, minimum: 1 }
+        claim_expires_at:
+          type: string
+          format: date-time
+          description: When the claim lapses unless re-claimed. Schedule the next keep-alive from this.
+    ResultRequest:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [printed, failed] }
+        error:
+          type: string
+          nullable: true
+          maxLength: 2000
+          description: What went wrong and why, for staff ("Printer 'Zebra ZD421' is out of labels"), not a stack trace. Used with `failed`.
+    ResultResponse:
+      type: object
+      required: [id, status]
+      properties:
+        id: { type: integer }
+        status: { type: string, enum: [printed, failed], description: The job's resulting status. }

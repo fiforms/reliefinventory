@@ -9,6 +9,7 @@ use App\Models\Transaction;
 use Illuminate\Support\Collection;
 use League\Csv\Writer;
 use Spatie\LaravelPdf\Facades\Pdf;
+use Spatie\LaravelPdf\PdfBuilder;
 
 /**
  * Every order not yet Completed — the "what's still owed to a partner" view
@@ -37,6 +38,12 @@ class OutstandingOrdersReportController extends Controller
     }
 
     public function pdf()
+    {
+        return $this->pdfBuilder();
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. */
+    public function pdfBuilder(): PdfBuilder
     {
         $records = $this->buildRecords();
         $generatedAt = now();

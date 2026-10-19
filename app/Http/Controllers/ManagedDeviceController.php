@@ -21,10 +21,15 @@ class ManagedDeviceController extends Controller
 {
     public function index()
     {
+        $devices = ManagedDevice::with(['location:id,name', 'printers'])->orderBy('name')->get();
+        // Printer status is derived from its device; hand it the one we already loaded.
+        $devices->each(fn ($device) => $device->printers->each->setRelation('device', $device));
+
         return response()->json([
-            'records' => ManagedDevice::with('location:id,name')->orderBy('name')->get(),
+            'records' => $devices,
             'functions' => collect(config('devices.functions'))->map(fn ($f, $key) => ['key' => $key, 'label' => $f['label']])->values(),
             'channels' => config('devices.channels'),
+            'media' => collect(config('printing.media'))->map(fn ($m, $key) => ['key' => $key, 'label' => $m['label']])->values(),
         ]);
     }
 
@@ -53,6 +58,7 @@ class ManagedDeviceController extends Controller
     {
         $managedDevice->update(['revoked_at' => now()]);
         $managedDevice->token_hash = null;
+        $managedDevice->wake_channel = null;
         $managedDevice->save();
 
         return response()->json(['message' => 'Device revoked.', 'record' => $managedDevice]);

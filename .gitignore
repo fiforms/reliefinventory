@@ -41,3 +41,11 @@ yarn-error.log
 # pushes to origin itself. Deliberately never committed — deployed to that
 # box by hand, outside the normal deploy pipeline.
 /.claude/skills/dev-autofix/
+
+# print-client (Tauri desktop print server)
+/print-client/target
+/print-client/src-tauri/target
+/print-client/node_modules
+/print-client/ui/dist
+/print-client/src-tauri/gen
+/print-client/src-tauri/resources/SumatraPDF*

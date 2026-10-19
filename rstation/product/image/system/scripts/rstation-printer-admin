@@ -1,0 +1,17 @@
+#!/bin/sh
+# Makes the device's local admin account a CUPS administrator (member of
+# `lpadmin`, CUPS's SystemGroup), so the printer setup page the Settings >
+# Printers screen opens (http://localhost:631/admin) accepts its login.
+#
+# Run on every boot rather than once at image build: the platform's image build
+# is not ours to change, and this is idempotent. Does nothing if CUPS (and with
+# it the lpadmin group) or the account isn't there.
+#
+# ADMIN_USER / GROUP_NAME exist for tests only.
+ADMIN_USER="${ADMIN_USER:-slideadmin}"
+GROUP_NAME="${GROUP_NAME:-lpadmin}"
+
+getent group "$GROUP_NAME" >/dev/null || exit 0
+id "$ADMIN_USER" >/dev/null 2>&1 || exit 0
+id -nG "$ADMIN_USER" | tr ' ' '\n' | grep -qx "$GROUP_NAME" && exit 0
+usermod -aG "$GROUP_NAME" "$ADMIN_USER"
