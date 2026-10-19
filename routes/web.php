@@ -297,11 +297,12 @@ Route::get('/help/sorting', function () {
 })->middleware(['auth']);
 
 // Printable PDF version of a help guide — same no-permission-gate rule as
-// the guide pages themselves. Route/controller named generically so more
-// guides (e.g. /report/help/sorting) can be added without redesigning this.
-Route::get('/report/help/receiving',
-    [HelpReportController::class, 'receiving'])
-    ->name('report.help.receiving')
+// the guide pages themselves. One route for every guide listed in
+// HelpReportController::GUIDES.
+Route::get('/report/help/{guide}',
+    [HelpReportController::class, 'show'])
+    ->whereIn('guide', array_keys(HelpReportController::GUIDES))
+    ->name('report.help')
     ->middleware(['auth']);
 
 Route::get('/report/pallet/{id}',

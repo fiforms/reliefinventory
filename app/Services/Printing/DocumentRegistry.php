@@ -36,7 +36,7 @@ class DocumentRegistry
     /** @return array<string, array{media: string, permission: ?string, rules: array, title: Closure, build: Closure}> */
     public function all(): array
     {
-        return [
+        return array_merge([
             'inventory-report' => [
                 'media' => 'report', 'permission' => 'view-reports', 'rules' => [],
                 'title' => fn () => 'Inventory Report',
@@ -69,11 +69,6 @@ class DocumentRegistry
                 'title' => fn (array $p) => 'BOL for order #'.$p['id'],
                 'build' => fn (array $p) => app(OrderController::class)->bolBuilder((int) $p['id']),
             ],
-            'help-receiving' => [
-                'media' => 'report', 'permission' => null, 'rules' => [],
-                'title' => fn () => 'Receiving Guide',
-                'build' => fn () => app(HelpReportController::class)->receivingBuilder(),
-            ],
             'pallet-label' => [
                 'media' => 'label_large', 'permission' => 'manage-pallets',
                 'rules' => ['id' => 'required|integer'],
@@ -92,7 +87,22 @@ class DocumentRegistry
                 'title' => fn (array $p) => 'Pre-printed pallet labels ('.count($p['ids']).')',
                 'build' => fn (array $p) => app(PalletReportController::class)->preprintLabelsBuilder(array_map('intval', $p['ids'])),
             ],
-        ];
+        ], $this->helpGuides());
+    }
+
+    /** One `help-<slug>` document per guide in HelpReportController::GUIDES. */
+    private function helpGuides(): array
+    {
+        $documents = [];
+        foreach (HelpReportController::GUIDES as $slug => $title) {
+            $documents['help-'.$slug] = [
+                'media' => 'report', 'permission' => null, 'rules' => [],
+                'title' => fn () => $title,
+                'build' => fn () => app(HelpReportController::class)->builder($slug),
+            ];
+        }
+
+        return $documents;
     }
 
     public function find(string $key): ?array
