@@ -284,6 +284,8 @@ export default {
 				);
 				line.item_ledgers = [...(line.item_ledgers || []), response.data.record];
 				this.entryByLine[line.id] = { item_id: null, item: null, qty: null };
+				// on-hand is a ledger sum the fill just changed — refresh it
+				this.fetchStockHints();
 			} catch (error) {
 				this.fillError = error.response?.data?.message
 					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
@@ -299,6 +301,7 @@ export default {
 			try {
 				await axios.delete('/json/order-filling/' + this.order.id + '/lines/' + line.id + '/fills/' + fill.id);
 				line.item_ledgers = (line.item_ledgers || []).filter((f) => f.id !== fill.id);
+				this.fetchStockHints();
 			} catch (error) {
 				this.fillError = 'Could not delete that fill record.';
 			}
