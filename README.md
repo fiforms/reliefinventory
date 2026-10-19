@@ -50,20 +50,24 @@ Install prerequisite packages:
 
     php artisan migrate
   
-** Create a new user (YOU MUST do this before loading test data) **
+** Finish setup in the browser **
 
-    php artisan user:create
-  
-** Load initial data **
+Start the app (`composer run dev`, or your web server) and open it in a browser. A first-run setup wizard asks
+for the administrator's name, email and password, seeds the essential data (statuses, units, categories, item
+catalog, permissions) and optionally loads example data (fictional donations, pallets and orders at every
+lifecycle stage -- demo instances only, never a real operation). It closes for good once used.
 
-    # Creating essential data
-    php artisan db:seed
-    
+If the server is reachable from the internet before you finish, set `RI_SETUP_CODE` in `.env` so completing the
+wizard also requires that code (otherwise whoever opens the page first becomes the administrator).
+
 *This is a great place to import site-specific data. Refer to site-specific documentation outside of GitHub*
-    
-    # (Optional) Load realistic demo data (donations, pallets and orders at every lifecycle stage).
-    # Demo instances only -- never run this against an instance with real operational data.
-    php artisan db:seed --class=WarehouseActivitySeeder
+
+Prefer the command line? These do the same job without the wizard:
+
+    php artisan setup:seed-essentials          # essential data; no-op if already seeded
+    php artisan user:create                    # interactive; or, non-interactively:
+    php artisan admin:bootstrap --email=you@example.com [--password=...]   # random password printed if omitted
+    php artisan db:seed --class=WarehouseActivitySeeder   # optional demo data
 
 # Updating
 

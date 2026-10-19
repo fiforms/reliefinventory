@@ -63,14 +63,6 @@ wait_for_db() {
     done
 }
 
-table_count() { # table_count <table> -> row count, or 0 if the table does not exist
-    TBL="$1" php -r '
-        try {
-            $p = new PDO(sprintf("mysql:host=%s;port=%s;dbname=%s", getenv("DB_HOST") ?: "127.0.0.1", getenv("DB_PORT") ?: "3306", getenv("DB_DATABASE") ?: "reliefinventory"), getenv("DB_USERNAME") ?: "reliefinventory", getenv("DB_PASSWORD") ?: "");
-            echo (int) $p->query("SELECT COUNT(*) FROM `".str_replace("`", "", getenv("TBL"))."`")->fetchColumn();
-        } catch (Throwable $e) { echo 0; }'
-}
-
 # The compose stack keeps generated passwords in a volume instead of asking the
 # operator to invent them; DB_PASSWORD_FILE points at the app database's.
 if [ -n "${DB_PASSWORD_FILE:-}" ] && [ -z "${DB_PASSWORD:-}" ]; then
@@ -141,16 +133,10 @@ web)
     log "running migrations"
     php artisan migrate --force --no-interaction
 
-    # First run only: the essential lookup data (statuses, categories, item
-    # families, permissions...). Migrations insert a few permission/unit rows
-    # themselves, so those tables can't be the signal; `statuses` is filled only
-    # by the (non-idempotent) seeder and `categories` only by its seeder, so
-    # both empty means "never seeded". Detected from the data, not a marker
-    # file, so a wiped database with a surviving volume still gets seeded.
-    if [ "$(table_count statuses)" = 0 ] && [ "$(table_count categories)" = 0 ]; then
-        log "empty database — seeding essential data"
-        php artisan db:seed --force --no-interaction
-    fi
+    # Essential lookup data (statuses, units, categories, item catalog,
+    # permissions) on a never-seeded database; a no-op otherwise. The web setup
+    # wizard does the same, so this only matters for RI_ADMIN_EMAIL installs.
+    php artisan setup:seed-essentials --no-interaction
 
     if [ -n "${RI_ADMIN_EMAIL:-}" ]; then
         php artisan admin:bootstrap --no-interaction \
@@ -158,9 +144,8 @@ web)
             ${RI_ADMIN_PASSWORD:+--password="$RI_ADMIN_PASSWORD"} \
             ${RI_ADMIN_FIRST_NAME:+--firstname="$RI_ADMIN_FIRST_NAME"} \
             ${RI_ADMIN_LAST_NAME:+--lastname="$RI_ADMIN_LAST_NAME"} || log "admin:bootstrap did not create an administrator (see above)"
-    elif [ "$(table_count people_roles)" = 0 ]; then
-        log "no administrator exists yet. Set RI_ADMIN_EMAIL (and optionally RI_ADMIN_PASSWORD) and restart, or run:"
-        log "  docker compose exec app ri-entrypoint artisan user:create"
+    elif [ "$(php artisan setup:status --no-interaction)" = needs-setup ]; then
+        log "first run: open ${APP_URL:-the server address} in a browser to create the administrator (setup wizard)"
     fi
 
     php artisan config:cache --no-interaction

@@ -15,6 +15,11 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
+// First-run setup wizard — only reachable until an administrator exists (see
+// FirstRunService / RedirectToSetup); afterwards both just redirect to /login.
+Route::get('/install', [SetupController::class, 'show'])->name('setup.show');
+Route::post('/install', [SetupController::class, 'store'])->middleware('throttle:10,1')->name('setup.store');
+
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),

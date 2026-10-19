@@ -368,6 +368,22 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
+### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
+
+A brand-new instance (no Administrator, `setup_state.completed_at` null) redirects every web page to `/install`
+(`RedirectToSetup`, `SetupController`, `Setup/FirstRun.vue`, logic in `FirstRunService`) — WordPress-style, replacing
+the old "run `user:create` then `db:seed`" CLI steps. Two steps, one POST: create the administrator, optionally load
+`WarehouseActivitySeeder` example data. Non-obvious points: `completed_at` is a **one-way latch** (set by the wizard,
+by `admin:bootstrap`, or lazily the first time an Administrator is seen) so deleting every admin later can never
+re-offer the instance to a stranger — don't "simplify" it to just checking for admins; `RedirectToSetup` must sort
+*before* `auth` (`prependToPriorityList(before: AuthenticatesRequests::class, …)` — the priority list holds the
+contract, not the `Authenticate` class); non-GET/JSON requests get 403 while setup is pending so the open
+`/register` can't be used beside the wizard; optional `RI_SETUP_CODE` (`config('app.setup_code')`) makes the wizard
+require a code for internet-exposed fresh instances; example data can't be removed from inside the app (the wizard
+says so). `tests/Pest.php` marks setup complete for every feature test, `SetupWizardTest` resets it. CLI
+equivalents: `setup:seed-essentials`, `setup:status`, `admin:bootstrap`. The shared `TextInput` puts `id`/`class`
+on its wrapper div, not the `<input>` (so `<label for>` doesn't link) — pre-existing, not specific to the wizard.
+
 ### Docker image (`Dockerfile`, `docker/`) — built 2026-10-19 on branch `docker-image`
 
 A multi-arch (amd64/arm64) production image plus a compose stack (`docker/compose.yaml`: MariaDB, web, queue,

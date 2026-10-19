@@ -8,8 +8,10 @@ use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureAccountApproved;
 use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RedirectToSetup;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Http\Middleware\VerifyFeedbackIngestSecret;
+use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -26,11 +28,15 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->web(append: [
+            RedirectToSetup::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
             TrackSessionActivity::class,
             EnsureAccountApproved::class,
         ]);
+        // Must run before `auth`, or a not-yet-set-up instance would bounce
+        // visitors to /login (or 401 a JSON call) instead of to the wizard.
+        $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: RedirectToSetup::class);
         $middleware->alias([
             'permission' => CheckPermission::class,
             'kiosk-access' => EnsureKioskAccess::class,

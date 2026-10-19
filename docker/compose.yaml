@@ -1,9 +1,9 @@
 # Relief Inventory — Docker Compose stack. This is the ONLY file you need to edit.
 #
-#   1. Edit the two settings in the "YOUR SETTINGS" block below.
+#   1. Set APP_URL in the "YOUR SETTINGS" block below.
 #   2. docker compose up -d
-#   3. docker compose logs app | grep -A1 -i "generated password"    # your first admin password
-#   4. Open the APP_URL address and sign in.
+#   3. Open that address in a browser: a setup wizard creates your administrator
+#      account (and can load example data). That's it.
 #
 # Database passwords are generated randomly on first start and kept in the
 # `secrets` volume — you never have to choose or see them. See README.md for
@@ -26,14 +26,20 @@ x-settings: &settings
   # If you change the port, change the "8080:8080" mapping under `app` too.
   APP_URL: http://localhost:8080
 
-  # The first administrator. Created on first start only, if no administrator
-  # exists yet. A random password is generated and printed once in the app log.
-  RI_ADMIN_EMAIL: admin@example.com
-
   # --- Optional: uncomment and edit what you need ---------------------------
+
+  # If this server is reachable from the internet before you've finished the
+  # setup wizard, require a code to complete it (anyone who opens the page first
+  # could otherwise become the administrator). Pick any string.
+  # RI_SETUP_CODE: choose-a-code
+
+  # Skip the wizard and create the administrator from the command line instead
+  # (unattended installs). A random password is printed once in the app log
+  # unless you set RI_ADMIN_PASSWORD.
+  # RI_ADMIN_EMAIL: admin@example.com
   # APP_NAME: Relief Inventory
   # APP_TIMEZONE: America/New_York      # default UTC; any PHP timezone name
-  # RI_ADMIN_PASSWORD: choose-one       # instead of a generated one
+  # RI_ADMIN_PASSWORD: choose-one       # (with RI_ADMIN_EMAIL) instead of a generated one
   # RI_ADMIN_FIRST_NAME: Pat
   # RI_ADMIN_LAST_NAME: Smith
 
