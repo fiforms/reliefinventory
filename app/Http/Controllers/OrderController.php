@@ -104,6 +104,7 @@ class OrderController extends Controller
             Transaction::statusId(Transaction::STATUS_READY_TO_SHIP),
             Transaction::statusId(Transaction::STATUS_SHIPPED),
             Transaction::statusId(Transaction::STATUS_DELIVERED),
+            Transaction::statusId(Transaction::STATUS_DELIVERED_AWAITING_BOL),
         ];
 
         return response()->json([
@@ -374,6 +375,7 @@ class OrderController extends Controller
             Transaction::STATUS_READY_TO_SHIP,
             Transaction::STATUS_SHIPPED,
             Transaction::STATUS_DELIVERED,
+            Transaction::STATUS_DELIVERED_AWAITING_BOL,
             Transaction::STATUS_COMPLETED,
         ];
         if (! in_array($order->status?->name, $bolEligibleStatuses, true)) {

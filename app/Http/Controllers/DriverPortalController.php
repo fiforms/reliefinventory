@@ -105,6 +105,8 @@ class DriverPortalController extends Controller
         $currentStatuses = [
             Transaction::statusId(Transaction::STATUS_READY_TO_SHIP),
             Transaction::statusId(Transaction::STATUS_SHIPPED),
+            // a rejected BOL: delivered, but the driver still owes a usable upload
+            Transaction::statusId(Transaction::STATUS_DELIVERED_AWAITING_BOL),
         ];
 
         $currentQuery = Transaction::where('type', 'order')
@@ -145,7 +147,8 @@ class DriverPortalController extends Controller
             abort(403, 'This load is not assigned to you.');
         }
 
-        if (! in_array($order->status?->name, [Transaction::STATUS_READY_TO_SHIP, Transaction::STATUS_SHIPPED], true)) {
+        $awaitingBol = [Transaction::STATUS_READY_TO_SHIP, Transaction::STATUS_SHIPPED, Transaction::STATUS_DELIVERED_AWAITING_BOL];
+        if (! in_array($order->status?->name, $awaitingBol, true)) {
             abort(response()->json([
                 'message' => 'This load is not currently awaiting a signed BOL.',
             ], 409));

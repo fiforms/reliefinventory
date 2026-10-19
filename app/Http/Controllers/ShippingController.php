@@ -18,7 +18,8 @@ use Illuminate\Support\Facades\Storage;
  * staff-observed event, not something inferred from any other action (per
  * Mark, 2026-08-27: "Shipped is when it leaves the warehouse") — and review
  * a Delivered order's signed BOL (approve() -> Completed, the real
- * terminus, or reject() back to Shipped for the driver to redo). Delivered
+ * terminus, or reject() -> Delivered - Waiting on BOL for the driver to
+ * redo). Delivered
  * itself is set by DriverPortalController once the signed BOL comes back,
  * not from here.
  */
@@ -57,6 +58,7 @@ class ShippingController extends Controller
             'ready_to_ship' => $byStatus(Transaction::STATUS_READY_TO_SHIP),
             'shipped' => $byStatus(Transaction::STATUS_SHIPPED),
             'delivered' => $byStatus(Transaction::STATUS_DELIVERED),
+            'awaiting_bol' => $byStatus(Transaction::STATUS_DELIVERED_AWAITING_BOL),
             'completed' => $recentByStatus(Transaction::STATUS_COMPLETED),
             'drivers' => Driver::orderBy('name')->get(),
         ]);
@@ -155,11 +157,13 @@ class ShippingController extends Controller
 
     /**
      * The uploaded image isn't a usable signed BOL (wrong document, no
-     * signature, illegible, ...). Back to Shipped — same status the
-     * Driver Portal's "current loads" query already includes, so the
-     * driver sees this load again with $reason shown on their card and
-     * re-uploads through the normal flow, no separate "corrected upload"
-     * endpoint needed.
+     * signature, illegible, ...). -> Delivered - Waiting on BOL: the goods
+     * did arrive, so the order stays a delivered state (feedback #54 — it
+     * used to drop back to Shipped and blend in with loads still on the
+     * road). The Driver Portal's "current loads" query includes this status,
+     * so the driver sees the load again with $reason on their card and
+     * re-uploads through the normal flow, which moves it back to Delivered
+     * for another review.
      */
     public function reject(Request $request, $id)
     {
@@ -179,7 +183,7 @@ class ShippingController extends Controller
         $order->signed_bol_path = null;
         $order->bol_rejection_reason = $data['reason'] ?? null;
         $order->bol_reviewed_by_person_id = Auth::id();
-        $order->status_id = Transaction::statusId(Transaction::STATUS_SHIPPED);
+        $order->status_id = Transaction::statusId(Transaction::STATUS_DELIVERED_AWAITING_BOL);
         $order->save();
 
         return response()->json(['record' => $order->load(self::WITH_RELATIONS)]);

@@ -56,6 +56,13 @@ export default {
 			listLoading: false,
 			listError: null,
 			showAllocation: false,
+			// Approve column drafts, keyed by order line id — '' means no
+			// approval (picker gets the full request). Seeded from each line's
+			// saved qty_approved, else the suggested proportional share.
+			approvalDrafts: {},
+			savingApprovals: false,
+			approvalError: null,
+			approvalSaved: false,
 
 			// stock-on-hand per itemtype, reused from Order Entry's own endpoint
 			stockHints: {},
@@ -118,6 +125,17 @@ export default {
 		orderLines() {
 			return this.order?.order_lines || [];
 		},
+		// Lines a picker actually pulls — an approved quantity of 0 means
+		// nothing to pick, so the line is left off the fill screen (and the
+		// pick sheet) and needs no fill record.
+		pickableLines() {
+			return this.orderLines.filter((line) => Number(line.qty_to_pick) > 0);
+		},
+		// Every fill is 0 (or nothing is pickable): completing will close the
+		// order as Closed - Unfulfilled instead of sending it to Shipping.
+		nothingPicked() {
+			return this.orderLines.every((line) => this.lineFilled(line) === 0);
+		},
 	},
 	methods: {
 		needLevelRank(level) {
@@ -132,7 +150,7 @@ export default {
 			return (line.item_ledgers || []).reduce((sum, fill) => sum + Number(fill.qty_subtracted || 0), 0);
 		},
 		orderProgress(order) {
-			const lines = order.order_lines || [];
+			const lines = (order.order_lines || []).filter((line) => Number(line.qty_to_pick) > 0);
 			const filledCount = lines.filter((line) => (line.item_ledgers || []).length > 0).length;
 			return { filled: filledCount, total: lines.length };
 		},
@@ -145,6 +163,7 @@ export default {
 				const response = await axios.get('/json/order-filling');
 				this.readyToFill = response.data.ready_to_fill || [];
 				this.filling = response.data.filling || [];
+				this.seedApprovalDrafts();
 			} catch (error) {
 				this.listError = 'Could not load the filling queue.';
 			} finally {
@@ -157,6 +176,38 @@ export default {
 				this.stockHints = response.data.hints || {};
 			} catch (error) {
 				this.stockHints = {};
+			}
+			this.seedApprovalDrafts();
+		},
+
+		// ---------- allocation approval ----------
+		seedApprovalDrafts() {
+			const drafts = {};
+			this.allocationRows.forEach((row) => row.lines.forEach(({ line, suggested }) => {
+				drafts[line.id] = line.qty_approved ?? suggested;
+			}));
+			this.approvalDrafts = drafts;
+			this.approvalSaved = false;
+		},
+		async saveApprovals() {
+			this.approvalError = null;
+			this.approvalSaved = false;
+			const lines = this.allocationRows.flatMap((row) => row.lines.map(({ line }) => {
+				const draft = this.approvalDrafts[line.id];
+				return { id: line.id, qty_approved: draft === '' || draft === null || draft === undefined ? null : Number(draft) };
+			}));
+			if (!lines.length) return;
+			this.savingApprovals = true;
+			try {
+				await axios.put('/json/order-filling/allocations', { lines });
+				await this.fetchQueue();
+				this.approvalSaved = true;
+			} catch (error) {
+				this.approvalError = error.response?.data?.message
+					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
+					|| 'Could not save approved quantities.';
+			} finally {
+				this.savingApprovals = false;
 			}
 		},
 		async fetchItems() {
@@ -307,7 +358,7 @@ export default {
 			}
 		},
 		allLinesAccounted() {
-			return this.orderLines.length > 0 && this.orderLines.every((line) => (line.item_ledgers || []).length > 0);
+			return this.pickableLines.every((line) => (line.item_ledgers || []).length > 0);
 		},
 		async completeFilling() {
 			this.fillError = null;
@@ -352,20 +403,22 @@ export default {
 			<p v-if="listError" class="of_error">{{ listError }}</p>
 			<p v-if="listLoading">Loading…</p>
 
-			<!-- Allocation Review: additive, non-blocking, informational only -->
+			<!-- Allocation Review: optional — approving is what changes the picker's number -->
 			<div v-if="showAllocation" class="of_card">
 				<h3>Allocation Review</h3>
 				<p class="of_hint">
 					Items where total requested across Ready-to-Fill orders exceeds on-hand. Suggested quantities
-					are straight-proportional; need level is self-reported context. Nothing here is enforced —
-					fill and print however you choose.
+					are straight-proportional; need level is self-reported context. Saving sets each line's
+					approved quantity — that's what the picker sees on the pick sheet and fill screen (a line
+					approved at 0 is left off). Leave a box blank to give the picker the full request. Nothing
+					here is required before printing or filling.
 				</p>
 				<p v-if="!allocationRows.length" class="of_hint">Nothing is currently short.</p>
 				<div v-for="row in allocationRows" :key="row.itemtype?.id" class="of_allocation_group">
 					<h4>{{ row.itemtype?.name }} — {{ row.onHand }} on hand, {{ row.totalRequested }} requested</h4>
 					<table class="ri_datatable" border="1">
 						<thead>
-							<tr><th>Order</th><th>Partner</th><th>Requested</th><th>Suggested</th><th>Need</th></tr>
+							<tr><th>Order</th><th>Partner</th><th>Requested</th><th>Suggested</th><th>Approve</th><th>Need</th></tr>
 						</thead>
 						<tbody>
 							<tr v-for="entry in row.lines" :key="entry.order.id + '-' + entry.line.id">
@@ -373,10 +426,24 @@ export default {
 								<td>{{ personLabel(entry.order.person) }}</td>
 								<td>{{ entry.line.qty_requested }}</td>
 								<td>{{ entry.suggested }}</td>
+								<td>
+									<input type="number" min="0" :max="entry.line.qty_requested" step="1"
+										v-model="approvalDrafts[entry.line.id]" class="ri_forminput of_qty"
+										@input="approvalSaved = false" />
+									<span v-if="entry.line.qty_approved !== null && entry.line.qty_approved !== undefined"
+										class="of_hint" title="Saved approved quantity">&#10003; {{ entry.line.qty_approved }}</span>
+								</td>
 								<td>{{ needLevelLabels[entry.line.need_level] || '—' }}</td>
 							</tr>
 						</tbody>
 					</table>
+				</div>
+				<div v-if="allocationRows.length" class="of_approvalactions">
+					<button @click="saveApprovals" :disabled="savingApprovals" class="ri_defaultbutton">
+						{{ savingApprovals ? 'Saving…' : 'Save Approved Quantities' }}
+					</button>
+					<span v-if="approvalSaved" class="of_hint">Saved — pickers will see the approved quantities.</span>
+					<span v-if="approvalError" class="of_error">{{ approvalError }}</span>
 				</div>
 			</div>
 
@@ -431,12 +498,12 @@ export default {
 
 			<div class="of_tablewrap"><table class="ri_datatable" border="1">
 				<thead>
-					<tr><th>Item</th><th>Requested</th><th>Filled</th><th>On Hand</th><th>Add Fill</th></tr>
+					<tr><th>Item</th><th>Qty to Pick</th><th>Filled</th><th>On Hand</th><th>Add Fill</th></tr>
 				</thead>
 				<tbody>
-					<tr v-for="line in orderLines" :key="line.id">
+					<tr v-for="line in pickableLines" :key="line.id">
 						<td>{{ line.itemtype?.name }}</td>
-						<td>{{ line.qty_requested }}</td>
+						<td>{{ line.qty_to_pick }}</td>
 						<td>{{ lineFilled(line) }}</td>
 						<td>{{ lineOnHand(line) }}</td>
 						<td>
@@ -474,8 +541,8 @@ export default {
 							</ul>
 						</td>
 					</tr>
-					<tr v-if="!orderLines.length">
-						<td colspan="5">No lines on this order.</td>
+					<tr v-if="!pickableLines.length">
+						<td colspan="5">Nothing to pick on this order.</td>
 					</tr>
 				</tbody>
 			</table></div>
@@ -490,6 +557,10 @@ export default {
 				</button>
 				<span v-if="!allLinesAccounted()" class="of_hint">
 					Every line needs at least one fill record (even 0) before this order can be marked Filled.
+				</span>
+				<span v-else-if="nothingPicked" class="of_hint">
+					Nothing has been picked — completing will close this request as Unfulfilled instead of
+					sending it to Shipping.
 				</span>
 			</div>
 		</div>
@@ -538,6 +609,13 @@ export default {
 	margin-top: 14px;
 }
 .of_allocation_group {
+	margin-top: 12px;
+}
+.of_approvalactions {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	flex-wrap: wrap;
 	margin-top: 12px;
 }
 .of_allocation_group h4 {

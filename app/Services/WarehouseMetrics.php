@@ -34,6 +34,7 @@ class WarehouseMetrics
         Transaction::STATUS_READY_TO_SHIP,
         Transaction::STATUS_SHIPPED,
         Transaction::STATUS_DELIVERED,
+        Transaction::STATUS_DELIVERED_AWAITING_BOL,
         Transaction::STATUS_COMPLETED,
     ];
 
@@ -144,7 +145,7 @@ class WarehouseMetrics
             ->all();
 
         $donationStatuses = [Transaction::STATUS_RECEIVED, Transaction::STATUS_SORTING, Transaction::STATUS_COMPLETE];
-        $orderStatuses = [Transaction::STATUS_NEW_ORDER, Transaction::STATUS_FILLING, Transaction::STATUS_FILLED, Transaction::STATUS_READY_TO_SHIP, Transaction::STATUS_SHIPPED, Transaction::STATUS_DELIVERED, Transaction::STATUS_COMPLETED];
+        $orderStatuses = [Transaction::STATUS_NEW_ORDER, Transaction::STATUS_FILLING, Transaction::STATUS_FILLED, Transaction::STATUS_READY_TO_SHIP, Transaction::STATUS_SHIPPED, Transaction::STATUS_DELIVERED, Transaction::STATUS_DELIVERED_AWAITING_BOL, Transaction::STATUS_COMPLETED, Transaction::STATUS_CLOSED_UNFULFILLED];
 
         $donationCounts = $byStatus('donation', $donationStatuses);
         $orderCounts = $byStatus('order', $orderStatuses);

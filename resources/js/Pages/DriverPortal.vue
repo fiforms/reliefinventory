@@ -196,7 +196,7 @@ export default {
 					Signed in as <strong>{{ signedInAs }}</strong>.
 					<button class="dp_logoutlink" @click="logout">Sign Out</button>
 				</p>
-				<p v-else-if="isStaffViewer" class="dp_hint">Staff view — every load currently Ready to Ship or Shipped, across all drivers.</p>
+				<p v-else-if="isStaffViewer" class="dp_hint">Staff view — every load currently Ready to Ship, Shipped, or waiting on a re-uploaded BOL, across all drivers.</p>
 
 				<p v-if="loadError" class="dp_error">{{ loadError }}</p>
 				<p v-if="loading">Loading...</p>

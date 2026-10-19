@@ -465,6 +465,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::get('/order-filling', [OrderFillingController::class, 'index']);
     Route::patch('/order-filling/{id}/start', [OrderFillingController::class, 'start']);
     Route::post('/order-filling/print-pick-sheets', [OrderFillingController::class, 'printPickSheets']);
+    Route::put('/order-filling/allocations', [OrderFillingController::class, 'approveAllocation']);
     Route::patch('/order-filling/{id}/complete', [OrderFillingController::class, 'completeFilling']);
     Route::post('/order-filling/{id}/lines/{lineId}/fills', [OrderFillingController::class, 'storeFill']);
     Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);

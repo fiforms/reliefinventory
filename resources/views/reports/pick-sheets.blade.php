@@ -110,21 +110,22 @@
                     <th>Item #</th>
                     <th>Name</th>
                     <th>Unit</th>
-                    <th class="qty">Qty Requested</th>
+                    <th class="qty">Qty to Pick</th>
                     <th class="picked">Picked</th>
                 </tr>
             </thead>
             <tbody>
-                @forelse($order->orderLines as $line)
+                {{-- Lines approved at 0 have nothing to pick, so they're left off the sheet. --}}
+                @forelse($order->orderLines->where('qty_to_pick', '>', 0) as $line)
                     <tr>
                         <td>{{ $line->itemtype?->display_number ?? '' }}</td>
                         <td>{{ $line->itemtype?->name }}</td>
                         <td>{{ $line->itemtype?->unit?->abbreviation ?? $line->itemtype?->unit?->name }}</td>
-                        <td class="qty">{{ $line->qty_requested }}</td>
+                        <td class="qty">{{ $line->qty_to_pick }}</td>
                         <td class="picked"></td>
                     </tr>
                 @empty
-                    <tr><td colspan="5">No lines on this order.</td></tr>
+                    <tr><td colspan="5">Nothing to pick on this order.</td></tr>
                 @endforelse
             </tbody>
         </table>

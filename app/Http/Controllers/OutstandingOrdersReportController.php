@@ -30,6 +30,7 @@ class OutstandingOrdersReportController extends Controller
         Transaction::STATUS_READY_TO_SHIP,
         Transaction::STATUS_SHIPPED,
         Transaction::STATUS_DELIVERED,
+        Transaction::STATUS_DELIVERED_AWAITING_BOL,
     ];
 
     public function index()

@@ -4,6 +4,7 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\Category;
+use App\Models\Driver;
 use App\Models\Item;
 use App\Models\ItemLedger;
 use App\Models\ItemType;
@@ -307,4 +308,94 @@ test('sorting session lines now stamp the acting person on the ledger row', func
     ])->assertCreated()->json('record.id');
 
     expect(ItemLedger::find($lineId)->person_id_user)->toBe($user->id);
+});
+
+test('an order filled entirely with zeros closes as Unfulfilled and never reaches Shipping', function () {
+    $user = userWithPermissions('manage-orders');
+    $itemtype = fillingItemtype();
+    $order = readyToFillOrder();
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLING)]);
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $itemtype->id, 'qty_requested' => 10]);
+    $item = fillableItem($itemtype);
+
+    $this->actingAs($user)->postJson('/json/order-filling/'.$order->id.'/lines/'.$line->id.'/fills', ['item_id' => $item->id, 'qty' => 0])
+        ->assertCreated();
+    $this->actingAs($user)->patchJson('/json/order-filling/'.$order->id.'/complete', ['pallet_count' => 2])
+        ->assertOk()->assertJsonPath('record.status.name', Transaction::STATUS_CLOSED_UNFULFILLED);
+
+    expect($order->fresh()->pallet_count)->toBeNull();
+    $shipping = $this->actingAs($user)->getJson('/json/shipping')->assertOk()->json();
+    expect(collect($shipping)->only(['filled', 'ready_to_ship', 'shipped', 'delivered', 'awaiting_bol'])->flatten(1)->pluck('id'))
+        ->not->toContain($order->id);
+    $this->actingAs($user)->patchJson('/json/shipping/'.$order->id.'/assign', ['driver_id' => Driver::create(['name' => 'Sam'])->id])
+        ->assertStatus(409);
+});
+
+test('approved quantities are saved per line with the approver, capped at the request, and only while Ready to Fill', function () {
+    $user = userWithPermissions('manage-orders');
+    $itemtype = fillingItemtype();
+    $order = readyToFillOrder();
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $itemtype->id, 'qty_requested' => 50]);
+
+    $this->actingAs($user)->putJson('/json/order-filling/allocations', ['lines' => [['id' => $line->id, 'qty_approved' => 51]]])
+        ->assertStatus(422);
+
+    $this->actingAs($user)->putJson('/json/order-filling/allocations', ['lines' => [['id' => $line->id, 'qty_approved' => 40]]])
+        ->assertOk()->assertJsonPath('records.0.qty_to_pick', 40);
+    $line->refresh();
+    expect($line->qty_requested)->toBe(50)
+        ->and($line->qty_approved)->toBe(40)
+        ->and($line->approved_by_person_id)->toBe($user->id)
+        ->and($line->approved_at)->not->toBeNull();
+
+    // clearing an approval gives the picker the full request again
+    $this->actingAs($user)->putJson('/json/order-filling/allocations', ['lines' => [['id' => $line->id, 'qty_approved' => null]]])
+        ->assertOk()->assertJsonPath('records.0.qty_to_pick', 50);
+    expect($line->fresh()->approved_by_person_id)->toBeNull();
+
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLING)]);
+    $this->actingAs($user)->putJson('/json/order-filling/allocations', ['lines' => [['id' => $line->id, 'qty_approved' => 10]]])
+        ->assertStatus(422);
+    expect($line->fresh()->qty_approved)->toBeNull();
+
+    $this->actingAs(userWithPermissions('general-access'))
+        ->putJson('/json/order-filling/allocations', ['lines' => [['id' => $line->id, 'qty_approved' => 10]]])
+        ->assertForbidden();
+});
+
+test('a line approved at 0 needs no fill record and is left off the pick sheet; the approved qty is what is picked', function () {
+    $user = userWithPermissions('manage-orders');
+    $water = fillingItemtype();
+    $beans = fillingItemtype('Canned Beans');
+    $order = readyToFillOrder();
+    $waterLine = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $water->id, 'qty_requested' => 50]);
+    $beansLine = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $beans->id, 'qty_requested' => 5]);
+
+    $this->actingAs($user)->putJson('/json/order-filling/allocations', ['lines' => [
+        ['id' => $waterLine->id, 'qty_approved' => 40],
+        ['id' => $beansLine->id, 'qty_approved' => 0],
+    ]])->assertOk();
+
+    $html = view('reports.pick-sheets', [
+        'orders' => Transaction::with(['person', 'orderLines.itemtype.unit'])->whereKey($order->id)->get(),
+        'generatedAt' => now(),
+    ])->render();
+    expect($html)->toContain('Bottled Water')->toContain('>40<')->not->toContain('Canned Beans')->not->toContain('>50<');
+
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLING)]);
+    $this->actingAs($user)->postJson('/json/order-filling/'.$order->id.'/lines/'.$waterLine->id.'/fills', ['item_id' => fillableItem($water)->id, 'qty' => 40])
+        ->assertCreated();
+    $this->actingAs($user)->patchJson('/json/order-filling/'.$order->id.'/complete')
+        ->assertOk()->assertJsonPath('record.status.name', Transaction::STATUS_FILLED);
+});
+
+test('an order where every line was approved at 0 can be completed with no fills and closes as Unfulfilled', function () {
+    $user = userWithPermissions('manage-orders');
+    $order = readyToFillOrder();
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => fillingItemtype()->id, 'qty_requested' => 5]);
+    $this->actingAs($user)->putJson('/json/order-filling/allocations', ['lines' => [['id' => $line->id, 'qty_approved' => 0]]])->assertOk();
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLING)]);
+
+    $this->actingAs($user)->patchJson('/json/order-filling/'.$order->id.'/complete')
+        ->assertOk()->assertJsonPath('record.status.name', Transaction::STATUS_CLOSED_UNFULFILLED);
 });
