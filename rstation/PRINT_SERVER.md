@@ -109,6 +109,9 @@ audio, and we don't reimplement driver/PPD selection.
     size stay in CUPS: those need a CUPS admin login, which the backend deliberately doesn't hold.
     The CUPS UI's login is the device's local `slideadmin` account (password set at image build);
     `image/system/rstation-printer-admin.service` adds it to `lpadmin` on every boot.
+    `image/system/rstation-cups-setup.service` starts cupsd at boot (stock Debian only socket-activates
+    it on a Unix socket, so nothing listens on TCP 631 otherwise) and sets `WebInterface Yes` (stock
+    Debian ships `No`, which shows "Web Interface Disabled" after login).
     **The password is set from the same page** — on a first-run or factory-reset device no old
     password is needed; after that the current one is. The rule is enforced by a root helper, not
     the UI: the backend (`admin_password.py`) drops a request file in `/run/slide-announcer/
