@@ -5,17 +5,17 @@
 
 namespace App\Console\Commands;
 
-use App\Models\PeopleRoles;
 use App\Models\User;
+use App\Services\FirstRunService;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 
 /**
  * Non-interactive first-administrator creation, for the Docker image's
  * entrypoint (user:create prompts for a password, which a container has no
- * terminal to answer). Does nothing once any Administrator exists, so it is
- * safe to run on every start.
+ * terminal to answer) and for unattended installs. Does nothing once any
+ * Administrator exists, so it is safe to run on every start. The first-run web
+ * wizard (/install) is the interactive alternative.
  */
 class BootstrapAdminCommand extends Command
 {
@@ -27,12 +27,10 @@ class BootstrapAdminCommand extends Command
 
     protected $description = 'Create the first Administrator if none exists (non-interactive; used by the Docker entrypoint).';
 
-    // Same role id user:create grants (the seeded Administrator role).
-    private const ADMINISTRATOR_ROLE_ID = 15;
-
-    public function handle(): int
+    public function handle(FirstRunService $firstRun): int
     {
-        if (PeopleRoles::where('role_id', self::ADMINISTRATOR_ROLE_ID)->exists()) {
+        if ($firstRun->administratorExists()) {
+            $firstRun->markComplete();
             $this->info('An Administrator already exists; nothing to do.');
 
             return self::SUCCESS;
@@ -53,16 +51,8 @@ class BootstrapAdminCommand extends Command
         $generated = ! $this->option('password');
         $password = $generated ? Str::password(20, symbols: false) : $this->option('password');
 
-        $user = new User;
-        $user->email = $email;
-        $user->first_name = $this->option('firstname');
-        $user->last_name = $this->option('lastname');
-        $user->password = Hash::make($password);
-        $user->email_verified_at = now();
-        $user->approved_at = now();
-        $user->save();
-
-        PeopleRoles::create(['person_id' => $user->id, 'role_id' => self::ADMINISTRATOR_ROLE_ID]);
+        $firstRun->ensureEssentialData();
+        $user = $firstRun->createAdministrator($email, $password, $this->option('firstname'), $this->option('lastname'));
 
         $this->info("Created Administrator $email (user id {$user->id}).");
         if ($generated) {

@@ -210,3 +210,10 @@ Issues identified October 8, 2026
  - **Open:** run on real arm64 hardware; first CI run + publishing to GHCR; a "managed by Docker" mode for the
    System Administration panel (update/backup buttons are systemd-only); test Reverb in the container; decide
    whether to drop Chromium for WeasyPrint (see `scripts/DOCKER_PLAN.md`).
+
+13. First-run setup wizard — built 2026-10-19 (branch `first-run-wizard`), see CLAUDE.md
+ - **Open:** a way to remove example data from inside the app (today a clean instance means a fresh database);
+   `demo_data_seeded_at` is recorded so the app could show a "contains demo data" banner; `TextInput` doesn't put
+   its `id` on the real `<input>` (labels don't link, app-wide); decide whether Docker should print a setup code in
+   the log by default instead of leaving the wizard open to the first visitor.
+

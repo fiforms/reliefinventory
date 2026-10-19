@@ -7,28 +7,36 @@ Nothing else is needed on the host — Chromium, WeasyPrint, Node (for PDF rende
 
 You only need `compose.yaml` (it is self-contained; grab it from this directory, or clone the repo).
 
-1. **Edit the "YOUR SETTINGS" block at the top of `compose.yaml`:** `APP_URL` (the address people will type into
-   a browser) and `RI_ADMIN_EMAIL` (your first administrator). Everything else has a working default.
+1. **Set `APP_URL`** in the "YOUR SETTINGS" block at the top of `compose.yaml` — the address people will type into
+   a browser. Everything else has a working default.
 2. `docker compose up -d`
-3. `docker compose logs app | grep -A1 -i "generated password"` — the first administrator's password, shown once.
-4. Open your `APP_URL` and sign in. Change the password from your profile.
+3. **Open `APP_URL` in a browser.** A first-run setup wizard asks for the administrator's name, email and password,
+   and whether to load example data. Then you're signed in and ready to go.
 
-That's all: the first start also generates the database passwords (random, kept in the `secrets` volume — you never
+On first start the container also generates the database passwords (random, kept in the `secrets` volume — you never
 need them), creates the database, runs the migrations, seeds the essential lookup data (statuses, units, categories,
-permissions) and generates the application key (kept in the `storage` volume). All of it is skipped on later starts.
+the item catalog, permissions) and generates the application key (kept in the `storage` volume). All of it is
+skipped on later starts. The wizard closes for good once it has been used.
 
-Want to choose passwords yourself? Uncomment `RI_ADMIN_PASSWORD` (and, **before the first start only**,
-`DB_PASSWORD` / `DB_ROOT_PASSWORD`) in the settings block.
+**Reachable from the internet before you've finished the wizard?** Whoever opens the page first can become the
+administrator, as with any "first visitor sets it up" installer. Either finish setup before exposing the server,
+or uncomment `RI_SETUP_CODE` in the settings block so completing the wizard also requires that code.
 
-To create more administrators or reset a password:
+**Prefer no wizard (unattended installs)?** Uncomment `RI_ADMIN_EMAIL` (and optionally `RI_ADMIN_PASSWORD`) in the
+settings block. The administrator is then created on first start; if you don't set a password, a random one is
+printed once in the log: `docker compose logs app | grep -A1 -i "generated password"`.
+
+Want to choose the database passwords yourself? Uncomment `DB_PASSWORD` / `DB_ROOT_PASSWORD` in the settings block
+**before the first start only**.
+
+To create more administrators or reset a password later, use the app's user administration, or:
 
 ```bash
-docker compose exec app ri-entrypoint artisan user:create
 docker compose exec app ri-entrypoint artisan user:update-password --email=you@example.com
 docker compose exec app ri-entrypoint artisan user:promote --email=you@example.com
 ```
 
-Demo data (optional, **never** on a real instance):
+Example data can also be loaded later from the command line (**never** on a real instance):
 `docker compose exec app ri-entrypoint artisan db:seed --class=WarehouseActivitySeeder`
 
 ## What runs

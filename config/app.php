@@ -157,4 +157,12 @@ return [
 
     'trusted_proxies' => env('TRUSTED_PROXIES'),
 
+    /*
+    | Optional hardening for the first-run wizard (/install): when set, whoever
+    | completes the wizard must also type this code. Leave unset for the
+    | WordPress-style "first visitor sets it up" flow (fine on a private
+    | network); set it when a brand-new instance is reachable from the internet.
+    */
+    'setup_code' => env('RI_SETUP_CODE'),
+
 ];
