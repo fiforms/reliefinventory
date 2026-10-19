@@ -14,3 +14,6 @@ cups-filters
 # package for label printers). Network and USB printers that speak IPP
 # Everywhere / AirPrint need none. Add them here once the first real printers
 # are known.
+
+# Colour emoji. The website uses emoji as icons; without a font, Chromium draws blank boxes.
+fonts-noto-color-emoji
