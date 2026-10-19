@@ -4,16 +4,15 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\BannedEmail;
-use App\Models\OfflineModeSetting;
 use App\Models\User;
 use App\Services\PinLoginService;
+use App\Services\TurnstileService;
 use App\Support\EmailFailureMessage;
 use Illuminate\Auth\Events\Registered;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rules;
 use Illuminate\Validation\ValidationException;
@@ -25,12 +24,12 @@ class RegisteredUserController extends Controller
     /**
      * Display the registration view.
      */
-    public function create(): Response
+    public function create(TurnstileService $turnstile): Response
     {
-        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
-        $turnstileSiteKey = config('services.turnstile.site_key');
+        $turnstileEnabled = $turnstile->enabled();
+        $turnstileSiteKey = $turnstile->siteKey();
 
-        if ($turnstileEnabled && empty($turnstileSiteKey)) {
+        if ($turnstile->misconfigured()) {
             abort(500, 'Cloudflare Turnstile is not properly configured.');
         }
 
@@ -45,9 +44,12 @@ class RegisteredUserController extends Controller
      *
      * @throws ValidationException
      */
-    public function store(Request $request, PinLoginService $pinLogin): RedirectResponse
+    public function store(Request $request, PinLoginService $pinLogin, TurnstileService $turnstile): RedirectResponse
     {
-        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
+        $turnstileEnabled = $turnstile->enabled();
+        if ($turnstile->misconfigured()) {
+            abort(500, 'Cloudflare Turnstile is not properly configured.');
+        }
 
         $request->validate([
             'first_name' => 'string|max:255',
@@ -58,19 +60,7 @@ class RegisteredUserController extends Controller
         ]);
 
         if ($turnstileEnabled) {
-            // Verify Turnstile response with Cloudflare
-            $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-                'secret' => config('services.turnstile.secret_key'),
-                'response' => $request->input('cf-turnstile-response'),
-                'remoteip' => $request->ip(),
-            ])->json();
-
-            // If Turnstile verification fails
-            if (! $response['success']) {
-                throw ValidationException::withMessages([
-                    'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
-                ]);
-            }
+            $turnstile->verify($request->input('cf-turnstile-response'), $request->ip());
         }
 
         if (BannedEmail::isBanned($request->email)) {

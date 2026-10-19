@@ -3,11 +3,10 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\Models\OfflineModeSetting;
+use App\Services\TurnstileService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Validation\ValidationException;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -17,12 +16,12 @@ class PasswordResetLinkController extends Controller
     /**
      * Display the password reset link request view.
      */
-    public function create(): Response
+    public function create(TurnstileService $turnstile): Response
     {
-        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
-        $turnstileSiteKey = config('services.turnstile.site_key');
+        $turnstileEnabled = $turnstile->enabled();
+        $turnstileSiteKey = $turnstile->siteKey();
 
-        if ($turnstileEnabled && empty($turnstileSiteKey)) {
+        if ($turnstile->misconfigured()) {
             abort(500, 'Cloudflare Turnstile is not properly configured.');
         }
 
@@ -36,11 +35,14 @@ class PasswordResetLinkController extends Controller
     /**
      * Handle an incoming password reset link request.
      *
-     * @throws \Illuminate\Validation\ValidationException
+     * @throws ValidationException
      */
-    public function store(Request $request): RedirectResponse
+    public function store(Request $request, TurnstileService $turnstile): RedirectResponse
     {
-        $turnstileEnabled = config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
+        $turnstileEnabled = $turnstile->enabled();
+        if ($turnstile->misconfigured()) {
+            abort(500, 'Cloudflare Turnstile is not properly configured.');
+        }
 
         $request->validate([
             'email' => 'required|email',
@@ -48,28 +50,16 @@ class PasswordResetLinkController extends Controller
         ]);
 
         if ($turnstileEnabled) {
-            // Verify Turnstile response with Cloudflare
-            $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-                'secret' => config('services.turnstile.secret_key'),
-                'response' => $request->input('cf-turnstile-response'),
-                'remoteip' => $request->ip(),
-            ])->json();
-
-            // If Turnstile verification fails
-            if (!$response['success']) {
-                throw ValidationException::withMessages([
-                    'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
-                ]);
-            }
+            $turnstile->verify($request->input('cf-turnstile-response'), $request->ip());
         }
 
         // Introduce a slight random delay (between 500ms and 4500ms) to prevent timing attacks
         usleep(random_int(500000, 4500000));
-        
+
         // Always return the same response to avoid user enumeration
         Password::sendResetLink($request->only('email'));
-        
+
         return back()->with('status', __('If the email exists, a reset link has been sent.'));
-        
+
     }
 }
