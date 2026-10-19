@@ -26,6 +26,7 @@ class HelpReportController extends Controller
     public function receivingBuilder(): PdfBuilder
     {
         return Pdf::view('reports.help.receiving')
+            ->driver('weasyprint')
             ->format('letter')
             ->name('receiving-guide.pdf');
     }

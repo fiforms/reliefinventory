@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <title>Situation Report</title>
     <style>
+        /* Margins live on @page (not body padding) so every page of a long county list keeps them. */
+        @page { size: letter; margin: 36px 42px; }
         body {
             font-family: Arial, sans-serif;
             color: #222;
             margin: 0;
-            padding: 36px 42px;
         }
         h1 {
             font-size: 24px;
@@ -50,6 +51,10 @@
         .stat_block h3 {
             font-size: 13px;
             margin: 0 0 8px 0;
+        }
+        /* Flex items must be plain blocks: weasyprint mis-sizes tables used directly as flex items. */
+        .stat_grid > .stat_col {
+            flex: 1;
         }
         .stat_row {
             display: flex;
@@ -129,22 +134,22 @@
     <div class="section">
         <h2>Current Pipeline</h2>
         <div class="stat_grid">
-            <table>
+            <div class="stat_col"><table>
                 <thead><tr><th>Donations</th><th class="num">Count</th></tr></thead>
                 <tbody>
                     @foreach($data['pipeline']['donations'] as $stage => $count)
                         <tr><td>{{ $stage }}</td><td class="num">{{ $count }}</td></tr>
                     @endforeach
                 </tbody>
-            </table>
-            <table>
+            </table></div>
+            <div class="stat_col"><table>
                 <thead><tr><th>Orders</th><th class="num">Count</th></tr></thead>
                 <tbody>
                     @foreach($data['pipeline']['orders'] as $stage => $count)
                         <tr><td>{{ $stage }}</td><td class="num">{{ $count }}</td></tr>
                     @endforeach
                 </tbody>
-            </table>
+            </table></div>
         </div>
     </div>
 

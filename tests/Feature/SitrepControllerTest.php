@@ -41,10 +41,8 @@ test('the situation report never includes names, donor quality, or anything beyo
         ->not->toContain('SecretCommentText');
 });
 
-// PDF byte-rendering needs spatie/browsershot (a real headless-browser
-// binary) which isn't installed in this dev environment — same gap as the
-// existing, also-untested PalletReportController PDF endpoints. Permission
-// gating is still fully testable since middleware runs before Pdf::view().
+// Byte-level PDF rendering is covered by SitrepWeasyprintTest; this one only
+// checks permission gating, which runs in middleware before Pdf::view().
 test('the situation report PDF requires the view-sitrep permission', function () {
     $user = userWithPermissions('view-dashboard');
 

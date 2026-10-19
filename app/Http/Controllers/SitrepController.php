@@ -53,6 +53,7 @@ class SitrepController extends Controller
     public function pdfBuilder(WarehouseMetrics $metrics): PdfBuilder
     {
         return Pdf::view('reports.sitrep', ['data' => $this->buildData($metrics)])
+            ->driver('weasyprint')
             ->format('letter')
             ->name('situation-report-'.now()->format('Y-m-d').'.pdf');
     }

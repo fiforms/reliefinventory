@@ -4,11 +4,12 @@
     <meta charset="UTF-8">
     <title>Receiving Guide</title>
     <style>
+        /* Margins live on @page (not body padding) so every page of the guide keeps them. */
+        @page { size: letter; margin: 36px 42px; }
         body {
             font-family: Arial, sans-serif;
             color: #222;
             margin: 0;
-            padding: 36px 42px;
             font-size: 13px;
             line-height: 1.5;
         }
