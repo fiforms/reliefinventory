@@ -8,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Models\OfflineModeSetting;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -47,6 +48,7 @@ class SystemController extends Controller
         'frequency' => 'daily',
         'hour' => 2,
         'dow' => 7,
+        'hourly' => false,
         'tz' => 'America/Los_Angeles',
         'keep_hourly' => 48,
         'keep_daily' => 14,
@@ -58,6 +60,7 @@ class SystemController extends Controller
         'frequency' => 'BACKUP_FREQUENCY',
         'hour' => 'BACKUP_HOUR',
         'dow' => 'BACKUP_DOW',
+        'hourly' => 'HOURLY_BACKUPS',
         'tz' => 'BACKUP_TZ',
         'keep_hourly' => 'KEEP_HOURLY',
         'keep_daily' => 'KEEP_DAILY',
@@ -141,6 +144,7 @@ class SystemController extends Controller
             'frequency' => 'required|in:daily,weekly',
             'hour' => 'required|integer|between:0,23',
             'dow' => 'required|integer|between:1,7',
+            'hourly' => 'sometimes|boolean',
             'tz' => 'required|timezone:all',
             'keep_hourly' => 'required|integer|between:1,500',
             'keep_daily' => 'required|integer|between:1,365',
@@ -150,8 +154,10 @@ class SystemController extends Controller
 
         $lines = ['# Relief Inventory backup settings — managed by the System Administration panel.',
             '# Format reference: scripts/backup-settings.conf.example'];
+        $data['hourly'] = (bool) ($data['hourly'] ?? false);
         foreach (self::SETTINGS_FILE_KEYS as $field => $fileKey) {
-            $lines[] = $fileKey.'='.$data[$field];
+            $value = $data[$field];
+            $lines[] = $fileKey.'='.(is_bool($value) ? (int) $value : $value);
         }
         file_put_contents(config('system.settings_file'), implode("\n", $lines)."\n");
 
@@ -209,6 +215,7 @@ class SystemController extends Controller
         foreach (['hour', 'dow', 'keep_hourly', 'keep_daily', 'keep_monthly', 'keep_yearly'] as $intField) {
             $values[$intField] = (int) $values[$intField];
         }
+        $values['hourly'] = $values['hourly'] === true || $values['hourly'] === '1';
 
         return $values;
     }
@@ -263,7 +270,7 @@ class SystemController extends Controller
         }
 
         if (($decoded['state'] ?? null) === 'running' && ! empty($decoded['updated_at'])) {
-            $secondsSinceUpdate = abs(now()->diffInSeconds(\Illuminate\Support\Carbon::parse($decoded['updated_at'])));
+            $secondsSinceUpdate = abs(now()->diffInSeconds(Carbon::parse($decoded['updated_at'])));
             if ($secondsSinceUpdate > self::RUNNING_STALE_AFTER_SECONDS) {
                 // Computed on read, never written back — a later real
                 // status write (from an update that does start) simply
