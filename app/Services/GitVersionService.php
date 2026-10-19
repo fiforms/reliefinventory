@@ -18,6 +18,11 @@ class GitVersionService
 {
     public function currentCommit(): ?string
     {
+        // A Docker image has no .git — its build bakes the commit in instead.
+        if ($baked = config('app.git_commit')) {
+            return substr($baked, 0, 9);
+        }
+
         $result = Process::path(base_path())->timeout(5)->run(['git', 'rev-parse', '--short=9', 'HEAD']);
 
         return $result->successful() ? trim($result->output()) : null;

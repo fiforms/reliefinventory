@@ -200,8 +200,13 @@ Issues identified October 8, 2026
    heartbeat extensions, and a parked "dockerized local copy of the app" idea) are in
    `rstation/IMPLEMENTATION.md`.
 
-12. Docker distribution (x64 + arm64) — assessed 2026-10-19, not started
+12. Docker distribution (x64 + arm64) — built and tested on amd64 2026-10-19 (branch `docker-image`); remaining items below
  - Package the web app + MariaDB as a multi-arch compose stack others can run. Feasible with no app changes;
    the real work is bundling Chromium (arm64 needs Debian's `chromium`) and `weasyprint` into the image, a
    first-run entrypoint, volumes, and replacing the systemd timers with a scheduler sidecar.
    Plan and estimate (~2–4 days to working, ~1 more week to distributable) in `scripts/DOCKER_PLAN.md`.
+ - **Built:** Dockerfile + `docker/` compose stack (FrankenPHP, MariaDB, queue, scheduler, optional Reverb),
+   first-run migrate/seed/admin bootstrap, Chromium + WeasyPrint bundled, CI workflow. See `docker/README.md`.
+ - **Open:** run on real arm64 hardware; first CI run + publishing to GHCR; a "managed by Docker" mode for the
+   System Administration panel (update/backup buttons are systemd-only); test Reverb in the container; decide
+   whether to drop Chromium for WeasyPrint (see `scripts/DOCKER_PLAN.md`).

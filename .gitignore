@@ -53,3 +53,6 @@ yarn-error.log
 # Python bytecode (the Pi print-server tests import the extensionless helper scripts, which writes caches next to them)
 __pycache__/
 *.pyc
+
+# Docker stack: daily DB dumps written by the scheduler container
+/docker/backups

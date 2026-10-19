@@ -1,6 +1,42 @@
 # Docker distribution plan (x64 + arm64)
 
-Status: **planned, not started** (assessed 2026-10-19). There is no Dockerfile or compose file in the repo yet.
+Status: **built and tested on amd64 (2026-10-19), branch `docker-image`**; arm64 build verified under QEMU
+emulation (see below); not yet run on real arm64 hardware or published. Files: `Dockerfile`, `.dockerignore`,
+`docker/` (compose.yaml, README.md, entrypoint, scheduler, Caddyfile, chromium wrapper),
+`.github/workflows/docker.yml`. User-facing docs: `docker/README.md`.
+
+## What was actually built (differs slightly from the plan below)
+
+- **Web server: FrankenPHP** (`dunglas/frankenphp`, Caddy + PHP in one process, classic mode) instead of
+  php-fpm + nginx — one process, no supervisor. Plain HTTP on 8080; TLS is a reverse proxy's job.
+- **PDF rendering: distro `chromium` + `weasyprint` from Debian trixie apt**, identical on both arches. Node is
+  copied from the official `node` image and puppeteer's production `node_modules` live in `/opt/pdf` (no
+  Chrome download; `PUPPETEER_SKIP_DOWNLOAD=1`). Browsershot is pointed at `docker/chromium-wrapper.sh`, which
+  adds `--no-sandbox --disable-dev-shm-usage --disable-gpu` so the app needs no container-specific code and no
+  `--shm-size` setting. Considered and not done: moving the three Chromium documents (pallet labels, sitrep, help
+  page) to the `chrome` driver (no Node) or WeasyPrint (no Chromium at all, ~380 MB smaller) — a rendering change
+  that can't be judged without real label printers.
+- **One image, roles by first argument** (`web|queue|scheduler|reverb|artisan`); only `web` migrates, seeds,
+  generates `APP_KEY` (kept in the storage volume if not supplied) and runs `admin:bootstrap`
+  (new non-interactive command; `RI_ADMIN_EMAIL`/`RI_ADMIN_PASSWORD`, random password logged once if blank).
+- **One config file, no secrets to invent**: operators edit only the settings block at the top of
+  `docker/compose.yaml` (`APP_URL`, `RI_ADMIN_EMAIL`; the rest optional). A one-shot `init` service generates random
+  DB passwords into a `secrets` volume that `db` (via `MARIADB_*_FILE`) and the app (via `DB_PASSWORD_FILE`) read;
+  `secrets` must live and die with `db-data`.
+- **Scheduler container** replaces the systemd timers: hourly `volunteers:sync-active-windows`, daily gzip'd
+  `mariadb-dump` into `./backups` with retention.
+- Image is ~2.9 GB uncompressed (Chromium 380 MB, Python/WeasyPrint 255 MB, Node 120 MB, fonts, FrankenPHP).
+
+## Known gaps
+
+- **System Administration panel**: "Install Update" / "Backup Now" / backup schedule shell out to systemd and git;
+  they don't work in the container, and its version panel relies on `RI_GIT_COMMIT` rather than git. Needs a
+  "managed by Docker" mode that hides them.
+- Reverb (`--profile realtime`) is wired but untested in the container.
+- Not yet run on real arm64 hardware (Pi) or in CI.
+- Backups cover the database only; the `storage` volume (photos, print PDFs) is the operator's to back up.
+- Print servers/R Stations pointing at a containerised instance untested end to end.
+
 
 Goal: a multi-arch (linux/amd64 + linux/arm64) image and compose stack that someone else can run in a Docker
 environment, without the manual server provisioning the app otherwise needs (see CLAUDE.md, "PDF / label

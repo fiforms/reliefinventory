@@ -1,0 +1,31 @@
+# Whitelist: nothing goes into the build context unless listed here. This keeps
+# rstation/, print-client/, tests/, docs, node_modules/, vendor/, .git, local
+# .env files and (importantly) any local storage/ data out of the image.
+*
+
+!app
+!bootstrap
+!config
+!database
+!public
+!resources
+!routes
+!artisan
+!composer.json
+!composer.lock
+!package.json
+!package-lock.json
+!vite.config.js
+!tailwind.config.js
+!postcss.config.js
+!jsconfig.json
+!docker
+
+# ...minus anything stale or machine-local inside those directories
+bootstrap/cache/*
+!bootstrap/cache/.gitignore
+public/build
+public/hot
+public/storage
+database/*.sqlite
+**/.DS_Store

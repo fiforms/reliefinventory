@@ -137,4 +137,24 @@ return [
 
     'hosted_link' => env('HOSTED_LINK', 'https://example.com'),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Docker image support
+    |--------------------------------------------------------------------------
+    |
+    | git_commit: the Docker image has no .git directory, so the commit it was
+    | built from is baked in as RI_GIT_COMMIT (see Dockerfile) and
+    | GitVersionService uses it in preference to asking git.
+    |
+    | trusted_proxies: comma-separated proxy IPs/CIDRs (or "*") whose
+    | X-Forwarded-* headers are believed, so generated URLs use the public
+    | https scheme/host when a TLS-terminating reverse proxy sits in front.
+    | Empty (the default) trusts none.
+    |
+    */
+
+    'git_commit' => env('RI_GIT_COMMIT'),
+
+    'trusted_proxies' => env('TRUSTED_PROXIES'),
+
 ];

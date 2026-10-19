@@ -1,0 +1,186 @@
+# Relief Inventory — Docker Compose stack. This is the ONLY file you need to edit.
+#
+#   1. Edit the two settings in the "YOUR SETTINGS" block below.
+#   2. docker compose up -d
+#   3. docker compose logs app | grep -A1 -i "generated password"    # your first admin password
+#   4. Open the APP_URL address and sign in.
+#
+# Database passwords are generated randomly on first start and kept in the
+# `secrets` volume — you never have to choose or see them. See README.md for
+# HTTPS, backups and upgrades.
+#
+# Services (the same image runs init, web, queue, scheduler and reverb):
+#   init       one-shot: creates the database passwords the first time
+#   db         MariaDB (data in the `db-data` volume)
+#   app        web server + first-run migrate/seed/admin bootstrap
+#   queue      queue worker
+#   scheduler  hourly volunteer-window sync + daily database dump to ./backups
+#   reverb     optional realtime; enable with `--profile realtime`
+
+name: reliefinventory
+
+# ============================== YOUR SETTINGS ===============================
+x-settings: &settings
+  # The address people type into their browser — used for links in e-mails and
+  # redirects. Include http:// or https:// (and the port if it isn't 80/443).
+  # If you change the port, change the "8080:8080" mapping under `app` too.
+  APP_URL: http://localhost:8080
+
+  # The first administrator. Created on first start only, if no administrator
+  # exists yet. A random password is generated and printed once in the app log.
+  RI_ADMIN_EMAIL: admin@example.com
+
+  # --- Optional: uncomment and edit what you need ---------------------------
+  # APP_NAME: Relief Inventory
+  # APP_TIMEZONE: America/New_York      # default UTC; any PHP timezone name
+  # RI_ADMIN_PASSWORD: choose-one       # instead of a generated one
+  # RI_ADMIN_FIRST_NAME: Pat
+  # RI_ADMIN_LAST_NAME: Smith
+
+  # Behind an HTTPS reverse proxy: its address(es), comma separated, or * if
+  # only the proxy can reach this container (see README.md).
+  # TRUSTED_PROXIES: "*"
+
+  # Outbound e-mail (feedback reports, account e-mails). `log` just writes
+  # e-mails to the app log, which is fine for trying things out.
+  MAIL_MAILER: log
+  # MAIL_MAILER: smtp
+  # MAIL_HOST: smtp.example.com
+  # MAIL_PORT: 587
+  # MAIL_USERNAME: me@example.com
+  # MAIL_PASSWORD: secret
+  # MAIL_ENCRYPTION: tls
+  # MAIL_FROM_ADDRESS: relief-inventory@example.com
+  # FEEDBACK_NOTIFY_EMAIL: developer@example.com
+
+  # Credit line on the welcome page.
+  # HOSTED_BY: Example Relief Org
+  # HOSTED_LINK: https://example.org
+
+  # Daily database dump (written to ./backups next to this file).
+  # RI_BACKUP_ENABLED: "true"
+  # RI_BACKUP_HOUR: 2                   # local hour (follows APP_TIMEZONE)
+  # RI_BACKUP_KEEP_DAYS: 14
+
+  # Passwords are generated for you. Only set these to pick your own, and only
+  # BEFORE the first `docker compose up` (afterwards they're already in the
+  # database and changing them here would lock the app out).
+  # DB_PASSWORD: choose-one
+  # DB_ROOT_PASSWORD: choose-one
+
+  # Keep the application key stable if you manage secrets yourself; by default
+  # one is generated and stored in the `storage` volume.
+  # APP_KEY: base64:...
+# ============================================================================
+
+x-app: &app
+  image: ghcr.io/fiforms/reliefinventory:latest
+  # (only used by `docker compose build`, i.e. when working from a git checkout)
+  build:
+    context: ..
+    dockerfile: Dockerfile
+  restart: unless-stopped
+  environment: &app-env
+    <<: *settings
+    TZ: UTC
+    DB_CONNECTION: mariadb
+    DB_HOST: db
+    DB_PORT: 3306
+    DB_DATABASE: reliefinventory
+    DB_USERNAME: reliefinventory
+    DB_PASSWORD_FILE: /secrets/db_password
+    SESSION_DRIVER: database
+    QUEUE_CONNECTION: database
+    CACHE_STORE: database
+  volumes:
+    # private uploads, logs, caches, print-queue PDFs and the generated APP_KEY
+    - storage:/var/www/html/storage
+    - secrets:/secrets:ro
+
+services:
+  init:
+    <<: *app
+    command: ["init-secrets"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    volumes:
+      - secrets:/secrets
+
+  db:
+    image: mariadb:11
+    restart: unless-stopped
+    environment:
+      MARIADB_DATABASE: reliefinventory
+      MARIADB_USER: reliefinventory
+      MARIADB_PASSWORD_FILE: /secrets/db_password
+      MARIADB_ROOT_PASSWORD_FILE: /secrets/db_root_password
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - db-data:/var/lib/mysql
+      - secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
+  app:
+    <<: *app
+    command: ["web"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  queue:
+    <<: *app
+    command: ["queue"]
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
+        condition: service_healthy
+
+  scheduler:
+    <<: *app
+    command: ["scheduler"]
+    healthcheck:
+      disable: true
+    volumes:
+      - storage:/var/www/html/storage
+      - secrets:/secrets:ro
+      - ./backups:/backups
+    depends_on:
+      app:
+        condition: service_healthy
+
+  reverb:
+    <<: *app
+    profiles: ["realtime"]
+    command: ["reverb"]
+    healthcheck:
+      disable: true
+    ports:
+      - "8081:8080"
+    environment:
+      <<: *app-env
+      BROADCAST_CONNECTION: reverb
+      # REVERB_APP_ID / REVERB_APP_KEY / REVERB_APP_SECRET: see ../scripts/REVERB.md
+      REVERB_SERVER_HOST: 0.0.0.0
+      REVERB_SERVER_PORT: 8080
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  storage:
+  # Generated database passwords. Keep this volume together with db-data: the
+  # database was initialised with these values.
+  secrets:
