@@ -4,11 +4,13 @@ import { useI18n } from 'vue-i18n'
 import { request } from '@core/api.js'
 import { grantReloadPass } from '@core/pinLock.js'
 
-// Settings > Printers. Shows the printers CUPS has and prints a test page; adding a
-// printer, drivers and media size are done in CUPS's own web interface, which this
-// opens (see PRINT_SERVER.md, "Printer setup on the device"). The kiosk is a single
-// Chromium tab, so that is a full-page navigation — like captivePortal.js — and the
-// remote's Back key comes back through browser history.
+// Settings > Printers. Shows the printers CUPS has, prints a test page, and finds / adds /
+// removes printers itself (backend/printer_setup.py, through a root helper) — driverless,
+// or with a generic PostScript/PCL driver. Vendor drivers and paper or label sizes are
+// still done in CUPS's own web interface, which this opens under "Advanced" (see
+// PRINT_SERVER.md, "Printer setup on the device"). The kiosk is a single Chromium tab, so
+// that is a full-page navigation — like captivePortal.js — and the remote's Back key
+// comes back through browser history.
 const CUPS_URL = 'http://localhost:631/admin'
 const REFRESH_MS = 5000
 
@@ -40,6 +42,80 @@ async function printTestPage(name) {
     results.value[name] = { ok: false, text: err.message }
   } finally {
     testing.value = null
+    load()
+  }
+}
+
+// --- Adding and removing printers
+const DRIVERS = ['everywhere', 'generic-postscript', 'generic-pcl']
+const searching = ref(false)
+const found = ref(null) // null = not searched yet; else the discovered printers
+const drafts = ref({}) // discovered uri -> { name, driver }, what staff may edit before adding
+const addingKey = ref(null) // discovered uri (or 'address') being added
+const addMessage = ref(null) // { ok, text }
+const address = ref('')
+const addressDraft = ref({ name: '', driver: 'everywhere' })
+const removing = ref(null) // queue name waiting for "are you sure"
+const removeBusy = ref(null)
+
+async function findPrinters() {
+  searching.value = true
+  addMessage.value = null
+  try {
+    const body = await request('/api/local/printers/discover', { method: 'POST' })
+    found.value = body.printers
+    drafts.value = Object.fromEntries(
+      body.printers.map((p) => [p.uri, { name: p.name, driver: p.driverless ? 'everywhere' : 'generic-postscript' }]),
+    )
+  } catch (err) {
+    found.value = found.value ?? []
+    addMessage.value = { ok: false, text: err.message }
+  } finally {
+    searching.value = false
+  }
+}
+
+async function addPrinter(key, payload, label) {
+  addingKey.value = key
+  addMessage.value = null
+  try {
+    await request('/api/local/printers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    addMessage.value = { ok: true, text: t('settings.printers.add.added', { name: label }) }
+    return true
+  } catch (err) {
+    addMessage.value = { ok: false, text: err.message }
+    return false
+  } finally {
+    addingKey.value = null
+    load()
+  }
+}
+
+async function addFound(p) {
+  const draft = drafts.value[p.uri]
+  if (await addPrinter(p.uri, { name: draft.name.trim(), uri: p.uri, driver: draft.driver }, draft.name.trim())) p.added = true
+}
+
+async function addByAddress() {
+  const name = addressDraft.value.name.trim()
+  if (await addPrinter('address', { name, address: address.value, driver: addressDraft.value.driver }, name)) {
+    address.value = addressDraft.value.name = ''
+  }
+}
+
+async function removePrinter(name) {
+  removeBusy.value = name
+  try {
+    await request(`/api/local/printers/${encodeURIComponent(name)}`, { method: 'DELETE' })
+    delete results.value[name]
+  } catch (err) {
+    results.value[name] = { ok: false, text: err.message }
+  } finally {
+    removing.value = removeBusy.value = null
     load()
   }
 }
@@ -146,10 +222,90 @@ onUnmounted(() => clearInterval(timer))
             <button class="tile action" :disabled="testing === p.name" @click="printTestPage(p.name)">
               {{ testing === p.name ? t('settings.printers.testing') : t('settings.printers.testPage') }}
             </button>
+            <template v-if="removing === p.name">
+              <span class="hint confirm">{{ t('settings.printers.remove.confirm', { name: p.name }) }}</span>
+              <button class="tile action danger" :disabled="removeBusy === p.name" @click="removePrinter(p.name)">
+                {{ t('settings.printers.remove.yes') }}
+              </button>
+              <button class="tile action" :disabled="removeBusy === p.name" @click="removing = null">{{ t('settings.printers.remove.no') }}</button>
+            </template>
+            <button v-else class="tile action" @click="removing = p.name">{{ t('settings.printers.remove.button') }}</button>
             <span v-if="results[p.name]" class="pill" :class="results[p.name].ok ? 'ok' : 'warn'">{{ results[p.name].text }}</span>
           </div>
         </li>
       </ul>
+    </section>
+
+    <section class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.printers.add.title') }}</h2></div>
+      <p class="hint">{{ t('settings.printers.add.hint') }}</p>
+      <div class="actions">
+        <button class="tile action primary" :disabled="searching" @click="findPrinters">
+          {{ searching ? t('settings.printers.add.searching') : found === null ? t('settings.printers.add.find') : t('settings.printers.add.findAgain') }}
+        </button>
+        <span v-if="searching" class="hint">{{ t('settings.printers.add.searchingHint') }}</span>
+      </div>
+
+      <p v-if="found && !found.length && !searching" class="hint note">{{ t('settings.printers.add.nothingFound') }}</p>
+      <ul v-if="found?.length" class="printers found">
+        <li v-for="p in found" :key="p.uri" class="printer" :class="{ dim: p.added }">
+          <div class="head">
+            <strong class="name">{{ p.model }}</strong>
+            <span class="pill">{{ p.connection }}</span>
+            <span v-if="p.added" class="pill ok">{{ t('settings.printers.add.alreadyAdded') }}</span>
+          </div>
+          <div class="detail">
+            <span v-if="p.location">{{ p.location }}</span>
+            <span>{{ p.display_uri }}</span>
+          </div>
+          <p v-if="!p.driverless && !p.added" class="hint">{{ t('settings.printers.add.needsDriver') }}</p>
+          <div v-if="!p.added" class="add-form">
+            <label>
+              <span>{{ t('settings.printers.add.name') }}</span>
+              <input v-model="drafts[p.uri].name" maxlength="63" autocomplete="off" />
+            </label>
+            <label>
+              <span>{{ t('settings.printers.add.driver') }}</span>
+              <select v-model="drafts[p.uri].driver">
+                <option v-for="d in DRIVERS" :key="d" :value="d">{{ t(`settings.printers.add.drivers.${d}`) }}</option>
+              </select>
+            </label>
+            <div class="actions">
+              <button class="tile action primary" :disabled="addingKey !== null || !drafts[p.uri].name.trim()" @click="addFound(p)">
+                {{ addingKey === p.uri ? t('settings.printers.add.adding') : t('settings.printers.add.button') }}
+              </button>
+            </div>
+          </div>
+        </li>
+      </ul>
+
+      <details class="by-address">
+        <summary>{{ t('settings.printers.add.byAddress') }}</summary>
+        <p class="hint">{{ t('settings.printers.add.addressHint') }}</p>
+        <form class="add-form" @submit.prevent="addByAddress">
+          <label>
+            <span>{{ t('settings.printers.add.address') }}</span>
+            <input v-model="address" placeholder="192.168.1.50" autocomplete="off" autocapitalize="off" />
+          </label>
+          <label>
+            <span>{{ t('settings.printers.add.name') }}</span>
+            <input v-model="addressDraft.name" maxlength="63" autocomplete="off" />
+          </label>
+          <label>
+            <span>{{ t('settings.printers.add.driver') }}</span>
+            <select v-model="addressDraft.driver">
+              <option v-for="d in DRIVERS" :key="d" :value="d">{{ t(`settings.printers.add.drivers.${d}`) }}</option>
+            </select>
+          </label>
+          <div class="actions">
+            <button type="submit" class="tile action primary" :disabled="addingKey !== null || !address.trim() || !addressDraft.name.trim()">
+              {{ addingKey === 'address' ? t('settings.printers.add.adding') : t('settings.printers.add.button') }}
+            </button>
+          </div>
+        </form>
+      </details>
+
+      <p v-if="addMessage" class="pill note" :class="addMessage.ok ? 'ok' : 'warn'">{{ addMessage.text }}</p>
     </section>
 
     <section class="tile panel">
@@ -241,6 +397,36 @@ onUnmounted(() => clearInterval(timer))
   gap: 1rem;
   flex-wrap: wrap;
 }
+.dim {
+  opacity: 0.6;
+}
+.confirm {
+  margin: 0;
+}
+.add-form {
+  display: grid;
+  gap: 0.8rem;
+  max-width: 28rem;
+  margin: 0.6rem 0 0;
+}
+.add-form label {
+  display: grid;
+  gap: 0.25rem;
+}
+.add-form label span {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+.by-address {
+  margin: 1.2rem 0 0;
+}
+.by-address summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+.by-address .add-form {
+  margin-top: 0.9rem;
+}
 .password-form {
   display: grid;
   gap: 0.8rem;
@@ -258,6 +444,9 @@ onUnmounted(() => clearInterval(timer))
 .action {
   padding: 0.75rem 1.5rem;
   font-size: 1rem;
+}
+.action.danger {
+  border-color: var(--warn, #c0392b);
 }
 .action.primary {
   border-color: var(--accent);

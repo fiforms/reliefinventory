@@ -103,10 +103,34 @@ audio, and we don't reimplement driver/PPD selection.
   - backend prints jobs for the daemon (`lp`/pycups) and reads back job completion/failure;
   - frontend adds a small "Printers" page to the settings shell (**built** — `frontend/
     PrintersSettings.vue`, `backend/printers_api.py`): the detected queues with status, device and
-    queue length (refreshed every 5 s), a "print test page" button per queue, and an "Open printer
-    setup" button that navigates the kiosk tab to `http://localhost:631/admin` (the remote's Back
-    key returns, same as the captive-portal sign-in). Adding/removing queues, pause/resume and media
-    size stay in CUPS: those need a CUPS admin login, which the backend deliberately doesn't hold.
+    queue length (refreshed every 5 s), a "print test page" and a "Remove" button per queue, an
+    **Add a printer** panel (below), and an "Open printer setup" button under *Advanced* that
+    navigates the kiosk tab to `http://localhost:631/admin` (the remote's Back key returns, same as
+    the captive-portal sign-in). Vendor drivers, pause/resume and media size stay in CUPS: those
+    need a CUPS admin login, which the backend deliberately doesn't hold.
+    **Add a printer** (built 2026-10-18, so the CUPS "Add Printer" form — whose Connection field is
+    garbled on Debian's CUPS 2.4.10 — and its login aren't needed for the usual case): "Find printers"
+    lists what CUPS discovers on the network and USB, one entry per physical printer with its best
+    connection (`backend/printer_setup.py` `curate()` folds CUPS's per-protocol and per-Bonjour-service
+    entries together; two identical printers stay two when a serial or Bonjour name tells them apart),
+    plus "Add by address" (a host or IP becomes `ipp://host/ipp/print`) for printers discovery can't
+    see. Adding picks a driver: **Automatic (IPP Everywhere, driverless)** for printers reached over
+    IPP, or **Generic PostScript** / **Generic PCL** (`drv:///sample.drv/generic.ppd` /
+    `laserjet.ppd`, from `cups-common` — the image ships no other drivers) for printers that only
+    take raw jobs on port 9100, which many older lasers do (a Brother MFC-9970CDW advertised only
+    `_pdl-datastream`). Real CUPS refuses driverless on a `socket://` URI ("IPP Everywhere driver
+    requires an IPP connection"), so the page defaults those to a generic driver. Like the password,
+    it needs admin rights the backend doesn't have, so it uses the same root-helper pattern:
+    `printer_setup.py` drops a request in `/run/slide-announcer/printer-setup` and starts
+    `slide-announcer-printer-setup.service`; the helper (`image/system/scripts/
+    slide-announcer-printer-setup`, root, self-contained) runs `lpinfo -l -v` / `lpadmin`. It is where
+    the rules live: queue names are `[A-Za-z0-9][A-Za-z0-9_.-]{0,62}`, URI schemes are limited to
+    ipp/ipps/dnssd/socket/lpd/usb (no `file:`/`pipe:`), the driver comes from a fixed list, an existing
+    queue is never overwritten, and a failed add leaves no queue behind. No password is required to
+    use it (a Settings-wide PIN, if wanted, would gate the whole Settings area, not just this). Tested
+    against fakes and against a real CUPS's `lpadmin`/`lpinfo` on a laptop; **not yet run on a Pi** —
+    polkit start of the unit, the unit's sandboxing, and generic-driver output on a real printer
+    (test page) are unverified.
     The CUPS UI's login is the device's local `slideadmin` account (password set at image build);
     `image/system/rstation-printer-admin.service` adds it to `lpadmin` on every boot.
     `image/system/rstation-cups-setup.service` starts cupsd at boot (stock Debian only socket-activates

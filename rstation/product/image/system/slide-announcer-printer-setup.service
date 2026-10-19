@@ -1,0 +1,15 @@
+[Unit]
+Description=Find, add or remove a CUPS printer — started on demand by Settings > Printers
+# Not enabled: the backend starts it per request. The name has to match
+# slide-announcer-*.service for the platform's polkit rule to let the backend
+# start it (system/polkit/50-slide-announcer-system.rules).
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/slide-announcer-printer-setup
+# Finding printers listens for ~15 s and adding one asks the printer over the
+# network, so unlike the password helper this needs the real network.
+TimeoutStartSec=150
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
