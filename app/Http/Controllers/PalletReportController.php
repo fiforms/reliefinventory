@@ -33,12 +33,16 @@ class PalletReportController extends Controller
         return $this->singleLabelBuilder($id);
     }
 
-    /** Large-label paper size, from the same media definition printers are typed with. */
+    /**
+     * Large-label paper size, from the same media definition printers are typed with.
+     * Rendered with weasyprint (no headless Chrome needed); the views set a matching
+     * @page size with zero margin, which weasyprint requires to avoid its default margins.
+     */
     private function labelPaper(PdfBuilder $pdf): PdfBuilder
     {
         $media = config('printing.media.label_large');
 
-        return $pdf->paperSize($media['width'], $media['height'], 'in');
+        return $pdf->driver('weasyprint')->paperSize($media['width'], $media['height'], 'in');
     }
 
     // The *Builder methods return the unrendered PDF so the same code feeds

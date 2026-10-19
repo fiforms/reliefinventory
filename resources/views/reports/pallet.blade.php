@@ -5,7 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Pallet Report</title>
     <style>
+        @page { size: 4in 6.5in; margin: 0; }
         body {
+            margin: 0;
             text-align: center;
             font-family: Arial, sans-serif;
         }
@@ -23,10 +25,10 @@
         }
         .barcode {
             margin-top: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 180px;
+            height: 200px;
+        }
+        .barcode > div {
+            margin: 0 auto;
         }
     </style>
 </head>
