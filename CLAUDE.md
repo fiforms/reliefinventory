@@ -265,35 +265,37 @@ these times aren't persisted separately, only the composed message string is.
 
 ### PDF / label generation
 
-Pallet labels and reports are generated via `spatie/laravel-pdf` (`PalletReportController`,
-`InventoryReportController::pdf`, `SitrepController::pdf`, `OrderController::orderFormPdf`) and
-`milon/barcode` for barcode rendering. `UPCGenerator` (`app/Helpers`) derives a valid check-digit UPC-A
-from a 5-digit item number for printed item labels. Blade views for these live under
-`resources/views/reports/`.
+Every PDF in the app — pallet labels (`PalletReportController`), the Situation Report, the Receiving Guide,
+the inventory/outstanding-orders reports, the order form, BOL and pick sheets — is generated via
+`spatie/laravel-pdf` and rendered by **WeasyPrint** (`pontedilana/php-weasyprint`); barcodes come from
+`milon/barcode`. `UPCGenerator` (`app/Helpers`) derives a valid check-digit UPC-A from a 5-digit item
+number for printed item labels. Blade views live under `resources/views/reports/`. There is **no headless
+Chrome / Browsershot / Puppeteer anywhere** (removed 2026-10-19; the labels, sitrep and help guide were the
+last holdouts and were verified to render identically, barcodes confirmed scannable on a real scanner).
 
-**Requires two one-time server provisioning steps beyond `composer install`**, or PDF generation fails
-even though the code is correct:
-1. `spatie/browsershot` (a *dependency of* `spatie/laravel-pdf`, but only a "suggest," never actually
-   pulled in) must be a real `composer.json` requirement — it wasn't, historically, so pallet label PDFs
-   silently never worked in production until this was fixed.
-2. Headless Chrome needs system shared libraries Ubuntu doesn't ship by default (`libatk1.0-0t64`,
-   `libnss3`, etc. — package names vary by Ubuntu release) and, on Ubuntu 23.10+, `LARAVEL_PDF_NO_SANDBOX=true`
-   in `.env` (AppArmor blocks Chromium's sandbox under an unprivileged user namespace otherwise — safe here
-   since the app never runs as root). Neither of these is part of the deploy script; a fresh box needs both
-   done manually once.
+`config/laravel-pdf.php` sets the default driver to `weasyprint` (the package's own default is the
+now-uninstalled `browsershot`), and each controller also calls `->driver('weasyprint')` explicitly. WeasyPrint
+was chosen over Chrome for real CSS Paged Media support — `@page`, `@page :first`, and per-page margin boxes
+for a running header/page-number that's absent on page 1 — which headless Chrome's print engine can't do
+reliably.
 
-`InventoryReportController::pdf` and `OrderController::orderFormPdf` specifically (not the pallet
-labels/sitrep, which stay on browsershot) render via a separate `weasyprint` driver instead
-(`->driver('weasyprint')`), chosen for real CSS Paged Media support — `@page`, `@page :first`, and
-per-page margin boxes for a running header/page-number that's cleanly absent on page 1 and correct page
-margins on every page, none of which headless Chrome's print engine supports reliably (Chromium's
-Puppeteer-driven header/footer template applies uniformly to every page including the first, with no
-page-aware conditional). This needs its own one-time provisioning step, independent of the Chrome-based
-setup above: the `weasyprint` binary (Python, with native Pango/Cairo deps — `apt install weasyprint` or
-`pip install weasyprint` depending on distro) must be on `PATH`, or set `LARAVEL_PDF_WEASYPRINT_BINARY` in
-`.env` to its path. `pontedilana/php-weasyprint` is a real `composer.json` requirement (added
-2026-08-17) — same historical trap as browsershot above, where a package sits as a driver's "suggest"
-and silently never gets pulled in.
+**One-time server provisioning:** the `weasyprint` binary (Python, with native Pango/Cairo deps —
+`apt install weasyprint` or `pip install weasyprint` depending on distro) must be on `PATH`, or set
+`LARAVEL_PDF_WEASYPRINT_BINARY` in `.env` to its path. Not part of the deploy script; a fresh box needs it done
+once (the Docker image already has it). `pontedilana/php-weasyprint` is a real `composer.json` requirement —
+a package that sits as a driver's "suggest" silently never gets pulled in.
+
+**WeasyPrint layout rules to follow in `resources/views/reports/*`** (each was a real bug when the views were
+ported from Chrome):
+- Set page size and margins with `@page { size: …; margin: … }`, not `<body>` padding — WeasyPrint otherwise
+  stacks its default page margin on top of the padding, and body padding only applies to the first page of a
+  multi-page document. Labels use `@page { size: 4in 6.5in; margin: 0 }`.
+- Don't use a `<table>` directly as a flex item (it's mis-sized and columns collapse) — wrap it in a `<div>`.
+- Center absolutely-positioned content (the `milon/barcode` HTML barcode) with `margin: 0 auto` on a block
+  rather than a flex container.
+- Tests inspect PDFs with poppler's `pdfinfo`/`pdftotext` (helpers in `tests/Pest.php`; they skip, not fail, where
+  poppler-utils is missing). The old Chrome-vs-WeasyPrint comparison tests are kept commented out at the bottom
+  of `PalletLabelPdfTest`, `SitrepPdfTest` and `HelpGuidePdfTest` in case a future engine change needs them.
 
 ### Print queue — per-site printers, print servers, optional realtime
 

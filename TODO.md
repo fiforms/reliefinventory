@@ -55,8 +55,9 @@ Issues identified August 16, 2026
  - Fixed, then reworked further: both reports now render via a WeasyPrint driver (real CSS
    Paged Media — `@page`, `@page :first`, margin-box running header/page-numbers) instead of
    headless Chrome, giving correct per-page margins, a running header absent on page 1, and
-   category headings that repeat on continuation pages. See CLAUDE.md's PDF/label generation
-   section for the technical detail.
+   category headings that repeat on continuation pages. (2026-10-19: every other PDF — labels,
+   sitrep, help guide — followed, and headless Chrome was removed entirely.) See CLAUDE.md's
+   PDF/label generation section for the technical detail.
 
 3. Important PDF Reports such as the inventory should also be available as a CVS (or XLSX) Spreadsheet Download
 
@@ -111,13 +112,14 @@ Issues identified August 17, 2026
    (daniel@pastordaniel.net, hellopastormark@gmail.com on both instances).
 
 9. Deploy step: install the `weasyprint` binary on any server this app runs on
- - The Inventory Report and Order Form PDFs (see item 2 above) now render via a `weasyprint`
-   driver instead of headless Chrome. This needs the `weasyprint` Python package (with its
-   native Pango/Cairo deps) provisioned on the box — `apt install weasyprint` or
-   `pip install weasyprint` depending on distro — same one-time-setup category as the earlier
-   headless-Chrome library requirement. Not part of `scripts/update.sh`; needs doing manually
-   once per server. Pallet labels and the SITREP are unaffected — they stay on the existing
-   Chrome-based driver.
+ - Every PDF in the app (see item 2 above) renders via a `weasyprint` driver; headless Chrome is
+   no longer used. This needs the `weasyprint` Python package (with its native Pango/Cairo deps)
+   provisioned on the box — `apt install weasyprint` or `pip install weasyprint` depending on
+   distro. Not part of `scripts/update.sh`; needs doing manually once per server. **Servers set up
+   for the old Chrome path (Chrome libraries, `LARAVEL_PDF_NO_SANDBOX=true` in `.env`) can drop
+   those — they're harmless but unused — and need `weasyprint` if they don't already have it.**
+   After deploying, run `composer install` (browsershot is gone) and print one pallet label to
+   confirm.
 
 10. ~~System Admin "Install Update" silently triggered the wrong instance's systemd unit on wa26~~
     — fixed 2026-08-18
@@ -202,14 +204,14 @@ Issues identified October 8, 2026
 
 12. Docker distribution (x64 + arm64) — built and tested on amd64 2026-10-19 (branch `docker-image`); remaining items below
  - Package the web app + MariaDB as a multi-arch compose stack others can run. Feasible with no app changes;
-   the real work is bundling Chromium (arm64 needs Debian's `chromium`) and `weasyprint` into the image, a
+   the real work is bundling `weasyprint` into the image, a
    first-run entrypoint, volumes, and replacing the systemd timers with a scheduler sidecar.
    Plan and estimate (~2–4 days to working, ~1 more week to distributable) in `scripts/DOCKER_PLAN.md`.
  - **Built:** Dockerfile + `docker/` compose stack (FrankenPHP, MariaDB, queue, scheduler, optional Reverb),
-   first-run migrate/seed/admin bootstrap, Chromium + WeasyPrint bundled, manual per-arch CI workflows. See `docker/README.md`.
+   first-run migrate/seed/admin bootstrap, WeasyPrint bundled (no Chromium/Node — dropped 2026-10-19), manual per-arch CI workflows. See `docker/README.md`.
  - **Open:** run on real arm64 hardware; first CI run + publishing to GHCR; a "managed by Docker" mode for the
-   System Administration panel (update/backup buttons are systemd-only); test Reverb in the container; decide
-   whether to drop Chromium for WeasyPrint (see `scripts/DOCKER_PLAN.md`).
+   System Administration panel (update/backup buttons are systemd-only); test Reverb in the container;
+   print a real label from the container (the amd64 image rebuilt at ~1.7 GB, PDF rendering verified in-container; arm64 not rebuilt).
 
 13. First-run setup wizard — built 2026-10-19 (branch `first-run-wizard`), see CLAUDE.md
  - **Open:** a way to remove example data from inside the app (today a clean instance means a fresh database);

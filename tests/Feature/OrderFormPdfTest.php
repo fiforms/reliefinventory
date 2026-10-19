@@ -69,8 +69,8 @@ test('the order form data only includes orderable item types with stock, and car
         ->not->toHaveKey('qty');
 });
 
-// PDF byte-rendering needs spatie/browsershot's real headless-Chrome
-// process, and the resulting content stream is compressed, so byte-level
+// PDF rendering shells out to the weasyprint binary, and the resulting
+// content stream is compressed, so byte-level
 // content assertions aren't meaningful here — the data itself is verified
 // above via buildOrderFormRecords() directly. This just confirms the route
 // end-to-end doesn't error.

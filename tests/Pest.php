@@ -69,3 +69,19 @@ function userWithPermissions(string ...$keys): User
 
     return $user;
 }
+
+// PDF inspection needs poppler-utils (pdfinfo/pdftotext); skip rather than fail where it's absent.
+function pdfToolsMissing(): bool
+{
+    return trim((string) shell_exec('command -v pdfinfo pdftotext | wc -l')) !== '2';
+}
+
+function pdfInfo(string $pdf): string
+{
+    return (string) shell_exec('pdfinfo '.escapeshellarg($pdf));
+}
+
+function pdfText(string $pdf): string
+{
+    return (string) shell_exec('pdftotext -layout '.escapeshellarg($pdf).' -');
+}

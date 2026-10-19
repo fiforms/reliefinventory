@@ -1,7 +1,7 @@
 # Running Relief Inventory in Docker
 
 One image (`linux/amd64` and `linux/arm64`) runs every role; the compose file wires them to MariaDB.
-Nothing else is needed on the host — Chromium, WeasyPrint, Node (for PDF rendering), fonts and PHP are all in the image.
+Nothing else is needed on the host — WeasyPrint (for PDF rendering), fonts and PHP are all in the image.
 
 ## Quick start
 

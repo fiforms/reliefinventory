@@ -35,8 +35,8 @@ class PalletReportController extends Controller
 
     /**
      * Large-label paper size, from the same media definition printers are typed with.
-     * Rendered with weasyprint (no headless Chrome needed); the views set a matching
-     * @page size with zero margin, which weasyprint requires to avoid its default margins.
+     * Rendered with weasyprint; the views set a matching zero-margin CSS page size,
+     * which weasyprint needs to avoid stacking its default page margins on the label.
      */
     private function labelPaper(PdfBuilder $pdf): PdfBuilder
     {

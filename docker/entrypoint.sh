@@ -36,7 +36,7 @@ if [ "$(id -u)" = 0 ] && [ -z "${RI_DROPPED:-}" ]; then
     exec setpriv --reuid=www-data --regid=www-data --init-groups "$0" "$@"
 fi
 # Running as some other non-root user (e.g. `user:` in compose / OpenShift):
-# HOME must still be somewhere writable for chromium.
+# HOME must still be somewhere writable (weasyprint's fontconfig cache).
 mkdir -p "${HOME:-/tmp/home}" 2>/dev/null || true
 
 cd "$APP"

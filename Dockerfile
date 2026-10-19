@@ -26,10 +26,6 @@ RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction --pr
 
 # ------------------------------------------------------------ frontend assets
 FROM ${NODE_IMAGE} AS assets
-# Puppeteer is a runtime dependency (PDF rendering) but its postinstall
-# downloads a Chrome that doesn't exist for linux/arm64; we use the distro's
-# chromium instead, so never download one.
-ENV PUPPETEER_SKIP_DOWNLOAD=1
 WORKDIR /build
 COPY package.json package-lock.json ./
 RUN npm ci --no-fund --no-audit
@@ -39,18 +35,6 @@ COPY resources ./resources
 # vendor views for class names
 COPY --from=vendor /app/vendor ./vendor
 RUN npm run build
-
-# ------------------------------------------- PDF renderer's node_modules only
-# Browsershot shells out to node + puppeteer. Install just the production
-# dependencies (puppeteer-core & friends), none of the Vite/Vue build tooling.
-FROM ${NODE_IMAGE} AS pdf-node
-ENV PUPPETEER_SKIP_DOWNLOAD=1
-WORKDIR /opt/pdf
-COPY package.json package-lock.json ./
-RUN npm ci --omit=dev --no-fund --no-audit && npm cache clean --force
-
-# the node binary only (copied into the runtime image)
-FROM ${NODE_IMAGE} AS node-bin
 
 # ----------------------------------------------------------- application code
 FROM vendor AS app-build
@@ -74,29 +58,23 @@ FROM php-base AS runtime
 
 # Everything PDF generation and the container's own housekeeping need, from the
 # distro so it is identical on amd64 and arm64:
-#   chromium            Browsershot (pallet labels, sitrep, help pages)
-#   weasyprint          inventory report, order form, BOL, pick sheets, outstanding orders
+#   weasyprint          every PDF: pallet labels, sitrep, help guide, inventory report,
+#                       order form, BOL, pick sheets, outstanding orders
 #   fonts-*             glyph coverage so reports/labels never render tofu boxes
 #   mariadb-client      the scheduler's database dumps
 #   curl                healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        chromium \
         weasyprint \
         fontconfig fonts-liberation fonts-dejavu-core fonts-noto-core fonts-noto-color-emoji \
         mariadb-client \
         curl ca-certificates tzdata util-linux libstdc++6 \
     && rm -rf /var/lib/apt/lists/*
 
-# The node binary Browsershot drives Puppeteer with (pinned by NODE_IMAGE).
-COPY --from=node-bin /usr/local/bin/node /usr/local/bin/node
-COPY --from=pdf-node /opt/pdf/node_modules /opt/pdf/node_modules
-
-COPY docker/chromium-wrapper.sh /usr/local/bin/chromium-wrapper
 COPY docker/entrypoint.sh /usr/local/bin/ri-entrypoint
 COPY docker/scheduler.sh /usr/local/bin/ri-scheduler
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-reliefinventory.ini
-RUN chmod +x /usr/local/bin/chromium-wrapper /usr/local/bin/ri-entrypoint /usr/local/bin/ri-scheduler
+RUN chmod +x /usr/local/bin/ri-entrypoint /usr/local/bin/ri-scheduler
 
 WORKDIR /var/www/html
 COPY --from=app-build /app /var/www/html
@@ -123,17 +101,12 @@ ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
     RI_GIT_COMMIT=$RI_GIT_COMMIT \
-    # chromium/puppeteer need a writable HOME; www-data's real one is read-only
+    # fontconfig (used by weasyprint) wants a writable HOME for its cache; www-data's real one is read-only
     HOME=/tmp/home \
     XDG_CONFIG_HOME=/tmp/home/.config \
     XDG_DATA_HOME=/tmp/home/.local/share \
-    # PDF rendering: Browsershot -> node -> puppeteer -> system chromium
-    LARAVEL_PDF_NODE_BINARY=/usr/local/bin/node \
-    LARAVEL_PDF_NODE_MODULES_PATH=/opt/pdf/node_modules \
-    LARAVEL_PDF_CHROME_PATH=/usr/local/bin/chromium-wrapper \
-    LARAVEL_PDF_NO_SANDBOX=true \
+    # PDF rendering: the distro's weasyprint (laravel-pdf's driver is weasyprint by default)
     LARAVEL_PDF_WEASYPRINT_BINARY=/usr/bin/weasyprint \
-    PUPPETEER_SKIP_DOWNLOAD=1 \
     RI_HTTP_PORT=8080
 
 EXPOSE 8080

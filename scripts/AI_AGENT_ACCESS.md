@@ -18,7 +18,7 @@ users' files.
 
 **Use this only when the task genuinely needs it** — running the full `scripts/update.sh` (which
 includes a pre-update backup), reading/restoring backups, one-time provisioning (installing system
-packages, setting up a systemd timer, the browsershot/weasyprint dependencies in `CLAUDE.md`),
+packages, setting up a systemd timer, the weasyprint dependency in `CLAUDE.md`),
 debugging that requires broad read access — and only when the user is actively directing the session,
 not from an unattended/scheduled run.
 

@@ -464,7 +464,7 @@ Strictly additive to the existing `Role`/`people_roles` structure — roles don'
 
 Two real, previously-undetected bugs were found and fixed while building this (not part of the original scope, but both blocking it):
 - `Person.county_id` was missing from both `PeopleController`'s validation rules and `Person::$fillable` — the People page's county picker had silently done nothing since it was built, on every instance ever deployed.
-- `spatie/browsershot` was never actually a `composer.json` dependency (only "suggested" by `spatie/laravel-pdf`) — pallet label PDF generation had likely never worked in production. Fixed, plus the Chrome/AppArmor sandbox provisioning gap this uncovered on the actual server — see `CLAUDE.md`'s PDF section.
+- `spatie/browsershot` was never actually a `composer.json` dependency (only "suggested" by `spatie/laravel-pdf`) — pallet label PDF generation had likely never worked in production. Fixed, plus the Chrome/AppArmor sandbox provisioning gap this uncovered on the actual server — see `CLAUDE.md`'s PDF section. *(Update 2026-10-19: Browsershot and headless Chrome have since been removed entirely — every PDF now renders via WeasyPrint.)*
 
 ## Part 9 — Incomplete/Unknown Intake Information (build session, Aug 15, 2026)
 
