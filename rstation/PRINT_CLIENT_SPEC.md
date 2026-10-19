@@ -6,7 +6,7 @@ Pi daemon and a PC/Mac software print server are the same thing on the wire. Thi
 down elsewhere; it points at them. If you extract this spec from the repo, take the documents in
 the next section with it.
 
-Status: draft, 2026-10-18. No client exists yet; nothing has been tested on real printers.
+Status: draft, 2026-10-18. The Pi client exists and printed on a real printer end to end on 2026-10-18; USB/label printers, macOS and Windows remain untested.
 
 ## Documents this spec depends on
 

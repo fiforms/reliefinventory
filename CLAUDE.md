@@ -355,7 +355,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   in the spec §2. Run its tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal
   rstation/platform/local-app/run-tests.sh -q` (virtual-time fakes; `RI_CUPS_INTEGRATION=1` adds the real-CUPS
   ones, which create and remove throwaway loopback queues).
-- **Still open** (tracked in `TODO.md` item 11): nothing has run on a real Pi or real printers; the Pi's
+- **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
   on-device Printers page and CUPS admin access; the PC/Mac client; staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
@@ -472,4 +472,4 @@ the parent repo's submodule pointer must be at that branch's commit or later.
 hands its one Chromium tab to the remote site, a core daemon (`slide-announcer-escape-hatch.service`, enabled
 by `product/image/enable`) returns it to local Settings on Ctrl+Alt+Home, Ctrl+Alt+S, or holding the remote's
 Home for 3 s, redirecting via `slide-announcer-kiosk-navigate` (DevTools) and falling back to a kiosk restart
-plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Never run on a real Pi yet.
+plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Confirmed working on a real Pi (2026-10-18).

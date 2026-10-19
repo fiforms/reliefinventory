@@ -28,8 +28,8 @@ keybinding — it sees keys even when Chromium is hung) redirects the browser to
 for 3 s**, via the reusable `slide-announcer-kiosk-navigate` (DevTools Protocol). If the browser
 doesn't answer it restarts the kiosk and the launcher (`product/frontend/Main.vue`) opens
 Settings once instead of going back to the site. The product opts in by listing
-`slide-announcer-escape-hatch.service` in `product/image/enable`. Not yet run on a real Pi or the
-real remote. Still to do from the original idea: the automatic watchdog (no page heartbeat → bounce
+`slide-announcer-escape-hatch.service` in `product/image/enable`. Confirmed working on a real Pi
+(2026-10-18). Still to do from the original idea: the automatic watchdog (no page heartbeat → bounce
 to the local page), and a Chromium URL allow-list.
 
 ## 2. First-run wizard: choose the site URL before pairing

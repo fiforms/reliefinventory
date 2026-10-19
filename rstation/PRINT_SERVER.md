@@ -9,7 +9,9 @@ Status (2026-10-18, branch `print-queue`):
   below is what a print-server client implements.
 - **Pi daemon — built** (`rstation/product/backend/`, see "Pi image / product" below), tested
   against fakes and a real CUPS with loopback queues, and end to end against the real web app and
-  Reverb — but **never run on a real Pi or a real printer**.
+  Reverb, and **verified on a real Pi with a real printer on 2026-10-18** (pair, heartbeat, printer
+  discovered, enabled in `/setup/devices`, report printed from the browser). Not yet verified on
+  hardware: adding printers from the Pi's Settings page, USB/label printers.
 - **Not built:** the PC/Mac client, the Pi's on-device Printers settings page, and getting the CUPS
   admin UI reachable from the settings shell. Originally planned 2026-10-08; depends on the R
   Station fleet pairing/heartbeat in `app/Http/Controllers/DevicePairController.php` /
@@ -128,7 +130,7 @@ audio, and we don't reimplement driver/PPD selection.
     ipp/ipps/dnssd/socket/lpd/usb (no `file:`/`pipe:`), the driver comes from a fixed list, an existing
     queue is never overwritten, and a failed add leaves no queue behind. No password is required to
     use it (a Settings-wide PIN, if wanted, would gate the whole Settings area, not just this). Tested
-    against fakes and against a real CUPS's `lpadmin`/`lpinfo` on a laptop; **not yet run on a Pi** —
+    against fakes and against a real CUPS's `lpadmin`/`lpinfo` on a laptop; **adding a printer through the Settings GUI is still untested on a Pi** (the first real printer was added manually) —
     polkit start of the unit, the unit's sandboxing, and generic-driver output on a real printer
     (test page) are unverified.
     The CUPS UI's login is the device's local `slideadmin` account (password set at image build);
@@ -164,8 +166,8 @@ audio, and we don't reimplement driver/PPD selection.
   local CUPS (`ipp.py`, `cups_client.py`) rather than `lp`/pycups — see the spec §4. Tested in virtual
   time against fakes (`test_print_station.py`, run with the platform's
   `local-app/run-tests.sh`), and against a real CUPS with throwaway loopback queues
-  (`test_cups_integration.py`, opt-in: `RI_CUPS_INTEGRATION=1`). Never run on a real Pi or real
-  printers yet.
+  (`test_cups_integration.py`, opt-in: `RI_CUPS_INTEGRATION=1`). Run on a real Pi with a real
+  printer on 2026-10-18 (queue -> print worked); USB and label printers are still unexercised.
 - Because the platform is consumed as an unmodified submodule (`rstation/platform`), all of this
   lives in `rstation/product`, not the submodule.
 
@@ -255,7 +257,7 @@ works; so does a few lines of raw WebSocket (verified against a live Reverb with
 
 ## Suggested build order
 
-1. Run the fleet pairing/heartbeat end to end on a real Pi first. *(not done)*
+1. Run the fleet pairing/heartbeat end to end on a real Pi first. *(done 2026-10-18)*
 2. ~~`printers` + `print_jobs` tables, queue API, and the device-side claim/result endpoints,
    with tests~~ *(done: claim atomicity, wrong-device access, stale-claim expiry, idempotent
    results)*
