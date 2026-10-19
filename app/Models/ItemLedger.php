@@ -1,4 +1,5 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -10,10 +11,10 @@ use Illuminate\Database\Eloquent\Model;
 class ItemLedger extends Model
 {
     use HasFactory;
-    
+
     // Define the table associated with the model
     protected $table = 'item_ledgers';
-    
+
     // Specify the fillable fields
     protected $fillable = [
         'orderdonation_id', // Foreign key linking to transactions
@@ -22,7 +23,8 @@ class ItemLedger extends Model
         'order_line_id',    // Foreign key linking to the order line this fill record satisfies
         'qty_added',        // Quantity of the items added
         'qty_subtracted',   // Quanitity of items removed
-        'disposition',      // usable | trashed | diverted
+        'disposition',      // usable | outdated | trashed | diverted
+        'item_condition',   // new | used — usable sorting rows only, see add_condition migration
         'transaction_type', // Type of transaction (e.g., 'addition', 'removal')
         'reference_id',     // Reference ID for the related entity (e.g., order, donation)
         'description',      // Description of the transaction
@@ -33,22 +35,22 @@ class ItemLedger extends Model
         // directly into the create()/fill() call.
         'person_id_user',
     ];
-    
+
     /**
      * Relationships
      */
-    
+
     // Define the relationship to the Item model
     public function transaction()
     {
         return $this->belongsTo(Transaction::class);
     }
-    
+
     public function pallet()
     {
         return $this->belongsTo(Pallet::class);
     }
-    
+
     public function item()
     {
         return $this->belongsTo(Item::class);
@@ -63,7 +65,7 @@ class ItemLedger extends Model
     {
         return $this->belongsTo(Person::class, 'person_id_user');
     }
-    
+
     // Define the relationship to the User model (creator of the transaction)
     public function creator()
     {

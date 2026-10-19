@@ -17,5 +17,5 @@ test('the inventory report CSV downloads for a permitted user', function () {
     $response->assertOk();
     $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
     expect($response->getContent())
-        ->toContain('"Item #",Name,Status,Category,Unit,"On Hand",Outdated,Trashed,Diverted');
+        ->toContain('"Item #",Name,Status,Category,Unit,"On Hand","Received New",Outdated,Trashed,Diverted');
 });

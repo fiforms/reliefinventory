@@ -44,8 +44,16 @@ class SortingSessionController extends Controller
         'item_id' => 'required|exists:items,id',
         'qty' => 'required|integer|min:1',
         'disposition' => 'required|in:usable,outdated,trashed,diverted',
+        // new vs. used is only recorded for usable goods (see conditionFor)
+        'item_condition' => 'nullable|in:new,used',
         'pallet_tag' => 'nullable|string',
     ];
+
+    /** Condition only means something for usable goods; null everywhere else. */
+    private static function conditionFor(string $disposition, ?string $condition): ?string
+    {
+        return $disposition === 'usable' ? $condition : null;
+    }
 
     private function statusId(string $name): int
     {
@@ -280,6 +288,7 @@ class SortingSessionController extends Controller
             'pallet_id' => $palletId,
             'qty_added' => $data['qty'],
             'disposition' => $data['disposition'],
+            'item_condition' => self::conditionFor($data['disposition'], $data['item_condition'] ?? null),
             'person_id_user' => Auth::id(),
         ]);
 
@@ -301,6 +310,7 @@ class SortingSessionController extends Controller
             'item_id' => 'nullable|exists:items,id',
             'qty' => 'nullable|integer|min:1',
             'disposition' => 'nullable|in:usable,outdated,trashed,diverted',
+            'item_condition' => 'nullable|in:new,used',
         ]);
 
         if (isset($data['qty'])) {
@@ -311,6 +321,9 @@ class SortingSessionController extends Controller
         }
         if (isset($data['disposition'])) {
             $line->disposition = $data['disposition'];
+        }
+        if (array_key_exists('item_condition', $data) || isset($data['disposition'])) {
+            $line->item_condition = self::conditionFor($line->disposition, $data['item_condition'] ?? $line->item_condition);
         }
         $line->save();
 

@@ -75,12 +75,14 @@ defineProps({
 					into <strong>Pallet Tag</strong>, or tap <strong>Camera Scan</strong> to use
 					the device camera, then <strong>Set Pallet</strong>. Everything you enter
 					next is attributed to this pallet — lines entered with no pallet set still
-					save, but won't be traceable back to a source.
+					save, but won't be recorded against a source.
 				</li>
 				<li>
 					For each item on the pallet: search or scan its UPC into the item field,
 					enter a <strong>Qty</strong>, pick a <strong>disposition</strong> —
-					<strong>Usable</strong> (counts into inventory), <strong>Outdated</strong>
+					<strong>New</strong> (unused, still in its original packaging — counts into
+					inventory), <strong>Usable</strong> (used or opened, in good condition — counts
+					into inventory), <strong>Outdated</strong>
 					(expired on arrival), <strong>Trash</strong> (damaged/unusable), or
 					<strong>Divert</strong> (usable, but passed to another organization) — then
 					click <strong>Add</strong>. The disposition button you last used stays

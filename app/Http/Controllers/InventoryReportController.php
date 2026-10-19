@@ -69,7 +69,7 @@ class InventoryReportController extends Controller
         )->values();
 
         $csv = Writer::createFromString('');
-        $csv->insertOne(['Item #', 'Name', 'Status', 'Category', 'Unit', 'On Hand', 'Outdated', 'Trashed', 'Diverted']);
+        $csv->insertOne(['Item #', 'Name', 'Status', 'Category', 'Unit', 'On Hand', 'Received New', 'Outdated', 'Trashed', 'Diverted']);
         foreach ($records as $r) {
             $csv->insertOne([
                 $r['display_number'],
@@ -78,6 +78,7 @@ class InventoryReportController extends Controller
                 $r['category'],
                 $r['unit'],
                 $r['on_hand'],
+                $r['received_new'],
                 $r['outdated'],
                 $r['trashed'],
                 $r['diverted'],
@@ -105,6 +106,8 @@ class InventoryReportController extends Controller
                 SUM(CASE WHEN COALESCE(item_ledgers.disposition, 'usable') = 'usable'
                     THEN COALESCE(item_ledgers.qty_added, 0) ELSE 0 END)
                 - SUM(COALESCE(item_ledgers.qty_subtracted, 0)) AS on_hand,
+                SUM(CASE WHEN item_ledgers.disposition = 'usable' AND item_ledgers.item_condition = 'new'
+                    THEN item_ledgers.qty_added ELSE 0 END) AS received_new,
                 SUM(CASE WHEN item_ledgers.disposition = 'outdated' THEN item_ledgers.qty_added ELSE 0 END) AS outdated,
                 SUM(CASE WHEN item_ledgers.disposition = 'trashed' THEN item_ledgers.qty_added ELSE 0 END) AS trashed,
                 SUM(CASE WHEN item_ledgers.disposition = 'diverted' THEN item_ledgers.qty_added ELSE 0 END) AS diverted
@@ -120,6 +123,7 @@ class InventoryReportController extends Controller
                 'description' => $row->description,
                 'upc' => $row->upc,
                 'on_hand' => (int) $row->on_hand,
+                'received_new' => (int) $row->received_new,
                 'outdated' => (int) $row->outdated,
                 'trashed' => (int) $row->trashed,
                 'diverted' => (int) $row->diverted,
@@ -133,6 +137,9 @@ class InventoryReportController extends Controller
                 'category' => $itemType->category?->name,
                 'unit' => $itemType->unit?->abbreviation ?? $itemType->unit?->name,
                 'on_hand' => (int) $items->sum('on_hand'),
+                // Usable goods sorted as new, all-time. Not "new on hand": stock is
+                // pooled once sorted and fills don't record condition.
+                'received_new' => (int) $items->sum('received_new'),
                 'outdated' => (int) $items->sum('outdated'),
                 'trashed' => (int) $items->sum('trashed'),
                 'diverted' => (int) $items->sum('diverted'),

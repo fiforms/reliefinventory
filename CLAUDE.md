@@ -114,7 +114,10 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   source of truth for inventory. Carries `pallet_id` on sorting's addition rows (per-donation/pallet provenance — fill/subtraction rows
   don't carry it, since stock is pooled once sorted) and a `disposition` field
   (usable/outdated/trashed/diverted) from scan-driven sorting — only `usable` counts toward stock-on-hand;
-  the others feed donor-quality reporting. `WarehouseMetrics` (`app/Services`) and
+  the others feed donor-quality reporting. Usable sorting rows also carry `item_condition` (`new`/`used`,
+  null on older rows; named so because CONDITION is reserved in MariaDB) — sorters pick New or Usable, both
+  count toward on-hand, and the Inventory Report's "Received New" column sums the new ones (all-time
+  received, not new-on-shelf, since fills don't record condition). `WarehouseMetrics` (`app/Services`) and
   `InventoryReportController` both aggregate this ledger (usable additions − subtractions) — that used to
   be a known gap ("nothing computes stock-on-hand"); it isn't anymore. `qty_subtracted` itself was always
   0 in production until Order Filling/Picking (2026-08-27) — see that section below. Also carries
