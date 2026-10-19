@@ -1021,7 +1021,8 @@ export default {
 
 				<div class="oe_field">
 					<label>Needed By Date:</label>
-					<input type="date" v-model="review.needed_by_date" class="ri_forminput" />
+					<!-- blur on pick: the native picker otherwise leaves focus parked in the field -->
+					<input type="date" v-model="review.needed_by_date" class="ri_forminput" @change="$event.target.blur()" />
 				</div>
 
 				<template v-if="review.fulfillment_method === 'delivery'">
