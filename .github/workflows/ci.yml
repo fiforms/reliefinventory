@@ -1,8 +1,8 @@
 name: CI
 
+# Manual only: Actions tab > "CI" > Run workflow (pick the branch to test).
 on:
-  push:
-  pull_request:
+  workflow_dispatch:
 
 jobs:
   test:

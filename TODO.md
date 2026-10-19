@@ -206,7 +206,7 @@ Issues identified October 8, 2026
    first-run entrypoint, volumes, and replacing the systemd timers with a scheduler sidecar.
    Plan and estimate (~2–4 days to working, ~1 more week to distributable) in `scripts/DOCKER_PLAN.md`.
  - **Built:** Dockerfile + `docker/` compose stack (FrankenPHP, MariaDB, queue, scheduler, optional Reverb),
-   first-run migrate/seed/admin bootstrap, Chromium + WeasyPrint bundled, CI workflow. See `docker/README.md`.
+   first-run migrate/seed/admin bootstrap, Chromium + WeasyPrint bundled, manual per-arch CI workflows. See `docker/README.md`.
  - **Open:** run on real arm64 hardware; first CI run + publishing to GHCR; a "managed by Docker" mode for the
    System Administration panel (update/backup buttons are systemd-only); test Reverb in the container; decide
    whether to drop Chromium for WeasyPrint (see `scripts/DOCKER_PLAN.md`).

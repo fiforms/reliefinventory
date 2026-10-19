@@ -3,7 +3,7 @@
 Status: **built and tested on amd64 (2026-10-19), branch `docker-image`**; arm64 build verified under QEMU
 emulation (see below); not yet run on real arm64 hardware or published. Files: `Dockerfile`, `.dockerignore`,
 `docker/` (compose.yaml, README.md, entrypoint, scheduler, Caddyfile, chromium wrapper),
-`.github/workflows/docker.yml`. User-facing docs: `docker/README.md`.
+`.github/workflows/docker-amd64.yml` + `docker-arm64.yml` (manual-dispatch, one per architecture; no combined multi-arch manifest yet). User-facing docs: `docker/README.md`.
 
 ## What was actually built (differs slightly from the plan below)
 
