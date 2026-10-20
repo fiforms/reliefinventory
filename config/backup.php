@@ -29,6 +29,17 @@ return [
     // A queued/running backup whose process is gone is marked failed once it is this many seconds old.
     'stale_after_seconds' => 120,
 
+    // Docker/R Station only: what the `scheduler` container's daily backup does. Set per deployment in
+    // docker/compose.yaml (the scheduler and pre-migration scripts read the same RI_* variables); the app
+    // only reads them to show the admin what is configured, since a container's schedule is not editable
+    // from inside the app. `scope` is what the daily and pre-migration backups include: database | full.
+    'container' => [
+        'enabled' => filter_var(env('RI_BACKUP_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
+        'hour' => (int) env('RI_BACKUP_HOUR', 2),
+        'premigrate' => filter_var(env('RI_PREMIGRATE_BACKUP', true), FILTER_VALIDATE_BOOLEAN),
+        'scope' => env('RI_BACKUP_SCOPE', 'database'),
+    ],
+
     // Restore (first-run wizard). The upload is chunked like firmware; a proxy's request-body limit
     // (Caddy's is 64 MB, nginx's default 1 MB) is why chunks are small.
     'upload_chunk_bytes' => (int) env('RI_RESTORE_CHUNK_BYTES', 1_000_000),

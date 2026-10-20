@@ -63,21 +63,45 @@ class RestoreController extends Controller
         return response()->json($payload, $status);
     }
 
+    /** The client's "this file is all here" call (sent automatically at the end of every chunked upload). Starts nothing. */
     public function complete(string $id)
     {
         $this->requireFreshInstance();
-        $uploads = $this->restore->uploads();
-        $meta = $uploads->meta($id);
-        $received = $uploads->received($id);
-        if ($received !== $meta['size']) {
-            return response()->json(['message' => "Upload is incomplete ({$received} of {$meta['size']} bytes).", 'received' => $received], 409);
+        $this->assertFullyUploaded($id);
+
+        return response()->json(['message' => 'Upload complete.']);
+    }
+
+    /**
+     * Start the restore once every file is up: the main backup, plus optionally a separate files backup (for
+     * recovering from a damaged database with the best copy of the files — see RestoreService).
+     */
+    public function launch(Request $request)
+    {
+        $this->requireFreshInstance();
+        $data = $request->validate([
+            'upload_id' => 'required|string',
+            'storage_upload_id' => 'nullable|string|different:upload_id',
+        ]);
+        foreach (array_filter([$data['upload_id'], $data['storage_upload_id'] ?? null]) as $id) {
+            $this->assertFullyUploaded($id);
         }
         if ($this->restore->isRunning()) {
             return response()->json(['message' => 'A restore is already running.'], 409);
         }
-        $this->restore->launch($id);
+        $this->restore->launch($data['upload_id'], $data['storage_upload_id'] ?? null);
 
         return response()->json(['message' => 'Restore started.'], 202);
+    }
+
+    private function assertFullyUploaded(string $id): void
+    {
+        $uploads = $this->restore->uploads();
+        $meta = $uploads->meta($id);
+        $received = $uploads->received($id);
+        if ($received !== $meta['size']) {
+            abort(response()->json(['message' => "Upload is incomplete ({$received} of {$meta['size']} bytes).", 'received' => $received], 409));
+        }
     }
 
     public function cancel(string $id)

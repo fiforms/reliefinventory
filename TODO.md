@@ -210,7 +210,7 @@ Issues identified October 8, 2026
  - **Built:** Dockerfile + `docker/` compose stack (FrankenPHP, MariaDB, queue, scheduler, optional Reverb),
    first-run migrate/seed/admin bootstrap, WeasyPrint bundled (no Chromium/Node — dropped 2026-10-19), manual per-arch CI workflows. See `docker/README.md`.
  - **Open:** run on real arm64 hardware; first CI run + publishing to GHCR; a "managed by Docker" mode for the
-   System Administration panel (update/backup buttons are systemd-only); test Reverb in the container;
+   test Reverb in the container;
    print a real label from the container (the amd64 image rebuilt at ~1.7 GB, PDF rendering verified in-container; arm64 not rebuilt).
 
 13. First-run setup wizard — built 2026-10-19 (branch `first-run-wizard`), see CLAUDE.md
@@ -219,3 +219,18 @@ Issues identified October 8, 2026
    its `id` on the real `<input>` (labels don't link, app-wide); decide whether Docker should print a setup code in
    the log by default instead of leaving the wizard open to the first visitor.
 
+14. Tiered backup retention for Docker / R Station — the one thing the 2026-10-20 backup unification left uneven
+ - **Done:** every platform now makes the same zip (`php artisan backup:create`, scope database | full | storage), restores
+   through the same pipeline (`backup:restore`, first-run wizard with an optional second files zip), and shows one merged
+   Updates & Backups page that hides what the platform can't do. See `scripts/BACKUPS.md`.
+ - **Open:** bare metal keeps hourly/daily/monthly/yearly tiers (`update.sh` promotes by hard link and prunes per tier);
+   the Docker scheduler and the R Station local server keep **one flat `RI_BACKUP_KEEP_DAYS`** (default 14). Parity means
+   porting `promote()`/`prune_tier()` into `BackupService::prune()` plus `RI_BACKUP_KEEP_*` settings, and showing the tiers
+   in the container branch of the page. Until then the page and `docker/README.md` tell operators to copy a backup off the
+   machine to keep it longer.
+ - **Also open:** the bare-metal tiered backups no longer keep a copy of `.env` beside each backup (a zip never holds the
+   application key) — decide whether the key's only copy being "write it down from the admin page" is enough. The tiers are now
+   **database only** (decided 2026-10-20): uploaded files get no scheduled backup on bare metal — only the admin page's
+   "Database + uploaded files" zips (manual) or a filesystem backup — so consider a scheduled `--scope=full` job or a setting.
+   Tier backups are downloadable from the page (group-readable by the web user). `setup:reset` exists for starting over
+   after a failed forced restore (typed-phrase, terminal-only).

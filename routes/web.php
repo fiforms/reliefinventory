@@ -38,6 +38,7 @@ Route::prefix('install/restore')->name('setup.restore.')->group(function () {
             StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
             RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
         ]);
+    Route::post('/launch', [RestoreController::class, 'launch'])->middleware('throttle:20,1')->name('launch');
     Route::get('/{id}', [RestoreController::class, 'uploadStatus'])->name('upload.status');
     Route::put('/{id}', [RestoreController::class, 'uploadChunk'])->name('upload.chunk');
     Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
@@ -210,10 +211,23 @@ Route::get('/setup/package-types', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/package-types')]);
 })->middleware(['auth', 'permission:manage-packagetypes']);
 
+// Updates & Backups: one page for software updates, offline mode, backup zips, the tiered backup schedule and
+// the app key. Each section is gated by its own permission (the JSON endpoints below enforce the same), so the
+// page opens for anyone holding admin-system or manage-backups.
 Route::get('/setup/system', function () {
-    return Inertia::render('SystemAdmin',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/system')]);
-})->middleware(['auth', 'permission:admin-system']);
+    $user = Auth::user();
+    $canAdmin = $user->hasPermission('admin-system');
+    $canBackups = $user->hasPermission('manage-backups');
+    abort_unless($canAdmin || $canBackups, 403, 'Missing required permission: admin-system');
+
+    return Inertia::render('SystemAdmin', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/system'),
+        'runtime' => config('system.runtime') === 'docker' ? 'docker' : 'systemd',
+        'canAdminSystem' => $canAdmin,
+        'canManageBackups' => $canBackups,
+        'canViewAppKey' => $user->hasPermission('view-app-key'),
+    ]);
+})->middleware(['auth']);
 
 Route::get('/setup/active-sessions', function () {
     return Inertia::render('ActiveSessions',
@@ -911,19 +925,16 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::get('/login-history', [ActiveSessionController::class, 'history']);
 });
 
-// Full backup files (database + uploads zip): trigger, list, download, delete. The key panel is its own,
-// narrower permission and a throttled POST — see BackupController::appKey.
-Route::get('/setup/backups', function () {
-    return Inertia::render('Backups', [
-        'breadcrumb' => MenuItem::getBreadcrumb('/setup/backups'),
-        'canViewAppKey' => Auth::user()->hasPermission('view-app-key'),
-    ]);
-})->middleware(['auth', 'permission:manage-backups']);
+// Backup zips (database, or database + uploads): trigger, list, download, delete. The key panel is its own,
+// narrower permission and a throttled POST — see BackupController::appKey. Their page is the Backups section
+// of /setup/system now; the old address still works.
+Route::redirect('/setup/backups', '/setup/system')->middleware('auth');
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-backups']], function () {
     Route::get('/backups', [BackupController::class, 'index']);
     Route::post('/backups', [BackupController::class, 'store']);
-    Route::get('/backups/{id}/download', [BackupController::class, 'download']);
+    Route::get('/backups/{id}/download', [BackupController::class, 'download'])->whereNumber('id');
+    Route::get('/backups/tier/{tier}/{stamp}/download', [BackupController::class, 'downloadTier']);
     Route::delete('/backups/{id}', [BackupController::class, 'destroy']);
 });
 Route::post('/json/backups/app-key', [BackupController::class, 'appKey'])

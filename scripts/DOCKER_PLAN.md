@@ -21,22 +21,26 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   `docker/compose.yaml` (`APP_URL`, `RI_ADMIN_EMAIL`; the rest optional). A one-shot `init` service generates random
   DB passwords into a `secrets` volume that `db` (via `MARIADB_*_FILE`) and the app (via `DB_PASSWORD_FILE`) read;
   `secrets` must live and die with `db-data`.
-- **Scheduler container** replaces the systemd timers: hourly `volunteers:sync-active-windows`, daily gzip'd
-  `mariadb-dump` into `./backups` with retention.
+- **Scheduler container** replaces the systemd timers: hourly `volunteers:sync-active-windows`, and a daily backup zip
+  (`php artisan backup:create`, the same format as every other backup — `scripts/BACKUPS.md`) into `./backups`, kept a flat
+  `RI_BACKUP_KEEP_DAYS` days. **Tiered (daily/monthly/yearly) retention, as the bare-metal install has, is not implemented
+  here or in the R Station local server** — TODO.md item 14.
 - Image was ~2.9 GB uncompressed with Chromium (380 MB) and Node (120 MB); both are now gone: the amd64 image measures ~1.7 GB (rebuilt 2026-10-19; a PDF rendered inside the container). Python/WeasyPrint is 255 MB; the rest is fonts and FrankenPHP.
 
 ## Known gaps
 
-- **System Administration panel**: "Install Update" / "Backup Now" / backup schedule shell out to systemd and git;
-  they don't work in the container, and its version panel relies on `RI_GIT_COMMIT` rather than git. Needs a
-  "managed by Docker" mode that hides them.
+- ~~**System Administration panel**: update/backup buttons are systemd-only~~ — done 2026-10-20: `config('system.runtime')`
+  (`RI_RUNTIME=docker` from the Dockerfile) hides the update, tiered-backup and schedule sections in a container and shows a
+  read-only summary of the compose settings instead; the systemd-only endpoints answer 409. The page is now one merged
+  "Updates & Backups" page.
 - Reverb (`--profile realtime`) is wired but untested in the container.
 - Not yet run on real arm64 hardware (Pi) or in CI.
-- **Pre-migration backup** (2026-10-20): `web` runs `ri-db-backup premigrate` (`docker/db-backup.sh`, shared with the
-  scheduler) when `migrate:status` shows pending migrations on an existing database, and refuses to migrate if the dump
-  fails (`RI_PREMIGRATE_BACKUP=false` opts out). Untested in a real container build. Known gap: a crash-looping
-  failed migration re-dumps on every restart (timestamped, pruned by age).
-- Backups cover the database only; the `storage` volume (photos, print PDFs) is the operator's to back up.
+- **Pre-migration backup** (2026-10-20): `web` runs `ri-db-backup premigrate` (`docker/db-backup.sh` → `backup:create`,
+  shared with the scheduler) when `migrate:status` shows pending migrations on an existing database, and refuses to migrate
+  if the backup fails (`RI_PREMIGRATE_BACKUP=false` opts out). Untested in a real container build. Known gap: a
+  crash-looping failed migration re-backs-up on every restart (timestamped, pruned by age).
+- Backups are database-only unless `RI_BACKUP_SCOPE=full`; otherwise the `storage` volume (photos, print PDFs) is the operator's to back up.
+- **No tiered retention** (see above): one flat number of days.
 - Print servers/R Stations pointing at a containerised instance untested end to end.
 
 

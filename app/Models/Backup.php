@@ -16,7 +16,6 @@ class Backup extends Model
     protected $guarded = [];
 
     protected $casts = [
-        'include_uploads' => 'boolean',
         'started_at' => 'datetime',
         'finished_at' => 'datetime',
         'expires_at' => 'datetime',

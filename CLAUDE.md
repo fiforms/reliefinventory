@@ -280,26 +280,48 @@ request. The maintenance banner's message is auto-generated from admin-entered s
 date-times (client-side text generation in `FeedbackReports.vue`, still hand-editable after) —
 these times aren't persisted separately, only the composed message string is.
 
-### On-demand backup zips (`/setup/backups`, `manage-backups`) — built 2026-10-20
+### Backups: one zip format, one command (`php artisan backup:create`), per-platform scheduling — unified 2026-10-20
 
-`BackupService` + `BackupController` + `Backups.vue`: a zip of `manifest.json` (SHA-256 of every entry),
-`database/db.sql` and, optionally, the uploads. Runs as a **detached `setsid` process** (`backup:run <id>`), not a
-queued job (worker timeout / `retry_after` would kill or re-run it); one-at-a-time via a row check plus an `flock`.
-Written to `RI_BACKUP_DIR` — **never under `storage/app`**, so a backup can't contain earlier backups. **The zip
-never contains `APP_KEY`/`.env`/`.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and
-logged, to `view-app-key` holders on that page. Only the feedback `shared_secret` (an `encrypted` cast) and cookies depend on
-it; `config/backup.php`'s `encrypted_columns` registry (test-enforced against model casts) lists what a restore blanks.
-**Restore** is a first-run-wizard option only (`RestoreController`, `RestoreService`, `Setup/RestoreBackup.vue`, shared
-`ChunkedUpload` service also used by firmware uploads): fresh instances only, manifest + SHA-256 verification *before*
-anything is touched, backups from newer software refused via the **migration list** (not a version string), then
-`db:wipe` + load + `migrate`, files moved in, undecryptable values blanked. Progress lives in a status file, not the
-database (it's being replaced). Details: `scripts/BACKUPS.md`.
+Every backup everywhere is a zip of `manifest.json` (format 2: scope, app commit, migration list, SHA-256 of every entry) plus
+`database/db.sql` and/or `files/private|public/...`, made by `backup:create [--scope=database|full|storage] [--dest=DIR
+[--name=N]]` (`BackupService` writes the zip, `DatabaseTools` is the only place dump/load command lines and flags live).
+`scope=storage` (files only) is CLI-only, for disaster recovery; the admin page offers database / database + files. Without
+`--dest` the zip goes to `RI_BACKUP_DIR` with a `backups` row (listed, expires after `RI_BACKUP_KEEP_DAYS`); with `--dest` it
+is unrecorded, never expires and works with the database down. A dump is only archived if it ends with mariadb-dump's
+`-- Dump completed` marker (also re-checked before a restore wipes anything). **The zip never contains `APP_KEY`/`.env`/
+`.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and logged, to `view-app-key` holders on the
+admin page, and a red notice above every backup section tells the admin they NEED to write it down (it is required to restore
+the encrypted parts). Only the feedback `shared_secret` (an `encrypted` cast) and cookies depend on it; `config/backup.php`'s
+`encrypted_columns` registry (test-enforced against model casts) lists what a restore blanks.
 
-These zips are separate from the **tiered scheduled backups** `scripts/update.sh` takes under `/var/backups/`
-(hourly systemd timer; a daily/weekly scheduled backup promoted into daily/monthly/yearly, plus an optional
-every-hour backup — `HOURLY_BACKUPS` in `storage/app/backup-settings.conf`, the "Also back up every hour"
-switch in System Admin, added 2026-10-19 — that stays in the Hourly tier only). Both kinds are full copies,
-never incremental.
+- **Who calls it:** the admin page (detached `setsid` process, `backup:run <id>`, one at a time via row check + `flock`);
+  `scripts/update.sh` (bare-metal tiered backups, **database only** — `--scope=database --dest=<staging>`, then moved/hard-linked
+  into `hourly|daily|monthly|yearly/<stamp>.zip`, `640 root:www-data` so the admin page can offer them for download via
+  `/json/backups/tier/{tier}/{stamp}/download` (`manage-backups`); uploaded files are not in the tiers); `docker/db-backup.sh` (Docker/R Station daily and pre-migration
+  backups). Nothing else carries its own `mysqldump`.
+- **One admin page, platform-aware:** `/setup/system` (`SystemAdmin.vue`) is the merged Updates & Backups page —
+  `/setup/backups` redirects to it, its menu item was removed. Sections are gated per permission (`admin-system`,
+  `manage-backups`, `view-app-key`; the page opens for the first two) and per `config('system.runtime')` (`systemd` | `docker`,
+  from `RI_RUNTIME`, set by the Dockerfile; tests pin `systemd`). Docker hides update/tiers/schedule and shows the compose
+  settings read-only; systemd-only endpoints answer 409 there. Keep any new admin option consistent with that split.
+- **Retention:** bare metal is tiered (see `scripts/BACKUPS.md`); **Docker / R Station is flat** (`RI_BACKUP_KEEP_DAYS`) — tiered
+  retention there is not implemented (TODO.md item 14, and noted in the page and docker docs).
+- **Restore** takes one or two zips (`RestoreService`): the first supplies the database (scope database/full) and, if it has
+  them, the files; an optional second supplies the files (scope storage/full) and its database, if any, is ignored — the
+  recovery for a corrupted database (latest good DB + best copy of files). Entry points: the first-run wizard
+  (`RestoreController`, `Setup/RestoreBackup.vue`, `ChunkedUpload` shared with firmware; uploads, then `POST
+  /install/restore/launch` — `complete` no longer starts anything) for a never-set-up instance, and `backup:restore DB.zip
+  [--storage=F.zip] --force` for one that is set up (maintenance mode during the database step; **left on if the load fails**,
+  because resetting a set-up instance would open the setup wizard to anyone; `php artisan setup:reset` is the deliberate way out —
+  it erases the database and refuses to run except from a real terminal after the operator types `YES-DELETE-ALL-MY-DATA`; there
+  is no `--force`, so it can't be scripted — don't add one). Manifest + SHA-256 verification *before*
+  anything is touched; backups from newer software refused via the **migration list**, not a version string (skipped for a zip
+  whose database isn't used). Progress lives in a status file, not the database. Details: `scripts/BACKUPS.md`.
+
+The tiered scheduled backups `scripts/update.sh` takes under `/var/backups/`
+(hourly systemd timer; a daily/weekly scheduled backup promoted into daily/monthly/yearly, plus an optional every-hour backup —
+`HOURLY_BACKUPS` in `storage/app/backup-settings.conf`, added 2026-10-19 — that stays in the Hourly tier only) are the same format.
+All are full copies, never incremental.
 
 ### PDF / label generation
 

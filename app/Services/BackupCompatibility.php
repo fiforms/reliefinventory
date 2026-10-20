@@ -20,9 +20,11 @@ class BackupCompatibility
      * @param  array  $manifest  decoded manifest.json
      * @param  string[]  $zipNames  every name inside the zip
      * @param  string[]|null  $knownMigrations  migration names this code ships (null = read them from disk)
+     * @param  bool  $checkVersion  false when this zip's database is not going to be used (a full zip supplying only
+     *                              the files), so a newer schema in it is harmless
      * @return string[]
      */
-    public function problems(array $manifest, array $zipNames, ?array $knownMigrations = null): array
+    public function problems(array $manifest, array $zipNames, ?array $knownMigrations = null, bool $checkVersion = true): array
     {
         $problems = [];
 
@@ -37,8 +39,14 @@ class BackupCompatibility
             $problems[] = 'This backup claims to contain an application key, which a valid backup never does.';
         }
 
+        $scope = $this->scope($manifest);
+        if ($scope === null) {
+            return array_merge($problems, ['The backup does not say what it contains (unknown scope).']);
+        }
+
+        // A files-only backup of an empty storage disk is legitimately just a manifest.
         $entries = $manifest['entries'] ?? null;
-        if (! is_array($entries) || $entries === []) {
+        if (! is_array($entries) || ($entries === [] && $scope !== 'storage')) {
             return array_merge($problems, ['The backup lists no files.']);
         }
 
@@ -58,8 +66,14 @@ class BackupCompatibility
             }
             $paths[$path] = true;
         }
-        if (! isset($paths['database/db.sql'])) {
+        if (BackupService::hasDatabase($scope) && ! isset($paths['database/db.sql'])) {
             $problems[] = 'The backup contains no database dump.';
+        }
+        if (! BackupService::hasStorage($scope) && array_filter(array_keys($paths), fn ($p) => str_starts_with($p, 'files/'))) {
+            $problems[] = 'The manifest says this is a database-only backup but it lists uploaded files.';
+        }
+        if (! BackupService::hasDatabase($scope) && isset($paths['database/db.sql'])) {
+            $problems[] = 'The manifest says this is a files-only backup but it lists a database dump.';
         }
 
         $inZip = array_filter($zipNames, fn ($n) => $n !== 'manifest.json' && ! str_ends_with($n, '/'));
@@ -68,6 +82,10 @@ class BackupCompatibility
         }
         foreach (array_diff(array_keys($paths), $inZip) as $missing) {
             $problems[] = "The manifest lists {$missing} but the zip does not contain it.";
+        }
+
+        if (! $checkVersion || ! BackupService::hasDatabase($scope)) {
+            return $problems;
         }
 
         $migrations = $manifest['database']['migrations'] ?? null;
@@ -83,6 +101,17 @@ class BackupCompatibility
         }
 
         return $problems;
+    }
+
+    /**
+     * database | full | storage. Format-1 zips (before scopes existed) had no `scope`: they held a dump, plus
+     * the files when `includes_uploads` was set. Null when the manifest names something else.
+     */
+    public function scope(array $manifest): ?string
+    {
+        $scope = $manifest['scope'] ?? (($manifest['includes_uploads'] ?? false) ? 'full' : 'database');
+
+        return in_array($scope, BackupService::SCOPES, true) ? $scope : null;
     }
 
     private function safePath(string $path): bool

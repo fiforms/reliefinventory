@@ -54,6 +54,26 @@ class DatabaseTools
             '--result-file='.$resultFile, $this->connection()['database']];
     }
 
+    /**
+     * mariadb-dump / mysqldump end a finished dump with "-- Dump completed on <time>" (their default comments; we never
+     * pass --skip-comments). A dump cut off part-way — the server dropped, the disk filled, the process was killed —
+     * lacks it, so this catches truncation even where an exit status was missed. Checked after a dump is written and
+     * again before a restore wipes anything.
+     */
+    public function dumpIsComplete(string $file): bool
+    {
+        $size = @filesize($file);
+        if (! $size) {
+            return false;
+        }
+        $handle = fopen($file, 'rb');
+        fseek($handle, max(0, $size - 512));
+        $tail = (string) fread($handle, 512);
+        fclose($handle);
+
+        return preg_match('/^-- Dump completed on .+\s*\z/m', $tail) === 1;
+    }
+
     /** The interactive client; give it the SQL on stdin. */
     public function clientCommand(): array
     {

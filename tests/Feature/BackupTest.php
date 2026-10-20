@@ -21,18 +21,18 @@ afterEach(function () {
     exec('rm -rf '.escapeshellarg($this->tmp));
 });
 
-function runBackup(bool $uploads): Backup
+function runBackup(string $scope): Backup
 {
-    $backup = Backup::create(['status' => 'queued', 'include_uploads' => $uploads]);
+    $backup = Backup::create(['status' => 'queued', 'scope' => $scope]);
     app(BackupService::class)->run($backup);
 
     return $backup->fresh();
 }
 
-function zipEntries(Backup $backup): array
+function zipEntries(Backup|string $backup): array
 {
     $zip = new ZipArchive;
-    $zip->open($backup->path());
+    $zip->open(is_string($backup) ? $backup : $backup->path());
     $names = [];
     for ($i = 0; $i < $zip->numFiles; $i++) {
         $names[] = $zip->getNameIndex($i);
@@ -44,14 +44,16 @@ function zipEntries(Backup $backup): array
 }
 
 test('a database-only backup holds a verifiable dump and manifest', function () {
-    $backup = runBackup(false);
+    $backup = runBackup('database');
 
     expect($backup->status)->toBe('complete')->and($backup->error)->toBeNull()
         ->and($backup->expires_at)->not->toBeNull();
     [$names, $manifest, $contents] = zipEntries($backup);
 
     expect($names)->toContain('manifest.json', 'database/db.sql')
-        ->and($manifest['format'])->toBe(1)
+        ->and($manifest['format'])->toBe(2)
+        ->and($manifest['scope'])->toBe('database')
+        ->and($manifest['includes_database'])->toBeTrue()
         ->and($manifest['includes_uploads'])->toBeFalse()
         ->and($manifest['contains_app_key'])->toBeFalse()
         ->and($manifest['database']['migrations'])->not->toBeEmpty();
@@ -73,10 +75,11 @@ test('uploads are included with hashes, excluded dirs and key files are left out
     file_put_contents($this->tmp.'/private/.env', 'APP_KEY=base64:SECRETSECRET');
     file_put_contents($this->tmp.'/public/logo.png', 'png');
 
-    $backup = runBackup(true);
+    $backup = runBackup('full');
     [$names, $manifest, $contents] = zipEntries($backup);
 
-    expect($names)->toContain('files/private/receiving-photos/a.jpg', 'files/public/logo.png')
+    expect($names)->toContain('database/db.sql', 'files/private/receiving-photos/a.jpg', 'files/public/logo.png')
+        ->and($manifest['scope'])->toBe('full')
         ->and($names)->not->toContain('files/private/device-releases/x/firmware.img')
         ->and($names)->not->toContain('files/private/print-jobs/j.pdf')
         ->and($names)->not->toContain('files/private/.app_key', 'files/private/.env')
@@ -90,29 +93,91 @@ test('uploads are included with hashes, excluded dirs and key files are left out
         ->and(str_contains(json_encode($manifest), config('app.key')))->toBeFalse();
 });
 
+test('a files-only backup holds just the uploads and needs no database dump', function () {
+    mkdir($this->tmp.'/private/receiving-photos', 0777, true);
+    file_put_contents($this->tmp.'/private/receiving-photos/a.jpg', 'photo-bytes');
+    file_put_contents($this->tmp.'/private/.app_key', 'base64:SECRETSECRET');
+
+    $backup = runBackup('storage');
+    [$names, $manifest] = zipEntries($backup);
+
+    expect($backup->status)->toBe('complete')
+        ->and($names)->toContain('manifest.json', 'files/private/receiving-photos/a.jpg')
+        ->and($names)->not->toContain('database/db.sql', 'files/private/.app_key')
+        ->and($manifest['scope'])->toBe('storage')
+        ->and($manifest['includes_database'])->toBeFalse()
+        ->and($manifest['database']['dump'])->toBeNull();
+});
+
+test('a backup can be written to any directory with no database record, so it works with the database down', function () {
+    mkdir($this->tmp.'/elsewhere');
+    mkdir($this->tmp.'/private/x', 0777, true);
+    file_put_contents($this->tmp.'/private/x/f.txt', 'file');
+
+    $result = app(BackupService::class)->createIn($this->tmp.'/elsewhere', 'storage', 'my-snapshot');
+
+    expect($result['path'])->toBe($this->tmp.'/elsewhere/my-snapshot.zip')
+        ->and($result['files'])->toBe(1)
+        ->and(is_file($result['path']))->toBeTrue()
+        ->and(Backup::count())->toBe(0)
+        ->and(glob($this->tmp.'/elsewhere/.work-*'))->toBe([])
+        ->and(glob($this->tmp.'/elsewhere/.partial-*'))->toBe([]);
+
+    // never overwrites a backup that is already there
+    expect(fn () => app(BackupService::class)->createIn($this->tmp.'/elsewhere', 'storage', 'my-snapshot'))
+        ->toThrow(RuntimeException::class, 'already exists');
+    // an unknown scope is refused outright
+    expect(fn () => app(BackupService::class)->createIn($this->tmp.'/elsewhere', 'everything'))
+        ->toThrow(RuntimeException::class, 'Unknown backup scope');
+});
+
+test('backup:create takes a scope, records the backup, and prints where the zip is', function () {
+    $this->artisan('backup:create', ['--scope' => 'database'])->assertSuccessful();
+    $backup = Backup::firstOrFail();
+    expect($backup->scope)->toBe('database')->and($backup->status)->toBe('complete')->and(is_file($backup->path()))->toBeTrue();
+
+    $this->artisan('backup:create', ['--scope' => 'bogus'])->assertFailed();
+    expect(Backup::count())->toBe(1);
+});
+
+test('backup:create --dest writes an unrecorded zip with the requested name', function () {
+    mkdir($this->tmp.'/tier');
+
+    $this->artisan('backup:create', ['--scope' => 'database', '--dest' => $this->tmp.'/tier', '--name' => '20261020-020000'])->assertSuccessful();
+
+    expect(is_file($this->tmp.'/tier/20261020-020000.zip'))->toBeTrue()->and(Backup::count())->toBe(0);
+    [$names, $manifest] = zipEntries($this->tmp.'/tier/20261020-020000.zip');
+    expect($names)->toContain('database/db.sql')->and($manifest['scope'])->toBe('database');
+
+    // --name only makes sense with --dest, and must be a plain file name
+    $this->artisan('backup:create', ['--name' => 'x'])->assertFailed();
+    $this->artisan('backup:create', ['--dest' => $this->tmp.'/tier', '--name' => '../escape'])->assertFailed();
+    $this->artisan('backup:create', ['--dest' => $this->tmp.'/tier', '--name' => 'x.zip'])->assertFailed();
+});
+
 test('only one backup can be started at a time', function () {
     Process::fake();
     $service = app(BackupService::class);
 
-    $first = $service->start(null, false);
+    $first = $service->start(null, 'database');
     expect($first->status)->toBe('queued');
     Process::assertRan(fn ($p) => str_contains($p->command, "backup:run {$first->id}") && str_contains($p->command, 'setsid'));
 
-    expect(fn () => $service->start(null, false))->toThrow(RuntimeException::class, 'already running');
+    expect(fn () => $service->start(null, 'database'))->toThrow(RuntimeException::class, 'already running');
 });
 
 test('a second runner cannot take the lock while one is running', function () {
     $lock = fopen($this->tmp.'/out/.backup.lock', 'c');
     flock($lock, LOCK_EX);
 
-    $backup = runBackup(false);
+    $backup = runBackup('database');
     expect($backup->status)->toBe('failed')->and($backup->error)->toContain('already running');
 
     flock($lock, LOCK_UN);
 });
 
 test('a running backup whose process died is marked failed instead of blocking forever', function () {
-    $stuck = Backup::create(['status' => 'running', 'include_uploads' => false]);
+    $stuck = Backup::create(['status' => 'running', 'scope' => 'database']);
 
     app(BackupService::class)->reapInterrupted();
 
@@ -120,7 +185,7 @@ test('a running backup whose process died is marked failed instead of blocking f
 });
 
 test('a running backup that still holds the lock is left alone', function () {
-    $running = Backup::create(['status' => 'running', 'include_uploads' => false]);
+    $running = Backup::create(['status' => 'running', 'scope' => 'database']);
     $lock = fopen($this->tmp.'/out/.backup.lock', 'c');
     flock($lock, LOCK_EX);
 
@@ -131,13 +196,31 @@ test('a running backup that still holds the lock is left alone', function () {
 });
 
 test('expired backups are pruned with their files', function () {
-    $backup = runBackup(false);
+    $backup = runBackup('database');
     expect(is_file($backup->path()))->toBeTrue();
 
     $backup->update(['expires_at' => now()->subMinute()]);
     app(BackupService::class)->prune();
 
     expect(is_file($backup->path()))->toBeFalse()->and(Backup::find($backup->id))->toBeNull();
+});
+
+test('old zips with no record are pruned too, but only ones this app names, and only past the retention', function () {
+    config(['backup.keep_days' => 14]);
+    $dir = $this->tmp.'/out';
+    $old = fn ($name) => tap("{$dir}/{$name}", fn ($path) => touch($path, now()->subDays(20)->getTimestamp()));
+    $orphan = $old('relief-backup-20260101-000000-database-premigrate.zip');   // pre-migration backup: never had a row
+    $unrelated = $old('someone-elses-notes.zip');
+    file_put_contents("{$dir}/relief-backup-20261020-000000-database-premigrate.zip", 'recent');
+    $kept = runBackup('database');
+    touch($kept->path(), now()->subDays(20)->getTimestamp());                  // old file but its row says it hasn't expired
+
+    app(BackupService::class)->prune();
+
+    expect(is_file($orphan))->toBeFalse()
+        ->and(is_file($unrelated))->toBeTrue()
+        ->and(is_file("{$dir}/relief-backup-20261020-000000-database-premigrate.zip"))->toBeTrue()
+        ->and(is_file($kept->path()))->toBeTrue();
 });
 
 test('backup endpoints require manage-backups', function () {
@@ -150,14 +233,14 @@ test('the admin can start, download and delete a backup', function () {
     Process::fake();
     $admin = userWithPermissions('manage-backups');
 
-    $started = $this->actingAs($admin)->postJson('/json/backups', ['include_uploads' => true])->assertStatus(202);
-    expect($started->json('record.include_uploads'))->toBeTrue()
+    $started = $this->actingAs($admin)->postJson('/json/backups', ['scope' => 'full'])->assertStatus(202);
+    expect($started->json('record.scope'))->toBe('full')
         ->and(Backup::first()->requested_by)->toBe($admin->id);
-    $this->actingAs($admin)->postJson('/json/backups')->assertStatus(409);
+    $this->actingAs($admin)->postJson('/json/backups', ['scope' => 'database'])->assertStatus(409);
 
     $this->actingAs($admin)->deleteJson('/json/backups/'.Backup::first()->id)->assertStatus(409); // still running
 
-    $done = runBackup(false);
+    $done = runBackup('database');
     Backup::whereKey(Backup::first()->id)->update(['status' => 'failed']);
     $this->actingAs($admin)->get("/json/backups/{$done->id}/download")->assertOk()->assertDownload($done->filename);
     $this->actingAs($admin)->deleteJson("/json/backups/{$done->id}")->assertOk();
@@ -179,9 +262,71 @@ test('the app key needs its own permission, the right password and is never cach
     expect($ok->json('key'))->toBe(config('app.key'))->and($ok->headers->get('Cache-Control'))->toContain('no-store');
 });
 
-test('the backups page only offers the key panel to people who can view it', function () {
-    $this->actingAs(userWithPermissions('manage-backups'))->get('/setup/backups')
-        ->assertInertia(fn ($page) => $page->component('Backups')->where('canViewAppKey', false));
-    $this->actingAs(userWithPermissions('manage-backups', 'view-app-key'))->get('/setup/backups')
+test('the page offers only a database or a database + files backup, never a files-only one', function () {
+    $admin = userWithPermissions('manage-backups');
+    $this->actingAs($admin)->postJson('/json/backups', ['scope' => 'storage'])->assertStatus(422);
+    $this->actingAs($admin)->postJson('/json/backups', [])->assertStatus(422);
+    expect(Backup::count())->toBe(0);
+});
+
+test('the merged page opens for either permission and tells each person what they may use', function () {
+    $this->actingAs(userWithPermissions('manage-backups'))->get('/setup/system')
+        ->assertInertia(fn ($page) => $page->component('SystemAdmin')
+            ->where('canManageBackups', true)->where('canAdminSystem', false)->where('canViewAppKey', false));
+    $this->actingAs(userWithPermissions('manage-backups', 'view-app-key'))->get('/setup/system')
         ->assertInertia(fn ($page) => $page->where('canViewAppKey', true));
+    $this->actingAs(userWithPermissions('admin-system'))->get('/setup/system')
+        ->assertInertia(fn ($page) => $page->where('canAdminSystem', true)->where('canManageBackups', false)->where('runtime', 'systemd'));
+    $this->actingAs(userWithPermissions('general-access'))->get('/setup/system')->assertForbidden();
+});
+
+test('the old backup files address lands on the merged page', function () {
+    $this->actingAs(userWithPermissions('manage-backups'))->get('/setup/backups')->assertRedirect('/setup/system');
+});
+
+test('only a dump that ends with the end-of-dump marker counts as complete', function () {
+    $tools = app(App\Services\DatabaseTools::class);
+    $write = fn (string $sql) => tap($this->tmp.'/d.sql', fn ($f) => file_put_contents($f, $sql));
+
+    expect($tools->dumpIsComplete($write("CREATE TABLE t (id int);\n\n-- Dump completed on 2026-10-20 10:12:46\n")))->toBeTrue()
+        ->and($tools->dumpIsComplete($write("CREATE TABLE t (id int);\nINSERT INTO t VALUES (1),(2")))->toBeFalse()
+        ->and($tools->dumpIsComplete($write('')))->toBeFalse()
+        ->and($tools->dumpIsComplete($this->tmp.'/missing.sql'))->toBeFalse()
+        // the marker mid-file, followed by more, is not an ending
+        ->and($tools->dumpIsComplete($write("-- Dump completed on 2026-10-20 10:12:46\nINSERT INTO t VALUES (1),(2")))->toBeFalse();
+
+    // and a real dump has it
+    $real = $this->tmp.'/real.sql';
+    $process = $tools->process($tools->dumpCommand($real));
+    $process->run();
+    expect($tools->dumpIsComplete($real))->toBeTrue();
+});
+
+test('a scheduled (tier) backup can be downloaded by manage-backups holders, and nothing else is reachable', function () {
+    $dir = $this->tmp.'/tiers';
+    config(['system.backup_dir' => $dir]);
+    mkdir("$dir/daily", 0777, true);
+    mkdir("$dir/hourly/20260101-010000", 0777, true);               // an old-style directory
+    file_put_contents("$dir/daily/20260102-030000.zip", 'zip-bytes');
+    file_put_contents("$dir/secret.zip", 'not in a tier');
+
+    $admin = userWithPermissions('manage-backups');
+    $get = fn ($path) => test()->actingAs($admin)->get("/json/backups/tier/{$path}/download");
+
+    $ok = $get('daily/20260102-030000')->assertOk()->assertDownload('relief-backup-daily-20260102-030000.zip');
+    expect($ok->headers->get('Cache-Control'))->toContain('no-store');
+
+    $get('daily/20260109-030000')->assertNotFound();                // no such backup
+    $get('hourly/20260101-010000')->assertNotFound();               // a directory, not a zip
+    $get('weekly/20260102-030000')->assertNotFound();               // not a tier
+    $get('daily/..%2Fsecret')->assertNotFound();                    // the stamp is a fixed pattern
+    $get('daily/20260102-030000.zip')->assertNotFound();
+
+    // the same permission as an on-demand zip, not admin-system's
+    $this->actingAs(userWithPermissions('admin-system'))->get('/json/backups/tier/daily/20260102-030000/download')->assertForbidden();
+    $this->actingAs(userWithPermissions('general-access'))->get('/json/backups/tier/daily/20260102-030000/download')->assertForbidden();
+
+    // a Docker install has no tiers to serve
+    config(['system.runtime' => 'docker']);
+    $get('daily/20260102-030000')->assertNotFound();
 });

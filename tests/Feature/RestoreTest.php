@@ -26,6 +26,7 @@ beforeEach(function () {
 });
 
 afterEach(function () {
+    @unlink(storage_path('framework/down')); // a failed --force test must not leave the dev site in maintenance mode
     if (! empty($GLOBALS['restore_test_dirtied_db'])) {
         Artisan::call('migrate:fresh', ['--force' => true]);
         $GLOBALS['restore_test_dirtied_db'] = false;
@@ -34,6 +35,8 @@ afterEach(function () {
 });
 
 /** Hand-build a backup zip so malformed/hostile ones can be tested without a real database. */
+const DUMP_END = "\n-- Dump completed on 2026-10-20 00:00:00\n";
+
 function craftZip(string $path, array $files, array $manifestOverrides = [], ?array $entriesOverride = null): void
 {
     $entries = [];
@@ -66,6 +69,12 @@ function uploadZip(string $path, array $extra = []): string
     }
 
     return $id;
+}
+
+/** Ask the wizard to start the restore once the upload(s) are up. */
+function launchRestore(string $id, ?string $storageId = null)
+{
+    return test()->postJson('/install/restore/launch', ['upload_id' => $id] + ($storageId ? ['storage_upload_id' => $storageId] : []));
 }
 
 function freshInstance(): void
@@ -119,6 +128,35 @@ test('unsafe or inconsistent manifests are refused', function () {
     expect($c->problems(['contains_app_key' => true] + $base([$entry('database/db.sql')]), ['manifest.json', 'database/db.sql'], []))->not->toBe([]);
 });
 
+test('scope decides what a manifest must contain, and a zip whose database is unused skips the version check', function () {
+    $c = app(BackupCompatibility::class);
+    $sha = str_repeat('a', 64);
+    $entry = fn ($path) => ['path' => $path, 'size' => 1, 'sha256' => $sha];
+    $future = ['database' => ['migrations' => [...$c->knownMigrations(), '2099_01_01_000000_future']]];
+
+    // files-only: no dump needed, no migration list needed, and even an empty disk is a valid backup
+    $files = ['format' => 2, 'scope' => 'storage', 'contains_app_key' => false, 'entries' => [$entry('files/private/a')]];
+    expect($c->problems($files, ['manifest.json', 'files/private/a']))->toBe([]);
+    expect($c->problems(['entries' => []] + $files, ['manifest.json']))->toBe([]);
+    // ... but it must not smuggle in a dump
+    expect($c->problems(['entries' => [$entry('database/db.sql')]] + $files, ['manifest.json', 'database/db.sql']))->not->toBe([]);
+
+    // a database zip with nothing in it is still refused, and an unknown scope is not guessed at
+    expect($c->problems(['scope' => 'database', 'entries' => []] + $files, ['manifest.json']))->not->toBe([]);
+    expect($c->problems(['scope' => 'everything'] + $files, ['manifest.json', 'files/private/a']))->not->toBe([]);
+
+    // format-1 zips had no scope: with uploads they are full, without they are database-only
+    expect($c->scope(['format' => 1, 'includes_uploads' => true]))->toBe('full')
+        ->and($c->scope(['format' => 1]))->toBe('database')
+        ->and($c->scope(['scope' => 'storage']))->toBe('storage');
+
+    // a full zip that only lends its files may have a newer schema; as the database source it may not
+    $full = ['format' => 2, 'scope' => 'full', 'contains_app_key' => false, 'entries' => [$entry('database/db.sql'), $entry('files/private/a')]] + $future;
+    $names = ['manifest.json', 'database/db.sql', 'files/private/a'];
+    expect($c->problems($full, $names, null, false))->toBe([]);
+    expect($c->problems($full, $names))->not->toBe([]);
+});
+
 test('every encrypted model cast is registered so a restore knows to blank it', function () {
     $registered = array_keys(config('backup.encrypted_columns'));
     foreach (glob(app_path('Models/*.php')) as $file) {
@@ -169,12 +207,33 @@ test('the chunked upload resumes, refuses gaps, and an incomplete upload cannot 
     $put(9, 'x')->assertStatus(409)->assertJsonPath('received', 5);        // gap
     $this->getJson("/install/restore/{$id}")->assertJsonPath('received', 5);
     $this->postJson("/install/restore/{$id}/complete")->assertStatus(409);
+    launchRestore($id)->assertStatus(409);
     Process::assertNothingRan();
 
     $put(5, 'fghij')->assertOk();
-    $this->postJson("/install/restore/{$id}/complete")->assertStatus(202);
-    Process::assertRan(fn ($p) => str_contains($p->command, "restore:run {$id}") && str_contains($p->command, 'setsid'));
+    $this->postJson("/install/restore/{$id}/complete")->assertOk(); // "all here" — starts nothing by itself
+    Process::assertNothingRan();
+    launchRestore($id)->assertStatus(202);
+    Process::assertRan(fn ($p) => str_contains($p->command, "restore:run '{$id}'") && str_contains($p->command, 'setsid'));
     expect($this->getJson('/install/restore/status')->assertOk()->headers->get('Cache-Control'))->toContain('no-store');
+});
+
+test('a second, files-only upload can be launched together with the main one', function () {
+    Process::fake();
+    freshInstance();
+    $upload = function (string $bytes) {
+        $id = test()->postJson('/install/restore', ['filename' => 'b.zip', 'size' => strlen($bytes)])->json('upload_id');
+        test()->call('PUT', "/install/restore/{$id}?offset=0", [], [], [], ['CONTENT_TYPE' => 'application/octet-stream'], $bytes)->assertOk();
+
+        return $id;
+    };
+    $main = $upload('main-zip');
+    $files = $upload('files-zip');
+
+    launchRestore($main, $main)->assertStatus(422);                                  // must be two different uploads
+    launchRestore($main, str_repeat('b', 40))->assertNotFound();                      // and a real one
+    launchRestore($main, $files)->assertStatus(202);
+    Process::assertRan(fn ($p) => str_contains($p->command, "restore:run '{$main}' '{$files}'"));
 });
 
 test('a hostile upload id cannot escape the restore directory', function () {
@@ -188,8 +247,8 @@ test('a hostile upload id cannot escape the restore directory', function () {
 test('a damaged backup is rejected before anything on the instance changes', function () {
     Process::fake();
     freshInstance();
-    $files = ['database/db.sql' => 'DROP TABLE people;', 'files/private/a.jpg' => 'photo'];
-    craftZip($this->tmp.'/bad.zip', $files);
+    $files = ['database/db.sql' => 'DROP TABLE people;'.DUMP_END, 'files/private/a.jpg' => 'photo'];
+    craftZip($this->tmp.'/bad.zip', $files, ['scope' => 'full', 'includes_uploads' => true]);
     // tamper: swap a.jpg's bytes after the manifest recorded its hash
     $zip = new ZipArchive;
     $zip->open($this->tmp.'/bad.zip');
@@ -197,7 +256,7 @@ test('a damaged backup is rejected before anything on the instance changes', fun
     $zip->close();
 
     $id = uploadZip($this->tmp.'/bad.zip');
-    $this->postJson("/install/restore/{$id}/complete")->assertStatus(202);
+    launchRestore($id)->assertStatus(202);
     $peopleBefore = DB::table('people')->count();
     app(RestoreService::class)->run($id);
 
@@ -212,11 +271,11 @@ test('a damaged backup is rejected before anything on the instance changes', fun
 test('a backup from newer software is rejected up front', function () {
     Process::fake();
     freshInstance();
-    craftZip($this->tmp.'/new.zip', ['database/db.sql' => 'SELECT 1;'], [
+    craftZip($this->tmp.'/new.zip', ['database/db.sql' => 'SELECT 1;'.DUMP_END], [
         'database' => ['migrations' => [...app(BackupCompatibility::class)->knownMigrations(), '2099_01_01_000000_future']],
     ]);
     $id = uploadZip($this->tmp.'/new.zip');
-    $this->postJson("/install/restore/{$id}/complete");
+    launchRestore($id);
     app(RestoreService::class)->run($id);
 
     expect(app(RestoreService::class)->status())->toMatchArray(['state' => 'failed'])
@@ -228,7 +287,7 @@ test('a not-a-backup file fails cleanly', function () {
     freshInstance();
     file_put_contents($this->tmp.'/junk.zip', str_repeat('not a zip', 100));
     $id = uploadZip($this->tmp.'/junk.zip');
-    $this->postJson("/install/restore/{$id}/complete");
+    launchRestore($id);
     app(RestoreService::class)->run($id);
 
     expect(app(RestoreService::class)->status()['state'])->toBe('failed');
@@ -251,7 +310,7 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     mkdir($this->tmp.'/private/receiving-photos', 0777, true);
     file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'photo-bytes');
 
-    $backup = Backup::create(['status' => 'queued', 'include_uploads' => true]);
+    $backup = Backup::create(['status' => 'queued', 'scope' => 'full']);
     app(BackupService::class)->run($backup);
     $backup = $backup->fresh();
     expect($backup->status)->toBe('complete')->and($backup->error)->toBeNull();
@@ -264,7 +323,7 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
 
     Process::fake();
     $id = uploadZip($backup->path());
-    $this->postJson("/install/restore/{$id}/complete")->assertStatus(202);
+    launchRestore($id)->assertStatus(202);
     app(RestoreService::class)->run($id);
 
     $status = app(RestoreService::class)->status();
@@ -282,4 +341,165 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     $this->get('/install')->assertRedirect(route('login'));
     $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertForbidden();
     expect($this->getJson('/install/restore/status')->json('state'))->toBe('complete');
+});
+
+
+// ---- restoring from zips on disk (backup:restore) -----------------------------------------------------
+
+test('restoring onto an instance that is already set up needs --force, and refuses before touching anything', function () {
+    craftZip($this->tmp.'/db.zip', ['database/db.sql' => 'DROP TABLE people;'.DUMP_END]);
+    $before = DB::table('people')->count();
+
+    expect(fn () => app(RestoreService::class)->runFromFiles($this->tmp.'/db.zip', null, false))
+        ->toThrow(RuntimeException::class, '--force');
+    $this->artisan('backup:restore', ['database' => $this->tmp.'/db.zip'])->assertFailed();
+
+    expect(Schema::hasTable('people'))->toBeTrue()->and(DB::table('people')->count())->toBe($before);
+});
+
+test('backup:restore needs something to restore, and says so about a file that is not there', function () {
+    $this->artisan('backup:restore')->assertFailed();
+    $this->artisan('backup:restore', ['database' => $this->tmp.'/missing.zip', '--force' => true, '--no-interaction' => true])->assertFailed();
+});
+
+test('the main zip must hold a database and the files zip must hold files', function () {
+    $service = app(BackupService::class);
+    $filesOnly = $service->createIn($this->tmp.'/out', 'storage', 'files-only')['path'];
+    $dbOnly = $service->createIn($this->tmp.'/out', 'database', 'db-only')['path'];
+
+    expect(fn () => app(RestoreService::class)->runFromFiles($filesOnly, null, true))
+        ->toThrow(RuntimeException::class, 'only files');
+    expect(fn () => app(RestoreService::class)->runFromFiles(null, $dbOnly, true))
+        ->toThrow(RuntimeException::class, 'only a database');
+});
+
+test('a files-only restore lays the files down and leaves the database alone', function () {
+    mkdir($this->tmp.'/private/receiving-photos', 0777, true);
+    file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'good-photo');
+    $zip = app(BackupService::class)->createIn($this->tmp.'/out', 'storage', 'files')['path'];
+    file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'damaged');
+    file_put_contents($this->tmp.'/private/keep-me.txt', 'newer than the backup');
+    $people = DB::table('people')->count();
+
+    $result = app(RestoreService::class)->runFromFiles(null, $zip, true);
+
+    expect($result['database_restored'])->toBeFalse()->and($result['includes_uploads'])->toBeTrue()
+        ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('good-photo')
+        ->and(file_get_contents($this->tmp.'/private/keep-me.txt'))->toBe('newer than the backup') // nothing is deleted
+        ->and(DB::table('people')->count())->toBe($people)
+        ->and(file_exists(storage_path('framework/down')))->toBeFalse()                              // no maintenance mode for a files-only restore
+        ->and(app(RestoreService::class)->status()['state'])->toBe('complete');
+});
+
+test('a damaged database is repaired from a database zip plus the best copy of the files', function () {
+    // Restoring wipes and reloads the whole (disposable) test database; rebuild a clean schema afterwards.
+    $GLOBALS['restore_test_dirtied_db'] = true;
+    Artisan::call('migrate:fresh', ['--force' => true]);
+    $service = app(BackupService::class);
+
+    // Monday: the database backup. The photo is still the first version.
+    $admin = User::factory()->create(['email' => 'admin@example.com']);
+    DB::table('people_roles')->insert(['person_id' => $admin->id, 'role_id' => 15, 'created_at' => now(), 'updated_at' => now()]);
+    mkdir($this->tmp.'/private/receiving-photos', 0777, true);
+    file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'monday-photo');
+    $databaseZip = $service->createIn($this->tmp.'/out', 'database', 'monday-db')['path'];
+
+    // Tuesday: more data and a newer photo; the best copy of the files is a FULL backup whose database is newer than Monday's.
+    User::factory()->create(['email' => 'tuesday@example.com']);
+    file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'tuesday-photo');
+    $filesZip = $service->createIn($this->tmp.'/out', 'full', 'tuesday-full')['path'];
+
+    // Wednesday: the database is damaged and the photo is gone with the disk.
+    DB::table('people')->where('email', 'tuesday@example.com')->delete();
+    unlink($this->tmp.'/private/receiving-photos/p.jpg');
+    SetupState::current()->update(['completed_at' => now()]);   // a normal, set-up instance, not a fresh one
+
+    $result = app(RestoreService::class)->runFromFiles($databaseZip, $filesZip, true);
+
+    expect($result['database_restored'])->toBeTrue()->and($result['includes_uploads'])->toBeTrue()
+        ->and(User::where('email', 'admin@example.com')->exists())->toBeTrue()
+        ->and(User::where('email', 'tuesday@example.com')->exists())->toBeFalse()   // the full zip's newer database was ignored
+        ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('tuesday-photo')
+        ->and($result['notes'])->toContain('The files backup also contained a database; it was ignored.')
+        ->and(app()->isDownForMaintenance())->toBeFalse()                            // maintenance mode was used and lifted
+        ->and(SetupState::current()->completed_at)->not->toBeNull();
+});
+
+test('a failed database load on a set-up instance leaves the site in maintenance mode instead of opening the setup wizard', function () {
+    $GLOBALS['restore_test_dirtied_db'] = true;
+    craftZip($this->tmp.'/broken.zip', ['database/db.sql' => 'THIS IS NOT SQL;'.DUMP_END]);
+
+    $this->artisan('backup:restore', ['database' => $this->tmp.'/broken.zip', '--force' => true, '--no-interaction' => true])->assertFailed();
+
+    expect(app()->isDownForMaintenance())->toBeTrue();
+    @unlink(storage_path('framework/down'));
+});
+
+test('a truncated database dump is refused before anything is wiped', function () {
+    craftZip($this->tmp.'/cut.zip', ['database/db.sql' => "CREATE TABLE t (id int);\nINSERT INTO t VALUES (1),(2"]);   // no end-of-dump marker
+    $people = DB::table('people')->count();
+
+    expect(fn () => app(RestoreService::class)->runFromFiles($this->tmp.'/cut.zip', null, true))
+        ->toThrow(RuntimeException::class, 'incomplete');
+
+    expect(DB::table('people')->count())->toBe($people)->and(app()->isDownForMaintenance())->toBeFalse();
+});
+
+
+// ---- setup:reset ----------------------------------------------------------------------------------------
+
+test('setup:reset cannot be scripted: without a real terminal it refuses, even with every flag', function () {
+    $people = DB::table('people')->count();
+    User::factory()->create();
+
+    $this->artisan('setup:reset')->assertFailed();                                 // no TTY under test
+    $this->artisan('setup:reset', ['--no-interaction' => true])->assertFailed();
+    expect(fn () => Artisan::call('setup:reset', ['--force' => true]))                // there is no such option to skip anything
+        ->toThrow(Symfony\Component\Console\Exception\InvalidOptionException::class);
+
+    expect(DB::table('people')->count())->toBe($people + 1);
+});
+
+/** The same command, standing in for a person at a keyboard (production decides this from the real STDIN). */
+function resetWithTerminal(): void
+{
+    Artisan::registerCommand(new class extends App\Console\Commands\SetupReset
+    {
+        protected function hasTerminal(): bool
+        {
+            return true;
+        }
+    });
+}
+
+test('setup:reset does nothing unless the exact phrase is typed', function () {
+    resetWithTerminal();
+    User::factory()->create();
+    $people = DB::table('people')->count();
+
+    foreach (['yes', 'yes-delete-all-my-data', 'YES-DELETE-ALL-MY-DATA ', ''] as $wrong) {
+        $this->artisan('setup:reset')
+            ->expectsQuestion('Type YES-DELETE-ALL-MY-DATA exactly to continue', $wrong)
+            ->assertFailed();
+    }
+
+    expect(DB::table('people')->count())->toBe($people);
+});
+
+test('setup:reset with the phrase typed returns the instance to brand new', function () {
+    $GLOBALS['restore_test_dirtied_db'] = true;
+    resetWithTerminal();
+    User::factory()->create(['email' => 'doomed@example.com']);
+    file_put_contents($this->tmp.'/private/keep.txt', 'files are not touched');
+
+    $this->artisan('setup:reset')
+        ->expectsQuestion('Type YES-DELETE-ALL-MY-DATA exactly to continue', 'YES-DELETE-ALL-MY-DATA')
+        ->assertSuccessful();
+
+    expect(User::where('email', 'doomed@example.com')->exists())->toBeFalse()
+        ->and(DB::table('people')->whereNull('system_key')->count())->toBe(0)    // no real people; only the built-in Unknown Donor placeholder
+        ->and(Schema::hasTable('migrations'))->toBeTrue()
+        ->and(DB::table('statuses')->count())->toBeGreaterThan(0)          // essential lookup data is back
+        ->and(file_get_contents($this->tmp.'/private/keep.txt'))->toBe('files are not touched')
+        ->and(app(App\Services\FirstRunService::class)->needsSetup())->toBeTrue();
 });

@@ -1,33 +1,40 @@
 #!/bin/bash
-# Write a gzip'd SQL dump of the app database into $RI_BACKUP_DIR, then prune old ones.
-# Shared by the scheduler's daily dump and the web container's pre-migration dump.
+# Make a backup zip (manifest + checksums, the same format as every other backup in the app) by running
+# `php artisan backup:create`. Shared by the scheduler's daily backup and the web container's pre-migration backup.
 #
-#   ri-db-backup [label]     label (optional) is added to the file name:
-#                            reliefinventory-<label>-<stamp>.sql.gz (default: reliefinventory-<stamp>.sql.gz)
+#   ri-db-backup            the daily backup: recorded in the app, so it is listed under Updates & Backups
+#                           and deleted by `backup:prune` after RI_BACKUP_KEEP_DAYS
+#   ri-db-backup premigrate a label: written to $RI_BACKUP_DIR as relief-backup-<stamp>-<scope>-<label>.zip
+#                           with no database record (the schema may not be ready for one yet); `backup:prune`
+#                           deletes it after RI_BACKUP_KEEP_DAYS too
 #
-#   RI_BACKUP_DIR         where dumps go (default /backups — mount a volume or host dir)
-#   RI_BACKUP_KEEP_DAYS   dumps older than this are deleted (default 14)
+#   RI_BACKUP_DIR         where backups go (default /backups — mount a volume or host dir)
+#   RI_BACKUP_SCOPE       database (default) | full (also the uploaded files)
+#   RI_BACKUP_KEEP_DAYS   older backups are deleted (default 14) — a flat retention; the tiered
+#                         daily/monthly/yearly retention of a systemd install is not implemented here yet
 #   RI_DB_DUMP_ARGS       extra mariadb-dump flags (default --skip-ssl; set e.g. --ssl for a TLS database)
-# Exit status 0 only if a complete dump was written.
+# Exit status 0 only if a complete backup was written.
 set -uo pipefail
 
 BACKUP_DIR="${RI_BACKUP_DIR:-/backups}"
 KEEP_DAYS="${RI_BACKUP_KEEP_DAYS:-14}"
-LABEL="${1:+$1-}"
+SCOPE="${RI_BACKUP_SCOPE:-database}"
+LABEL="${1:-}"
 log() { echo "[db-backup] $(date '+%F %T') $*" >&2; }
 
-stamp="$(date +%Y%m%d-%H%M%S)"
-out="$BACKUP_DIR/reliefinventory-$LABEL$stamp.sql.gz"
 mkdir -p "$BACKUP_DIR" 2>/dev/null && [ -w "$BACKUP_DIR" ] || { log "cannot write to $BACKUP_DIR — mount a volume there"; exit 1; }
-if MYSQL_PWD="${DB_PASSWORD:-}" mariadb-dump \
-        --host="${DB_HOST:-127.0.0.1}" --port="${DB_PORT:-3306}" --user="${DB_USERNAME:-reliefinventory}" \
-        --single-transaction --no-tablespaces --routines --triggers ${RI_DB_DUMP_ARGS:---skip-ssl} \
-        "${DB_DATABASE:-reliefinventory}" 2>"$out.err" | gzip > "$out.tmp" && [ "${PIPESTATUS[0]}" = 0 ]; then
-    mv "$out.tmp" "$out"; rm -f "$out.err"
-    log "backup written: $out ($(du -h "$out" | cut -f1))"
+cd /var/www/html || exit 1
+
+args=(--scope="$SCOPE")
+if [ -n "$LABEL" ]; then
+    args+=(--dest="$BACKUP_DIR" --name="relief-backup-$(date +%Y%m%d-%H%M%S)-$SCOPE-$LABEL")
+fi
+
+if out="$(php artisan backup:create --no-interaction "${args[@]}")"; then
+    log "backup written: $(printf '%s\n' "$out" | tail -n1) ($(du -h "$(printf '%s\n' "$out" | tail -n1)" | cut -f1))"
+    # Dumps from before backups were zipped (RI image <= 2026-10-20): age them out the old way.
     find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
 else
-    log "backup FAILED: $(head -c 400 "$out.err" 2>/dev/null)"
-    rm -f "$out.tmp"
+    log "backup FAILED"
     exit 1
 fi

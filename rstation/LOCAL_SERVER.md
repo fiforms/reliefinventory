@@ -104,8 +104,10 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
   "offline" build, or move the tarball out of the rootfs onto the boot/data partition.
 - **No way to get data out** except copying `/data/relief-inventory/backups` off the card. A "copy backup to
   USB" button and an import path into a central site (there is no sync/merge story in the app) are the
-  natural next steps. Backups cover the database only; uploaded photos are in `storage/`.
+  natural next steps. Backups are database-only unless `RI_BACKUP_SCOPE=full` is set in the stack's environment; uploaded
+  photos are in `storage/`. **Retention is flat** (`RI_BACKUP_KEEP_DAYS`, 14 by default): the daily/monthly/yearly tiers of the
+  bare-metal install are not implemented for the local server (TODO.md item 14) — a long-running site should copy backups off the card.
 - **Printing from the local server works** (verified, below): the device pairs with its own server and prints through
   its own print server. Home on its own only moves the kiosk's screen; pairing is a separate step.
 - No automatic update of the containers apart from the OS image; no Reverb (realtime) in this stack.
-- The System Administration panel's systemd/git buttons don't apply inside the container (see `scripts/DOCKER_PLAN.md`).
+- The Updates & Backups page hides its systemd/git-only sections inside the container and shows the compose backup settings read-only (see `scripts/DOCKER_PLAN.md`).

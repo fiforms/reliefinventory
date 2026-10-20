@@ -11,14 +11,14 @@ use Illuminate\Console\Command;
 /** Started detached by the first-run wizard once the backup zip is fully uploaded. */
 class RestoreRun extends Command
 {
-    protected $signature = 'restore:run {id : the completed upload id}';
+    protected $signature = 'restore:run {id : the completed upload id} {storage? : the completed upload id of a separate files backup}';
 
     protected $description = 'Restore an uploaded backup zip onto this (never set up) instance';
 
     public function handle(RestoreService $restore): int
     {
         set_time_limit(0);
-        $restore->run($this->argument('id'));
+        $restore->run($this->argument('id'), $this->argument('storage'));
 
         return ($restore->status()['state'] ?? '') === 'complete' ? self::SUCCESS : self::FAILURE;
     }

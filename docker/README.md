@@ -66,25 +66,27 @@ State lives in three named volumes:
   removes all of them, i.e. a clean slate).
 - `storage` — uploads (donation photos, feedback screenshots), print-queue PDFs, logs, and the generated app key.
 
-The scheduler writes a gzip'd SQL dump daily into `./backups` (next to `compose.yaml`), keeping
-`RI_BACKUP_KEEP_DAYS` days. (The container takes ownership of that directory so it can write there.) **That covers the database only** — back up the `storage` volume too if you rely on the
-uploaded photos, and copy dumps off the machine. Restore a dump with:
+The scheduler writes a backup **.zip** daily into `./backups` (next to `compose.yaml`), keeping
+`RI_BACKUP_KEEP_DAYS` days. (The container takes ownership of that directory so it can write there.) It holds the
+database only unless you set `RI_BACKUP_SCOPE: full`, which adds the uploaded files — **otherwise back up the `storage`
+volume too** if you rely on the uploaded photos, and copy backups off the machine. They are the same zips an admin
+makes on demand from **Updates & Backups** in the app (listed there, downloadable, never containing the application key —
+see `scripts/BACKUPS.md`).
 
-```bash
-gunzip -c backups/reliefinventory-YYYYMMDD-HHMMSS.sql.gz | docker compose exec -T db sh -c 'mariadb -u"$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE"'
-```
+> **Retention is flat here.** Backups are kept `RI_BACKUP_KEEP_DAYS` days and then deleted. The daily / monthly / yearly
+> tiers a standard (systemd) server install keeps are not implemented for containers or the R Station local server yet —
+> copy a backup off the machine if you want to keep it longer.
 
 If you set `APP_KEY` yourself, keep it with the backups: restoring a database without its key makes encrypted
 values unreadable.
 
-Admins can also make a full backup **.zip** (database, optionally all uploaded files) on demand from
-**Backup Files** in the app, then download it. These land in the same `backups/` directory, are deleted
-after `RI_BACKUP_KEEP_DAYS`, and never contain the application key (see `scripts/BACKUPS.md`).
-
 **Restoring** one onto a brand-new install: open the new server, choose **Restore from a backup** on the first-run
 screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. If you
 want the encrypted settings (e.g. the feedback shared secret) to survive, set `APP_KEY` in `compose.yaml` to the old
-system's key *before* the first start; otherwise they are cleared and listed for you to re-enter.
+system's key *before* the first start; otherwise they are cleared and listed for you to re-enter. To recover a damaged
+database, the restore screen also takes a second zip that supplies just the uploaded files (any database inside it is
+ignored); on a system that is already set up, an administrator runs
+`docker compose exec app php artisan backup:restore backups/<database zip> --storage=backups/<files zip> --force`.
 
 ## Upgrading
 
@@ -93,11 +95,11 @@ docker compose pull
 docker compose up -d      # migrations run automatically when `app` starts
 ```
 
-If the new image has pending migrations, the `app` container dumps the database to `backups/` first
-(`reliefinventory-premigrate-<timestamp>.sql.gz`) and only then migrates. **If that dump fails, it does not migrate** —
+If the new image has pending migrations, the `app` container backs up the database to `backups/` first
+(`relief-backup-<timestamp>-database-premigrate.zip`) and only then migrates. **If that backup fails, it does not migrate** —
 the container exits with a message in `docker compose logs app` (usually the backup directory isn't writable). Fix that
 and it retries on restart, or set `RI_PREMIGRATE_BACKUP: "false"` to migrate without a backup. A fresh install, or an
-upgrade with no new migrations, takes no extra dump. Pre-migration dumps are pruned with the daily ones
+upgrade with no new migrations, takes no extra dump. Pre-migration backups are pruned with the daily ones
 (`RI_BACKUP_KEEP_DAYS`). This covers the database only — see "Data and backups" for `storage`.
 
 **Rolling back:** an old image can't run against a migrated schema. Pin the previous version tag in `compose.yaml`

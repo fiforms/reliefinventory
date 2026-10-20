@@ -63,10 +63,11 @@ x-settings: &settings
   # HOSTED_BY: Example Relief Org
   # HOSTED_LINK: https://example.org
 
-  # Daily database dump (written to ./backups next to this file).
+  # Daily backup zip (written to ./backups next to this file).
   # RI_BACKUP_ENABLED: "true"
   # RI_BACKUP_HOUR: 2                   # local hour (follows APP_TIMEZONE)
-  # RI_BACKUP_KEEP_DAYS: 14
+  # RI_BACKUP_KEEP_DAYS: 14             # flat retention: no daily/monthly/yearly tiers here
+  # RI_BACKUP_SCOPE: database           # or "full" to include the uploaded files
   # An upgrade that has pending migrations dumps the database first (into the same
   # ./backups) and won't migrate if the dump fails. Set to "false" to opt out.
   # RI_PREMIGRATE_BACKUP: "true"
@@ -101,7 +102,7 @@ x-app: &app
     SESSION_DRIVER: database
     QUEUE_CONNECTION: database
     CACHE_STORE: database
-    # Daily dumps, pre-migration dumps and the zips made from Backup Files in the app all live here.
+    # Daily backups, pre-migration backups and the zips made from Updates & Backups in the app all live here.
     RI_BACKUP_DIR: /backups
   volumes:
     # private uploads, logs, caches, print-queue PDFs and the generated APP_KEY

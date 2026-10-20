@@ -14,8 +14,8 @@ use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
- * Backs /setup/backups (permission: manage-backups): start an on-demand backup zip, list, download and
- * delete them. The work itself is BackupService's detached process; this only starts it and reports status.
+ * Backs the Backups section of /setup/system (permission: manage-backups): start an on-demand backup zip, list,
+ * download and delete them. The work itself is BackupService's detached process; this only starts it and reports status.
  * The application-key panel is a separate permission (view-app-key) and a password-confirmed POST.
  */
 class BackupController extends Controller
@@ -35,14 +35,16 @@ class BackupController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->validate(['include_uploads' => 'boolean']);
+        // A files-only zip is a disaster-recovery tool (`backup:create --scope=storage`); the page offers the two
+        // everyday choices only.
+        $data = $request->validate(['scope' => 'required|in:database,full']);
 
         try {
-            $backup = $this->backups->start(Auth::id(), (bool) ($data['include_uploads'] ?? false));
+            $backup = $this->backups->start(Auth::id(), $data['scope']);
         } catch (RuntimeException $e) {
             return response()->json(['message' => $e->getMessage()], 409);
         }
-        Log::notice('Backup requested', ['backup' => $backup->id, 'person' => Auth::id(), 'uploads' => $backup->include_uploads]);
+        Log::notice('Backup requested', ['backup' => $backup->id, 'person' => Auth::id(), 'scope' => $backup->scope]);
 
         return response()->json(['message' => 'Backup started.', 'record' => $backup], 202);
     }
@@ -55,6 +57,23 @@ class BackupController extends Controller
 
         // BinaryFileResponse streams from disk and honours Range requests, so a multi-GB download can resume.
         return response()->download($backup->path(), $backup->filename, ['Cache-Control' => 'no-store']);
+    }
+
+    /**
+     * Download a scheduled (tiered) backup of a bare-metal install: /var/backups/.../<tier>/<stamp>.zip, made by
+     * scripts/update.sh and readable by the web user for exactly this. Same permission and logging as an on-demand
+     * zip. Tier and stamp are matched against fixed patterns, so nothing from the URL ever reaches the filesystem
+     * unchecked, and a Docker install (no tiers) has nothing to serve.
+     */
+    public function downloadTier(string $tier, string $stamp)
+    {
+        abort_if(config('system.runtime') === 'docker', 404);
+        abort_unless(in_array($tier, ['hourly', 'daily', 'monthly', 'yearly'], true) && preg_match('/^\d{8}-\d{6}$/', $stamp) === 1, 404);
+        $path = rtrim(config('system.backup_dir'), '/')."/{$tier}/{$stamp}.zip";
+        abort_unless(is_file($path) && is_readable($path), 404);
+        Log::notice('Scheduled backup downloaded', ['tier' => $tier, 'stamp' => $stamp, 'person' => Auth::id()]);
+
+        return response()->download($path, "relief-backup-{$tier}-{$stamp}.zip", ['Cache-Control' => 'no-store']);
     }
 
     public function destroy(int $id)

@@ -12,9 +12,16 @@
 #   bash scripts/update.sh --scheduled         backup only if one is due (hourly systemd timer)
 #   bash scripts/update.sh --seed-permissions  full update + PermissionsSeeder
 #
+# Every backup is one zip (the database, with a manifest of checksums) made by
+# `php artisan backup:create --scope=database --dest=...` — the same command and
+# format as every other backup in the app (scripts/BACKUPS.md). It never contains
+# the application key or .env. Uploaded files are NOT part of the tiers (an update
+# never touches them): take a "Database + uploaded files" backup from the admin
+# page, or `backup:create --scope=full`, when they need protecting too.
+#
 # Backups are tiered: every backup (scheduled, hourly if HOURLY_BACKUPS=1, or
-# on-demand — a full update's pre-update backup, or "Back Up Now" from the
-# admin panel) lands in hourly/,
+# on-demand — a full update's pre-update backup, or "Run a Scheduled Backup Now"
+# from the admin panel) lands in hourly/,
 # kept a short while so a bad update can be rolled back to whichever attempt
 # preceded it. Only the once-a-day *scheduled* backup is also promoted (as a
 # hardlink, so promotion costs no space) into daily/, and the first such
@@ -25,7 +32,7 @@
 # storage/app/backup-settings.conf — a www-data-writable file, so the admin
 # panel can later manage the schedule without root. See scripts/BACKUPS.md.
 #
-# Sequence: backup (DB dump + storage/app + .env + current git SHA) -> maintenance
+# Sequence: backup (zip: DB dump + manifest with the git commit) -> maintenance
 # mode -> git reset to origin -> composer/npm only if lock files changed -> asset
 # build -> migrate -> cache rebuild -> service restarts -> health check against
 # /up (behind the maintenance-mode bypass secret) -> up. If any step fails, the
@@ -202,9 +209,11 @@ on_error() {
     write_status failed "Update failed (line $1, log update-$STAMP.log)"
     if [ "$MAINTENANCE_DOWN" -eq 1 ]; then
         echo "!! The site has been LEFT IN MAINTENANCE MODE on purpose." >&2
-        echo "!! To roll back: restore $BACKUP_PATH/db.sql.gz into the database," >&2
-        echo "!! 'git reset --hard \$(cat $BACKUP_PATH/git-sha.txt)' as $APP_USER," >&2
-        echo "!! re-run composer install / npm run build if needed, then '$PHP artisan up'." >&2
+        echo "!! To roll back, as $APP_USER in $APP_DIR:" >&2
+        echo "!!   1. 'git reset --hard ${OLD_SHA:-<commit in the zip manifest: unzip -p $BACKUP_PATH manifest.json>}'," >&2
+        echo "!!      then re-run composer install / npm run build if needed," >&2
+        echo "!!   2. '$PHP artisan backup:restore --force $BACKUP_PATH' (restores the database, then brings the site up)." >&2
+        echo "!! Or, if the database is fine, just fix the failure and run '$PHP artisan up'." >&2
     fi
 }
 trap 'on_error $LINENO' ERR
@@ -215,40 +224,36 @@ write_status running "Update running (started $STAMP)"
 # Every backup lands here first, scheduled or on-demand — see the tiering
 # note at the top of the file for why only the scheduled one gets promoted
 # further, into daily/ and beyond.
-BACKUP_PATH="$BACKUP_DIR/hourly/$STAMP"
-mkdir -p "$BACKUP_PATH"
+#
+# The zip is written by the app user (artisan needs .env and the database
+# credentials, and must not create root-owned files under storage/), which
+# cannot write the root-owned tier directories — so it is built in a staging
+# directory beside them (same filesystem, so the move is a rename) and moved in.
+BACKUP_PATH="$BACKUP_DIR/hourly/$STAMP.zip"
+STAGING="$BACKUP_DIR/.staging"
+mkdir -p "$BACKUP_DIR/hourly" "$STAGING"
+find "$STAGING" -mindepth 1 -delete   # leftovers of an interrupted run (the update lock is held, so nothing else is using it)
+chown "$APP_USER" "$STAGING"
 echo "-- Backing up to $BACKUP_PATH"
 
-DB_DATABASE="$(env_get DB_DATABASE)"
-DB_USERNAME="$(env_get DB_USERNAME)"
-DB_PASSWORD="$(env_get DB_PASSWORD)"
-DB_HOST="$(env_get DB_HOST)"
-[ -n "$DB_DATABASE" ] || { echo "Could not read DB_DATABASE from .env" >&2; exit 2; }
-
-MYSQL_PWD="$DB_PASSWORD" mysqldump --single-transaction --routines --triggers \
-    -h "${DB_HOST:-127.0.0.1}" -u "$DB_USERNAME" "$DB_DATABASE" | gzip > "$BACKUP_PATH/db.sql.gz"
-gzip -t "$BACKUP_PATH/db.sql.gz"
-
-tar -czf "$BACKUP_PATH/storage-app.tar.gz" -C "$APP_DIR" storage/app
-cp -p "$APP_DIR/.env" "$BACKUP_PATH/env.backup"
-if [ -d "$APP_DIR/.git" ]; then
-    as_app git -C "$APP_DIR" rev-parse HEAD > "$BACKUP_PATH/git-sha.txt"
-fi
-chmod -R go-rwx "$BACKUP_PATH"   # dump + .env hold credentials
+as_app "$PHP" artisan backup:create --scope=database --dest="$STAGING" --name="$STAMP"
+[ -s "$STAGING/$STAMP.zip" ] || { echo "Backup did not produce $STAGING/$STAMP.zip" >&2; exit 2; }
+mv "$STAGING/$STAMP.zip" "$BACKUP_PATH"
+chown root:"$APP_USER" "$BACKUP_PATH"   # group-readable below, once the tier directories are sorted out
 echo "-- Backup complete: $(du -sh "$BACKUP_PATH" | cut -f1)"
 
 # Promotion: only the once-a-day *scheduled* backup (never an on-demand one —
 # see the tiering note at the top of the file) is linked into daily/, and the
 # first such promotion of a month/year is further linked into monthly/ or
-# yearly/. cp -al hardlinks the files, so a promoted backup costs no extra
-# space until the hourly copy it shares data with is pruned.
+# yearly/. A hard link, so a promoted backup costs no extra space until the
+# hourly copy it shares data with is pruned.
 promote() { # promote <tier> <stamp-prefix>
     local tier="$1" prefix="$2" existing
     mkdir -p "$BACKUP_DIR/$tier"
     existing=( "$BACKUP_DIR/$tier/$prefix"* )
     if [ ! -e "${existing[0]}" ]; then
         echo "-- Promoting this backup to $tier/ (first of $prefix)"
-        cp -al "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP"
+        ln "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP.zip"
     fi
 }
 if [ "$DAILY_DUE" -eq 1 ]; then
@@ -262,11 +267,12 @@ fi
 # under the same BACKUP_TZ; right after that setting changes, a backup made
 # under the old TZ can sort as "newer" than one made minutes later under the
 # new one purely from the string comparison, which would prune the wrong one.
+# An entry is a <stamp>.zip, or a <stamp>/ directory made before backups were zipped.
 prune_tier() { # prune_tier <dir> <keep-count>
     local dir="$1" keep="$2"
     [ -d "$dir" ] || return 0
     local entries=()
-    mapfile -t entries < <(find "$dir" -mindepth 1 -maxdepth 1 -type d -printf '%T@\t%p\n' | sort -n | cut -f2-)
+    mapfile -t entries < <(find "$dir" -mindepth 1 -maxdepth 1 \( -type d -o -name '*.zip' \) -printf '%T@\t%p\n' | sort -n | cut -f2-)
     [ "${#entries[@]}" -gt 0 ] || return 0
     while [ "${#entries[@]}" -gt "$keep" ]; do
         echo "-- Pruning old backup ${entries[0]}"
@@ -274,6 +280,17 @@ prune_tier() { # prune_tier <dir> <keep-count>
         entries=( "${entries[@]:1}" )
     done
 }
+# The admin page lists the tiers and offers each zip for download (to manage-backups holders, exactly like an
+# on-demand backup), so the web user must be able to read them: group-readable by the app user, nobody else.
+# The zips hold no secrets beyond the data itself — never the application key or .env. Done on every run so a
+# directory or zip made before this existed (or by an older umask) is brought in line.
+chgrp "$APP_USER" "$BACKUP_DIR" 2>/dev/null && chmod 750 "$BACKUP_DIR"
+for tier in hourly daily monthly yearly; do
+    [ -d "$BACKUP_DIR/$tier" ] || continue
+    chgrp "$APP_USER" "$BACKUP_DIR/$tier" && chmod 750 "$BACKUP_DIR/$tier"
+    find "$BACKUP_DIR/$tier" -maxdepth 1 -name '*.zip' -exec chgrp "$APP_USER" {} + -exec chmod 640 {} +
+done
+
 prune_tier "$BACKUP_DIR/hourly" "$KEEP_HOURLY"
 prune_tier "$BACKUP_DIR/daily" "$KEEP_DAILY"
 prune_tier "$BACKUP_DIR/monthly" "$KEEP_MONTHLY"

@@ -5,7 +5,7 @@
 
 use App\Models\User;
 
-test('the system admin page requires the admin-system permission', function () {
+test('the system admin page requires admin-system or manage-backups', function () {
     $this->actingAs(User::factory()->create())
         ->get('/setup/system')
         ->assertForbidden();
@@ -33,7 +33,7 @@ test('status returns version, backups, and settings for a system admin', functio
     $response = $this->actingAs(userWithPermissions('admin-system'))
         ->get('/json/system/status');
 
-    $response->assertOk()->assertJsonStructure([
+    $response->assertOk()->assertJsonPath('runtime', 'systemd')->assertJsonPath('container_backups', null)->assertJsonStructure([
         'version' => ['current', 'behind', 'pending_commits'],
         'backup_settings' => ['frequency', 'hour', 'tz', 'keep_hourly', 'keep_daily', 'keep_monthly', 'keep_yearly'],
         'backups' => ['tiers' => ['hourly', 'daily', 'monthly', 'yearly'], 'last_scheduled'],
@@ -60,8 +60,46 @@ test('backup entries are ordered by actual mtime, not by stamp-name sort order',
         ->get('/json/system/status');
 
     $response->assertOk()
-        ->assertJsonPath('backups.tiers.daily.entries.0', '20260827-001538')
-        ->assertJsonPath('backups.tiers.daily.entries.1', '20260827-070910');
+        ->assertJsonPath('backups.tiers.daily.entries.0.name', '20260827-001538')
+        ->assertJsonPath('backups.tiers.daily.entries.1.name', '20260827-070910');
+});
+
+test('tier entries are zips (with their size) or old-style directories, newest first', function () {
+    $dir = sys_get_temp_dir().'/ri-test-backups-'.uniqid();
+    config(['system.backup_dir' => $dir]);
+    mkdir("$dir/hourly", 0777, true);
+    mkdir("$dir/hourly/20260101-010000");
+    file_put_contents("$dir/hourly/20260102-010000.zip", str_repeat('z', 2048));
+    file_put_contents("$dir/hourly/notes.txt", 'ignored');
+    touch("$dir/hourly/20260101-010000", strtotime('2026-01-01 01:00:00 UTC'));
+    touch("$dir/hourly/20260102-010000.zip", strtotime('2026-01-02 01:00:00 UTC'));
+
+    $this->actingAs(userWithPermissions('admin-system'))->get('/json/system/status')->assertOk()
+        ->assertJsonPath('backups.tiers.hourly.count', 2)
+        ->assertJsonPath('backups.tiers.hourly.entries.0', ['name' => '20260102-010000', 'size' => 2048, 'downloadable' => true])
+        ->assertJsonPath('backups.tiers.hourly.entries.1.name', '20260101-010000')
+        ->assertJsonPath('backups.tiers.hourly.entries.1.downloadable', false);   // an old-style directory can't be downloaded
+});
+
+test('a Docker install shows what compose configured and refuses the systemd-only actions', function () {
+    config(['system.runtime' => 'docker', 'backup.keep_days' => 9, 'backup.container' => ['enabled' => true, 'hour' => 3, 'premigrate' => false, 'scope' => 'full']]);
+    $admin = userWithPermissions('admin-system');
+
+    $this->actingAs($admin)->get('/json/system/status')->assertOk()
+        ->assertJsonPath('runtime', 'docker')
+        ->assertJsonPath('backups', null)
+        ->assertJsonPath('backup_settings', null)
+        ->assertJsonPath('update_status', null)
+        ->assertJsonPath('container_backups', ['enabled' => true, 'hour' => 3, 'premigrate' => false, 'scope' => 'full', 'keep_days' => 9])
+        ->assertJsonPath('version.behind', null);
+
+    $this->actingAs($admin)->post('/json/system/update')->assertStatus(409);
+    $this->actingAs($admin)->post('/json/system/check-updates')->assertStatus(409);
+    $this->actingAs($admin)->post('/json/system/backup')->assertStatus(409);
+    $this->actingAs($admin)->putJson('/json/system/backup-settings', [])->assertStatus(409);
+    // what applies everywhere still works
+    $this->actingAs($admin)->putJson('/json/system/offline-mode', ['enabled' => false])->assertOk();
+    $this->actingAs($admin)->get('/setup/system')->assertInertia(fn ($page) => $page->where('runtime', 'docker'));
 });
 
 test('backup settings round-trip through the conf file', function () {
