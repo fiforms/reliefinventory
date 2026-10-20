@@ -1,11 +1,14 @@
 <?php
 
+use App\Models\Location;
 use App\Models\MenuItem;
 use App\Models\Page;
 use App\Models\Pallet;
 use App\Models\PalletStatus;
 use App\Models\Person;
 use App\Models\Transaction;
+use App\Models\UseModel;
+use App\Models\Warehouse;
 use Illuminate\Support\Facades\DB;
 
 // Lists that only ever grow (history, closed-out pallets, old offers) are bounded server-side: a year of
@@ -111,4 +114,26 @@ test('the menu loads in a fixed number of queries however many items there are',
 
 test('a page with no menu entry still gets a breadcrumb instead of crashing', function () {
     expect(MenuItem::getBreadcrumb('/pallet-management'))->toBe([['href' => '/pallet-management', 'title' => 'Pallet Management']]);
+});
+
+test('movement summary counts live pallets per location and lookup resolves a scanned tag', function () {
+    $this->actingAs(userWithPermissions('manage-pallets', 'general-access'));
+    $use = UseModel::create(['use' => 'Storage']);
+    $wh = Warehouse::create(['name' => 'WH', 'address' => '1 Main St', 'city' => 'Town', 'state' => 'CA', 'zip' => '90000']);
+    $b = Location::forceCreate(['warehouse_id' => $wh->id, 'code' => 'B-1', 'use_id' => $use->id, 'status' => 'active', 'PullSequence' => 2]);
+    $a = Location::forceCreate(['warehouse_id' => $wh->id, 'code' => 'A-1', 'use_id' => $use->id, 'status' => 'active', 'PullSequence' => 1]);
+    makePallet('W', 'sealed')->update(['location_id' => $a->id]);
+    makePallet('W', 'open')->update(['location_id' => $a->id]);
+    makePallet('W', 'empty')->update(['location_id' => $a->id]);
+    makePallet('S', 'shipped')->update(['location_id' => $a->id]); // closed out: not counted
+    $loose = makePallet('R', 'received');
+
+    $res = $this->getJson('/json/palletstatus/summary')->assertOk();
+    $res->assertJsonPath('locations.0.code', 'A-1')->assertJsonPath('locations.0.total', 3)
+        ->assertJsonPath('locations.0.by_status.sealed', 1)->assertJsonPath('locations.1.code', 'B-1')
+        ->assertJsonPath('locations.1.total', 0)->assertJsonPath('no_location.total', 1);
+
+    $this->getJson('/json/palletstatus/lookup?tag=R'.str_pad($loose->id, 8, '0', STR_PAD_LEFT))->assertOk()
+        ->assertJsonPath('record.id', $loose->id)->assertJsonPath('record.location', null);
+    $this->getJson('/json/palletstatus/lookup?tag=99999')->assertNotFound();
 });

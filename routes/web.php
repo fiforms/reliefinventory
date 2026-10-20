@@ -562,6 +562,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pallets']], function () {
     // Pallet Status (history/audit trail for pallets)
     Route::get('/palletstatus', [PalletStatusController::class, 'index']);
+    Route::get('/palletstatus/summary', [PalletStatusController::class, 'summary']);
+    Route::get('/palletstatus/lookup', [PalletStatusController::class, 'lookup']);
     Route::get('/palletstatus/statuses', [PalletStatusController::class, 'statuses']);
     Route::post('/palletstatus', [PalletStatusController::class, 'store']);
     Route::put('/palletstatus/{id}', [PalletStatusController::class, 'update']);

@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Location;
 use App\Models\Pallet;
 use App\Models\PalletStatus;
 use App\Support\PalletKind;
@@ -70,6 +71,84 @@ class PalletStatusController extends Controller
         $statuses[] = ['id' => PalletKind::MISSING, 'name' => 'Missing'];
 
         return response()->json(['records' => $statuses]);
+    }
+
+    /**
+     * Where everything is right now: every active location in pull order with
+     * the live pallets in it, broken down by status, plus a bucket for live
+     * pallets with no location. "Live" means still physically around — closed-out
+     * (shipped/collected/released/condemned) and missing pallets aren't counted;
+     * an emptied pallet still occupies its spot, so it is.
+     */
+    public function summary()
+    {
+        $gone = [PalletKind::MISSING, 'shipped', 'collected', 'released', 'condemned'];
+        $counts = Pallet::query()
+            ->whereNotIn('status', $gone)
+            ->selectRaw('location_id, status, count(*) as total')
+            ->groupBy('location_id', 'status')
+            ->get()->toBase()
+            ->groupBy(fn ($row) => $row->location_id ?? 0);
+
+        $bucket = function ($rows) {
+            $byStatus = $rows ? $rows->pluck('total', 'status')->map(fn ($n) => (int) $n)->all() : [];
+
+            return ['total' => array_sum($byStatus), 'by_status' => $byStatus];
+        };
+
+        $locations = Location::where('status', 'active')
+            ->orderByRaw('PullSequence is null')->orderBy('PullSequence')->orderBy('code')
+            ->get(['id', 'code', 'PullSequence'])
+            ->map(fn ($location) => ['id' => $location->id, 'code' => $location->code] + $bucket($counts->get($location->id)));
+
+        // Pallets sitting in an archived/unknown location still need to show up somewhere.
+        $known = $locations->pluck('id')->all();
+        $stray = $counts->except(array_merge($known, [0]))->flatten(1)->groupBy('status')
+            ->map(fn ($rows) => (int) $rows->sum('total'));
+
+        return response()->json([
+            'locations' => $locations,
+            'no_location' => $bucket($counts->get(0)),
+            'other_locations' => ['total' => $stray->sum(), 'by_status' => $stray->all()],
+        ]);
+    }
+
+    /**
+     * Resolve a scanned/typed pallet tag ("W00000042", "42") to the pallet and
+     * where the database believes it is, so the movement form can tell whether
+     * a move actually needs recording.
+     */
+    public function lookup(Request $request)
+    {
+        $id = SortingSessionController::palletIdFromTag((string) $request->query('tag', ''));
+        $pallet = $id ? Pallet::with('location:id,code')->find($id) : null;
+
+        if (! $pallet) {
+            return response()->json(['message' => 'Unknown pallet: '.$request->query('tag')], 404);
+        }
+
+        $last = $pallet->statuses()->with('location:id,code')->latest('id')->first();
+
+        return response()->json(['record' => [
+            'id' => $pallet->id,
+            'tag' => $pallet->tag,
+            'kind' => $pallet->kind,
+            'kind_label' => PalletKind::LABELS[$pallet->kind] ?? $pallet->kind,
+            'status' => $pallet->status,
+            'location_id' => $pallet->location_id,
+            'location' => $pallet->location,
+            'last_moved_at' => $last?->created_at,
+            'statuses' => $this->statusOptions($pallet->kind),
+        ]]);
+    }
+
+    private function statusOptions(?string $kind): array
+    {
+        $lifecycle = PalletKind::LIFECYCLES[$kind] ?? array_unique(array_merge(...array_values(PalletKind::LIFECYCLES)));
+        $statuses = array_map(fn ($status) => ['id' => $status, 'name' => ucfirst($status)], array_values($lifecycle));
+        $statuses[] = ['id' => PalletKind::MISSING, 'name' => 'Missing'];
+
+        return $statuses;
     }
 
     public function store(Request $request)
