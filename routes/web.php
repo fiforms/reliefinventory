@@ -871,6 +871,24 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::get('/login-history', [ActiveSessionController::class, 'history']);
 });
 
+// Full backup files (database + uploads zip): trigger, list, download, delete. The key panel is its own,
+// narrower permission and a throttled POST — see BackupController::appKey.
+Route::get('/setup/backups', function () {
+    return Inertia::render('Backups', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/backups'),
+        'canViewAppKey' => Auth::user()->hasPermission('view-app-key'),
+    ]);
+})->middleware(['auth', 'permission:manage-backups']);
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-backups']], function () {
+    Route::get('/backups', [BackupController::class, 'index']);
+    Route::post('/backups', [BackupController::class, 'store']);
+    Route::get('/backups/{id}/download', [BackupController::class, 'download']);
+    Route::delete('/backups/{id}', [BackupController::class, 'destroy']);
+});
+Route::post('/json/backups/app-key', [BackupController::class, 'appKey'])
+    ->middleware(['auth', 'permission:view-app-key', 'throttle:5,1']);
+
 // PIN-login global settings (on/off, trust mode) — system-wide config,
 // same gate as every other system-wide toggle.
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {

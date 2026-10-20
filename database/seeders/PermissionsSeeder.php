@@ -103,6 +103,10 @@ class PermissionsSeeder extends Seeder
         // releases (and choosing where devices look for them) is its own key, separate from
         // manage-devices (pairing/configuring individual devices). Administrator-only by default.
         'manage-firmware' => 'Upload and tag R Station firmware/software releases, and set the firmware source',
+        // Full backup zips (database + uploads): they hold every person's data, so Administrator-only by default.
+        'manage-backups' => 'Create, download, and delete full backup files (database and uploads)',
+        // The application key is the one secret a backup never contains; only this key reveals it.
+        'view-app-key' => 'Reveal the application encryption key (APP_KEY) so it can be written down',
         // Renamed from operate-volunteer-kiosk (2026-09-02) — "volunteer" is
         // a person status (people.is_volunteer), not a role, and permissions
         // are tied to what someone does, not who they are; the kiosk this
