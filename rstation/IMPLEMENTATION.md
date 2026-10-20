@@ -71,19 +71,14 @@ of several sites, chosen at setup time on the device itself.
 - Act on `kiosk_function` / `kiosk_path` from the response via the product's
   `on_heartbeat_response`.
 
-## Idea (not planned): a local, dockerized copy of the whole app
+## 4. A local, dockerized copy of the whole app (built 2026-10-19, branch `rstation-local-server`)
 
-A possible future direction: package the entire Relief Inventory web app (Laravel + MariaDB +
-queue worker) as a Docker image/compose stack that can run **locally on the Pi** itself, so a
-site with poor or no connectivity runs fully offline, with the kiosk pointed at `localhost`
-instead of a remote server.
-
-Open points if this is ever pursued: the Pi's resource limits (RAM/SD wear for MariaDB); how
-the local database syncs back with a central site (the app has no sync/merge story today — a
-large design problem, not a packaging one); how updates/migrations ship (the platform's OTA
-tiers are OS image and local app, not containers); and backups. It would also change the device's
-role from "thin client of a remote site" to "its own site," which touches pairing and the
-fleet-management model. Noted here only so the idea isn't lost.
+Built as an **opt-in, standalone** mode — not a sync target: Docker plus the Relief Inventory images
+(web app, queue, scheduler, MariaDB) ride in the image and run on the device from Settings > Local
+server, for a site with no Internet. Design, rules and known gaps: [LOCAL_SERVER.md](LOCAL_SERVER.md).
+Still open from the original idea: syncing a local site's data back to a central one (no merge story
+exists in the app; export/import is the realistic first step), updating the containers independently of
+the OS image, and making the device a first-class "its own site" in pairing and fleet management.
 
 ## Open questions
 

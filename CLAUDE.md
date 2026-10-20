@@ -370,6 +370,16 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
+### R Station local server — a whole offline site on the device (`rstation/LOCAL_SERVER.md`) — built 2026-10-19, branch `rstation-local-server`
+
+For a disaster site with no Internet: the R Station image carries Docker plus this app's images (a .deb from
+`rstation/build-offline-bundle.sh` → `/opt/relief-inventory`, loaded into `/data/docker` on first use), and
+Settings > Local server starts the `docker/compose.yaml`-style stack (`rstation/product/offline/compose.yaml`) on port
+8080 with data under `/data/relief-inventory`. Docker is **off unless the flag file exists** (our overrides of
+Debian's `docker.service`/`docker.socket`), the root supervisor is `slide-announcer-local-server`, and the Settings
+backend can only start fixed enable/disable/reset units — read LOCAL_SERVER.md before touching it. It's a standalone site,
+not a sync target; **untested on real hardware** as of build.
+
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 
 A brand-new instance (no Administrator, `setup_state.completed_at` null) redirects every web page to `/install`
