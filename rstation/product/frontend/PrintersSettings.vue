@@ -3,10 +3,12 @@ import { onMounted, onUnmounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { request } from '@core/api.js'
 import { grantReloadPass } from '@core/pinLock.js'
+import DriverSelect from './DriverSelect.vue'
 
 // Settings > Printers. Shows the printers CUPS has, prints a test page, and finds / adds /
 // removes printers itself (backend/printer_setup.py, through a root helper) — driverless,
-// or with a generic PostScript/PCL driver. Vendor drivers and paper or label sizes are
+// or with a generic or model-specific driver found by searching the installed driver list
+// (DriverSelect.vue). Vendor-supplied drivers that aren't installed, and paper or label sizes, are
 // still done in CUPS's own web interface, which this opens under "Advanced" (see
 // PRINT_SERVER.md, "Printer setup on the device"). The kiosk is a single Chromium tab, so
 // that is a full-page navigation — like captivePortal.js — and the remote's Back key
@@ -47,7 +49,6 @@ async function printTestPage(name) {
 }
 
 // --- Adding and removing printers
-const DRIVERS = ['everywhere', 'generic-postscript', 'generic-pcl']
 const searching = ref(false)
 const found = ref(null) // null = not searched yet; else the discovered printers
 const drafts = ref({}) // discovered uri -> { name, driver }, what staff may edit before adding
@@ -180,9 +181,23 @@ function cancelChange() {
   passwordMessage.value = null
 }
 
-function openCups() {
+// CUPS's own admin page, already signed in: the device makes a one-time login for a dedicated
+// account (printer_setup.py cups_login) and we navigate to it as http://user:password@host — a
+// top-level navigation, which Chromium still honours. Falls back to the plain URL (CUPS then
+// asks for a login) if that can't be prepared.
+const openingCups = ref(false)
+const cupsMessage = ref(null)
+async function openCups() {
+  openingCups.value = true
+  cupsMessage.value = null
+  let url = CUPS_URL
+  try {
+    url = (await request('/api/local/printers/cups-login', { method: 'POST' })).url
+  } catch (err) {
+    cupsMessage.value = err.message
+  }
   grantReloadPass() // coming back via Back reloads Settings; don't ask for the PIN again
-  window.location.href = CUPS_URL
+  window.location.href = url
 }
 
 const STATES = ['idle', 'printing', 'error', 'offline']
@@ -264,12 +279,7 @@ onUnmounted(() => clearInterval(timer))
               <span>{{ t('settings.printers.add.name') }}</span>
               <input v-model="drafts[p.uri].name" maxlength="63" autocomplete="off" />
             </label>
-            <label>
-              <span>{{ t('settings.printers.add.driver') }}</span>
-              <select v-model="drafts[p.uri].driver">
-                <option v-for="d in DRIVERS" :key="d" :value="d">{{ t(`settings.printers.add.drivers.${d}`) }}</option>
-              </select>
-            </label>
+            <DriverSelect v-model="drafts[p.uri].driver" :model="p.model" />
             <div class="actions">
               <button class="tile action primary" :disabled="addingKey !== null || !drafts[p.uri].name.trim()" @click="addFound(p)">
                 {{ addingKey === p.uri ? t('settings.printers.add.adding') : t('settings.printers.add.button') }}
@@ -291,12 +301,7 @@ onUnmounted(() => clearInterval(timer))
             <span>{{ t('settings.printers.add.name') }}</span>
             <input v-model="addressDraft.name" maxlength="63" autocomplete="off" />
           </label>
-          <label>
-            <span>{{ t('settings.printers.add.driver') }}</span>
-            <select v-model="addressDraft.driver">
-              <option v-for="d in DRIVERS" :key="d" :value="d">{{ t(`settings.printers.add.drivers.${d}`) }}</option>
-            </select>
-          </label>
+          <DriverSelect v-model="addressDraft.driver" />
           <div class="actions">
             <button type="submit" class="tile action primary" :disabled="addingKey !== null || !address.trim() || !addressDraft.name.trim()">
               {{ addingKey === 'address' ? t('settings.printers.add.adding') : t('settings.printers.add.button') }}
@@ -311,20 +316,20 @@ onUnmounted(() => clearInterval(timer))
     <section class="tile panel">
       <div class="panel-title"><h2>{{ t('settings.printers.manageTitle') }}</h2></div>
 
-      <template v-if="passwordSet">
-        <p class="hint">{{ t('settings.printers.manageHint') }}</p>
-        <p class="hint">{{ t('settings.printers.loginHint') }}</p>
-        <div class="actions">
-          <button class="tile action primary" @click="openCups">{{ t('settings.printers.openCups') }}</button>
-          <button v-if="!changing" class="tile action" @click="changing = true; passwordMessage = null">
-            {{ t('settings.printers.password.change') }}
-          </button>
-        </div>
-        <p class="hint note">{{ t('settings.printers.backHint') }}</p>
-      </template>
-      <p v-else-if="passwordSet === false" class="hint">{{ t('settings.printers.password.firstRun') }}</p>
+      <p class="hint">{{ t('settings.printers.manageHint') }}</p>
+      <p class="hint">{{ t('settings.printers.loginHint') }}</p>
+      <div class="actions">
+        <button class="tile action primary" :disabled="openingCups" @click="openCups">
+          {{ openingCups ? t('settings.printers.openingCups') : t('settings.printers.openCups') }}
+        </button>
+        <button v-if="!changing" class="tile action" @click="changing = true; passwordMessage = null">
+          {{ t('settings.printers.password.change') }}
+        </button>
+      </div>
+      <p v-if="cupsMessage" class="pill note warn">{{ cupsMessage }}</p>
+      <p class="hint note">{{ t('settings.printers.backHint') }}</p>
 
-      <form v-if="passwordSet === false || changing" class="password-form" @submit.prevent="savePassword">
+      <form v-if="changing" class="password-form" @submit.prevent="savePassword">
         <label v-if="passwordSet">
           <span>{{ t('settings.printers.password.current') }}</span>
           <input v-model="oldPassword" :type="showPasswords ? 'text' : 'password'" autocomplete="off" />

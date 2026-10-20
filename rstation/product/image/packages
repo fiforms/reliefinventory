@@ -9,11 +9,25 @@ cups
 # The PDF -> printer filters CUPS uses to print the PDFs the website renders.
 cups-filters
 
-# Printer drivers are deliberately not listed: which ones are needed depends on
-# the printers actually used (e.g. printer-driver-all, hplip, or a vendor
-# package for label printers). Network and USB printers that speak IPP
-# Everywhere / AirPrint need none. Add them here once the first real printers
-# are known.
+# Printer drivers, so Settings > Printers' "Find a specific driver" search has something to
+# offer printers that aren't driverless (backend/printer_setup.py, `drivers`). A curated
+# set rather than printer-driver-all, which drags in the whole HPLIP stack: foomatic's PPD
+# database (the Brother/Ricoh/Kyocera/etc. PCL6 and PostScript entries — the biggest single
+# win), plus the open-source drivers that cover most of what donors actually hand over.
+# Printers that speak IPP Everywhere / AirPrint still need none of this.
+foomatic-db-compressed-ppds
+printer-driver-gutenprint
+printer-driver-brlaser
+printer-driver-pxljr
+printer-driver-foo2zjs
+printer-driver-splix
+printer-driver-escpr
+printer-driver-c2esp
+printer-driver-postscript-hp
+printer-driver-hpcups
+# Label printers (Dymo, Brother P-touch) — the website prints labels too.
+printer-driver-dymo
+printer-driver-ptouch
 
 # Colour emoji. The website uses emoji as icons; without a font, Chromium draws blank boxes.
 fonts-noto-color-emoji

@@ -2,8 +2,8 @@
 
 Deliberately small: it shows what CUPS has, prints a test page, finds / adds /
 removes printers (printer_setup.py, through a root helper — this process holds no CUPS
-credential; driverless, or a generic PostScript/PCL driver), and sets the password the
-CUPS login uses (admin_password.py). Vendor drivers and media size stay in CUPS's own web
+credential; driverless, a generic PostScript/PCL driver, or any installed model driver found by search), and sets the password the
+CUPS login uses (admin_password.py). Unpackaged vendor drivers and media size stay in CUPS's own web
 interface (rstation/PRINT_SERVER.md, "Printer setup on the device"). Like the rest of
 /api/local, this only listens on loopback.
 """
@@ -11,7 +11,7 @@ import socket
 from dataclasses import asdict
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from . import ipp, testpage
@@ -30,8 +30,8 @@ class PrinterAdd(BaseModel):
     # Either the connection CUPS discovered, or an address staff typed (a host or IP, or a full URI).
     uri: str | None = Field(default=None, max_length=512)
     address: str | None = Field(default=None, max_length=512)
-    # "everywhere" (driverless, the default) or a generic driver; the root helper holds the allowed list.
-    driver: str = Field(default="everywhere", max_length=32)
+    # "everywhere" (driverless, the default), a generic driver, or a driver id from /drivers; the root helper validates it.
+    driver: str = Field(default="everywhere", max_length=300)
 
 
 def build_router(cups: CupsClient, admin_password: AdminPassword | None = None,
@@ -74,6 +74,22 @@ def build_router(cups: CupsClient, admin_password: AdminPassword | None = None,
         return {"printers": [{
             "name": c.name, "model": c.model, "uri": c.uri, "display_uri": display_uri(c.uri), "kind": c.kind,
             "connection": c.connection, "driverless": c.driverless, "location": c.location, "added": c.added} for c in found]}
+
+    @router.get("/api/local/printers/drivers")
+    async def search_drivers(q: str = Query(max_length=100)):
+        """Installed drivers whose name contains every word of `q` (capped; slow on a Pi — it reads every PPD)."""
+        try:
+            return await printer_setup.drivers(q)
+        except SetupError as exc:
+            raise HTTPException(exc.status, str(exc))
+
+    @router.post("/api/local/printers/cups-login")
+    async def cups_login():
+        """URL for CUPS's own admin page with a fresh one-time login embedded (the kiosk opens it as a top-level page)."""
+        try:
+            return {"url": await printer_setup.cups_login()}
+        except SetupError as exc:
+            raise HTTPException(exc.status, str(exc))
 
     @router.post("/api/local/printers")
     async def add_printer(body: PrinterAdd):

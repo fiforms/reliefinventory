@@ -142,12 +142,49 @@ def test_add_can_use_one_of_the_fixed_generic_drivers(driver, model):
     assert fake.calls[-1][fake.calls[-1].index("-m") + 1] == model
 
 
+LPINFO_M = """\
+everywhere IPP Everywhere
+drv:///sample.drv/generic.ppd Generic PostScript Printer
+foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-MFC-9970CDW-pxlcolor.ppd Brother MFC-9970CDW Foomatic/pxlcolor (en)
+brmfc9970cdw.ppd Brother MFC-9970CDW CUPS
+foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-HL-2060-pxlmono.ppd Brother HL-2060 Foomatic/pxlmono
+"""
+
+
+def test_drivers_search_matches_every_word_and_lists_the_shortest_name_first():
+    fake = FakeRun(lpinfo=LPINFO_M)
+
+    result = helper.Helper(run=fake).handle({"op": "drivers", "query": "brother 9970"})
+
+    assert [d["id"] for d in result["drivers"]] == [
+        "brmfc9970cdw.ppd", "foomatic-db-compressed-ppds:0/ppd/foomatic-ppd/Brother-MFC-9970CDW-pxlcolor.ppd"]
+    assert result["total"] == 2 and fake.calls == [["lpinfo", "-m"]]
+
+
+@pytest.mark.parametrize("query", ["", "   ", None, 5, "x" * 101])
+def test_drivers_search_refuses_an_empty_or_odd_query(query):
+    assert _code(helper.Helper(run=FakeRun(lpinfo=LPINFO_M)), {"op": "drivers", "query": query}) == "invalid_request"
+
+
+def test_add_accepts_a_driver_id_the_system_lists_and_nothing_else():
+    ppd = "brmfc9970cdw.ppd"
+    fake = FakeRun(lpinfo=LPINFO_M)
+
+    assert _code(helper.Helper(run=fake), {"op": "add", "name": "Lab", "uri": "socket://h", "driver": ppd}) == "ok"
+    assert fake.calls[-1][fake.calls[-1].index("-m") + 1] == ppd
+
+    fake = FakeRun(lpinfo=LPINFO_M)
+    for bad in ("brmfc9970cdw", "-o", "lsb/usr/../../etc/passwd"):
+        assert _code(helper.Helper(run=fake), {"op": "add", "name": "Lab2", "uri": "socket://h", "driver": bad}) == "invalid_driver"
+    assert not any(c[0] == "lpadmin" for c in fake.calls)
+
+
 @pytest.mark.parametrize("driver", ["", "everywhere ", "raw", "-o foo", "drv:///sample.drv/laserjet.ppd", None, ["everywhere"], 3])
-def test_add_refuses_any_driver_that_is_not_on_the_fixed_list(driver):
+def test_add_refuses_any_driver_that_is_neither_fixed_nor_listed_by_the_system(driver):
     fake = FakeRun()
 
     assert _code(helper.Helper(run=fake), {"op": "add", "name": "P", "uri": "socket://h", "driver": driver}) == "invalid_driver"
-    assert fake.calls == []
+    assert not any(c[0] == "lpadmin" for c in fake.calls)
 
 
 def test_add_never_touches_an_existing_queue():
@@ -191,6 +228,60 @@ def test_add_rejects_schemes_and_shapes_that_arent_a_printer_connection(uri):
     "dnssd://Brother%20MFC._ipp._tcp.local/?uuid=abc", "usb://Zebra/ZD421?serial=123"])
 def test_add_accepts_real_connections(uri):
     assert _code(helper.Helper(run=FakeRun()), {"op": "add", "name": "P", "uri": uri}) == "ok"
+
+
+class FakeChpasswd:
+    def __init__(self, ok=True):
+        self.ok, self.calls = ok, []
+
+    def __call__(self, user, password):
+        self.calls.append((user, password))
+        return self.ok
+
+
+class AccountRun(FakeRun):
+    """FakeRun plus the account commands cups-login uses."""
+
+    def __init__(self, account_exists):
+        super().__init__()
+        self.account_exists = account_exists
+
+    def __call__(self, args, timeout):
+        if args[0] in ("id", "useradd", "usermod"):
+            self.calls.append(args)
+            return (0 if args[0] != "id" or self.account_exists else 1), "", ""
+        return super().__call__(args, timeout)
+
+
+def test_cups_login_creates_a_locked_down_account_and_returns_a_fresh_password():
+    fake, chpasswd = AccountRun(account_exists=False), FakeChpasswd()
+
+    result = helper.Helper(run=fake, chpasswd=chpasswd).handle({"op": "cups-login"})
+
+    useradd = next(c for c in fake.calls if c[0] == "useradd")
+    assert "/usr/sbin/nologin" in useradd and "lpadmin" in useradd and useradd[-1] == "cupsadmin"
+    assert result["user"] == "cupsadmin" and len(result["password"]) >= 20
+    assert chpasswd.calls == [("cupsadmin", result["password"])]
+    assert not any(ch in result["password"] for ch in "@:/?# %")  # safe inside user:password@host
+
+
+def test_cups_login_reuses_the_account_and_changes_the_password_every_time():
+    fake, chpasswd = AccountRun(account_exists=True), FakeChpasswd()
+    h = helper.Helper(run=fake, chpasswd=chpasswd)
+
+    first, second = h.handle({"op": "cups-login"}), h.handle({"op": "cups-login"})
+
+    assert not any(c[0] == "useradd" for c in fake.calls)
+    assert first["password"] != second["password"]
+
+
+def test_cups_login_reports_a_failed_password_change_without_returning_a_password():
+    h = helper.Helper(run=AccountRun(account_exists=True), chpasswd=FakeChpasswd(ok=False))
+
+    with pytest.raises(helper.Failure) as failure:
+        h.handle({"op": "cups-login"})
+
+    assert failure.value.code == "error"
 
 
 def test_remove_deletes_only_an_existing_queue():

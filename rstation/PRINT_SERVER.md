@@ -86,6 +86,8 @@ off. See "Realtime wake-ups".
 
 ### Printer setup on the device (decided 2026-10-08)
 
+> **Update 2026-10-19:** the add form now also has a "Find a specific driver…" search over the drivers installed in the image (`drivers` op in the root helper, `GET /api/local/printers/drivers?q=`), and the image installs a curated set of `printer-driver-*` packages (`product/image/packages`) so there is something to find. Vendor drivers that aren't packaged in Debian (Brother's own, for example) still need the CUPS page. The paragraph below predates this.
+
 Adding/configuring a printer (drivers, media size, test page) is done through CUPS's own web
 interface (`http://localhost:631`) rather than a UI we build. The product shims it into the
 device's on-device settings shell, so staff reach it from the same Settings screens as Wi-Fi and

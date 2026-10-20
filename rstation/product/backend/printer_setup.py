@@ -8,10 +8,10 @@ with that prefix) and reads the answer back. What is acceptable (queue-name shap
 schemes, never overwriting an existing queue) is enforced by the root helper
 (image/system/scripts/slide-announcer-printer-setup), not here.
 
-Queues are driverless (IPP Everywhere) unless staff pick one of the generic drivers the
-image does have (PostScript, PCL) — for printers like older laser models that only
-accept raw jobs on port 9100. The image ships no vendor drivers; anything needing one
-goes through the CUPS page behind "Advanced".
+Queues are driverless (IPP Everywhere) unless staff pick a driver: one of the generic
+ones (PostScript, PCL) or any model-specific driver installed in the image, found by
+searching the driver list. Vendor-supplied drivers that aren't packaged (e.g. Brother's
+own) still go through the CUPS page behind "Advanced".
 
 This module also turns the helper's raw device list into something staff can pick from
 (`curate()`): CUPS reports one entry per protocol per printer, plus generic placeholders.
@@ -27,10 +27,10 @@ from urllib.parse import unquote, urlsplit
 EXCHANGE_DIR = Path("/run/slide-announcer/printer-setup")
 UNIT = "slide-announcer-printer-setup.service"
 # The helper's own limits are 15 s of discovery and 100 s for an add; this just stops the backend waiting forever.
-TIMEOUT_SECONDS = {"discover": 75, "add": 125, "remove": 40}
+TIMEOUT_SECONDS = {"discover": 75, "add": 125, "remove": 40, "drivers": 100}
 
-# Driver choices the helper accepts, and what staff are told they mean.
-DRIVERS = ("everywhere", "generic-postscript", "generic-pcl")
+# The built-in driver choices; the helper also accepts any driver id it listed itself (see `drivers`).
+DRIVERS = ("everywhere", "generic-postscript", "generic-pcl", "zebra-zpl")
 
 # How a discovered connection is reached. CUPS lists one entry per Bonjour *service* too
 # (`..._ipp._tcp`, `..._pdl-datastream._tcp`, `..._printer._tcp`), and only the IPP ones
@@ -94,6 +94,21 @@ class PrinterSetup:
         result = await self._ask({"op": "add", "name": name, "uri": uri, "driver": driver})
         self._raise_unless_ok(result, "Could not add the printer.")
 
+    async def drivers(self, query: str) -> dict:
+        """Installed drivers matching every word of `query`: {"drivers": [{"id", "name"}], "total": n}."""
+        result = await self._ask({"op": "drivers", "query": query})
+        self._raise_unless_ok(result, "Could not search the driver list.")
+        return {"drivers": result.get("drivers") or [], "total": result.get("total", 0)}
+
+    async def cups_login(self) -> str:
+        """A URL that opens CUPS's admin page already signed in (a fresh one-time password each call)."""
+        result = await self._ask({"op": "cups-login"})
+        self._raise_unless_ok(result, "Could not prepare the printer setup login.")
+        user, password = result.get("user"), result.get("password")
+        if not (isinstance(user, str) and isinstance(password, str) and re.fullmatch(r"[A-Za-z0-9_-]+", user + password)):
+            raise SetupError(500, "Could not prepare the printer setup login.")
+        return f"http://{user}:{password}@localhost:631/admin"
+
     async def remove(self, name: str) -> None:
         result = await self._ask({"op": "remove", "name": name})
         self._raise_unless_ok(result, "Could not remove the printer.")
@@ -106,6 +121,8 @@ class PrinterSetup:
         detail = result.get("detail")
         if code == "invalid_name":
             raise SetupError(400, "That printer name isn't allowed. Use letters, numbers, dashes and underscores.")
+        if code == "invalid_request":
+            raise SetupError(400, "Enter at least one word to search for.")
         if code == "invalid_driver":
             raise SetupError(400, "That driver choice isn't available.")
         if code == "invalid_uri":
