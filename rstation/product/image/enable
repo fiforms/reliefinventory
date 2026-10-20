@@ -5,3 +5,6 @@ rstation-cups-setup.service
 # The way back to Settings from the remote site: Ctrl+Alt+Home, Ctrl+Alt+S, or hold the
 # remote's Home (platform/docs/ESCAPE_HATCH.md).
 slide-announcer-escape-hatch.service
+# The offline copy of the whole website, if the image includes it (the units do nothing unless
+# Settings > Local server has been switched on).
+slide-announcer-local-server.service

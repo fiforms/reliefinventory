@@ -1,0 +1,100 @@
+# Relief Inventory — local server stack for the R Station (an offline copy of the whole app).
+#
+# Not edited by hand and not started by hand: slide-announcer-local-server (the supervisor unit)
+# exports the RI_* variables below and runs `docker compose up` against this file. It is the
+# docker/compose.yaml stack, reduced for a Pi: images come from the tarball baked into the OS
+# image (never pulled), state lives in bind mounts under /data/relief-inventory (one folder to
+# back up or wipe), and MariaDB is capped small. See rstation/LOCAL_SERVER.md.
+name: reliefinventory
+
+x-app: &app
+  image: ${RI_APP_IMAGE}
+  pull_policy: never
+  restart: unless-stopped
+  environment: &app-env
+    APP_URL: ${RI_APP_URL}
+    RI_SETUP_CODE: ${RI_SETUP_CODE}
+    APP_TIMEZONE: ${RI_TIMEZONE:-UTC}
+    TZ: ${RI_TIMEZONE:-UTC}
+    MAIL_MAILER: log
+    # No Internet is the whole point of this deployment: nothing here may wait on a remote service.
+    DB_CONNECTION: mariadb
+    DB_HOST: db
+    DB_PORT: 3306
+    DB_DATABASE: reliefinventory
+    DB_USERNAME: reliefinventory
+    DB_PASSWORD_FILE: /secrets/db_password
+    SESSION_DRIVER: database
+    QUEUE_CONNECTION: database
+    CACHE_STORE: database
+    RI_BACKUP_ENABLED: "true"
+    RI_BACKUP_KEEP_DAYS: 14
+  volumes:
+    - ${RI_DATA}/storage:/var/www/html/storage
+    - ${RI_DATA}/secrets:/secrets:ro
+
+services:
+  init:
+    <<: *app
+    command: ["init-secrets"]
+    restart: "no"
+    healthcheck:
+      disable: true
+    volumes:
+      - ${RI_DATA}/secrets:/secrets
+
+  db:
+    image: ${RI_DB_IMAGE}
+    pull_policy: never
+    restart: unless-stopped
+    # A Pi has a gigabyte or two to share with the browser; MariaDB's defaults assume a server.
+    command: ["--innodb-buffer-pool-size=96M", "--performance-schema=OFF", "--max-connections=40"]
+    environment:
+      MARIADB_DATABASE: reliefinventory
+      MARIADB_USER: reliefinventory
+      MARIADB_PASSWORD_FILE: /secrets/db_password
+      MARIADB_ROOT_PASSWORD_FILE: /secrets/db_root_password
+      MARIADB_AUTO_UPGRADE: "1"
+    volumes:
+      - ${RI_DATA}/db:/var/lib/mysql
+      - ${RI_DATA}/secrets:/secrets:ro
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 18
+      start_period: 60s
+
+  app:
+    <<: *app
+    command: ["web"]
+    ports:
+      - "${RI_PORT:-8080}:8080"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  queue:
+    <<: *app
+    command: ["queue"]
+    healthcheck:
+      disable: true
+    depends_on:
+      app:
+        condition: service_healthy
+
+  scheduler:
+    <<: *app
+    command: ["scheduler"]
+    healthcheck:
+      disable: true
+    volumes:
+      - ${RI_DATA}/storage:/var/www/html/storage
+      - ${RI_DATA}/secrets:/secrets:ro
+      - ${RI_DATA}/backups:/backups
+    depends_on:
+      app:
+        condition: service_healthy

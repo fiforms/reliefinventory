@@ -31,3 +31,11 @@ printer-driver-ptouch
 
 # Colour emoji. The website uses emoji as icons; without a font, Chromium draws blank boxes.
 fonts-noto-color-emoji
+
+# The offline local server (Settings > Local server; ../../LOCAL_SERVER.md): the container engine and
+# Compose to run the stack baked in by build-offline-bundle.sh, and curl for the supervisor's health
+# probe. Their units are overridden (system/docker.service,
+# docker.socket) so none of it runs unless that page has been switched on.
+docker.io
+docker-compose
+curl

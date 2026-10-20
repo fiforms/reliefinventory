@@ -1,0 +1,28 @@
+[Unit]
+Description=Docker Application Container Engine
+Documentation=https://docs.docker.com
+After=network-online.target docker.socket containerd.service time-set.target
+Wants=network-online.target containerd.service
+Requires=docker.socket
+StartLimitBurst=3
+StartLimitIntervalSec=60
+# R Station: Debian's unit with two changes. It only runs while Settings > Local server is on, and
+# its images and containers live on /data (the root is a read-only overlay with no room for them).
+ConditionPathExists=/data/relief-inventory/enabled
+
+[Service]
+Type=notify
+ExecStart=/usr/sbin/dockerd -H fd:// --containerd=/run/containerd/containerd.sock --data-root=/data/docker --log-driver=local --log-opt=max-size=10m --log-opt=max-file=3
+ExecReload=/bin/kill -s HUP $MAINPID
+TimeoutStartSec=0
+RestartSec=2
+Restart=always
+LimitNPROC=infinity
+LimitCORE=infinity
+TasksMax=infinity
+Delegate=yes
+KillMode=process
+OOMScoreAdjust=-500
+
+[Install]
+WantedBy=multi-user.target

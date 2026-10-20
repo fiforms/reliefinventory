@@ -9,11 +9,15 @@ The print server (print_station.py) claims print jobs from the website and
 prints them on this device's CUPS queues. It is a background task here, its
 printer list rides on every heartbeat, and its state lives under /data and is
 wiped with the pairing. Design: rstation/PRINT_SERVER.md and
-rstation/PRINT_CLIENT_SPEC.md."""
+rstation/PRINT_CLIENT_SPEC.md.
+
+The local server (local_server.py) runs a whole offline copy of the website on this device
+for sites with no Internet; Settings > Local server controls it. Design: rstation/LOCAL_SERVER.md."""
 from fastapi import APIRouter
 
 from product import Product
 
+from .local_server_api import build_router as local_server_router
 from .print_station import default_station
 from .printers_api import build_router as printers_router
 
@@ -34,7 +38,7 @@ product = Product(
     # frontend's `setupSteps` supplies the step); the boot yaml's server_url is
     # only its default. See platform/docs/SERVER_URL.md.
     confirm_server_url=True,
-    routers=[router, printers_router(station.cups)],
+    routers=[router, printers_router(station.cups), local_server_router()],
     # Claims print jobs from the website and prints them (see print_station.py).
     background_tasks=[station.run],
     # Appears as `portal` and `print_station` in GET /api/local/status.

@@ -1,0 +1,9 @@
+[Unit]
+Description=Relief Inventory local server: reset — started on demand by Settings > Local server
+# Not enabled: the backend starts it. The name has to match slide-announcer-*.service for the
+# platform's polkit rule to let the backend start it (system/polkit/50-slide-announcer-system.rules).
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/slide-announcer-local-server reset
+TimeoutStartSec=300

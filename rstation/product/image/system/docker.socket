@@ -1,0 +1,15 @@
+[Unit]
+Description=Docker Socket for the API
+PartOf=docker.service
+# R Station: Debian's unit plus this line. Docker runs only while Settings > Local server is on
+# (slide-announcer-local-server), so a station that never uses it never starts a container engine.
+ConditionPathExists=/data/relief-inventory/enabled
+
+[Socket]
+ListenStream=/run/docker.sock
+SocketMode=0660
+SocketUser=root
+SocketGroup=docker
+
+[Install]
+WantedBy=sockets.target

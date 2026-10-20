@@ -1,0 +1,21 @@
+[Unit]
+Description=Relief Inventory local server (Docker stack) — Settings > Local server
+# Only runs while the start-at-boot flag exists, which Settings > Local server controls
+# (slide-announcer-local-server-enable/-disable). Docker is ordered before us only so that on
+# shutdown we stop first and the database is closed cleanly before the engine goes away.
+After=data.mount network-online.target docker.service docker.socket
+RequiresMountsFor=/data
+ConditionPathExists=/data/relief-inventory/enabled
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/slide-announcer-local-server run
+# The first start unpacks ~1.6 GB of images; stopping gives MariaDB up to a minute (see the script).
+TimeoutStopSec=180
+Restart=on-failure
+RestartSec=20
+# 3 = nothing a retry could fix (no disk space, feature not in this image).
+RestartPreventExitStatus=3
+
+[Install]
+WantedBy=multi-user.target

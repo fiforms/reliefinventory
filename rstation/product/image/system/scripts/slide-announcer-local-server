@@ -1,0 +1,210 @@
+#!/bin/bash
+# Runs a complete Relief Inventory server (web app, queue worker, scheduler, MariaDB — the
+# docker/compose.yaml stack) on this device, with no Internet: the images come from the .deb the
+# image build baked into the root filesystem (rstation/build-offline-bundle.sh), and everything
+# that matters lives under /data. Design and rules: rstation/LOCAL_SERVER.md.
+#
+#   run      the supervisor, as slide-announcer-local-server.service: start Docker, load the images
+#            on first use, bring the stack up, keep /run/.../status.json current, and on SIGTERM
+#            stop the stack gracefully (MariaDB gets time to shut down) and then Docker itself
+#   enable   start-at-boot flag on, start the supervisor        (…-local-server-enable.service)
+#   disable  flag off, stop the supervisor and so Docker        (…-local-server-disable.service)
+#   reset    erase all server data, keeping the images           (…-local-server-reset.service)
+#   status   print the status file
+#
+# The Settings > Local server page (backend/local_server.py) only ever starts those units, so the
+# one thing it can ask for is one of those four actions, and nothing it sends is parsed here.
+#
+# Docker is only started while the flag exists: product/image/system/docker.{service,socket} are
+# our own copies of the Debian units with ConditionPathExists on it, so a station that never
+# uses this feature never runs a container engine. Exit status 3 means "don't retry" (no space,
+# nothing to load); the unit does not restart on it.
+#
+# RI_LOCAL_* and the binary variables exist for tests only.
+set -uo pipefail
+
+ROOT="${RI_LOCAL_ROOT:-/opt/relief-inventory}"      # the .deb's payload (read-only rootfs)
+DATA="${RI_LOCAL_DATA:-/data/relief-inventory}"     # database, uploads, passwords, backups
+RUN="${RI_LOCAL_RUN:-/run/slide-announcer/local-server}"
+DOCKER_ROOT="${RI_LOCAL_DOCKER_ROOT:-/data/docker}"
+SYSTEMCTL="${SYSTEMCTL:-systemctl}"
+DOCKER="${DOCKER:-docker}"
+CURL="${CURL:-curl}"
+UNIT=slide-announcer-local-server.service
+PORT="${RI_LOCAL_PORT:-8080}"
+FLAG="$DATA/enabled"
+STATUS="$RUN/status.json"
+# The uncompressed images (~1.6 GB) plus room for the database to grow; refusing early beats a
+# half-loaded image and a full SD card.
+MIN_FREE_BYTES="${RI_LOCAL_MIN_FREE_BYTES:-3000000000}"
+
+log() { echo "[local-server] $*" >&2; }
+
+json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\n\r\t'; }
+
+# status PHASE "message" — phases: stopped, starting, loading-images, running, degraded, stopping, resetting, error
+status() {
+    mkdir -p "$RUN" && chmod 755 "$RUN"
+    local code="" app="null"
+    [ -r "$DATA/state/setup-code" ] && code="$(cat "$DATA/state/setup-code")"
+    [ -r "$ROOT/manifest.json" ] && app="$(cat "$ROOT/manifest.json")"
+    printf '{"phase":"%s","message":"%s","updated":%s,"port":%s,"setup_code":"%s","app":%s}\n' \
+        "$1" "$(json_escape "${2:-}")" "$(date +%s)" "$PORT" "$(json_escape "$code")" "$app" > "$STATUS.tmp" \
+        && chmod 644 "$STATUS.tmp" && mv -f "$STATUS.tmp" "$STATUS"
+}
+
+die() { # die EXITCODE "message"
+    log "$2"
+    status error "$2"
+    docker_down   # nothing is running worth keeping the engine's memory for
+    exit "$1"
+}
+
+compose() {
+    if "$DOCKER" compose version >/dev/null 2>&1; then
+        "$DOCKER" compose -p reliefinventory -f "$ROOT/compose.yaml" "$@"
+    else
+        docker-compose -p reliefinventory -f "$ROOT/compose.yaml" "$@"
+    fi
+}
+
+free_bytes() { df --output=avail -B1 "$1" 2>/dev/null | tail -n1 | tr -d ' '; }
+
+ensure_dirs() {
+    mkdir -p "$DATA"/{db,storage,secrets,backups,state} "$DOCKER_ROOT"
+    chmod 755 "$DATA"
+}
+
+docker_up() {
+    "$SYSTEMCTL" start docker.socket docker.service || return 1
+    local i
+    for i in $(seq 1 60); do
+        "$DOCKER" info >/dev/null 2>&1 && return 0
+        sleep 1
+    done
+    return 1
+}
+
+docker_down() { "$SYSTEMCTL" stop docker.service docker.socket >/dev/null 2>&1; }
+
+# Loads the images the first time, and again whenever an OS update shipped a different build under
+# the same tag (compared by the id recorded in manifest.json, so a reboot doesn't reload them).
+load_images() {
+    . "$ROOT/images.env"
+    local want have=""
+    want="$(sed -n 's/.*"app_image_id": *"\([^"]*\)".*/\1/p' "$ROOT/manifest.json")"
+    [ -r "$DATA/state/loaded-image-id" ] && have="$(cat "$DATA/state/loaded-image-id")"
+    if [ -n "$want" ] && [ "$want" = "$have" ] \
+        && "$DOCKER" image inspect "$RI_APP_IMAGE" "$RI_DB_IMAGE" >/dev/null 2>&1; then
+        return 0
+    fi
+    local free; free="$(free_bytes "$DOCKER_ROOT")"
+    if [ -n "$free" ] && [ "$free" -lt "$MIN_FREE_BYTES" ]; then
+        die 3 "Not enough free space on the device's data partition to unpack the server ($((free / 1000000)) MB free, $((MIN_FREE_BYTES / 1000000)) MB needed)."
+    fi
+    status loading-images "Unpacking the server software. This takes several minutes the first time."
+    "$DOCKER" load -i "$ROOT/images.tar" >/dev/null &
+    local pid=$!
+    wait "$pid" || return 1
+    # wait only reports the pipeline's last command; the load itself failing shows up as a missing image.
+    "$DOCKER" image inspect "$RI_APP_IMAGE" "$RI_DB_IMAGE" >/dev/null 2>&1 || return 1
+    printf '%s' "$want" > "$DATA/state/loaded-image-id"
+    "$DOCKER" image prune -f >/dev/null 2>&1   # an older build's layers
+    return 0
+}
+
+# What compose.yaml's ${RI_*} placeholders mean on this device.
+export_env() {
+    . "$ROOT/images.env"
+    export RI_APP_IMAGE RI_DB_IMAGE
+    export RI_DATA="$DATA" RI_PORT="$PORT"
+    export RI_APP_URL="${RI_LOCAL_APP_URL:-http://$(hostname).local:$PORT}"
+    export RI_TIMEZONE; RI_TIMEZONE="$(timedatectl show -p Timezone --value 2>/dev/null || true)"
+    : "${RI_TIMEZONE:=UTC}"
+    # The server will be on a shared hotspot or switch, where anyone nearby could otherwise open
+    # /install first and become its administrator. The code is shown only on this device's Settings page.
+    if [ ! -s "$DATA/state/setup-code" ]; then
+        (umask 077; LC_ALL=C tr -dc 'a-hj-km-np-z2-9' < /dev/urandom | head -c 8 > "$DATA/state/setup-code") 2>/dev/null
+    fi
+    RI_SETUP_CODE="$(cat "$DATA/state/setup-code")"; export RI_SETUP_CODE
+}
+
+app_is_up() { "$CURL" -fsS -o /dev/null --max-time 4 "http://127.0.0.1:$PORT/up" 2>/dev/null; }
+
+shutting_down=0
+shutdown() {
+    [ "$shutting_down" = 1 ] && return; shutting_down=1
+    status stopping "Stopping the server…"
+    kill $(jobs -p) 2>/dev/null
+    export_env 2>/dev/null
+    # Graceful, with time for MariaDB to flush; a plain `docker stop` default of 10 s is too short on an SD card.
+    compose stop -t 60 >/dev/null 2>&1
+    docker_down
+    status stopped "The server is stopped."
+}
+
+run() {
+    [ -r "$ROOT/images.tar" ] && [ -r "$ROOT/compose.yaml" ] || die 3 "This image does not include the local server."
+    ensure_dirs
+    trap 'shutdown; exit 0' TERM INT
+    status starting "Starting the container engine…"
+    docker_up || die 1 "The container engine did not start. See: journalctl -u docker"
+    load_images || die 1 "The server software could not be unpacked."
+    export_env
+    status starting "Starting the server…"
+    compose up -d --no-build --pull never --remove-orphans >"$RUN/compose.log" 2>&1 &
+    local up_pid=$! up_done=0
+    while :; do
+        if [ "$up_done" = 0 ] && ! kill -0 "$up_pid" 2>/dev/null; then
+            up_done=1
+            wait "$up_pid" || log "docker compose up failed: $(tail -n 3 "$RUN/compose.log" | tr '\n' ' ')"
+        fi
+        if app_is_up; then
+            status running "The server is running."
+        elif [ "$up_done" = 1 ] && [ -n "$(compose ps --status running -q app 2>/dev/null)" ]; then
+            status starting "Starting the server… the first start takes a few minutes."
+        elif [ "$up_done" = 1 ]; then
+            status degraded "The server is not answering. It will keep trying."
+        else
+            status starting "Starting the server… the first start takes a few minutes."
+        fi
+        sleep 5 &
+        wait $!
+    done
+}
+
+enable() {
+    ensure_dirs
+    touch "$FLAG"
+    status starting "Starting…"
+    "$SYSTEMCTL" start --no-block "$UNIT"
+}
+
+disable() {
+    rm -f "$FLAG"
+    "$SYSTEMCTL" stop --no-block "$UNIT"
+}
+
+reset() {
+    status resetting "Erasing the server's data…"
+    "$SYSTEMCTL" stop "$UNIT"        # graceful, and it stops Docker; the flag is still there so Docker can be started again below
+    if docker_up; then
+        export_env
+        # Containers keep a bind mount to the database folder's old inode; they must go before it does.
+        compose down --remove-orphans >/dev/null 2>&1
+        docker_down
+    fi
+    rm -f "$FLAG"
+    rm -rf "$DATA/db" "$DATA/storage" "$DATA/secrets" "$DATA/backups" "$DATA/state"
+    ensure_dirs; rm -f "$FLAG"
+    status stopped "The server's data was erased."
+}
+
+case "${1:-}" in
+    run) run ;;
+    enable) enable ;;
+    disable) disable ;;
+    reset) reset ;;
+    status) cat "$STATUS" 2>/dev/null || echo '{"phase":"stopped"}' ;;
+    *) echo "usage: $0 run|enable|disable|reset|status" >&2; exit 2 ;;
+esac
