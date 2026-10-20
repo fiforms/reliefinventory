@@ -8,3 +8,7 @@ slide-announcer-escape-hatch.service
 # The offline copy of the whole website, if the image includes it (the units do nothing unless
 # Settings > Local server has been switched on).
 slide-announcer-local-server.service
+# A "Settings" button floated over every remote page (CUPS included) that turns amber when the
+# page's server is unreachable, and a rescue for pages that are lost outright
+# (platform/docs/KIOSK_GUARD.md).
+slide-announcer-kiosk-guard.service

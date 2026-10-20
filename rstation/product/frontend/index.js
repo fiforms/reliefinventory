@@ -180,7 +180,7 @@ export default {
           loginHint: 'You are signed in automatically. The password below is only for this device’s console and keyboard login (slideadmin).',
           openCups: 'Open printer setup',
           openingCups: 'Opening…',
-          backHint: 'To return to Settings from there, press the remote’s Back button.',
+          backHint: 'To return to Settings from there, tap the Settings button at the bottom right, or press the remote’s Back button.',
           password: {
             firstRun: 'Set a password first. Printer setup asks for it, so keep it somewhere safe. If it’s ever lost, a factory reset starts over (it also removes the printers set up here).',
             set: 'Set password',
@@ -349,7 +349,7 @@ export default {
           loginHint: 'Se inicia sesión automáticamente. La contraseña de abajo es solo para el acceso por consola y teclado de este dispositivo (slideadmin).',
           openCups: 'Abrir configuración de impresoras',
           openingCups: 'Abriendo…',
-          backHint: 'Para volver a Configuración desde allí, pulse el botón Atrás del control remoto.',
+          backHint: 'Para volver a Configuración desde allí, toque el botón Configuración en la esquina inferior derecha, o pulse el botón Atrás del control remoto.',
           password: {
             firstRun: 'Primero establezca una contraseña. La configuración de impresoras la pide, así que guárdela en un lugar seguro. Si se pierde, un restablecimiento de fábrica empieza de nuevo (también elimina las impresoras configuradas aquí).',
             set: 'Establecer contraseña',
