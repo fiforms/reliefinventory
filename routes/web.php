@@ -5,20 +5,44 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Middleware\EnsureAccountApproved;
+use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\RedirectToSetup;
+use App\Http\Middleware\TrackSessionActivity;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\KioskLocation;
 use App\Models\KioskSetting;
 use App\Models\MenuItem;
 use App\Services\PinLoginService;
 use Illuminate\Foundation\Application;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Inertia\Inertia;
 
 // First-run setup wizard — only reachable until an administrator exists (see
 // FirstRunService / RedirectToSetup); afterwards both just redirect to /login.
 Route::get('/install', [SetupController::class, 'show'])->name('setup.show');
 Route::post('/install', [SetupController::class, 'store'])->middleware('throttle:10,1')->name('setup.store');
+
+// First-run "restore a backup" path. Named setup.* so RedirectToSetup lets it through; the controller
+// itself refuses anything but a never-set-up instance. The status poll skips the session middleware: while
+// the database is being replaced there is no sessions table to read (nor a setup_state table to ask).
+Route::prefix('install/restore')->name('setup.restore.')->group(function () {
+    Route::post('/', [RestoreController::class, 'start'])->middleware('throttle:20,1')->name('start');
+    Route::get('/status', [RestoreController::class, 'status'])->name('status')
+        ->withoutMiddleware([
+            StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
+            RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
+        ]);
+    Route::get('/{id}', [RestoreController::class, 'uploadStatus'])->name('upload.status');
+    Route::put('/{id}', [RestoreController::class, 'uploadChunk'])->name('upload.chunk');
+    Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
+    Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
+});
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [

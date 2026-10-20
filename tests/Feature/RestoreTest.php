@@ -1,0 +1,285 @@
+<?php
+
+use App\Models\Backup;
+use App\Models\SetupState;
+use App\Models\User;
+use App\Services\BackupCompatibility;
+use App\Services\BackupService;
+use App\Services\RestoreService;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Encryption\Encrypter;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Process;
+
+beforeEach(function () {
+    $this->tmp = sys_get_temp_dir().'/ri-restore-test-'.bin2hex(random_bytes(4));
+    foreach (['out', 'private', 'public'] as $d) {
+        mkdir($this->tmp."/{$d}", 0777, true);
+    }
+    config([
+        'backup.dir' => $this->tmp.'/out',
+        'filesystems.disks.local.root' => $this->tmp.'/private',
+        'filesystems.disks.public.root' => $this->tmp.'/public',
+        'backup.upload_chunk_bytes' => 50_000,
+    ]);
+});
+
+afterEach(function () {
+    if (! empty($GLOBALS['restore_test_dirtied_db'])) {
+        Artisan::call('migrate:fresh', ['--force' => true]);
+        $GLOBALS['restore_test_dirtied_db'] = false;
+    }
+    exec('rm -rf '.escapeshellarg($this->tmp));
+});
+
+/** Hand-build a backup zip so malformed/hostile ones can be tested without a real database. */
+function craftZip(string $path, array $files, array $manifestOverrides = [], ?array $entriesOverride = null): void
+{
+    $entries = [];
+    foreach ($files as $name => $content) {
+        $entries[] = ['path' => $name, 'size' => strlen($content), 'sha256' => hash('sha256', $content)];
+    }
+    $manifest = array_merge([
+        'format' => 1, 'created_at' => now()->toIso8601String(), 'app' => ['commit' => 'abc'],
+        'database' => ['migrations' => app(BackupCompatibility::class)->knownMigrations()],
+        'includes_uploads' => false, 'contains_app_key' => false, 'entries' => $entriesOverride ?? $entries,
+    ], $manifestOverrides);
+    $zip = new ZipArchive;
+    $zip->open($path, ZipArchive::CREATE | ZipArchive::OVERWRITE);
+    foreach ($files as $name => $content) {
+        $zip->addFromString($name, $content);
+    }
+    $zip->addFromString('manifest.json', json_encode($manifest));
+    $zip->close();
+}
+
+/** Put a zip through the real upload endpoints in small chunks and return its upload id. */
+function uploadZip(string $path, array $extra = []): string
+{
+    $size = filesize($path);
+    $start = test()->postJson('/install/restore', ['filename' => 'b.zip', 'size' => $size] + $extra)->assertCreated();
+    $id = $start->json('upload_id');
+    $bytes = file_get_contents($path);
+    for ($offset = 0; $offset < $size; $offset += 50_000) {
+        test()->call('PUT', "/install/restore/{$id}?offset={$offset}", [], [], [], ['CONTENT_TYPE' => 'application/octet-stream'], substr($bytes, $offset, 50_000))->assertOk();
+    }
+
+    return $id;
+}
+
+function freshInstance(): void
+{
+    SetupState::current()->update(['completed_at' => null]);
+}
+
+// ---- compatibility ------------------------------------------------------------------------------
+
+test('a manifest from this version is compatible', function () {
+    $dump = 'SELECT 1;';
+    craftZip($this->tmp.'/ok.zip', ['database/db.sql' => $dump]);
+    $zip = new ZipArchive;
+    $zip->open($this->tmp.'/ok.zip');
+    $manifest = json_decode($zip->getFromName('manifest.json'), true);
+
+    expect(app(BackupCompatibility::class)->problems($manifest, ['manifest.json', 'database/db.sql']))->toBe([]);
+});
+
+test('a backup from newer software is refused by its migration list, an older one is fine', function () {
+    $known = app(BackupCompatibility::class)->knownMigrations();
+    $base = ['format' => 1, 'contains_app_key' => false, 'entries' => [['path' => 'database/db.sql', 'size' => 1, 'sha256' => str_repeat('a', 64)]]];
+    $names = ['manifest.json', 'database/db.sql'];
+
+    $newer = app(BackupCompatibility::class)->problems($base + ['database' => ['migrations' => [...$known, '2099_01_01_000000_future_change']]], $names);
+    expect($newer)->toHaveCount(1)->and($newer[0])->toContain('newer software', '2099_01_01_000000_future_change');
+
+    $older = app(BackupCompatibility::class)->problems($base + ['database' => ['migrations' => array_slice($known, 0, 5)]], $names);
+    expect($older)->toBe([]);
+
+    $newFormat = app(BackupCompatibility::class)->problems(['format' => 99] + $base, $names);
+    expect($newFormat[0])->toContain('newer backup format');
+});
+
+test('unsafe or inconsistent manifests are refused', function () {
+    $c = app(BackupCompatibility::class);
+    $sha = str_repeat('a', 64);
+    $migrations = ['database' => ['migrations' => []]];
+    $entry = fn ($path) => ['path' => $path, 'size' => 1, 'sha256' => $sha];
+    $base = fn (array $entries) => ['format' => 1, 'contains_app_key' => false, 'entries' => $entries] + $migrations;
+
+    foreach (['files/private/../../../etc/passwd', '/etc/passwd', 'files/private//x', 'files/other/x', 'files\\private\\x', 'database/db.sql.php', 'files/private/./x'] as $bad) {
+        $problems = $c->problems($base([$entry('database/db.sql'), $entry($bad)]), ['manifest.json', 'database/db.sql', $bad], []);
+        expect($problems)->not->toBe([], "accepted {$bad}");
+    }
+
+    // extra file in the zip the manifest doesn't list; listed file missing from the zip; no dump; key claimed
+    expect($c->problems($base([$entry('database/db.sql')]), ['manifest.json', 'database/db.sql', 'files/private/sneaky.php'], []))->not->toBe([]);
+    expect($c->problems($base([$entry('database/db.sql'), $entry('files/private/a')]), ['manifest.json', 'database/db.sql'], []))->not->toBe([]);
+    expect($c->problems($base([$entry('files/private/a')]), ['manifest.json', 'files/private/a'], []))->not->toBe([]);
+    expect($c->problems(['contains_app_key' => true] + $base([$entry('database/db.sql')]), ['manifest.json', 'database/db.sql'], []))->not->toBe([]);
+});
+
+test('every encrypted model cast is registered so a restore knows to blank it', function () {
+    $registered = array_keys(config('backup.encrypted_columns'));
+    foreach (glob(app_path('Models/*.php')) as $file) {
+        $class = 'App\\Models\\'.basename($file, '.php');
+        $ref = new ReflectionClass($class);
+        if ($ref->isAbstract() || ! $ref->isSubclassOf(Model::class)) {
+            continue;
+        }
+        $model = new $class;
+        foreach ($model->getCasts() as $column => $cast) {
+            if (str_starts_with((string) $cast, 'encrypted')) {
+                expect($registered)->toContain($model->getTable().'.'.$column);
+            }
+        }
+    }
+});
+
+// ---- wizard endpoints ---------------------------------------------------------------------------
+
+test('restore endpoints only work on an instance that has never been set up', function () {
+    // Pest.php marks setup complete for every feature test
+    $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertForbidden();
+
+    freshInstance();
+    $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertCreated();
+
+    SetupState::current()->update(['completed_at' => now()]);
+    $this->putJson('/install/restore/'.str_repeat('a', 40).'?offset=0')->assertForbidden();
+});
+
+test('the setup code is required to start a restore when one is configured', function () {
+    freshInstance();
+    config(['app.setup_code' => 'letmein']);
+
+    $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertStatus(422);
+    $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10, 'setup_code' => 'wrong'])->assertStatus(422);
+    $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10, 'setup_code' => 'letmein'])->assertCreated();
+});
+
+test('the chunked upload resumes, refuses gaps, and an incomplete upload cannot start a restore', function () {
+    Process::fake();
+    freshInstance();
+    $id = $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->json('upload_id');
+
+    $put = fn ($offset, $bytes) => $this->call('PUT', "/install/restore/{$id}?offset={$offset}", [], [], [], ['CONTENT_TYPE' => 'application/octet-stream'], $bytes);
+    $put(0, 'abcde')->assertOk()->assertJsonPath('received', 5);
+    $put(0, 'abcde')->assertStatus(409)->assertJsonPath('received', 5);   // repeated chunk
+    $put(9, 'x')->assertStatus(409)->assertJsonPath('received', 5);        // gap
+    $this->getJson("/install/restore/{$id}")->assertJsonPath('received', 5);
+    $this->postJson("/install/restore/{$id}/complete")->assertStatus(409);
+    Process::assertNothingRan();
+
+    $put(5, 'fghij')->assertOk();
+    $this->postJson("/install/restore/{$id}/complete")->assertStatus(202);
+    Process::assertRan(fn ($p) => str_contains($p->command, "restore:run {$id}") && str_contains($p->command, 'setsid'));
+    expect($this->getJson('/install/restore/status')->assertOk()->headers->get('Cache-Control'))->toContain('no-store');
+});
+
+test('a hostile upload id cannot escape the restore directory', function () {
+    freshInstance();
+    $this->getJson('/install/restore/'.str_repeat('..', 20))->assertNotFound();
+    $this->deleteJson('/install/restore/'.str_repeat('a', 40))->assertNotFound();
+});
+
+// ---- the restore itself -------------------------------------------------------------------------
+
+test('a damaged backup is rejected before anything on the instance changes', function () {
+    Process::fake();
+    freshInstance();
+    $files = ['database/db.sql' => 'DROP TABLE people;', 'files/private/a.jpg' => 'photo'];
+    craftZip($this->tmp.'/bad.zip', $files);
+    // tamper: swap a.jpg's bytes after the manifest recorded its hash
+    $zip = new ZipArchive;
+    $zip->open($this->tmp.'/bad.zip');
+    $zip->addFromString('files/private/a.jpg', 'PHOTO');
+    $zip->close();
+
+    $id = uploadZip($this->tmp.'/bad.zip');
+    $this->postJson("/install/restore/{$id}/complete")->assertStatus(202);
+    $peopleBefore = DB::table('people')->count();
+    app(RestoreService::class)->run($id);
+
+    $status = app(RestoreService::class)->status();
+    expect($status['state'])->toBe('failed')->and($status['error'])->toContain('checksum', 'files/private/a.jpg')
+        ->and(Schema::hasTable('people'))->toBeTrue()
+        ->and(DB::table('people')->count())->toBe($peopleBefore)
+        ->and(file_exists($this->tmp.'/private/a.jpg'))->toBeFalse()
+        ->and(glob($this->tmp.'/out/restore/*/'))->toBe([]); // upload and work files cleaned up
+});
+
+test('a backup from newer software is rejected up front', function () {
+    Process::fake();
+    freshInstance();
+    craftZip($this->tmp.'/new.zip', ['database/db.sql' => 'SELECT 1;'], [
+        'database' => ['migrations' => [...app(BackupCompatibility::class)->knownMigrations(), '2099_01_01_000000_future']],
+    ]);
+    $id = uploadZip($this->tmp.'/new.zip');
+    $this->postJson("/install/restore/{$id}/complete");
+    app(RestoreService::class)->run($id);
+
+    expect(app(RestoreService::class)->status())->toMatchArray(['state' => 'failed'])
+        ->and(app(RestoreService::class)->status()['error'])->toContain('newer software');
+});
+
+test('a not-a-backup file fails cleanly', function () {
+    Process::fake();
+    freshInstance();
+    file_put_contents($this->tmp.'/junk.zip', str_repeat('not a zip', 100));
+    $id = uploadZip($this->tmp.'/junk.zip');
+    $this->postJson("/install/restore/{$id}/complete");
+    app(RestoreService::class)->run($id);
+
+    expect(app(RestoreService::class)->status()['state'])->toBe('failed');
+});
+
+test('a full backup restores onto a fresh instance, blanking what the new key cannot read', function () {
+    // Restoring wipes and reloads the whole database (the disposable test one), which also commits the
+    // RefreshDatabase transaction, so rebuild a clean schema when done — see afterEach.
+    $GLOBALS['restore_test_dirtied_db'] = true;
+    Artisan::call('migrate:fresh', ['--force' => true]);
+
+    // The "old instance": an administrator, a photo, a secret encrypted under some other key.
+    $admin = User::factory()->create(['email' => 'old-admin@example.com']);
+    DB::table('people_roles')->insert(['person_id' => $admin->id, 'role_id' => 15, 'created_at' => now(), 'updated_at' => now()]);
+    // (the migration already created the singleton row)
+    DB::table('feedback_aggregation_settings')->where('id', 1)->update([
+        'instance_identifier' => 'old-box',
+        'shared_secret' => (new Encrypter(random_bytes(32), 'aes-256-cbc'))->encryptString('s3cret'),
+    ]);
+    mkdir($this->tmp.'/private/receiving-photos', 0777, true);
+    file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'photo-bytes');
+
+    $backup = Backup::create(['status' => 'queued', 'include_uploads' => true]);
+    app(BackupService::class)->run($backup);
+    $backup = $backup->fresh();
+    expect($backup->status)->toBe('complete')->and($backup->error)->toBeNull();
+
+    // The "new instance": empty schema, never set up, no photo.
+    Artisan::call('migrate:fresh', ['--force' => true]);
+    unlink($this->tmp.'/private/receiving-photos/p.jpg');
+    SetupState::current()->update(['completed_at' => null]);
+    expect(User::where('email', 'old-admin@example.com')->exists())->toBeFalse();
+
+    Process::fake();
+    $id = uploadZip($backup->path());
+    $this->postJson("/install/restore/{$id}/complete")->assertStatus(202);
+    app(RestoreService::class)->run($id);
+
+    $status = app(RestoreService::class)->status();
+    expect($status['state'])->toBe('complete', $status['error'] ?? '')
+        ->and($status['blanked'])->toBe(['Centralized feedback shared secret'])
+        ->and($status['admin_missing'])->toBeFalse()
+        ->and(User::where('email', 'old-admin@example.com')->exists())->toBeTrue()
+        ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('photo-bytes')
+        ->and(DB::table('feedback_aggregation_settings')->value('instance_identifier'))->toBe('old-box')
+        ->and(DB::table('feedback_aggregation_settings')->value('shared_secret'))->toBeNull()
+        ->and(DB::table('backups')->count())->toBe(0)
+        ->and(SetupState::current()->completed_at)->not->toBeNull();
+
+    // The instance is now a normal, set-up one: the wizard and restore are closed.
+    $this->get('/install')->assertRedirect(route('login'));
+    $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertForbidden();
+    expect($this->getJson('/install/restore/status')->json('state'))->toBe('complete');
+});
