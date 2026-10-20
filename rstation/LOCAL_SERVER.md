@@ -16,6 +16,8 @@ Settings > Local server (first start took a few minutes, as the page says, and w
 logging in; pairing the R Station with its own self-hosted server; and printing to a real printer through the
 station's own print server, with the whole loop on one device and no Internet. That covers the Docker engine and
 unit overrides, loading the baked-in images into `/data/docker`, the supervisor, the compose stack and the launcher.
+After one reboot the stack came back quickly on its own and the kiosk went straight to the login page with no browser
+error (a single try so far, so the launcher's wait-for-`/up` path under a slower boot is not yet proven).
 (Reported by the project owner; not scripted.)
 
 ## What ships where
@@ -94,7 +96,7 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
 ## Known gaps / not done
 
 - **Still unverified on hardware:** the Settings > Local server extras beyond the happy path (QR codes, setting an
-  external site later, the erase/reset button, stop/start cycles and start-at-boot), an OTA update that ships a
+  external site later, the erase/reset button, stop/start cycles, and start-at-boot beyond the single reboot noted below), an OTA update that ships a
   different image build (reload by image id), abrupt power loss, `.local` name resolution from phones and other
   clients on a customer network, and measured memory use on the Pi (the ~460 MB figure is from an amd64 host). Unit tests use a fake `docker`/`systemctl` (`backend/test_local_server.py`).
 - **Image size.** The .deb is ~475 MB; it sits in both root slots and so **every OTA
