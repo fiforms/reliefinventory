@@ -43,17 +43,26 @@ class DeviceReleaseResolver
     /** The release to offer for $kind, or null when there's nothing newer. */
     public function offerFor(ManagedDevice $device, string $kind): ?DeviceRelease
     {
-        $architecture = $device->architecture;
+        if ($device->device_type !== 'rstation') {
+            return null; // print servers don't take firmware
+        }
+
+        return $this->offerForState(
+            $device->architecture, $device->update_channel, $kind === 'app' ? $device->app_version : $device->os_version, $kind);
+    }
+
+    /** The same resolution for a bare (architecture, channel, installed version) — what a device asking a source server sends. */
+    public function offerForState(?string $architecture, string $channel, ?string $current, string $kind): ?DeviceRelease
+    {
         if (! $architecture) {
             return null; // first-ever heartbeat: matches no release
         }
-        $current = $kind === 'app' ? $device->app_version : $device->os_version;
 
         $tagged = DeviceRelease::where('kind', $kind)
             ->where('architecture', $architecture)
             ->whereIn('release_type', ['full', 'hotfix'])
             ->get()
-            ->filter(fn (DeviceRelease $r) => $r->isTaggedOn($device->update_channel));
+            ->filter(fn (DeviceRelease $r) => $r->isTaggedOn($channel));
 
         // Hotfix first: exact byte-for-byte match on the device's reported version.
         if ($current !== null) {

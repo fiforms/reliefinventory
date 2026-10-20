@@ -6,23 +6,31 @@
 	Fleet admin for R Station Raspberry Pi devices and PC/Mac print servers
 	(permission: manage-devices): generate a pairing code, configure each
 	device (name, site, what it does, update channel), set up the printers a
-	print server reports (name, site, paper type, on/off), revoke it, and
-	upload/tag the app and OS releases offered to devices on their next
-	heartbeat. Server half
-	of rstation/platform/docs/DEVICE_CONTRACT.md. Panel-style page per the
-	admin-page-style skill — not RIForm.
+	print server reports (name, site, paper type, on/off) and revoke it. Each
+	device is a collapsible tile (expand it for its settings and printers; a
+	printer expands again for its own settings); R Stations and RI Print
+	Servers are told apart by an icon, and firmware options only exist for
+	R Stations. Software releases live on their own page, /setup/firmware
+	(manage-firmware); all printers together, with drag-to-order and status,
+	on /setup/printers. Server half of rstation/platform/docs/DEVICE_CONTRACT.md.
+	Panel-style page per the admin-page-style skill — not RIForm.
 -->
 
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import DeviceTypeIcon from '@/Components/DeviceTypeIcon.vue';
 import axios from 'axios';
-import { onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 
 defineProps({
 	breadcrumb: {
 		type: Array,
+	},
+	canManageFirmware: {
+		type: Boolean,
+		default: false,
 	},
 });
 
@@ -34,21 +42,18 @@ const functions = ref([]);
 const channels = ref([]);
 const media = ref([]);
 const locations = ref([]);
-const releases = ref([]);
 const savingId = ref(null);
 
 async function fetchAll() {
-	const [d, l, r] = await Promise.all([
+	const [d, l] = await Promise.all([
 		axios.get('/json/managed-devices'),
 		axios.get('/json/kiosk-locations'),
-		axios.get('/json/device-releases'),
 	]);
 	devices.value = d.data.records;
 	functions.value = d.data.functions;
 	channels.value = d.data.channels;
 	media.value = d.data.media;
 	locations.value = l.data.records.filter((loc) => loc.active);
-	releases.value = r.data.records;
 	if (!pairLocationId.value && locations.value.length) pairLocationId.value = locations.value[0].id;
 }
 
@@ -156,53 +161,26 @@ function lastSeen(device) {
 	return device.last_seen_at ? new Date(device.last_seen_at).toLocaleString() : 'never';
 }
 
-// ---- Releases ----
-const upload = reactive({ kind: 'app', version: '', architecture: 'aarch64', release_type: 'full', required_base_version: '', notes: '' });
-const uploadFile = ref(null);
-const uploading = ref(false);
-
-async function uploadRelease() {
-	if (!uploadFile.value) return;
-	uploading.value = true;
-	error.value = '';
-	const form = new FormData();
-	Object.entries(upload).forEach(([key, value]) => value !== '' && form.append(key, value));
-	form.append('file', uploadFile.value);
-	try {
-		await axios.post('/json/device-releases', form);
-		upload.version = '';
-		upload.required_base_version = '';
-		upload.notes = '';
-		await fetchAll();
-	} catch (e) {
-		fail(e, 'Could not upload that release.');
-	} finally {
-		uploading.value = false;
-	}
+// ---- Collapsible tiles ----
+// A device and each of its printers start collapsed so the whole fleet fits on one screen;
+// the header row of either toggles it. Keys are namespaced so a device and a printer with
+// the same numeric id don't share state.
+const open = reactive({});
+const isOpen = (key) => !!open[key];
+const toggle = (key) => { open[key] = !open[key]; };
+const allOpen = computed(() => devices.value.length > 0 && devices.value.every((d) => open[`d${d.id}`]));
+function toggleAll() {
+	const target = !allOpen.value;
+	devices.value.forEach((d) => { open[`d${d.id}`] = target; });
 }
 
-async function toggleTag(release, channel) {
-	const action = release.channels?.includes(channel) ? 'untag' : 'tag';
-	try {
-		await axios.post(`/json/device-releases/${release.id}/${action}`, { channel });
-		await fetchAll();
-	} catch (e) {
-		fail(e, 'Could not change that release\'s channels.');
-	}
+const isPrintServer = (device) => device.device_type === 'print_server';
+const deviceTypeLabel = (device) => (isPrintServer(device) ? 'RI Print Server' : 'R Station');
+function printerProblems(device) {
+	return (device.printers || []).filter((p) => p.active && !['idle', 'printing'].includes(p.status)).length;
 }
-
-async function deleteRelease(release) {
-	if (!window.confirm(`Delete ${release.filename}?`)) return;
-	try {
-		await axios.delete(`/json/device-releases/${release.id}`);
-		await fetchAll();
-	} catch (e) {
-		fail(e, 'Could not delete that release.');
-	}
-}
-
-function formatSize(bytes) {
-	return bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+function functionLabel(device) {
+	return functions.value.find((f) => f.key === device.kiosk_function)?.label || null;
 }
 
 onMounted(fetchAll);
@@ -236,208 +214,169 @@ onMounted(fetchAll);
 			</section>
 
 			<!-- Devices -->
-			<section class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Devices</h2>
+			<section class="bg-white shadow rounded-lg p-6 space-y-3">
+				<div class="flex items-center justify-between gap-3">
+					<h2 class="text-lg font-semibold">Devices</h2>
+					<div class="flex items-center gap-4 text-sm">
+						<a v-if="canManageFirmware" href="/setup/firmware" class="underline text-gray-700">Firmware</a>
+						<a href="/setup/printers" class="underline text-gray-700">All printers</a>
+						<button v-if="devices.length" type="button" class="underline text-gray-700" @click="toggleAll">
+							{{ allOpen ? 'Collapse all' : 'Expand all' }}
+						</button>
+					</div>
+				</div>
 				<p v-if="!devices.length" class="text-sm text-gray-400">No devices paired yet.</p>
-				<div v-for="device in devices" :key="device.id" class="border rounded p-3 space-y-3">
-					<div class="flex items-center gap-3 text-sm">
-						<span class="inline-block w-3 h-3 rounded-full" :class="device.revoked ? 'bg-red-500' : device.online ? 'bg-green-500' : 'bg-gray-400'"></span>
-						<strong>{{ device.name }}</strong>
-						<span class="text-gray-500">
-							{{ device.revoked ? 'revoked' : device.online ? 'online' : 'offline' }} · last seen {{ lastSeen(device) }}
-						</span>
-					</div>
-					<div class="text-xs text-gray-500">
-						<template v-if="device.platform">{{ device.platform }} · </template>app {{ device.app_version || '?' }} · OS {{ device.os_version || '?' }} · {{ device.architecture || '?' }}
-						<template v-if="device.hostname"> · {{ device.hostname }}.local</template>
-						<template v-if="device.cpu_temp_c != null"> · {{ device.cpu_temp_c }}°C</template>
-					</div>
-					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-						<label class="block">
-							<span class="text-gray-700">Name</span>
-							<input type="text" maxlength="255" v-model="device.name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-						</label>
-						<label class="block">
-							<span class="text-gray-700">Site</span>
-							<select v-model="device.kiosk_location_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-								<option :value="null">— none —</option>
-								<option v-for="location in locations" :key="location.id" :value="location.id">{{ location.name }}</option>
-							</select>
-						</label>
-						<label class="block">
-							<span class="text-gray-700">Function</span>
-							<select v-model="device.kiosk_function" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-								<option :value="null">— not configured —</option>
-								<option v-for="f in functions" :key="f.key" :value="f.key">{{ f.label }}</option>
-							</select>
-						</label>
-						<label class="block">
-							<span class="text-gray-700">Update channel</span>
-							<select v-model="device.update_channel" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-								<option v-for="c in channels" :key="c" :value="c">{{ c }}</option>
-							</select>
-						</label>
-						<label class="flex items-center gap-2 sm:col-span-2">
-							<input type="checkbox" v-model="device.os_auto_update_enabled" class="rounded border-gray-300" />
-							<span class="text-gray-700">Allow OS updates to apply automatically (overnight window)</span>
-						</label>
-					</div>
-					<div class="flex gap-3 items-center">
-						<PrimaryButton :disabled="savingId === device.id" @click="saveDevice(device)">
-							{{ savingId === device.id ? 'Saving…' : 'Save' }}
-						</PrimaryButton>
-						<button v-if="!device.revoked" type="button" class="text-sm text-red-700 underline" @click="revokeDevice(device)">Revoke</button>
-						<button type="button" class="text-sm text-gray-600 underline" @click="removeDevice(device)">Remove</button>
-					</div>
 
-					<!-- Printers this print server reports -->
-					<div v-if="device.kiosk_function === 'print_station' || device.printers?.length" class="border-t pt-3 space-y-3">
-						<h3 class="font-medium text-sm">Printers</h3>
-						<p v-if="!device.printers?.length" class="text-sm text-gray-400">
-							No printers reported yet. Once the print server is running it lists the printers it can see here at its next check-in.
-						</p>
-						<div v-for="printer in device.printers" :key="printer.id" class="border rounded p-3 space-y-3 bg-gray-50">
-							<div class="flex items-center gap-2 text-sm">
-								<span class="inline-block w-3 h-3 rounded-full" :class="printerDot(printer)"></span>
-								<span class="font-mono text-xs text-gray-600">{{ printer.queue_name }}</span>
-								<span class="text-gray-500">{{ printerState(printer) }}</span>
-								<span v-if="!printer.active" class="text-xs text-gray-400">· off</span>
-							</div>
-							<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+				<div v-for="device in devices" :key="device.id" class="border rounded">
+					<!-- Summary row: always visible, toggles the tile -->
+					<button
+						type="button"
+						class="w-full flex items-center gap-3 p-3 text-left text-sm"
+						:aria-expanded="isOpen(`d${device.id}`)"
+						@click="toggle(`d${device.id}`)"
+					>
+						<span class="text-gray-400 w-3 shrink-0">{{ isOpen(`d${device.id}`) ? '▾' : '▸' }}</span>
+						<DeviceTypeIcon :type="device.device_type" />
+						<span class="inline-block w-3 h-3 rounded-full shrink-0" :class="device.revoked ? 'bg-red-500' : device.online ? 'bg-green-500' : 'bg-gray-400'"></span>
+						<span class="min-w-0 grow">
+							<strong>{{ device.name }}</strong>
+							<span class="text-gray-500">
+								· {{ deviceTypeLabel(device) }}<template v-if="device.location"> · {{ device.location.name }}</template><template v-if="functionLabel(device)"> · {{ functionLabel(device) }}</template>
+							</span>
+							<span class="block text-xs text-gray-500">
+								{{ device.revoked ? 'revoked' : device.online ? 'online' : 'offline' }} · last seen {{ lastSeen(device) }}
+								<template v-if="device.printers?.length"> · {{ device.printers.length }} printer{{ device.printers.length === 1 ? '' : 's' }}</template>
+							</span>
+						</span>
+						<span v-if="printerProblems(device)" class="text-xs rounded bg-amber-100 text-amber-800 px-2 py-0.5 shrink-0">
+							{{ printerProblems(device) }} printer{{ printerProblems(device) === 1 ? '' : 's' }} need attention
+						</span>
+					</button>
+
+					<div v-if="isOpen(`d${device.id}`)" class="border-t p-3 space-y-3">
+						<div class="text-xs text-gray-500">
+							<template v-if="isPrintServer(device)">
+								{{ device.platform }} · software {{ device.app_version || '?' }} · {{ device.architecture || '?' }}
+							</template>
+							<template v-else>
+								<template v-if="device.platform">{{ device.platform }} · </template>app {{ device.app_version || '?' }} · OS {{ device.os_version || '?' }} · {{ device.architecture || '?' }}
+							</template>
+							<template v-if="device.hostname"> · {{ device.hostname }}.local</template>
+							<template v-if="device.cpu_temp_c != null"> · {{ device.cpu_temp_c }}°C</template>
+						</div>
+						<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+							<label class="block">
+								<span class="text-gray-700">Name</span>
+								<input type="text" maxlength="255" v-model="device.name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+							</label>
+							<label class="block">
+								<span class="text-gray-700">Site</span>
+								<select v-model="device.kiosk_location_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+									<option :value="null">— none —</option>
+									<option v-for="location in locations" :key="location.id" :value="location.id">{{ location.name }}</option>
+								</select>
+							</label>
+							<!-- Firmware options: only R Stations take firmware; a print server has none of this. -->
+							<template v-if="!isPrintServer(device)">
 								<label class="block">
-									<span class="text-gray-700">Name</span>
-									<input type="text" maxlength="255" v-model="printer.name" placeholder="e.g. Shipping Floor" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-								</label>
-								<label class="block">
-									<span class="text-gray-700">Site</span>
-									<select v-model="printer.kiosk_location_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-										<option :value="null">— none —</option>
-										<option v-for="location in locations" :key="location.id" :value="location.id">{{ location.name }}</option>
+									<span class="text-gray-700">Function</span>
+									<select v-model="device.kiosk_function" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+										<option :value="null">— not configured —</option>
+										<option v-for="f in functions" :key="f.key" :value="f.key">{{ f.label }}</option>
 									</select>
 								</label>
 								<label class="block">
-									<span class="text-gray-700">Paper type</span>
-									<select v-model="printer.media" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-										<option :value="null">— not set —</option>
-										<option v-for="m in media" :key="m.key" :value="m.key">{{ m.label }}</option>
+									<span class="text-gray-700">Update channel</span>
+									<select v-model="device.update_channel" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+										<option v-for="c in channels" :key="c" :value="c">{{ c }}</option>
 									</select>
-								</label>
-								<label class="block">
-									<span class="text-gray-700">Menu order</span>
-									<input type="number" min="0" max="9999" v-model.number="printer.sort_order" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
 								</label>
 								<label class="flex items-center gap-2 sm:col-span-2">
-									<input type="checkbox" v-model="printer.active" class="rounded border-gray-300" />
-									<span class="text-gray-700">Offer this printer in Print menus</span>
+									<input type="checkbox" v-model="device.os_auto_update_enabled" class="rounded border-gray-300" />
+									<span class="text-gray-700">Allow OS updates to apply automatically (overnight window)</span>
 								</label>
-							</div>
-							<div class="flex gap-3 items-center">
-								<PrimaryButton :disabled="savingPrinterId === printer.id" @click="savePrinter(printer)">
-									{{ savingPrinterId === printer.id ? 'Saving…' : 'Save Printer' }}
-								</PrimaryButton>
+							</template>
+						</div>
+						<div class="flex gap-3 items-center">
+							<PrimaryButton :disabled="savingId === device.id" @click="saveDevice(device)">
+								{{ savingId === device.id ? 'Saving…' : 'Save' }}
+							</PrimaryButton>
+							<button v-if="!device.revoked" type="button" class="text-sm text-red-700 underline" @click="revokeDevice(device)">Revoke</button>
+							<button type="button" class="text-sm text-gray-600 underline" @click="removeDevice(device)">Remove</button>
+						</div>
+
+						<!-- Printers this print server reports -->
+						<div v-if="device.kiosk_function === 'print_station' || device.printers?.length" class="border-t pt-3 space-y-2">
+							<h3 class="font-medium text-sm">Printers</h3>
+							<p v-if="!device.printers?.length" class="text-sm text-gray-400">
+								No printers reported yet. Once the print server is running it lists the printers it can see here at its next check-in.
+							</p>
+							<div v-for="printer in device.printers" :key="printer.id" class="border rounded bg-gray-50">
 								<button
 									type="button"
-									class="text-sm underline"
-									:class="confirmingPrinterRemove === printer.id ? 'text-red-700 font-semibold' : 'text-gray-600'"
-									@click="removePrinter(printer)"
+									class="w-full flex items-center gap-2 p-2 text-left text-sm"
+									:aria-expanded="isOpen(`p${printer.id}`)"
+									@click="toggle(`p${printer.id}`)"
 								>
-									{{ confirmingPrinterRemove === printer.id ? 'Confirm — it returns if the server still reports it' : 'Remove' }}
+									<span class="text-gray-400 w-3 shrink-0">{{ isOpen(`p${printer.id}`) ? '▾' : '▸' }}</span>
+									<span class="inline-block w-3 h-3 rounded-full shrink-0" :class="printerDot(printer)"></span>
+									<strong>{{ printer.name || printer.queue_name }}</strong>
+									<span class="text-gray-500 text-xs">{{ printerState(printer) }}</span>
+									<span v-if="!printer.active" class="text-xs text-gray-400">· off</span>
 								</button>
-								<button v-if="confirmingPrinterRemove === printer.id" type="button" class="text-sm text-gray-600 underline" @click="confirmingPrinterRemove = null">Cancel</button>
+								<div v-if="isOpen(`p${printer.id}`)" class="border-t p-3 space-y-3">
+									<div class="font-mono text-xs text-gray-600">{{ printer.queue_name }}</div>
+									<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+										<label class="block">
+											<span class="text-gray-700">Name</span>
+											<input type="text" maxlength="255" v-model="printer.name" placeholder="e.g. Shipping Floor" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+										</label>
+										<label class="block">
+											<span class="text-gray-700">Site</span>
+											<select v-model="printer.kiosk_location_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+												<option :value="null">— none —</option>
+												<option v-for="location in locations" :key="location.id" :value="location.id">{{ location.name }}</option>
+											</select>
+										</label>
+										<label class="block">
+											<span class="text-gray-700">Paper type</span>
+											<select v-model="printer.media" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+												<option :value="null">— not set —</option>
+												<option v-for="m in media" :key="m.key" :value="m.key">{{ m.label }}</option>
+											</select>
+										</label>
+										<p class="text-xs text-gray-500 self-end">The order printers appear in Print menus is set by dragging on the <a href="/setup/printers" class="underline">All printers</a> page.</p>
+										<label class="flex items-center gap-2 sm:col-span-2">
+											<input type="checkbox" v-model="printer.active" class="rounded border-gray-300" />
+											<span class="text-gray-700">Offer this printer in Print menus</span>
+										</label>
+									</div>
+									<div class="flex gap-3 items-center">
+										<PrimaryButton :disabled="savingPrinterId === printer.id" @click="savePrinter(printer)">
+											{{ savingPrinterId === printer.id ? 'Saving…' : 'Save Printer' }}
+										</PrimaryButton>
+										<button
+											type="button"
+											class="text-sm underline"
+											:class="confirmingPrinterRemove === printer.id ? 'text-red-700 font-semibold' : 'text-gray-600'"
+											@click="removePrinter(printer)"
+										>
+											{{ confirmingPrinterRemove === printer.id ? 'Confirm — it returns if the server still reports it' : 'Remove' }}
+										</button>
+										<button v-if="confirmingPrinterRemove === printer.id" type="button" class="text-sm text-gray-600 underline" @click="confirmingPrinterRemove = null">Cancel</button>
+									</div>
+								</div>
 							</div>
+							<p class="text-xs text-gray-500">
+								A printer is only offered in Print menus once it has a site and a paper type and is switched on.
+								Changing a paper type needs the printer's queue to be empty.
+							</p>
 						</div>
-						<p class="text-xs text-gray-500">
-							A printer is only offered in Print menus once it has a site and a paper type and is switched on.
-							Changing a paper type needs the printer's queue to be empty.
-						</p>
 					</div>
 				</div>
 				<p class="text-xs text-gray-500">
 					Devices check in every 5 minutes; changes made here reach a device on its next check-in.
 					Revoking sends it back to setup. A device unseen for 15+ minutes shows as offline.
-				</p>
-			</section>
-
-			<!-- Releases -->
-			<section class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Software Releases</h2>
-				<table v-if="releases.length" class="w-full text-sm">
-					<thead>
-						<tr class="text-left text-gray-600">
-							<th class="py-1">Release</th>
-							<th>Live on channel</th>
-							<th></th>
-						</tr>
-					</thead>
-					<tbody>
-						<tr v-for="release in releases" :key="release.id" class="border-t">
-							<td class="py-2">
-								<div><strong>{{ release.kind }}</strong> {{ release.version }}
-									<span class="text-gray-500">({{ release.release_type }}, {{ release.architecture }}, {{ formatSize(release.size_bytes) }})</span>
-								</div>
-								<div v-if="release.required_base_version" class="text-xs text-gray-500">applies on top of {{ release.required_base_version }}</div>
-								<div class="text-xs text-gray-400">{{ release.filename }}</div>
-							</td>
-							<td>
-								<label v-for="c in channels" :key="c" class="mr-3 whitespace-nowrap">
-									<input type="checkbox" :checked="release.channels?.includes(c)" @change="toggleTag(release, c)" class="rounded border-gray-300" />
-									{{ c }}
-								</label>
-							</td>
-							<td class="text-right">
-								<button type="button" class="text-red-700 underline" @click="deleteRelease(release)">Delete</button>
-							</td>
-						</tr>
-					</tbody>
-				</table>
-				<p v-else class="text-sm text-gray-400">No releases uploaded yet.</p>
-
-				<h3 class="font-medium text-sm pt-2">Upload a release</h3>
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-					<label class="block">
-						<span class="text-gray-700">Kind</span>
-						<select v-model="upload.kind" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-							<option value="app">App (.tar.gz)</option>
-							<option value="os">OS bundle (.raucb)</option>
-						</select>
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Type</span>
-						<select v-model="upload.release_type" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-							<option value="full">Full</option>
-							<option v-if="upload.kind === 'os'" value="hotfix">Hotfix (small, on top of one base version)</option>
-							<option v-if="upload.kind === 'os'" value="disk_image">Disk image (SD card re-flash; never auto-offered)</option>
-						</select>
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Version</span>
-						<input type="text" v-model="upload.version" placeholder="e.g. 0.4.0_0.1.1" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Architecture</span>
-						<input type="text" v-model="upload.architecture" placeholder="aarch64" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-					<label v-if="upload.release_type === 'hotfix'" class="block sm:col-span-2">
-						<span class="text-gray-700">Required base version (exact)</span>
-						<input type="text" v-model="upload.required_base_version" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-					<label class="block sm:col-span-2">
-						<span class="text-gray-700">File</span>
-						<input type="file" @change="uploadFile = $event.target.files[0]" class="mt-1 block w-full text-sm" />
-					</label>
-					<label class="block sm:col-span-2">
-						<span class="text-gray-700">Notes (optional)</span>
-						<input type="text" v-model="upload.notes" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-				</div>
-				<PrimaryButton :disabled="uploading || !uploadFile || !upload.version" @click="uploadRelease">
-					{{ uploading ? 'Uploading…' : 'Upload' }}
-				</PrimaryButton>
-				<p class="text-xs text-gray-500">
-					A newly uploaded release is offered to no one until you tick a channel. Ticking a channel
-					replaces whatever release held that slot there (one full release per kind and architecture,
-					one hotfix per base version). Devices are only ever offered newer versions, never downgrades.
-					Very large uploads may need PHP's upload_max_filesize / post_max_size raised.
 				</p>
 			</section>
 		</div>

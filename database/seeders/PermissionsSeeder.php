@@ -98,7 +98,11 @@ class PermissionsSeeder extends Seeder
         // so it's individually delegable.
         'manage-kiosk' => 'Configure Sign-in Kiosk settings: locations, guest types, and behavior',
         // Pi kiosk fleet (R Station device contract): pairing, channels, releases. Administrator-only by default.
-        'manage-devices' => 'Pair, configure, and revoke kiosk devices, and upload and tag their software releases',
+        'manage-devices' => 'Pair, configure, and revoke R Station devices and print servers, and set up their printers',
+        // Firmware is fleet-wide and a bad release can brick every device, so uploading and tagging
+        // releases (and choosing where devices look for them) is its own key, separate from
+        // manage-devices (pairing/configuring individual devices). Administrator-only by default.
+        'manage-firmware' => 'Upload and tag R Station firmware/software releases, and set the firmware source',
         // Renamed from operate-volunteer-kiosk (2026-09-02) — "volunteer" is
         // a person status (people.is_volunteer), not a role, and permissions
         // are tied to what someone does, not who they are; the kiosk this

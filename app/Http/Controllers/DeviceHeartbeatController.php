@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\FirmwareSetting;
 use App\Services\DeviceReleaseResolver;
 use App\Services\PrintBroadcaster;
 use App\Services\PrintQueueService;
@@ -77,8 +78,12 @@ class DeviceHeartbeatController extends Controller
             $queue->syncReportedPrinters($device, $data['print_printers'], $wasOnline);
         }
 
-        $app = $resolver->offerFor($device, 'app');
-        $os = $resolver->offerFor($device, 'os');
+        // When an admin has pointed this instance at another server for firmware, this (paired)
+        // server makes no offers of its own: it tells the device where to ask instead, and which
+        // channel to ask for. The device does the asking (platform heartbeat.py).
+        $source = $device->device_type === 'rstation' ? FirmwareSetting::sourceUrl() : null;
+        $app = $source ? null : $resolver->offerFor($device, 'app');
+        $os = $source ? null : $resolver->offerFor($device, 'os');
         $function = config("devices.functions.{$device->kiosk_function}");
 
         return response()->json([
@@ -97,6 +102,8 @@ class DeviceHeartbeatController extends Controller
             'os_bundle_sha256' => $os?->sha256,
             'os_release_type' => $os?->release_type,
             'os_auto_update_enabled' => $device->os_auto_update_enabled,
+            'update_channel' => $device->update_channel,
+            'update_server_url' => $source,
             // Extension keys, namespaced per the contract.
             'kiosk_function' => $device->kiosk_function,
             'kiosk_path' => $function['path'] ?? null,

@@ -11,9 +11,10 @@ use Illuminate\Support\Facades\Storage;
 function pairedDevice(array $overrides = []): array
 {
     $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::create([
-        'code' => '123456', 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
-    ]);
+    $code = DevicePairingCode::firstOrCreate(
+        ['code' => $overrides['code'] ?? '123456'],
+        ['kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5)]
+    );
     $response = test()->postJson('/api/devices/pair', array_merge([
         'code' => $code->code, 'device_name' => 'Pi One', 'device_uuid' => 'uuid-1',
     ], $overrides))->assertCreated();
@@ -169,7 +170,7 @@ test('an OS hotfix is offered only on top of its exact base version', function (
 
 test('release upload stores a hashed artifact that devices can download by token', function () {
     Storage::fake('local');
-    $admin = userWithPermissions('manage-devices');
+    $admin = userWithPermissions('manage-firmware');
 
     $record = $this->actingAs($admin)->postJson('/json/device-releases', [
         'file' => UploadedFile::fake()->createWithContent('app-1.0.0.tar.gz', 'payload'),
@@ -182,7 +183,7 @@ test('release upload stores a hashed artifact that devices can download by token
 });
 
 test('a tagged release cannot be deleted', function () {
-    $admin = userWithPermissions('manage-devices');
+    $admin = userWithPermissions('manage-firmware');
     $r = release([]);
     app(DeviceReleaseResolver::class)->tag($r, 'stable');
 
@@ -213,6 +214,133 @@ test('device admin endpoints require manage-devices', function () {
     $user = userWithPermissions('manage-kiosk');
 
     $this->actingAs($user)->getJson('/json/managed-devices')->assertStatus(403);
-    $this->actingAs($user)->getJson('/json/device-releases')->assertStatus(403);
     $this->actingAs($user)->get('/setup/devices')->assertStatus(403);
+});
+
+test('firmware endpoints need manage-firmware, which manage-devices alone does not grant', function () {
+    $deviceAdmin = userWithPermissions('manage-devices');
+
+    $this->actingAs($deviceAdmin)->getJson('/json/device-releases')->assertStatus(403);
+    $this->actingAs($deviceAdmin)->postJson('/json/device-releases/uploads', [])->assertStatus(403);
+    $this->actingAs($deviceAdmin)->putJson('/json/firmware-source', ['source_url' => 'https://x.example.org'])->assertStatus(403);
+    $this->actingAs($deviceAdmin)->get('/setup/firmware')->assertStatus(403);
+    $this->actingAs(userWithPermissions('manage-firmware'))->getJson('/json/device-releases')->assertOk();
+});
+
+function startChunkedUpload(array $overrides = []): array
+{
+    $admin = $overrides['admin'] ?? userWithPermissions('manage-firmware');
+    unset($overrides['admin']);
+    $response = test()->actingAs($admin)->postJson('/json/device-releases/uploads', array_merge([
+        'filename' => 'fw 1.0.raucb', 'size' => 10, 'kind' => 'os', 'version' => '1.0.0_1.0.0', 'architecture' => 'aarch64', 'release_type' => 'full',
+    ], $overrides))->assertCreated();
+
+    return [$admin, $response->json('upload_id'), $response];
+}
+
+function putChunk(string $id, int $offset, string $bytes)
+{
+    return test()->call('PUT', "/json/device-releases/uploads/{$id}?offset={$offset}", [], [], [], ['CONTENT_TYPE' => 'application/octet-stream'], $bytes);
+}
+
+test('a release can be uploaded in chunks and is hashed and stored once complete', function () {
+    Storage::fake('local');
+    [$admin, $id, $start] = startChunkedUpload();
+    expect($start->json('chunk_size'))->toBeGreaterThan(0);
+
+    $this->actingAs($admin);
+    putChunk($id, 0, '01234')->assertOk()->assertJsonPath('received', 5);
+    $this->getJson("/json/device-releases/uploads/{$id}")->assertJsonPath('received', 5);
+    putChunk($id, 5, '56789')->assertOk()->assertJsonPath('received', 10);
+
+    $record = $this->postJson("/json/device-releases/uploads/{$id}/complete")->assertCreated()->json('record');
+
+    expect($record['sha256'])->toBe(hash('sha256', '0123456789'))
+        ->and($record['size_bytes'])->toBe(10)
+        ->and($record['filename'])->toBe('fw_1.0.raucb');
+    $this->get($record['download_url'])->assertOk();
+    $this->getJson("/json/device-releases/uploads/{$id}")->assertNotFound(); // the part file is gone
+});
+
+test('chunks must arrive in order, so a client can always resume from the server offset', function () {
+    Storage::fake('local');
+    [$admin, $id] = startChunkedUpload();
+    $this->actingAs($admin);
+
+    putChunk($id, 5, 'late!')->assertStatus(409)->assertJsonPath('received', 0);
+    putChunk($id, 0, '01234')->assertOk();
+    putChunk($id, 0, '01234')->assertStatus(409)->assertJsonPath('received', 5); // a retried chunk is not appended twice
+    putChunk($id, 5, 'too long for the file')->assertStatus(422);
+    $this->postJson("/json/device-releases/uploads/{$id}/complete")->assertStatus(409); // incomplete
+});
+
+test('an upload belongs to the person who started it', function () {
+    Storage::fake('local');
+    [, $id] = startChunkedUpload();
+
+    $this->actingAs(userWithPermissions('manage-firmware'))->getJson("/json/device-releases/uploads/{$id}")->assertNotFound();
+    $this->actingAs(userWithPermissions('manage-firmware'))->deleteJson("/json/device-releases/uploads/{$id}")->assertNotFound();
+});
+
+test('an upload id that is not a plain token is refused, and app releases must be full', function () {
+    $admin = userWithPermissions('manage-firmware');
+
+    $this->actingAs($admin)->getJson('/json/device-releases/uploads/'.str_repeat('..', 20))->assertNotFound();
+    $this->actingAs($admin)->postJson('/json/device-releases/uploads', [
+        'filename' => 'a.tar.gz', 'size' => 10, 'kind' => 'app', 'version' => '1.0.0', 'architecture' => 'aarch64',
+        'release_type' => 'hotfix', 'required_base_version' => '0.9.0',
+    ])->assertStatus(422);
+});
+
+test('print servers are told apart from R Stations and are never offered firmware', function () {
+    [$piDevice, $piToken] = pairedDevice(['device_uuid' => 'pi']);
+    [$pcDevice, $pcToken] = pairedDevice(['device_uuid' => 'pc', 'code' => '654321']);
+    app(DeviceReleaseResolver::class)->tag(release(['version' => '9.0.0']), 'stable');
+
+    $this->withToken($piToken)->postJson('/api/devices/heartbeat', ['architecture' => 'aarch64', 'app_version' => '1.0.0'])
+        ->assertJsonPath('app_update_available', true);
+    $this->withToken($pcToken)->postJson('/api/devices/heartbeat', ['architecture' => 'aarch64', 'app_version' => '1.0.0', 'print_platform' => 'linux'])
+        ->assertJsonPath('app_update_available', false);
+
+    expect($piDevice->fresh()->device_type)->toBe('rstation')->and($pcDevice->fresh()->device_type)->toBe('print_server');
+});
+
+test('with a firmware source set the heartbeat points the device at it instead of offering releases', function () {
+    [$device, $token] = pairedDevice();
+    $device->update(['update_channel' => 'testing']);
+    app(DeviceReleaseResolver::class)->tag(release(['version' => '9.0.0']), 'testing');
+    $beat = fn () => $this->withToken($token)->postJson('/api/devices/heartbeat', ['architecture' => 'aarch64', 'app_version' => '1.0.0']);
+
+    $beat()->assertJsonPath('update_server_url', null)->assertJsonPath('app_update_available', true);
+
+    $admin = userWithPermissions('manage-firmware');
+    $this->actingAs($admin)->putJson('/json/firmware-source', ['source_url' => 'https://master.example.org/'])
+        ->assertOk()->assertJsonPath('source_url', 'https://master.example.org');
+    $beat()->assertJsonPath('update_server_url', 'https://master.example.org')
+        ->assertJsonPath('update_channel', 'testing')->assertJsonPath('app_update_available', false);
+
+    $this->actingAs($admin)->putJson('/json/firmware-source', ['source_url' => null])->assertOk();
+    $beat()->assertJsonPath('update_server_url', null);
+});
+
+test('the firmware source must be an http(s) URL and not this server', function () {
+    $admin = userWithPermissions('manage-firmware');
+
+    foreach (['javascript:alert(1)', 'ftp://x.example.org', 'not a url', url('/')] as $bad) {
+        $this->actingAs($admin)->putJson('/json/firmware-source', ['source_url' => $bad])->assertStatus(422);
+    }
+});
+
+test('another instance\'s device can ask this catalogue directly, without a token', function () {
+    app(DeviceReleaseResolver::class)->tag(release(['version' => '3.0.0', 'sha256' => str_repeat('b', 64)]), 'testing');
+    // Even when this instance is itself pointed elsewhere, it answers from its own releases only.
+    \App\Models\FirmwareSetting::current()->update(['source_url' => 'https://elsewhere.example.org']);
+
+    $this->postJson('/api/devices/update-check', ['architecture' => 'aarch64', 'app_version' => '1.0.0', 'channel' => 'testing'])
+        ->assertOk()->assertJsonPath('app_update_available', true)->assertJsonPath('latest_app_version', '3.0.0')
+        ->assertJsonPath('app_sha256', str_repeat('b', 64))->assertJsonPath('os_update_available', false);
+    $this->postJson('/api/devices/update-check', ['architecture' => 'aarch64', 'app_version' => '1.0.0', 'channel' => 'stable'])
+        ->assertJsonPath('app_update_available', false); // not tagged on stable
+    $this->postJson('/api/devices/update-check', ['channel' => 'stable'])->assertStatus(422);
+    $this->postJson('/api/devices/update-check', ['architecture' => 'aarch64', 'channel' => 'bogus'])->assertStatus(422);
 });

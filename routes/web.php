@@ -900,8 +900,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ki
 // R Station device fleet (DEVICE_CONTRACT.md): the admin page and
 // its JSON. The device-facing endpoints are in routes/api.php.
 Route::get('/setup/devices', function () {
-    return Inertia::render('RStationDevices',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/devices')]);
+    return Inertia::render('RStationDevices', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/devices'),
+        'canManageFirmware' => (bool) Auth::user()->hasPermission('manage-firmware'),
+    ]);
 })->middleware(['auth', 'permission:manage-devices']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-devices']], function () {
@@ -914,9 +916,26 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-de
     // Typing the print queues a print server reports (see PrinterAdminController).
     Route::put('/printers/{printer}', [PrinterAdminController::class, 'update']);
     Route::delete('/printers/{printer}', [PrinterAdminController::class, 'destroy']);
+});
 
+// Firmware (the app/OS release catalogue and where devices look for it) is its own permission,
+// narrower than manage-devices: only fleet admins should be able to publish a release.
+Route::get('/setup/firmware', function () {
+    return Inertia::render('RStationFirmware',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/firmware')]);
+})->middleware(['auth', 'permission:manage-firmware']);
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-firmware']], function () {
+    Route::get('/firmware-source', [DeviceReleaseController::class, 'source']);
+    Route::put('/firmware-source', [DeviceReleaseController::class, 'updateSource']);
     Route::get('/device-releases', [DeviceReleaseController::class, 'index']);
     Route::post('/device-releases', [DeviceReleaseController::class, 'store']);
+    // Chunked upload for large files (see DeviceReleaseController).
+    Route::post('/device-releases/uploads', [DeviceReleaseController::class, 'startUpload']);
+    Route::get('/device-releases/uploads/{id}', [DeviceReleaseController::class, 'uploadStatus']);
+    Route::put('/device-releases/uploads/{id}', [DeviceReleaseController::class, 'uploadChunk']);
+    Route::post('/device-releases/uploads/{id}/complete', [DeviceReleaseController::class, 'finishUpload']);
+    Route::delete('/device-releases/uploads/{id}', [DeviceReleaseController::class, 'cancelUpload']);
     Route::post('/device-releases/{deviceRelease}/tag', [DeviceReleaseController::class, 'tag']);
     Route::post('/device-releases/{deviceRelease}/untag', [DeviceReleaseController::class, 'untag']);
     Route::delete('/device-releases/{deviceRelease}', [DeviceReleaseController::class, 'destroy']);

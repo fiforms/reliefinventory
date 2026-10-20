@@ -7,6 +7,7 @@ use App\Http\Controllers\DeviceArtifactController;
 use App\Http\Controllers\DeviceHeartbeatController;
 use App\Http\Controllers\DevicePairController;
 use App\Http\Controllers\DevicePrintJobController;
+use App\Http\Controllers\DeviceUpdateCheckController;
 use Illuminate\Support\Facades\Route;
 
 // Server half of rstation/platform/docs/DEVICE_CONTRACT.md. The device's
@@ -25,6 +26,8 @@ Route::prefix('devices')->group(function () {
         Route::get('/{id}/payload', [DevicePrintJobController::class, 'payload'])->whereNumber('id');
         Route::post('/{id}/result', [DevicePrintJobController::class, 'result'])->whereNumber('id');
     });
+    // Another instance's devices asking this one's catalogue (see DeviceUpdateCheckController).
+    Route::post('/update-check', [DeviceUpdateCheckController::class, 'check'])->middleware('throttle:60,1');
     // Unauthenticated by contract (devices fetch with plain GETs); the
     // per-release random token in the path is the access control.
     Route::get('/artifacts/{token}/{filename}', [DeviceArtifactController::class, 'download']);

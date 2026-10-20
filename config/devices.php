@@ -11,6 +11,11 @@ return [
     // (heartbeats are every 5 minutes; allow a few missed ones).
     'offline_after_minutes' => 15,
 
+    // Chunked firmware upload (DeviceReleaseController): the size the browser slices files into
+    // — under a default proxy's 1 MB request-body limit — and the largest file accepted.
+    'upload_chunk_bytes' => (int) env('DEVICE_UPLOAD_CHUNK_BYTES', 1_000_000),
+    'max_release_bytes' => (int) env('DEVICE_MAX_RELEASE_BYTES', 8 * 1024 * 1024 * 1024),
+
     'channels' => ['stable', 'testing', 'developer'],
 
     // What a kiosk can be configured to do, sent down in the heartbeat as

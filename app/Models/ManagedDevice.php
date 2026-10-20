@@ -31,7 +31,7 @@ class ManagedDevice extends Model
         'printers_reported_at' => 'datetime',
     ];
 
-    protected $appends = ['online', 'revoked'];
+    protected $appends = ['online', 'revoked', 'device_type'];
 
     // The wake-up channel name is a capability: never serialize it to the admin UI.
     protected $hidden = ['wake_channel'];
@@ -77,6 +77,17 @@ class ManagedDevice extends Model
         $this->wake_channel = null;
 
         return $token;
+    }
+
+    /**
+     * 'print_server' for the desktop software print client (reports windows/macos/linux), else
+     * 'rstation' — the Raspberry Pi platform, including one running as a print station, which
+     * reports platform 'rstation' or nothing at all. Print servers are not managed firmware
+     * devices: they get no update offers and no channel/OS-update settings.
+     */
+    public function getDeviceTypeAttribute(): string
+    {
+        return in_array($this->platform, ['windows', 'macos', 'linux'], true) ? 'print_server' : 'rstation';
     }
 
     public function getRevokedAttribute(): bool
