@@ -114,6 +114,39 @@ class PalletStatusController extends Controller
     }
 
     /**
+     * Drill-down for the Locations tab: the live pallets (same definition of "live" as summary())
+     * in one location, with status. $location is a location id, "none" (no location recorded) or
+     * "other" (archived/unknown locations).
+     */
+    public function locationPallets(string $location)
+    {
+        $gone = [PalletKind::MISSING, 'shipped', 'collected', 'released', 'condemned'];
+        $query = Pallet::query()->whereNotIn('status', $gone)->with('location:id,code');
+
+        if ($location === 'none') {
+            $query->whereNull('location_id');
+        } elseif ($location === 'other') {
+            $query->whereNotNull('location_id')
+                ->whereNotIn('location_id', Location::where('status', 'active')->select('id'));
+        } else {
+            $query->where('location_id', (int) $location);
+        }
+
+        $pallets = $query->orderBy('id')->limit(self::MAX_LIMIT)->get();
+        $lastMoved = PalletStatus::whereIn('pallet_id', $pallets->pluck('id'))
+            ->selectRaw('pallet_id, max(created_at) as moved')->groupBy('pallet_id')->pluck('moved', 'pallet_id');
+
+        return response()->json(['records' => $pallets->map(fn ($p) => [
+            'id' => $p->id,
+            'tag' => $p->tag,
+            'kind_label' => PalletKind::LABELS[$p->kind] ?? $p->kind,
+            'status' => $p->status,
+            'location' => $p->location?->code,
+            'last_moved_at' => $lastMoved[$p->id] ?? null,
+        ])->values()]);
+    }
+
+    /**
      * Resolve a scanned/typed pallet tag ("W00000042", "42") to the pallet and
      * where the database believes it is, so the movement form can tell whether
      * a move actually needs recording.

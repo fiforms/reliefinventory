@@ -54,6 +54,23 @@ function locationByCode(code) {
 	return (summary.value?.locations || []).find((l) => l.code.toLowerCase() === wanted) || null;
 }
 
+// ---------- location drill-down ----------
+const openLocation = ref(null); // { key, label, pallets|null, error }
+
+async function toggleLocation(key, label) {
+	if (openLocation.value?.key === key) {
+		openLocation.value = null;
+		return;
+	}
+	openLocation.value = { key, label, pallets: null, error: null };
+	try {
+		const pallets = (await axios.get(`/json/palletstatus/location/${key}`)).data.records;
+		if (openLocation.value?.key === key) openLocation.value.pallets = pallets;
+	} catch (e) {
+		if (openLocation.value?.key === key) openLocation.value.error = e.response?.data?.message || 'Could not load pallets.';
+	}
+}
+
 // ---------- pallet lookup (shared by Record + Search) ----------
 async function lookupPallet(tag) {
 	const response = await axios.get('/json/palletstatus/lookup', { params: { tag } });
@@ -275,18 +292,18 @@ onMounted(loadSummary);
 							</tr>
 						</thead>
 						<tbody>
-							<tr v-for="l in summary.locations" :key="l.id" :class="{ pm_zero: !l.total }">
-								<td>{{ l.code }}</td>
+							<tr v-for="l in summary.locations" :key="l.id" :class="{ pm_zero: !l.total, pm_clickable: l.total }" @click="l.total && toggleLocation(l.id, l.code)">
+								<td>{{ openLocation?.key === l.id ? '▾' : '▸' }} {{ l.code }}</td>
 								<td>{{ l.total }}</td>
 								<td v-for="s in statusColumns" :key="s">{{ l.by_status[s] || '' }}</td>
 							</tr>
-							<tr v-if="summary.no_location.total" class="pm_nolocation">
-								<td>No location recorded</td>
+							<tr v-if="summary.no_location.total" class="pm_nolocation pm_clickable" @click="toggleLocation('none', 'No location recorded')">
+								<td>{{ openLocation?.key === 'none' ? '▾' : '▸' }} No location recorded</td>
 								<td>{{ summary.no_location.total }}</td>
 								<td v-for="s in statusColumns" :key="s">{{ summary.no_location.by_status[s] || '' }}</td>
 							</tr>
-							<tr v-if="summary.other_locations.total" class="pm_nolocation">
-								<td>Archived / other locations</td>
+							<tr v-if="summary.other_locations.total" class="pm_nolocation pm_clickable" @click="toggleLocation('other', 'Archived / other locations')">
+								<td>{{ openLocation?.key === 'other' ? '▾' : '▸' }} Archived / other locations</td>
 								<td>{{ summary.other_locations.total }}</td>
 								<td v-for="s in statusColumns" :key="s">{{ summary.other_locations.by_status[s] || '' }}</td>
 							</tr>
@@ -296,7 +313,28 @@ onMounted(loadSummary);
 						</tbody>
 					</table>
 				</div>
-				<p class="ri_hint">Counts are live pallets only — shipped, collected, released, condemned and missing pallets aren't included.</p>
+				<div v-if="openLocation" class="pm_drill">
+					<h3 class="pm_sub">Pallets in {{ openLocation.label }}</h3>
+					<p v-if="openLocation.error" class="ri_error">{{ openLocation.error }}</p>
+					<p v-else-if="!openLocation.pallets">Loading…</p>
+					<div v-else class="pm_tablewrap">
+						<table class="ri_datatable" border="1">
+							<thead>
+								<tr><th>Pallet</th><th>Type</th><th>Status</th><th>Last moved</th></tr>
+							</thead>
+							<tbody>
+								<tr v-for="p in openLocation.pallets" :key="p.id">
+									<td class="pm_mono">{{ p.tag }}</td>
+									<td>{{ p.kind_label }}</td>
+									<td>{{ p.status }}</td>
+									<td>{{ formatDate(p.last_moved_at) }}</td>
+								</tr>
+								<tr v-if="!openLocation.pallets.length"><td colspan="4">No live pallets here.</td></tr>
+							</tbody>
+						</table>
+					</div>
+				</div>
+				<p class="ri_hint">Click a location to list its pallets. Counts are live pallets only — shipped, collected, released, condemned and missing pallets aren't included.</p>
 			</div>
 
 			<!-- Record movement -->
@@ -514,6 +552,12 @@ onMounted(loadSummary);
 }
 .pm_status_head {
 	text-transform: capitalize;
+}
+.pm_clickable {
+	cursor: pointer;
+}
+.pm_drill {
+	margin-top: 1em;
 }
 .pm_zero {
 	opacity: 0.55;

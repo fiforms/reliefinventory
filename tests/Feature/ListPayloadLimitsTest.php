@@ -136,4 +136,9 @@ test('movement summary counts live pallets per location and lookup resolves a sc
     $this->getJson('/json/palletstatus/lookup?tag=R'.str_pad($loose->id, 8, '0', STR_PAD_LEFT))->assertOk()
         ->assertJsonPath('record.id', $loose->id)->assertJsonPath('record.location', null);
     $this->getJson('/json/palletstatus/lookup?tag=99999')->assertNotFound();
+
+    $this->getJson("/json/palletstatus/location/{$a->id}")->assertOk()
+        ->assertJsonCount(3, 'records')->assertJsonPath('records.0.location', 'A-1');
+    $this->getJson('/json/palletstatus/location/none')->assertOk()->assertJsonCount(1, 'records');
+    $this->getJson("/json/palletstatus/location/{$b->id}")->assertOk()->assertJsonCount(0, 'records');
 });
