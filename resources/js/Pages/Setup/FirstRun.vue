@@ -18,6 +18,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import RestoreBackup from './RestoreBackup.vue';
 import { Head, useForm } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 
@@ -25,6 +26,8 @@ const props = defineProps({
 	codeRequired: { type: Boolean, default: false },
 });
 
+// 'new' (the two-step wizard) or 'restore' (upload a backup instead)
+const mode = ref('new');
 const step = ref(1);
 const form = useForm({
 	first_name: '',
@@ -78,8 +81,16 @@ const stepTitle = computed(() => (step.value === 1 ? 'Create the administrator a
 		<Head title="Set up Relief Inventory" />
 
 		<h1 class="text-lg font-semibold text-gray-900">Welcome to Relief Inventory</h1>
+		<template v-if="mode === 'restore'">
+			<p class="mt-1 text-sm text-gray-600">Restore from a backup</p>
+			<RestoreBackup :code-required="codeRequired" @back="mode = 'new'" />
+		</template>
+
+		<template v-else>
 		<p class="mt-1 text-sm text-gray-600">
 			This is a brand-new installation. Two quick steps and you're in.
+			Moving from another system?
+			<button type="button" class="underline text-blue-700" @click="mode = 'restore'">Restore from a backup</button>
 		</p>
 
 		<p class="mt-4 text-xs font-semibold uppercase tracking-wide text-gray-500">
@@ -178,5 +189,6 @@ const stepTitle = computed(() => (step.value === 1 ? 'Create the administrator a
 				</div>
 			</div>
 		</form>
+		</template>
 	</GuestLayout>
 </template>
