@@ -378,7 +378,8 @@ Settings > Local server starts the `docker/compose.yaml`-style stack (`rstation/
 8080 with data under `/data/relief-inventory`. Docker is **off unless the flag file exists** (our overrides of
 Debian's `docker.service`/`docker.socket`), the root supervisor is `slide-announcer-local-server`, and the Settings
 backend can only start fixed enable/disable/reset units — read LOCAL_SERVER.md before touching it. It's a standalone site,
-not a sync target; **untested on real hardware** as of build.
+not a sync target; proven end to end on a real Pi 2026-10-20 (install, first-run setup, self-pairing, printing) —
+LOCAL_SERVER.md lists what is still unverified (QR/external-site/reset paths, OTA reload, power loss, phone `.local` resolution).
 
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 

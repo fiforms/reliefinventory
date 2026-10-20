@@ -1,12 +1,22 @@
 # Local server — a whole Relief Inventory site on the R Station
 
-Built 2026-10-19 (branch `rstation-local-server`). **Status: built and unit-tested; the compose stack was run against the real image on an amd64 host and Debian's classic Docker 26 loads the arm64 archive; nothing has been run on a Pi.**
+Built 2026-10-19 (branch `rstation-local-server`). **Status: built, unit-tested, and proven end to end on a real Raspberry Pi (2026-10-20, first image build) — see "Verified on hardware".**
 The scenario: a disaster zone with no Internet. Someone plugs the R Station into an Ethernet switch or
 a Wi-Fi hotspot, switches it on, opens Settings > Local server, presses *Start*, and a few minutes later
 everyone on that network can use a full Relief Inventory site from a browser. Nothing leaves the device.
 
 This is the Docker stack from `docker/compose.yaml` (web, queue, scheduler, MariaDB — see
 `scripts/DOCKER_PLAN.md`) with its images baked into the OS image instead of pulled.
+
+## Verified on hardware (2026-10-20)
+
+On a real Raspberry Pi, from an image built with `build-offline-bundle.sh` on the first attempt: the first-run
+wizard with `http://localhost:8080` as the server and pairing skipped; installing the self-hosted server from
+Settings > Local server (it took a few minutes and came up); completing the server's own first-run setup and
+logging in; pairing the R Station with its own self-hosted server; and printing to a real printer through the
+station's own print server, with the whole loop on one device and no Internet. That covers the Docker engine and
+unit overrides, loading the baked-in images into `/data/docker`, the supervisor, the compose stack and the launcher.
+(Reported by the project owner; not scripted.)
 
 ## What ships where
 
@@ -83,18 +93,18 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
 
 ## Known gaps / not done
 
-- **Never run on real hardware.** Unit-tested with a fake `docker`/`systemctl` (`backend/test_local_server.py`);
-  untested: the actual `docker.io` + overlay2 on `/data`, cgroup memory on the Pi kernel, the unit
-  overrides actually replacing Debian's, `.local` name resolution on the customer network, the arm64 stack's
-  real memory use and first-start time.
+- **Still unverified on hardware:** the Settings > Local server extras beyond the happy path (QR codes, setting an
+  external site later, the erase/reset button, stop/start cycles and start-at-boot), an OTA update that ships a
+  different image build (reload by image id), abrupt power loss, `.local` name resolution from phones and other
+  clients on a customer network, and measured memory use and first-start time on the Pi (the ~460 MB figure is from
+  an amd64 host). Unit tests use a fake `docker`/`systemctl` (`backend/test_local_server.py`).
 - **Image size.** The .deb is ~475 MB; it sits in both root slots and so **every OTA
   bundle grows by that much**. If that proves painful: ship the local-server image only in a separate
   "offline" build, or move the tarball out of the rootfs onto the boot/data partition.
 - **No way to get data out** except copying `/data/relief-inventory/backups` off the card. A "copy backup to
   USB" button and an import path into a central site (there is no sync/merge story in the app) are the
   natural next steps. Backups cover the database only; uploaded photos are in `storage/`.
-- **Printing from the local server:** home only moves the kiosk's screen. The device's print server still needs
-  pairing with a site to receive jobs, and pairing with its own local server (so the print queue works offline) isn't
-  wired up or tested.
+- **Printing from the local server works** (verified, below): the device pairs with its own server and prints through
+  its own print server. Home on its own only moves the kiosk's screen; pairing is a separate step.
 - No automatic update of the containers apart from the OS image; no Reverb (realtime) in this stack.
 - The System Administration panel's systemd/git buttons don't apply inside the container (see `scripts/DOCKER_PLAN.md`).
