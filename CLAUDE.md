@@ -263,6 +263,17 @@ request. The maintenance banner's message is auto-generated from admin-entered s
 date-times (client-side text generation in `FeedbackReports.vue`, still hand-editable after) —
 these times aren't persisted separately, only the composed message string is.
 
+### On-demand backup zips (`/setup/backups`, `manage-backups`) — built 2026-10-20
+
+`BackupService` + `BackupController` + `Backups.vue`: a zip of `manifest.json` (SHA-256 of every entry),
+`database/db.sql` and, optionally, the uploads. Runs as a **detached `setsid` process** (`backup:run <id>`), not a
+queued job (worker timeout / `retry_after` would kill or re-run it); one-at-a-time via a row check plus an `flock`.
+Written to `RI_BACKUP_DIR` — **never under `storage/app`**, so a backup can't contain earlier backups. **The zip
+never contains `APP_KEY`/`.env`/`.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and
+logged, to `view-app-key` holders on that page. Only the feedback `shared_secret` (an `encrypted` cast) and cookies depend on
+it. Stage 2 — restore from the first-run wizard (chunked upload, manifest check, blank undecryptable values) — is not
+built. Details: `scripts/BACKUPS.md`.
+
 ### PDF / label generation
 
 Every PDF in the app — pallet labels (`PalletReportController`), the Situation Report, the Receiving Guide,

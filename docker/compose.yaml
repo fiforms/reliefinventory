@@ -101,10 +101,14 @@ x-app: &app
     SESSION_DRIVER: database
     QUEUE_CONNECTION: database
     CACHE_STORE: database
+    # Daily dumps, pre-migration dumps and the zips made from Backup Files in the app all live here.
+    RI_BACKUP_DIR: /backups
   volumes:
     # private uploads, logs, caches, print-queue PDFs and the generated APP_KEY
     - storage:/var/www/html/storage
     - secrets:/secrets:ro
+    # Deliberately a host directory outside `storage`, so a backup never contains earlier backups.
+    - ./backups:/backups
 
 services:
   init:
@@ -143,11 +147,6 @@ services:
     command: ["web"]
     ports:
       - "8080:8080"
-    volumes:
-      - storage:/var/www/html/storage
-      - secrets:/secrets:ro
-      # pre-migration dumps (taken when an upgrade has pending migrations) land beside the daily ones
-      - ./backups:/backups
     depends_on:
       db:
         condition: service_healthy
@@ -166,10 +165,6 @@ services:
     command: ["scheduler"]
     healthcheck:
       disable: true
-    volumes:
-      - storage:/var/www/html/storage
-      - secrets:/secrets:ro
-      - ./backups:/backups
     depends_on:
       app:
         condition: service_healthy

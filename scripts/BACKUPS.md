@@ -103,3 +103,35 @@ journalctl -u reliefinventory-backup.service  # scheduled-run history
 Restore is manual and deliberate: `gunzip < db.sql.gz | mysql <db>` for data,
 untar `storage-app.tar.gz` from the app root for uploads, and `git reset
 --hard $(cat git-sha.txt)` + rebuild if the code must match the data.
+
+## Backup files (on-demand zips) — `/setup/backups`
+
+Separate from the tiered backups above (which stay as they are): a `manage-backups` holder
+(Administrator by default) can create, download and delete full backup **zip files** from the
+**Backup Files** page, and `php artisan backup:create [--uploads]` does the same from a shell.
+
+```
+manifest.json         format version, app commit, migration list, size + SHA-256 of every entry
+database/db.sql       plain mariadb-dump
+files/private/...     storage/app/private  (only with "include uploads")
+files/public/...      storage/app/public   (only with "include uploads")
+```
+
+- **Where:** `config('backup.dir')` (`RI_BACKUP_DIR`, default `storage/backups`; `/backups` in Docker) —
+  never under `storage/app`, which `update.sh` tars and a backup must not contain earlier backups.
+  Excluded from uploads (`config('backup.exclude_dirs')`): `print-jobs`, `device-releases`, `device-uploads`.
+- **How it runs:** the request starts `php artisan backup:run <id>` detached (`setsid -f`), so it outlives the
+  web request and needs no queue worker (a worker's timeout/`retry_after` would kill or re-run a long job).
+  One at a time: the `start()` row check plus an `flock` on `<dir>/.backup.lock`, which the kernel releases if
+  the process dies; a row whose process vanished is marked failed on the next page load. Needs `setsid`
+  (util-linux), `zip` support in PHP, and `mariadb-dump`/`mysqldump` on the server.
+- **Expiry:** `RI_BACKUP_KEEP_DAYS` (default 14) after creation; deleted lazily when the page loads or a backup
+  runs, hourly by the Docker scheduler (`backup:prune`), or individually by an admin. Bare-metal has no scheduler
+  for it beyond the lazy path.
+- **The application key is never in a zip** (not `.env`, not `storage/app/.app_key`; `BackupService` refuses
+  those names even if they sit in an included directory). What depends on `APP_KEY`: values encrypted in the
+  database (today only the feedback-aggregation shared secret) and login/remember cookies. Passwords and PINs
+  are bcrypt, unaffected. Admins with `view-app-key` can reveal it on the Backup Files page (password re-entry,
+  throttled, logged) to write it down. A restore without the key must blank anything encrypted with the old one.
+- **Restore** (a first-run-wizard option: chunked upload, manifest check, SQL load, files, migrate, blank
+  undecryptable values) is **not built yet**; for now restore by hand from `database/db.sql` and `files/`.

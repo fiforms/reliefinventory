@@ -1,7 +1,7 @@
 #!/bin/bash
 # The container stand-in for the systemd timers the bare-metal install uses
 # (scripts/volunteer-sync.sh, scripts/update.sh --scheduled):
-#   hourly  php artisan volunteers:sync-active-windows
+#   hourly  php artisan volunteers:sync-active-windows, and backup:prune (expired on-demand backup zips)
 #   daily   gzip'd SQL dump of the database into $RI_BACKUP_DIR (default /backups)
 #
 #   RI_BACKUP_ENABLED     true|false (default true)
@@ -23,6 +23,7 @@ backup_done_today() { ls "$BACKUP_DIR"/reliefinventory-"$(date +%Y%m%d)"-*.sql.g
 log "started (volunteer sync hourly; db backup ${RI_BACKUP_ENABLED:-true} daily at hour $BACKUP_HOUR, keep $KEEP_DAYS days in $BACKUP_DIR)"
 while true; do
     php artisan volunteers:sync-active-windows --no-interaction || log "volunteer sync failed"
+    php artisan backup:prune --no-interaction || log "backup prune failed"
 
     if [ "${RI_BACKUP_ENABLED:-true}" = true ] && [ "$(date +%-H)" -ge "$BACKUP_HOUR" ] && ! backup_done_today; then
         ri-db-backup || true

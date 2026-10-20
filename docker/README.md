@@ -77,6 +77,10 @@ gunzip -c backups/reliefinventory-YYYYMMDD-HHMMSS.sql.gz | docker compose exec -
 If you set `APP_KEY` yourself, keep it with the backups: restoring a database without its key makes encrypted
 values unreadable.
 
+Admins can also make a full backup **.zip** (database, optionally all uploaded files) on demand from
+**Backup Files** in the app, then download it. These land in the same `backups/` directory, are deleted
+after `RI_BACKUP_KEEP_DAYS`, and never contain the application key (see `scripts/BACKUPS.md`).
+
 ## Upgrading
 
 ```bash
