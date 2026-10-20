@@ -5,8 +5,9 @@
 	RestoreBackup.vue — the "restore from a backup" path of the first-run wizard (FirstRun.vue).
 
 	Upload the backup .zip in resumable chunks (composables/chunkedUpload.js, same protocol as the firmware
-	upload), then the server takes over (RestoreService, a detached process) and this page polls its status
-	file until it finishes. The status poll tolerates failures on purpose: while the database is being replaced
+	upload) — plus, optionally, a second zip that supplies only the uploaded files (for recovering a damaged
+	database with the best copy of the files; any database inside that second zip is ignored) — then ask the
+	server to start (RestoreService, a detached process) and poll its status file until it finishes. The status poll tolerates failures on purpose: while the database is being replaced
 	the server can briefly answer with errors, and that is progress, not a problem. Server half: RestoreController.
 -->
 
@@ -18,7 +19,7 @@ import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import { useChunkedUpload } from '@/composables/chunkedUpload';
 import axios from 'axios';
-import { onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 defineProps({
 	codeRequired: { type: Boolean, default: false },
@@ -26,12 +27,19 @@ defineProps({
 defineEmits(['back']);
 
 const BASE = '/install/restore';
-const { task, percent, start, resume, cancel } = useChunkedUpload(BASE);
+// Two uploads: `main` (has the database) and, optionally, `extra` (the files). `stage` is the one in progress.
+const main = useChunkedUpload(BASE);
+const extra = useChunkedUpload(BASE);
+const stage = ref('main');
+const current = computed(() => (stage.value === 'main' ? main : extra));
+const task = computed(() => current.value.task);
+const percent = computed(() => current.value.percent.value);
 
 // idle -> uploading -> restoring -> complete | failed
 const phase = ref('idle');
 const setupCode = ref('');
 const file = ref(null);
+const filesFile = ref(null);
 const error = ref('');
 const codeError = ref('');
 const status = ref({});
@@ -41,6 +49,11 @@ const human = (bytes) => (bytes > 1073741824 ? `${(bytes / 1073741824).toFixed(2
 
 function pick(event) {
 	file.value = event.target.files[0] || null;
+	error.value = '';
+}
+
+function pickFiles(event) {
+	filesFile.value = event.target.files[0] || null;
 	error.value = '';
 }
 
@@ -54,30 +67,46 @@ async function begin() {
 	codeError.value = '';
 	if (!file.value) return;
 	phase.value = 'uploading';
+	stage.value = 'main';
 	try {
-		await start(file.value, { setup_code: setupCode.value || undefined });
-		phase.value = 'restoring';
-		poll();
+		await main.start(file.value, { setup_code: setupCode.value || undefined });
+		await uploadFilesThenLaunch();
 	} catch (e) {
-		if (!task.id) phase.value = 'idle'; // never started (wrong code, not a fresh instance, ...)
+		if (!current.value.task.id) phase.value = 'idle'; // never started (wrong code, not a fresh instance, ...)
 		failWith(e, 'The upload was interrupted. Choose Resume to carry on from where it stopped.');
 	}
+}
+
+// After the main file is up: the optional files backup, then start the restore.
+async function uploadFilesThenLaunch() {
+	if (filesFile.value && !extra.task.id) {
+		stage.value = 'files';
+		await extra.start(filesFile.value, { setup_code: setupCode.value || undefined });
+	}
+	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined });
+	phase.value = 'restoring';
+	poll();
 }
 
 async function resumeUpload() {
 	error.value = '';
 	try {
-		await resume();
-		phase.value = 'restoring';
-		poll();
+		if (stage.value === 'main') {
+			await main.resume();
+			await uploadFilesThenLaunch();
+		} else {
+			await extra.resume();
+			await uploadFilesThenLaunch();
+		}
 	} catch (e) {
 		failWith(e, 'The upload was interrupted again. Choose Resume to try once more.');
 	}
 }
 
 async function cancelUpload() {
-	await cancel();
+	await Promise.all([main.cancel(), extra.cancel()]);
 	phase.value = 'idle';
+	stage.value = 'main';
 	error.value = '';
 }
 
@@ -101,11 +130,14 @@ function poll() {
 }
 
 function reset() {
-	cancel();
+	main.cancel();
+	extra.cancel();
 	phase.value = 'idle';
+	stage.value = 'main';
 	status.value = {};
 	error.value = '';
 	file.value = null;
+	filesFile.value = null;
 }
 
 onMounted(async () => {
@@ -128,7 +160,7 @@ onUnmounted(() => clearInterval(timer));
 		<!-- choose a file -->
 		<div v-if="phase === 'idle'" class="mt-3 space-y-4">
 			<p class="text-sm text-gray-600">
-				Choose a backup file (.zip) made by <strong>Backup Files</strong> in Relief Inventory. The whole system — data
+				Choose a backup file (.zip) made by <strong>Updates &amp; Backups</strong> in Relief Inventory. The whole system — data
 				and, if the backup included them, uploaded photos and documents — is restored onto this new installation.
 			</p>
 
@@ -143,6 +175,17 @@ onUnmounted(() => clearInterval(timer));
 				<input id="restore_file" type="file" accept=".zip,application/zip" class="mt-1 block w-full text-sm" @change="pick" />
 				<p v-if="file" class="mt-1 text-xs text-gray-500">{{ file.name }} — {{ human(file.size) }}</p>
 			</div>
+
+			<details class="rounded border border-gray-200 p-3 text-sm">
+				<summary class="cursor-pointer text-gray-700">Recovering from a damaged database? Add a separate backup of the files</summary>
+				<p class="mt-2 text-xs text-gray-600">
+					If the backup above holds only the database, or you have a newer or more complete copy of the uploaded files
+					(a “files only” or “database + files” backup), choose it here. The uploaded files come from this one; if it also
+					contains a database, that part is ignored.
+				</p>
+				<input id="restore_files_file" type="file" accept=".zip,application/zip" class="mt-2 block w-full text-sm" @change="pickFiles" />
+				<p v-if="filesFile" class="mt-1 text-xs text-gray-500">{{ filesFile.name }} — {{ human(filesFile.size) }}</p>
+			</details>
 
 			<div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
 				<p>This installation must be new and empty — a backup can only be restored onto one that has never been set up.</p>
@@ -164,12 +207,15 @@ onUnmounted(() => clearInterval(timer));
 
 		<!-- uploading -->
 		<div v-else-if="phase === 'uploading'" class="mt-3 space-y-3">
-			<p class="text-sm text-gray-700">Uploading {{ task.file?.name }}…</p>
+			<p class="text-sm text-gray-700">
+				Uploading {{ task.file?.name }}…
+				<span v-if="filesFile" class="text-gray-500">(file {{ stage === 'main' ? 1 : 2 }} of 2)</span>
+			</p>
 			<div class="h-3 w-full overflow-hidden rounded bg-gray-200"><div class="h-3 bg-blue-600" :style="{ width: percent + '%' }"></div></div>
 			<p class="text-xs text-gray-500">{{ human(task.received) }} of {{ human(task.size) }} ({{ percent }}%). Keep this page open.</p>
 			<div v-if="error" class="rounded border border-red-300 bg-red-50 p-2 text-sm text-red-800">{{ error }}</div>
 			<div class="flex items-center gap-3">
-				<PrimaryButton v-if="task.failed && !task.running" type="button" @click="resumeUpload">Resume</PrimaryButton>
+				<PrimaryButton v-if="task.failed && !task.running && task.id" type="button" @click="resumeUpload">Resume</PrimaryButton>
 				<SecondaryButton type="button" @click="cancelUpload">Cancel</SecondaryButton>
 			</div>
 		</div>
@@ -190,7 +236,13 @@ onUnmounted(() => clearInterval(timer));
 				<p class="font-medium">These settings were encrypted with the old system's key and could not be carried over. Re-enter them after signing in:</p>
 				<ul class="mt-1 list-disc pl-5"><li v-for="label in status.blanked" :key="label">{{ label }}</li></ul>
 			</div>
+			<div v-if="status.notes?.length" class="rounded border border-gray-300 bg-gray-50 p-3 text-sm text-gray-700">
+				<p v-for="note in status.notes" :key="note">{{ note }}</p>
+			</div>
 			<div v-if="!status.includes_uploads" class="text-xs text-gray-600">This backup did not include uploaded photos and documents.</div>
+			<div v-else-if="status.files_created_at && status.files_created_at !== status.backup_created_at" class="text-xs text-gray-600">
+				Uploaded files are from the backup made {{ new Date(status.files_created_at).toLocaleString() }}.
+			</div>
 			<div v-if="status.admin_missing" class="rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">
 				The restored data has no administrator account. Continue to create one.
 				<a href="/install" class="block mt-2 underline">Continue to setup</a>

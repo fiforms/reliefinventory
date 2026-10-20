@@ -17,6 +17,12 @@ return [
     |
     */
 
+    // Which kind of install this is: 'docker' (the container image, incl. the R Station local server) or
+    // 'systemd' (a bare-metal install updated by scripts/update.sh). The admin page shows only what the
+    // platform can do — container installs have no systemd units, git checkout or tiered backup timer.
+    // The Dockerfile sets RI_RUNTIME=docker; /.dockerenv is the fallback for a hand-rolled container.
+    'runtime' => env('RI_RUNTIME') ?: (is_file('/.dockerenv') ? 'docker' : 'systemd'),
+
     'backup_dir' => env('SYSTEM_BACKUP_DIR', '/var/backups/reliefinventory'),
 
     'settings_file' => env('SYSTEM_BACKUP_SETTINGS_FILE', storage_path('app/backup-settings.conf')),

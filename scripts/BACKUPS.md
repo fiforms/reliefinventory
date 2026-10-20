@@ -1,92 +1,128 @@
-# Backups: schedule, tiers, and admin-panel integration
+# Backups: one format, one command, per-platform scheduling
 
-Backups are made by `scripts/update.sh` (every full update backs up first; the
-`--backup-only` and `--scheduled` flags back up without updating) and land under
-`/var/backups/reliefinventory/`:
+Every backup in the app is a **zip with a manifest**, made by one command:
 
-```
-hourly/<YYYYmmdd-HHMMSS>/    every backup: hourly, scheduled, or on-demand  keep KEEP_HOURLY (48)
-daily/<stamp>/               that day's scheduled backup           keep KEEP_DAILY   (14)
-monthly/<stamp>/             first daily promotion of the month    keep KEEP_MONTHLY (12)
-yearly/<stamp>/              first daily promotion of the year     keep KEEP_YEARLY  (3)
+```bash
+php artisan backup:create [--scope=database|full|storage] [--dest=DIR [--name=NAME]]
 ```
 
-`hourly/` is a flat, undeduplicated recent-backups tier — its job is to let you roll
-back to whichever attempt preceded a bad one (e.g. three "Back Up Now" clicks or
-update attempts in the same hour each get their own entry there, none of them
-collapsed into "the hour's backup"). Only the once-a-day **scheduled** backup (never
-an on-demand one — an update's pre-update backup, or a manual "Back Up Now") gets
-promoted further into `daily/`, and only that promotion can, in turn, promote into
-`monthly/`/`yearly/`. This is deliberate: an on-demand backup never enters
-daily/monthly/yearly directly, so triggering several in one day can't crowd out
-that day's (or an earlier day's) history — see `promote()`/`prune_tier()` in
-`update.sh`.
+| scope | holds | used for |
+|---|---|---|
+| `database` (default) | the database dump | the bare-metal tiered backups, the Docker daily and pre-migration dumps, everyday backups |
+| `full` | the dump **and** the uploaded files | "Database + uploaded files" on the admin page; `RI_BACKUP_SCOPE=full` in Docker |
+| `storage` | the uploaded files only | disaster recovery — a good copy of the files to pair with a database zip. CLI only; the admin page doesn't offer it |
 
-The stamp is generated in `BACKUP_TZ`, not server-local time (`TZ="$BACKUP_TZ" date
-...` in `update.sh`) — the admin panel displays it verbatim, so it has to already be
-in the configured timezone or the panel would silently mislabel every backup time.
+```
+manifest.json         format (2), scope, app commit, migration list, size + SHA-256 of every entry
+database/db.sql       plain mariadb-dump         (database, full)
+files/private/...     storage/app/private        (full, storage)
+files/public/...      storage/app/public         (full, storage)
+```
 
-Each backup contains `db.sql.gz` (integrity-checked mysqldump),
-`storage-app.tar.gz` (uploads), `env.backup`, and `git-sha.txt` (the code
-revision the data matched). Daily/monthly/yearly copies are **hardlink
-promotions** (`cp -al`) of the underlying hourly backup — promotion itself costs
-no disk space; space is only held by however many distinct snapshots the tiers
-retain.
+`DatabaseTools` (`app/Services`) is the one place the dump/load command lines (and their flags: `--single-transaction
+--no-tablespaces --routines --triggers`, `--skip-ssl` for the MariaDB client) are built; `BackupService` is the one
+place a zip is written. Nothing else — not `update.sh`, not the Docker scripts — carries its own `mysqldump`.
 
-## Hourly backups (optional)
+- **A truncated dump is never archived.** `mariadb-dump` ends a finished dump with `-- Dump completed on <time>`
+  (`DatabaseTools::dumpIsComplete()`). `BackupService` checks the exit status, a non-empty file *and* that marker before
+  checksumming, and a restore checks it again before wiping anything — a cut-off dump checksums perfectly well, so the
+  manifest alone couldn't catch it.
+- **Never in a zip:** the application key (`APP_KEY`, `.env`, `storage/app/.app_key` — `BackupService` refuses those
+  names even inside an included directory). What depends on `APP_KEY`: values encrypted in the database (today only
+  the feedback-aggregation shared secret) and login/remember cookies. Passwords and PINs are bcrypt, unaffected.
+  Admins with `view-app-key` can reveal it on the admin page (password re-entry, throttled, logged) to write it down.
+  A restore without the key blanks anything encrypted with the old one. *(The tiered backups used to keep a copy of
+  `.env` beside each dump; they no longer do — keep the key somewhere separate.)*
+- **Uploaded files** = `storage/app/private` and `storage/app/public`, minus `config('backup.exclude_dirs')`:
+  `print-jobs` (regenerated), `device-releases` and `device-uploads` (firmware — gigabytes, re-uploadable).
+- **`--dest=DIR`** writes the zip into `DIR` with **no database record and no expiry** (the caller owns retention) and
+  works with the database down — use it for scripts and disaster recovery. `--name` is the file name without `.zip`.
+  Without `--dest` the zip goes to `config('backup.dir')` (`RI_BACKUP_DIR`, default `storage/backups`; `/backups` in
+  Docker) with a `backups` row so the admin page lists it and it expires. If the row can't be written (database down, or
+  a pre-migration backup before the table has this version's columns) the file is written anyway, unlisted.
+  `backup.dir` is deliberately never under `storage/app`, so a backup can't contain earlier backups.
+- **How the admin page runs one:** the request starts `php artisan backup:run <id>` detached (`setsid -f`), so it
+  outlives the request and needs no queue worker. One at a time: the `start()` row check plus an `flock` on
+  `<dir>/.backup.lock`, released by the kernel if the process dies; a row whose process vanished is marked failed on
+  the next page load. Needs `setsid` (util-linux), PHP's zip support, and `mariadb-dump`/`mysqldump`.
+- **Expiry** (the `backups`-table zips and anything else named `relief-backup-*.zip` in `backup.dir`): `RI_BACKUP_KEEP_DAYS`
+  (default 14) after creation, deleted lazily when the admin page loads or a backup runs, hourly by the Docker scheduler
+  (`backup:prune`), or individually by an admin. Files with that name and no row (pre-migration backups, leftovers after
+  a restore replaced the table) go once they are that old; nothing else in the directory is touched.
 
-With `HOURLY_BACKUPS=1` ("Also back up every hour" on `/setup/system`), each firing
-of the hourly timer also takes a backup if none has been taken yet that hour
-(tracked in `/var/backups/reliefinventory/.last-hourly`). These are ordinary
-`hourly/` entries — never promoted — so `KEEP_HOURLY` decides how far back they
-reach (48 = two days). The daily/weekly scheduled backup and its promotion into
-`daily/`/`monthly/`/`yearly/` are unaffected; an hour in which the scheduled backup
-runs doesn't take a second hourly one. Off by default: without it, `hourly/` only
-holds the scheduled and on-demand backups, so on a quiet instance it looks just like
-`daily/`.
+> **The key is the one thing a backup does not carry.** The admin page shows a red notice above every backup section telling
+> the administrator to write down the application key (shown in the panel at the bottom, to `view-app-key` holders) and keep it
+> somewhere safe, separate from the backups: it is required to restore the encrypted parts of a backup.
 
-Every backup is a full copy (gzipped mysqldump + storage tarball), not incremental —
-simple to restore from any single directory, which matters more here than disk space.
+## Updates & Backups — one admin page (`/setup/system`)
 
-## Schedule settings
+`SystemAdmin.vue` (`SystemController` + `BackupController`) replaces the old separate "Updates & Backups" and "Backup
+Files" pages (`/setup/backups` redirects here). Each section needs its own permission, and only what the platform can do
+is shown (`config('system.runtime')`: `systemd` or `docker`; the Dockerfile sets `RI_RUNTIME=docker`, `/.dockerenv` is the
+fallback):
 
-Live settings file: `storage/app/backup-settings.conf` (copy
-`scripts/backup-settings.conf.example` to start). Keys, defaults, and valid
-values are documented in the example file; defaults are 2am
-`America/Los_Angeles`, daily, keeping 48/14/12/3 (hourly/daily/monthly/yearly).
+| section | permission | systemd (bare metal) | docker (incl. R Station local server) |
+|---|---|---|---|
+| Software update | `admin-system` | check for / install updates (`update.sh`) | version only; upgrade by pulling an image |
+| Offline mode | `admin-system` | ✔ | ✔ |
+| Create a backup + Backups list | `manage-backups` | ✔ | ✔ |
+| Scheduled backups | `admin-system` | tiers, "Run a Scheduled Backup Now", schedule + retention form | read-only summary of the compose settings, with the flat-retention note |
+| Application key | `view-app-key` | ✔ | ✔ |
 
-The systemd timer (`reliefinventory-backup.timer`) fires **hourly**, and each
-firing runs `update.sh --scheduled`, which exits immediately unless a backup is
-due per the settings file. Due means: at/past `BACKUP_HOUR` in `BACKUP_TZ`
-(past, not exactly at — so downtime over the backup hour self-heals later the
-same day, helped by `Persistent=true`), the right `BACKUP_DOW` in weekly mode,
-and no scheduled backup recorded yet that day (tracked in
-`/var/backups/reliefinventory/.last-scheduled`).
+The systemd-only endpoints (`/json/system/update`, `check-updates`, `backup`, `backup-settings`) answer **409** in a
+container, so hiding them in the page isn't the only guard. The page opens for `admin-system` **or** `manage-backups`;
+the nav entry is still gated on `admin-system`.
 
-## Admin panel integration
+## Bare metal (systemd): tiered scheduled backups
 
-The System Administration panel (`/setup/system`, permission `admin-system`,
-`SystemController` + `SystemAdmin.vue`) manages all of this:
+Made by `scripts/update.sh` (every full update backs up first; `--backup-only` and `--scheduled` back up without
+updating). It runs `backup:create --scope=database --dest=<staging> --name=<stamp>` as the app user (so no root-owned files
+appear under `storage/`), moves the zip beside the tiers (same filesystem — a rename) and files it under
+`/var/backups/reliefinventory/`. The zips are `root:<app user>` mode `640` (and the tier directories `750`), re-applied on every
+run: the **web user can read them**, which is what lets the admin page offer them for download
+(`GET /json/backups/tier/{tier}/{stamp}/download`, permission `manage-backups`, logged — the same gate as an on-demand zip;
+tier and stamp are matched against fixed patterns). Nobody else on the box can. A zip holds the data but never the application key:
 
-- **Schedule/retention changes**: the app rewrites
-  `storage/app/backup-settings.conf`, which `www-data` owns. No root, no
-  systemd interaction, takes effect at the next hourly check. The script
-  **never sources** the settings file — each key is extracted and validated
-  against a strict pattern with bad values falling back to defaults — so the
-  file being web-writable does not give the web app shell access as root.
-- **"Back up now"** starts `reliefinventory-backup-now.service` (plain
-  `--backup-only`, no due-check) and **"Install Update"** starts
-  `reliefinventory-update.service` (full update) — both via the sudoers rule
-  in `scripts/systemd/reliefinventory-sudoers`, which allows exactly those
-  two `systemctl start --no-block` commands and nothing else.
-- **Status display**: the panel lists tier directory names (contents stay
-  root-only; the names are enough), reads `.last-scheduled`, and follows a
-  running update through `storage/app/system-update-status.json`, which
-  `update.sh` writes at start/success/failure of full updates. During the
-  update's maintenance window the panel's polls get 503s and it shows that
-  as progress, not an error.
+```
+hourly/<YYYYmmdd-HHMMSS>.zip   every backup: hourly, scheduled, or on-demand   keep KEEP_HOURLY (48)
+daily/<stamp>.zip              that day's scheduled backup                     keep KEEP_DAILY   (14)
+monthly/<stamp>.zip            first daily promotion of the month              keep KEEP_MONTHLY (12)
+yearly/<stamp>.zip             first daily promotion of the year               keep KEEP_YEARLY  (3)
+```
 
-## One-time install (per server)
+(Backups made before the zip format are `<stamp>/` directories holding `db.sql.gz` + `storage-app.tar.gz` + `env.backup`;
+they stay listed and age out through the same tiers. Restore one by hand: `gunzip < db.sql.gz | mysql <db>`.)
+
+`hourly/` is a flat, undeduplicated recent-backups tier — its job is to let you roll back to whichever attempt preceded a
+bad one (three "Run a Scheduled Backup Now" clicks or update attempts in the same hour each get their own entry). Only the
+once-a-day **scheduled** backup (never an on-demand one) is promoted into `daily/` — as a **hard link**, so promotion costs
+no disk space — and only that promotion can promote into `monthly/`/`yearly/`. An on-demand backup can therefore never
+crowd out the daily/monthly/yearly history (`promote()`/`prune_tier()` in `update.sh`; pruning is by file mtime, not name).
+
+The stamp is generated in `BACKUP_TZ` (`TZ="$BACKUP_TZ" date ...`), not server-local time — the panel displays it verbatim.
+Every backup is a full copy of the database, not incremental: simple to restore from any single file, which matters more here than disk space.
+**The tiers hold the database only — uploaded files are not in them** (an update never touches uploads, so a rollback point
+doesn't need them). Protect the files with a "Database + uploaded files" backup from the admin page (or
+`backup:create --scope=full` from a cron/script), or back up `storage/app` at the filesystem level.
+
+**Hourly backups (optional):** with `HOURLY_BACKUPS=1` each firing of the hourly timer also takes a backup if none has been
+taken that hour (`.last-hourly`). These are ordinary `hourly/` entries, never promoted; `KEEP_HOURLY` decides how far back
+they reach (48 = two days). Off by default.
+
+**Schedule settings:** `storage/app/backup-settings.conf` (copy `scripts/backup-settings.conf.example` to start; keys and
+valid values are documented there). Defaults: 2am `America/Los_Angeles`, daily, keeping 48/14/12/3. The timer
+(`reliefinventory-backup.timer`) fires **hourly**; each firing runs `update.sh --scheduled`, which exits at once unless a
+backup is due: at/past `BACKUP_HOUR` in `BACKUP_TZ` (past, not exactly at — downtime over the hour self-heals the same
+day, helped by `Persistent=true`), the right `BACKUP_DOW` in weekly mode, and none recorded yet that day (`.last-scheduled`).
+The panel rewrites the file (`www-data` owns it; no root, no systemd) and `update.sh` **never sources** it — each key is
+extracted and checked against a strict pattern, bad values fall back to defaults.
+
+"Run a Scheduled Backup Now" and "Install Update" start `reliefinventory-backup-now.service` / `reliefinventory-update.service`
+through the sudoers rule in `scripts/systemd/reliefinventory-sudoers`, which allows exactly those two
+`systemctl start --no-block` commands. The panel follows a running update through `storage/app/system-update-status.json`
+(written by `update.sh`); during the maintenance window its polls get 503s and it shows that as progress, not an error.
+
+### One-time install (per server)
 
 ```bash
 cd /var/www/reliefinventory-demo
@@ -105,74 +141,84 @@ chmod 440 /etc/sudoers.d/reliefinventory
 visudo -c
 ```
 
-After changing the unit files in the repo, re-copy them and `systemctl
-daemon-reload` (settings-file changes need nothing).
+After changing the unit files in the repo, re-copy them and `systemctl daemon-reload` (settings-file changes need nothing).
+`journalctl -u reliefinventory-backup.service` shows scheduled-run history.
 
-## Manual operations
+## Docker / R Station local server: flat retention
+
+The `scheduler` container (`docker/scheduler.sh` → `docker/db-backup.sh` → `backup:create`) makes a daily zip into
+`RI_BACKUP_DIR` (`RI_BACKUP_SCOPE`, default `database`; `RI_BACKUP_HOUR`; `RI_BACKUP_ENABLED`), and the `app` container makes
+a `…-premigrate` zip before applying pending migrations (`RI_PREMIGRATE_BACKUP`; it refuses to migrate if that fails). The
+daily zips are recorded, so they appear in the admin page's Backups list; all are deleted after `RI_BACKUP_KEEP_DAYS`.
+
+> **Note — tiered retention is not implemented for Docker / R Station.** Retention there is one number of days. The
+> daily / monthly / yearly tiers (and hourly rollback points) of the bare-metal install don't exist in a container yet: an
+> operator who wants a monthly or yearly keepsake has to copy a zip off the machine before it expires. The admin page says so.
+> To bring parity, `BackupService::prune()` would need `update.sh`'s promote/prune-by-tier logic (a promoted zip is a hard
+> link) and `RI_BACKUP_KEEP_*` settings, with the schedule shown read-only as it is now. See TODO.md item 14.
+
+## Restoring
+
+**Onto a brand-new instance — the first-run wizard** (`/install` → "Restore from a backup"). Creating or emptying an instance
+is deliberately not offered in the UI. The wizard uploads the zip in resumable chunks (the `ChunkedUpload` service the firmware
+page also uses; `RI_RESTORE_CHUNK_BYTES`, `RI_RESTORE_MAX_BYTES`), then `POST /install/restore/launch` starts
+`php artisan restore:run <id> [<files-id>]` as a detached process (`RestoreService`). It takes **one or two zips**:
+
+- the **main** zip supplies the database (scope `database` or `full`) — and the files too, if it has them;
+- an optional **files** zip (scope `storage` or `full`) supplies the files instead. If that zip also holds a database it is
+  **ignored**, as are the main zip's files when a files zip is given. This is the recovery for a corrupted database: the latest
+  good database zip plus the best copy of the files.
+
+**On an instance that is already set up — the command line.** Same pipeline, zips on disk, nothing deleted from them:
 
 ```bash
-bash scripts/update.sh --backup-only          # back up right now (lands in hourly/ only)
-journalctl -u reliefinventory-backup.service  # scheduled-run history
+php artisan backup:restore DATABASE.zip [--storage=FILES.zip] --force
+php artisan backup:restore --storage=FILES.zip --force      # files only; the database is left alone
 ```
 
-Restore is manual and deliberate: `gunzip < db.sql.gz | mysql <db>` for data,
-untar `storage-app.tar.gz` from the app root for uploads, and `git reset
---hard $(cat git-sha.txt)` + rebuild if the code must match the data.
+`--force` is required once the instance has been set up, and a database restore then **puts the site in maintenance mode
+first** and lifts it after. If the database load fails, the site is **left in maintenance mode** with a message: a wiped
+database has no setup-complete record, so resetting it to a clean state (as the wizard does for a never-set-up instance)
+would open the setup wizard to anyone. Run it as the app user (`runuser -u www-data -- php artisan …`) so files it writes
+aren't root-owned. Files are laid over what is there; none are deleted.
 
-## Backup files (on-demand zips) — `/setup/backups`
+### Starting over: `php artisan setup:reset`
 
-Separate from the tiered backups above (which stay as they are): a `manage-backups` holder
-(Administrator by default) can create, download and delete full backup **zip files** from the
-**Backup Files** page, and `php artisan backup:create [--uploads]` does the same from a shell.
+If a forced restore fails and leaves the database empty or half-loaded (the site is then in maintenance mode), or you simply
+want a brand-new instance, `setup:reset` **erases the entire database** and rebuilds it empty (schema + essential lookup data, no user
+accounts — only the built-in Unknown Donor placeholder — and no setup record). Uploaded files and backup zips on disk are not touched. Afterwards restore a backup with
+`backup:restore` (no `--force` needed — the instance is new again) or set up from scratch in the browser.
 
-```
-manifest.json         format version, app commit, migration list, size + SHA-256 of every entry
-database/db.sql       plain mariadb-dump
-files/private/...     storage/app/private  (only with "include uploads")
-files/public/...      storage/app/public   (only with "include uploads")
-```
+It is built so it cannot be run by accident, from a script, or from something pasted off the Internet:
 
-- **Where:** `config('backup.dir')` (`RI_BACKUP_DIR`, default `storage/backups`; `/backups` in Docker) —
-  never under `storage/app`, which `update.sh` tars and a backup must not contain earlier backups.
-  Excluded from uploads (`config('backup.exclude_dirs')`): `print-jobs`, `device-releases`, `device-uploads`.
-- **How it runs:** the request starts `php artisan backup:run <id>` detached (`setsid -f`), so it outlives the
-  web request and needs no queue worker (a worker's timeout/`retry_after` would kill or re-run a long job).
-  One at a time: the `start()` row check plus an `flock` on `<dir>/.backup.lock`, which the kernel releases if
-  the process dies; a row whose process vanished is marked failed on the next page load. Needs `setsid`
-  (util-linux), `zip` support in PHP, and `mariadb-dump`/`mysqldump` on the server.
-- **Expiry:** `RI_BACKUP_KEEP_DAYS` (default 14) after creation; deleted lazily when the page loads or a backup
-  runs, hourly by the Docker scheduler (`backup:prune`), or individually by an admin. Bare-metal has no scheduler
-  for it beyond the lazy path.
-- **The application key is never in a zip** (not `.env`, not `storage/app/.app_key`; `BackupService` refuses
-  those names even if they sit in an included directory). What depends on `APP_KEY`: values encrypted in the
-  database (today only the feedback-aggregation shared secret) and login/remember cookies. Passwords and PINs
-  are bcrypt, unaffected. Admins with `view-app-key` can reveal it on the Backup Files page (password re-entry,
-  throttled, logged) to write it down. A restore without the key must blank anything encrypted with the old one.
+- it **only runs from a real, interactive terminal** — piped input, `--no-interaction`, cron, CI and `ssh host 'cmd'` without a
+  TTY all stop at the first check, and there is **no `--force`/`--yes` option** to skip anything;
+- it shows what is about to be lost (database name and host, row counts, the newest backup zips found) and then makes you
+  **type `YES-DELETE-ALL-MY-DATA` yourself**, exactly (case-sensitive, nothing else accepted). Anything else changes nothing.
 
-### Restoring a backup zip — first-run wizard (`/install` → "Restore from a backup")
+Afterwards run `php artisan up` if the site is still in maintenance mode — and, if the server is reachable from the internet,
+set `RI_SETUP_CODE` first, because the new instance's setup wizard is open to whoever reaches it. In Docker:
+`docker compose exec app php artisan setup:reset` (`exec` gives it a terminal; `-T` or a redirected stdin will refuse).
 
-Only onto a **brand-new instance** (`FirstRunService::needsSetup()`); creating or emptying an instance is deliberately
-not offered in the UI — start from a fresh database/volume. The wizard uploads the zip in resumable chunks (the same
-`ChunkedUpload` service the firmware page uses; `RI_RESTORE_CHUNK_BYTES`, `RI_RESTORE_MAX_BYTES`), then
-`php artisan restore:run <id>` takes over as a detached process (`RestoreService`):
+The pipeline (`RestoreService`):
 
-1. read `manifest.json`, run `BackupCompatibility` (format, no app key, safe paths, zip == manifest, **migration list
-   must not contain a migration this code lacks** — a backup from newer software is refused; an older one is
-   fine, the restore ends by migrating up), check disk space;
-2. unpack every entry to `<RI_BACKUP_DIR>/restore/<id>/work`, checking size and SHA-256 as it streams — **nothing
+1. open every zip, read `manifest.json`, run `BackupCompatibility` (format, no app key, safe paths, zip == manifest,
+   **migration list must not contain a migration this code lacks** — a backup from newer software is refused; an older one is
+   fine, the restore ends by migrating up; skipped for a zip whose database isn't used), choose what comes from where, check
+   disk space;
+2. unpack only the entries needed to `<RI_BACKUP_DIR>/restore/<id>/work`, checking size and SHA-256 as it streams — **nothing
    on the instance has changed up to here**, so a damaged or hostile zip is harmless;
-3. `db:wipe`, load `database/db.sql`, `migrate`. If this step fails the instance is reset to a clean migrated +
-   seeded state so the wizard works again (re-upload and retry);
+3. `db:wipe`, load `database/db.sql`, `migrate` (a never-set-up instance that fails here is reset to a clean migrated + seeded
+   state so the wizard works again);
 4. move `files/private` / `files/public` into the storage disks;
-5. blank every value in `config('backup.encrypted_columns')` that this instance's `APP_KEY` can't decrypt (all of
-   them, unless the operator set the same `APP_KEY` as the old system before restoring) and list them for the admin;
-6. clear machine-local rows pointing at files a backup never carries (`backups`, `device_releases` — re-upload
-   firmware — and unfinished `print_jobs`), then set the setup-complete latch if an Administrator exists (if the
-   backup has none the wizard stays open to create one).
+5. blank every value in `config('backup.encrypted_columns')` that this instance's `APP_KEY` can't decrypt;
+6. drop rows that point at files this machine doesn't have (`backups` zips, `device_releases` firmware — re-upload — and
+   unfinished `print_jobs`), then set the setup-complete latch if an Administrator exists (if the backup has none the wizard
+   stays open to create one).
 
-Progress lives in `<RI_BACKUP_DIR>/restore/status.json` (the database is being replaced, so it can't live there);
-the wizard polls `GET /install/restore/status`, which deliberately skips the session/CSRF/setup middleware.
-There are no logins yet, so the gates are the wizard's own: the instance must still need setup, `RI_SETUP_CODE`
-(if set) at the start, and the unguessable upload id for the chunk calls. As with the wizard itself, an
-internet-exposed fresh instance should set `RI_SETUP_CODE` — a restore can install any administrator the backup holds.
-Adding an encrypted model cast? Register it in `config/backup.php` (`encrypted_columns`) — a test enforces it.
+Progress lives in `<RI_BACKUP_DIR>/restore/status.json` (the database is being replaced, so it can't live there); the wizard
+polls `GET /install/restore/status`, which deliberately skips the session/CSRF/setup middleware. There are no logins yet, so
+the gates are the wizard's own: the instance must still need setup, `RI_SETUP_CODE` (if set) at the start, and the unguessable
+upload id for the chunk calls. An internet-exposed fresh instance should set `RI_SETUP_CODE` — a restore can install any
+administrator the backup holds. Adding an encrypted model cast? Register it in `config/backup.php` (`encrypted_columns`) — a
+test enforces it.

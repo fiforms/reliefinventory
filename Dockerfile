@@ -108,7 +108,9 @@ ENV APP_ENV=production \
     XDG_DATA_HOME=/tmp/home/.local/share \
     # PDF rendering: the distro's weasyprint (laravel-pdf's driver is weasyprint by default)
     LARAVEL_PDF_WEASYPRINT_BINARY=/usr/bin/weasyprint \
-    RI_HTTP_PORT=8080
+    RI_HTTP_PORT=8080 \
+    # the admin page hides systemd/git-only options and shows the compose-managed backup settings instead
+    RI_RUNTIME=docker
 
 EXPOSE 8080
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \

@@ -18,22 +18,32 @@ use Throwable;
 use ZipArchive;
 
 /**
- * Restore a backup zip (BackupService's format) onto a brand-new instance — the first-run wizard's only
- * restore path. Creating or emptying an instance is deliberately not offered anywhere in the UI.
+ * Restore backup zips (BackupService's format). Two entry points share one pipeline: the first-run wizard's
+ * detached `restore:run` (uploads onto a brand-new instance — the only restore the UI offers) and the
+ * `backup:restore` command (zips on disk; an instance that has already been set up needs --force).
+ *
+ * One or two zips. The database comes from the first (any zip with a database: scope database or full); the files
+ * come from the second when one is given (scope storage or full), else from the first when it has them. So a
+ * database corruption is recoverable from the latest good database zip plus the best copy of the files — and if
+ * that second zip also holds a database, the database part is ignored, as is the first zip's files when a second
+ * zip is supplied. A files-only restore (no database zip) leaves the database untouched. Files are laid over
+ * what is already there; nothing is deleted.
  *
  * Phases, in the order that keeps a bad file harmless:
- *   1. read + validate the manifest (BackupCompatibility), check free disk space
- *   2. extract every entry to a work directory, verifying size and SHA-256 as it streams
+ *   1. read + validate every manifest (BackupCompatibility), choose the sources, check free disk space
+ *   2. extract the entries actually needed to a work directory, verifying size and SHA-256 as it streams
  *      — nothing on the instance has changed up to here, so any failure leaves it untouched
- *   3. wipe the (empty, never-set-up) database, load database/db.sql, run migrations
+ *   3. wipe the database, load database/db.sql, run migrations
  *   4. move uploaded files into place
  *   5. blank values encrypted with a key this instance doesn't have (config backup.encrypted_columns)
  *   6. clear machine-local state that points at files a backup never carries, set the setup-complete latch
  *
  * The database is replaced in step 3, so progress can't live in it: it lives in <backup dir>/restore/status.json
  * and the wizard polls that. Like BackupService this runs as a detached process (restore:run), one at a time
- * via an flock. If step 3 fails after the wipe, the instance is put back to a clean migrated + seeded state
- * so the wizard is usable again.
+ * via an flock. If step 3 fails on a never-set-up instance, it is put back to a clean migrated + seeded state so
+ * the wizard is usable again. On an instance that WAS set up (--force) that would be wrong — a wiped database
+ * has no setup-complete latch, so the setup wizard would be open to anyone — so the site is put into maintenance
+ * mode before the wipe, and left there if the load fails, for the operator to retry or reset.
  */
 class RestoreService
 {
@@ -92,13 +102,14 @@ class RestoreService
         return ($this->status()['state'] ?? 'idle') === 'running';
     }
 
-    /** Mark running and start the detached process. The upload must already be complete. */
-    public function launch(string $uploadId): void
+    /** Mark running and start the detached process. The upload(s) must already be complete. */
+    public function launch(string $uploadId, ?string $storageUploadId = null): void
     {
         $this->progress($uploadId, 'Starting', 1);
         $log = escapeshellarg($this->dir().'/restore.log');
         $php = escapeshellarg(config('backup.php_binary'));
-        Process::path(base_path())->run("setsid -f {$php} artisan restore:run {$uploadId} >> {$log} 2>&1 < /dev/null");
+        $args = escapeshellarg($uploadId).($storageUploadId ? ' '.escapeshellarg($storageUploadId) : '');
+        Process::path(base_path())->run("setsid -f {$php} artisan restore:run {$args} >> {$log} 2>&1 < /dev/null");
     }
 
     private function lockHeld(): bool
@@ -114,7 +125,8 @@ class RestoreService
         return ! $free;
     }
 
-    public function run(string $uploadId): void
+    /** The wizard's path: uploaded zips, a never-set-up instance. */
+    public function run(string $uploadId, ?string $storageUploadId = null): void
     {
         @mkdir($this->dir(), 0750, true);
         $lock = fopen($this->dir().'/.lock', 'c');
@@ -126,7 +138,7 @@ class RestoreService
 
         $uploads = $this->uploads();
         try {
-            $this->perform($uploadId, $uploads);
+            $this->perform($uploadId, $uploads->partPath($uploadId), $storageUploadId ? $uploads->partPath($storageUploadId) : null, false, true);
         } catch (Throwable $e) {
             if (! $e instanceof RuntimeException) {
                 report($e);
@@ -135,9 +147,11 @@ class RestoreService
             $this->writeStatus(['state' => 'failed', 'upload_id' => $uploadId, 'error' => $e instanceof RuntimeException ? $e->getMessage() : 'Unexpected error: '.$e->getMessage()]);
         } finally {
             // Terminal either way: free the (possibly huge) upload and work files.
-            try {
-                $uploads->delete($uploadId);
-            } catch (Throwable) {
+            foreach (array_filter([$uploadId, $storageUploadId]) as $id) {
+                try {
+                    $uploads->delete($id);
+                } catch (Throwable) {
+                }
             }
             $this->removeTree($this->dir().'/'.$uploadId);
             flock($lock, LOCK_UN);
@@ -145,43 +159,210 @@ class RestoreService
         }
     }
 
-    private function perform(string $id, ChunkedUpload $uploads): void
+    /**
+     * The command's path: zips already on disk (never deleted). Throws RuntimeException with the reason on failure.
+     *
+     * @param  ?string  $databaseZip  supplies the database (and the files too, unless $storageZip is given)
+     * @param  ?string  $storageZip  supplies the files; any database inside it is ignored
+     * @param  bool  $force  allow restoring onto an instance that has already been set up
+     */
+    public function runFromFiles(?string $databaseZip, ?string $storageZip, bool $force): array
+    {
+        @mkdir($this->dir(), 0750, true);
+        $lock = fopen($this->dir().'/.lock', 'c');
+        if (! flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+            throw new RuntimeException('Another restore is already running.');
+        }
+
+        $id = 'cli-'.bin2hex(random_bytes(4));
+        try {
+            return $this->perform($id, $databaseZip, $storageZip, $force, false);
+        } catch (Throwable $e) {
+            $this->writeStatus(['state' => 'failed', 'upload_id' => $id, 'error' => $e->getMessage()]);
+            throw $e;
+        } finally {
+            $this->removeTree($this->dir().'/'.$id);
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /**
+     * @param  bool  $force  the instance may already be set up (see class doc)
+     * @param  bool  $consume  the zips are throwaway uploads: free each one's disk as soon as it is unpacked
+     */
+    private function perform(string $id, ?string $databaseZip, ?string $storageZip, bool $force, bool $consume): array
     {
         $this->progress($id, 'Checking the backup', 2);
-        $zipPath = $uploads->partPath($id);
-        if (! is_file($zipPath)) {
-            throw new RuntimeException('The uploaded file is missing.');
-        }
-        $zip = new ZipArchive;
-        if ($zip->open($zipPath, ZipArchive::CHECKCONS) !== true) {
-            throw new RuntimeException('That file is not a valid zip archive (it may be damaged or incomplete).');
-        }
+        $plan = $this->plan($databaseZip, $storageZip);
 
-        $manifest = $this->readManifest($zip);
-        $names = [];
-        for ($i = 0; $i < $zip->numFiles; $i++) {
-            $names[] = $zip->getNameIndex($i);
+        $fresh = rescue(fn () => app(FirstRunService::class)->needsSetup(), false, false);
+        if (! $fresh && ! $force) {
+            throw new RuntimeException('This instance has already been set up. Restoring replaces its data; add --force if that is what you want.');
         }
-        if ($problems = app(BackupCompatibility::class)->problems($manifest, $names)) {
-            throw new RuntimeException(implode(' ', $problems));
-        }
+        $maintenance = $force && ! $fresh && $plan['database'];
 
-        $entries = $manifest['entries'];
-        $total = array_sum(array_column($entries, 'size'));
+        // ---- 2. extract + verify ----
+        $total = array_sum(array_column($plan['sources'], 'bytes'));
         $work = $this->dir()."/{$id}/work";
         @mkdir($work, 0700, true);
         $free = @disk_free_space($work);
         if ($free !== false && $free < $total * 1.05 + 50 * 1024 * 1024) {
             throw new RuntimeException('Not enough free disk space to unpack this backup ('.$this->human($total).' needed, '.$this->human((int) $free).' free).');
         }
-
-        // ---- 2. extract + verify ----
         $done = 0;
+        foreach ($plan['sources'] as $source) {
+            $this->extract($id, $source, $work, $done, $total);
+            $source['zip']->close();
+            if ($consume) {
+                @unlink($source['path']); // the unpacked copy is verified; give the disk back
+            }
+        }
+
+        // ---- 3. database ----
+        if ($plan['database']) {
+            // Before anything is wiped: a dump cut off part-way would leave a half-empty database. (Its checksum
+            // can't tell: a truncated dump checksums fine.)
+            if (! app(DatabaseTools::class)->dumpIsComplete("{$work}/database/db.sql")) {
+                throw new RuntimeException('The database dump in this backup is incomplete (it has no end-of-dump marker), so nothing was changed. Use an earlier backup.');
+            }
+            if ($maintenance) {
+                $this->artisan('down', ['--retry' => 60]);
+            }
+            $this->progress($id, 'Replacing the database', 62);
+            $this->replaceDatabase("{$work}/database/db.sql", $fresh);
+            $this->progress($id, 'Updating the database to this version', 78);
+            $this->migrate($fresh);
+        }
+
+        // ---- 4. files ----
+        if ($plan['files']) {
+            $this->progress($id, 'Restoring uploaded files', 85);
+            $this->moveTree("{$work}/files/private", config('filesystems.disks.local.root'));
+            $this->moveTree("{$work}/files/public", config('filesystems.disks.public.root'));
+        }
+
+        // ---- 5/6. fix-ups (they read the database, so only when it is the restored one) ----
+        $this->progress($id, 'Finishing up', 95);
+        $blanked = [];
+        $adminMissing = false;
+        if ($plan['database']) {
+            $blanked = $this->blankUndecryptable();
+            $this->clearMachineLocalState();
+            $adminMissing = ! app(FirstRunService::class)->administratorExists();
+            if (! $adminMissing) {
+                app(FirstRunService::class)->markComplete();
+            }
+            if ($maintenance) {
+                $this->artisan('up');
+            }
+        }
+
+        $result = [
+            'state' => 'complete', 'upload_id' => $id, 'phase' => 'Done', 'percent' => 100,
+            'blanked' => $blanked, 'admin_missing' => $adminMissing,
+            'database_restored' => $plan['database'], 'includes_uploads' => $plan['files'],
+            'backup_created_at' => $plan['database_created_at'], 'files_created_at' => $plan['files_created_at'],
+            'notes' => $plan['notes'],
+        ];
+        $this->writeStatus($result);
+
+        return $result;
+    }
+
+    /**
+     * Open and validate each zip, then decide what is taken from where (see class doc). `sources` are the zips that
+     * contribute something, each with a `want` rule saying which of its entries to unpack.
+     *
+     * @return array{sources: array[], database: bool, files: bool, notes: string[], database_created_at: ?string, files_created_at: ?string}
+     */
+    private function plan(?string $databaseZip, ?string $storageZip): array
+    {
+        if ($databaseZip === null && $storageZip === null) {
+            throw new RuntimeException('There is nothing to restore: no backup file was given.');
+        }
+        $db = $databaseZip !== null ? $this->open($databaseZip) : null;
+        $files = $storageZip !== null ? $this->open($storageZip) : null;
+
+        if ($db !== null && ! BackupService::hasDatabase($db['scope'])) {
+            throw new RuntimeException('That backup holds only files, no database. Give it as the files backup, with a backup that has the database as the main one.');
+        }
+        if ($files !== null && ! BackupService::hasStorage($files['scope'])) {
+            throw new RuntimeException('The files backup holds only a database, no files.');
+        }
+
+        // Only the zip whose database is used has to carry a schema this software understands.
+        $compat = app(BackupCompatibility::class);
+        foreach ([[$db, true], [$files, false]] as [$source, $usesDatabase]) {
+            if ($source !== null && $problems = $compat->problems($source['manifest'], $source['names'], null, $usesDatabase)) {
+                throw new RuntimeException(implode(' ', $problems));
+            }
+        }
+
+        $notes = [];
+        if ($files !== null && BackupService::hasDatabase($files['scope'])) {
+            $notes[] = 'The files backup also contained a database; it was ignored.';
+        }
+        // A full backup on its own supplies its files too; given a separate files backup, those win.
+        $dbSuppliesFiles = $db !== null && $files === null && BackupService::hasStorage($db['scope']);
+        if ($db !== null && $files !== null && BackupService::hasStorage($db['scope'])) {
+            $notes[] = "The main backup's files were ignored in favour of the separate files backup.";
+        }
+
+        $isFile = fn (string $path) => str_starts_with($path, 'files/');
+        if ($db !== null) {
+            $db['want'] = fn (string $path) => $path === 'database/db.sql' || ($dbSuppliesFiles && $isFile($path));
+        }
+        if ($files !== null) {
+            $files['want'] = $isFile;
+        }
+        $sources = array_values(array_filter([$db, $files]));
+        foreach ($sources as &$source) {
+            $source['bytes'] = array_sum(array_map(fn ($e) => $source['want']($e['path']) ? $e['size'] : 0, $source['manifest']['entries']));
+        }
+        unset($source);
+
+        return [
+            'sources' => $sources, 'database' => $db !== null, 'files' => $files !== null || $dbSuppliesFiles, 'notes' => $notes,
+            'database_created_at' => $db['manifest']['created_at'] ?? null,
+            'files_created_at' => ($files ?? ($dbSuppliesFiles ? $db : null))['manifest']['created_at'] ?? null,
+        ];
+    }
+
+    /** @return array{path: string, zip: ZipArchive, manifest: array, names: string[], scope: string} */
+    private function open(string $path): array
+    {
+        if (! is_file($path)) {
+            throw new RuntimeException(basename($path).' was not found.');
+        }
+        $zip = new ZipArchive;
+        if ($zip->open($path, ZipArchive::CHECKCONS) !== true) {
+            throw new RuntimeException(basename($path).' is not a valid zip archive (it may be damaged or incomplete).');
+        }
+        $manifest = $this->readManifest($zip);
+        $names = [];
+        for ($i = 0; $i < $zip->numFiles; $i++) {
+            $names[] = $zip->getNameIndex($i);
+        }
+
+        return [
+            'path' => $path, 'zip' => $zip, 'manifest' => $manifest, 'names' => $names,
+            'scope' => app(BackupCompatibility::class)->scope($manifest) ?? 'database',
+        ];
+    }
+
+    /** Unpack the entries this source is wanted for into $work, checking size and SHA-256 as they stream. */
+    private function extract(string $id, array $source, string $work, int &$done, int $total): void
+    {
         $lastReport = 0.0;
-        foreach ($entries as $entry) {
+        foreach ($source['manifest']['entries'] as $entry) {
+            if (! $source['want']($entry['path'])) {
+                continue;
+            }
             $dest = "{$work}/{$entry['path']}";
             @mkdir(dirname($dest), 0700, true);
-            $in = $zip->getStream($entry['path']);
+            $in = $source['zip']->getStream($entry['path']);
             $out = fopen($dest, 'wb');
             if ($in === false || $out === false) {
                 throw new RuntimeException("Could not read {$entry['path']} from the backup.");
@@ -208,36 +389,6 @@ class RestoreService
                 throw new RuntimeException("The backup is damaged: {$entry['path']} does not match its checksum. Nothing was restored.");
             }
         }
-        $zip->close();
-        @unlink($zipPath); // the unpacked copy is verified; give the disk back
-
-        // ---- 3. database ----
-        $this->progress($id, 'Replacing the database', 62);
-        $this->replaceDatabase("{$work}/database/db.sql");
-        $this->progress($id, 'Updating the database to this version', 78);
-        $this->migrate();
-
-        // ---- 4. files ----
-        $this->progress($id, 'Restoring uploaded files', 85);
-        $this->moveTree("{$work}/files/private", config('filesystems.disks.local.root'));
-        $this->moveTree("{$work}/files/public", config('filesystems.disks.public.root'));
-
-        // ---- 5/6. fix-ups ----
-        $this->progress($id, 'Finishing up', 95);
-        $blanked = $this->blankUndecryptable();
-        $this->clearMachineLocalState();
-
-        $adminMissing = ! app(FirstRunService::class)->administratorExists();
-        if (! $adminMissing) {
-            app(FirstRunService::class)->markComplete();
-        }
-
-        $this->writeStatus([
-            'state' => 'complete', 'upload_id' => $id, 'phase' => 'Done', 'percent' => 100,
-            'blanked' => $blanked, 'admin_missing' => $adminMissing,
-            'includes_uploads' => (bool) ($manifest['includes_uploads'] ?? false),
-            'backup_created_at' => $manifest['created_at'] ?? null,
-        ]);
     }
 
     private function readManifest(ZipArchive $zip): array
@@ -254,10 +405,10 @@ class RestoreService
         return $manifest;
     }
 
-    private function replaceDatabase(string $sqlFile): void
+    /** @param  bool  $fresh  never set up: a failure resets it to a clean state; otherwise it is left for the operator */
+    private function replaceDatabase(string $sqlFile, bool $fresh): void
     {
         try {
-            // The instance has never been set up, so what is in the database is only the fresh schema.
             // Dropping everything (rather than loading over it) means a backup from an older version
             // can't collide with tables that only the current migrations create.
             $this->artisan('db:wipe', ['--force' => true]);
@@ -273,28 +424,49 @@ class RestoreService
                 throw new RuntimeException('Loading the database dump failed: '.substr(trim($process->getErrorOutput()), 0, 400));
             }
         } catch (Throwable $e) {
-            $this->recoverFreshState();
-            throw new RuntimeException($e->getMessage().' The instance was reset to a clean state; you can try again.');
+            throw new RuntimeException($e->getMessage().' '.$this->afterDatabaseFailure($fresh));
         }
     }
 
-    private function migrate(): void
+    private function migrate(bool $fresh): void
     {
         try {
             $this->artisan('migrate', ['--force' => true]);
         } catch (Throwable $e) {
-            $this->recoverFreshState();
-            throw new RuntimeException('Updating the restored database failed: '.$e->getMessage().' The instance was reset to a clean state; you can try again.');
+            throw new RuntimeException('Updating the restored database failed: '.$e->getMessage().' '.$this->afterDatabaseFailure($fresh));
         }
     }
 
-    /** After a failed load: schema + essential data again, so /install works. Best effort. */
+    private function afterDatabaseFailure(bool $fresh): string
+    {
+        if ($fresh) {
+            $this->recoverFreshState();
+
+            return 'The instance was reset to a clean state; you can try again.';
+        }
+
+        return 'The database may be empty or incomplete and the site has been left in maintenance mode on purpose '
+            .'(a database without its setup record would open the setup wizard to anyone). Run the restore again from a good backup, '
+            .'then "php artisan up". If the database cannot be loaded at all, "php artisan setup:reset" erases it and starts clean (it asks for typed confirmation).';
+    }
+
+    /**
+     * Drop everything and rebuild: schema plus the essential lookup data, no user accounts (only the built-in Unknown Donor placeholder), no setup record — a brand-new
+     * instance. Throws on failure. The one caller that may run it on a live instance is `setup:reset`, behind its
+     * typed confirmation.
+     */
+    public function resetInstance(): void
+    {
+        $this->artisan('db:wipe', ['--force' => true]);
+        $this->artisan('migrate', ['--force' => true]);
+        $this->artisan('setup:seed-essentials');
+    }
+
+    /** After a failed load on a never-set-up instance: back to a clean state so /install works. Best effort. */
     private function recoverFreshState(): void
     {
         try {
-            $this->artisan('db:wipe', ['--force' => true]);
-            $this->artisan('migrate', ['--force' => true]);
-            $this->artisan('setup:seed-essentials');
+            $this->resetInstance();
         } catch (Throwable $e) {
             Log::critical('Restore could not return the instance to a clean state', ['message' => $e->getMessage()]);
         }
@@ -353,14 +525,27 @@ class RestoreService
         return $blanked;
     }
 
-    /** Rows that point at files a backup deliberately never carries. */
+    /**
+     * Rows that point at files a backup deliberately never carries — dropped only where the file really is missing,
+     * so restoring onto the machine that made the backups keeps its own zips and firmware listed.
+     */
     private function clearMachineLocalState(): void
     {
         if (Schema::hasTable('backups')) {
-            DB::table('backups')->delete(); // the previous machine's zips are not here
+            $dir = rtrim(config('backup.dir'), '/');
+            foreach (DB::table('backups')->get(['id', 'status', 'filename']) as $row) {
+                if ($row->status !== 'complete' || ! $row->filename || ! is_file("{$dir}/{$row->filename}")) {
+                    DB::table('backups')->where('id', $row->id)->delete();
+                }
+            }
         }
         if (Schema::hasTable('device_releases')) {
-            DB::table('device_releases')->delete(); // firmware images are excluded from backups; re-upload them
+            $root = rtrim((string) config('filesystems.disks.local.root'), '/');
+            foreach (DB::table('device_releases')->get(['id', 'storage_path']) as $row) {
+                if (! file_exists("{$root}/{$row->storage_path}")) {
+                    DB::table('device_releases')->where('id', $row->id)->delete(); // firmware images are excluded from backups; re-upload them
+                }
+            }
         }
         if (Schema::hasTable('print_jobs')) {
             DB::table('print_jobs')->whereIn('status', ['queued', 'claimed', 'failed'])->update(['status' => 'cancelled']); // their PDFs aren't here

@@ -15,7 +15,13 @@ use Illuminate\Support\Facades\Process;
 
 /**
  * Backs the System Administration panel (/setup/system): software version /
- * update triggering, backup inventory, and the backup schedule.
+ * update triggering, the tiered backup inventory and schedule, and offline mode.
+ * (The backup-zip list and the app-key panel on the same page are BackupController's.)
+ *
+ * Platform: config('system.runtime') is 'systemd' (bare metal) or 'docker'. Updating, the tiered backup
+ * timer and its settings only exist on systemd; a container is upgraded by pulling a new image and its
+ * schedule lives in compose.yaml. status() says which one this is and leaves out what doesn't apply, and the
+ * systemd-only actions refuse in a container (the page doesn't offer them there either).
  *
  * Design notes (see scripts/BACKUPS.md):
  * - Backup settings live in a www-data-writable conf file that
@@ -68,14 +74,32 @@ class SystemController extends Controller
         'keep_yearly' => 'KEEP_YEARLY',
     ];
 
+    private function isDocker(): bool
+    {
+        return config('system.runtime') === 'docker';
+    }
+
+    /** The systemd-only actions: null when allowed, else the refusal to return. */
+    private function requireSystemd(): ?JsonResponse
+    {
+        return $this->isDocker()
+            ? response()->json(['message' => 'Not available in a Docker install: upgrade by pulling a new image, and set the backup schedule in compose.yaml.'], 409)
+            : null;
+    }
+
     public function status(): JsonResponse
     {
+        $docker = $this->isDocker();
+
         return response()->json([
+            'runtime' => $docker ? 'docker' : 'systemd',
             'version' => $this->versionInfo(),
-            'backup_settings' => $this->readBackupSettings(),
-            'backups' => $this->backupInventory(),
-            'update_status' => $this->readUpdateStatus(),
-            'timezones' => \DateTimeZone::listIdentifiers(),
+            'backup_settings' => $docker ? null : $this->readBackupSettings(),
+            'backups' => $docker ? null : $this->backupInventory(),
+            // What the compose file configured for the scheduler container (read-only here).
+            'container_backups' => $docker ? config('backup.container') + ['keep_days' => (int) config('backup.keep_days')] : null,
+            'update_status' => $docker ? null : $this->readUpdateStatus(),
+            'timezones' => $docker ? [] : \DateTimeZone::listIdentifiers(),
             'offline_mode' => OfflineModeSetting::current()->enabled,
         ]);
     }
@@ -102,6 +126,9 @@ class SystemController extends Controller
      */
     public function checkUpdates(): JsonResponse
     {
+        if ($refused = $this->requireSystemd()) {
+            return $refused;
+        }
         $result = Process::path(base_path())->timeout(60)->run(['git', 'fetch', 'origin', 'master']);
         if (! $result->successful()) {
             return response()->json([
@@ -114,6 +141,9 @@ class SystemController extends Controller
 
     public function update(): JsonResponse
     {
+        if ($refused = $this->requireSystemd()) {
+            return $refused;
+        }
         if (($this->readUpdateStatus()['state'] ?? null) === 'running') {
             return response()->json(['message' => 'An update is already running.'], 409);
         }
@@ -133,6 +163,9 @@ class SystemController extends Controller
 
     public function backupNow(): JsonResponse
     {
+        if ($refused = $this->requireSystemd()) {
+            return $refused;
+        }
         Log::info('On-demand backup triggered from admin panel', ['person_id_user' => Auth::id()]);
 
         return $this->startUnit(config('system.backup_now_unit'));
@@ -140,6 +173,9 @@ class SystemController extends Controller
 
     public function saveBackupSettings(Request $request): JsonResponse
     {
+        if ($refused = $this->requireSystemd()) {
+            return $refused;
+        }
         $data = $request->validate([
             'frequency' => 'required|in:daily,weekly',
             'hour' => 'required|integer|between:0,23',
@@ -187,6 +223,14 @@ class SystemController extends Controller
 
     private function versionInfo(): array
     {
+        // A container has no git checkout and nothing to fetch: just the commit the image was built from.
+        if ($this->isDocker()) {
+            return [
+                'current' => app(\App\Services\GitVersionService::class)->currentCommit(),
+                'current_subject' => null, 'current_date' => null, 'behind' => null, 'pending_commits' => [],
+            ];
+        }
+
         $behind = $this->git('rev-list', '--count', 'HEAD..origin/master');
         $pending = $this->git('log', '--oneline', '--no-decorate', '-20', 'HEAD..origin/master');
 
@@ -238,13 +282,20 @@ class SystemController extends Controller
             // comparison, for as long as both remain in the retention window.
             $entries = is_dir($path)
                 ? collect(scandir($path))
-                    ->filter(fn ($n) => preg_match('/^\d{8}-\d{6}$/', $n))
+                    // <stamp>.zip, or a bare <stamp> directory from before backups were zipped
+                    ->filter(fn ($n) => preg_match('/^\d{8}-\d{6}(\.zip)?$/', $n))
                     ->sortBy(fn ($n) => filemtime("$path/$n"))
                     ->values()
                 : collect();
             $tiers[$tier] = [
                 'count' => $entries->count(),
-                'entries' => $entries->reverse()->take(5)->values(),
+                // All of them (the page scrolls): the one you want to download is often an old monthly/yearly.
+                'entries' => $entries->reverse()->map(fn ($n) => [
+                    'name' => preg_replace('/\.zip$/', '', $n),
+                    'size' => is_file("$path/$n") ? @filesize("$path/$n") : null,
+                    // Only a zip the web user can read; old-style <stamp>/ directories can't be downloaded.
+                    'downloadable' => is_file("$path/$n") && is_readable("$path/$n"),
+                ])->values(),
             ];
         }
 

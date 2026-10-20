@@ -53,7 +53,7 @@ curl -O https://raw.githubusercontent.com/fiforms/reliefinventory/master/docker/
    whether to load example data. Then you're signed in.
 
 On first start the stack creates its own database, generates random database passwords, runs the migrations and
-loads the essential lookup data. A daily database dump is written to a `backups/` folder next to
+loads the essential lookup data. A daily backup (a .zip) is written to a `backups/` folder next to
 `compose.yaml`.
 
 **To upgrade:**
