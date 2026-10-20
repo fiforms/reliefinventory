@@ -5,7 +5,7 @@
     <title>Situation Report</title>
     <style>
         /* Margins live on @page (not body padding) so every page of a long county list keeps them. */
-        @page { size: letter; margin: 36px 42px; }
+        @page { size: letter; margin: 0.75in 0.6in; }  /* office printers can't print within ~0.5in of the top edge */
         body {
             font-family: Arial, sans-serif;
             color: #222;
