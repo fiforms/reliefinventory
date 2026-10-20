@@ -12,6 +12,7 @@ use App\Http\Controllers\OrderFillingController;
 use App\Http\Controllers\OutstandingOrdersReportController;
 use App\Http\Controllers\PalletReportController;
 use App\Http\Controllers\SitrepController;
+use App\Http\Controllers\UnfulfilledRequestsReportController;
 use App\Services\WarehouseMetrics;
 use Closure;
 use Spatie\LaravelPdf\PdfBuilder;
@@ -46,6 +47,12 @@ class DocumentRegistry
                 'media' => 'report', 'permission' => 'view-reports', 'rules' => [],
                 'title' => fn () => 'Outstanding Orders Report',
                 'build' => fn () => app(OutstandingOrdersReportController::class)->pdfBuilder(),
+            ],
+            'unfulfilled-requests' => [
+                'media' => 'report', 'permission' => 'view-reports',
+                'rules' => UnfulfilledRequestsReportController::FILTER_RULES,
+                'title' => fn () => 'Unfulfilled Requests Report',
+                'build' => fn (array $p) => app(UnfulfilledRequestsReportController::class)->pdfBuilder(array_filter($p)),
             ],
             'sitrep' => [
                 'media' => 'report', 'permission' => 'view-sitrep', 'rules' => [],

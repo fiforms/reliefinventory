@@ -18,7 +18,8 @@ test suite, order filling/picking as of 2026-08-27); what's still genuinely open
 order fulfillment lifecycle past Filled (Ready to Ship/Shipped), the facility-network expansion
 (Part 5), and several report pages (`/reports/flow`, `/reports/donors`, `/reports/customers` are
 still "Coming Soon" placeholders — `/reports/orders`, the Outstanding Orders Report, is built as of
-2026-08-22) — check the doc's own inline "Update" notes for the current state of any given item before
+2026-08-22, and `/reports/unfulfilled`, the Unfulfilled Requests Report — requested vs. filled per item, by the
+partner's county and zip, finished requests only — as of 2026-10-20) — check the doc's own inline "Update" notes for the current state of any given item before
 assuming it's still broken.
 
 ## Commands

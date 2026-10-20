@@ -335,6 +335,11 @@ Route::get('/reports/orders', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/orders')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+Route::get('/reports/unfulfilled', function () {
+    return Inertia::render('UnfulfilledRequestsReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/unfulfilled')]);
+})->middleware(['auth', 'permission:view-reports']);
+
 // Internal warehouse dashboard: full-detail view for management/admins.
 Route::get('/reports/dashboard', function () {
     return Inertia::render('WarehouseDashboard',
@@ -565,6 +570,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-it
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-reports']], function () {
     Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
     Route::get('/reports/orders', [OutstandingOrdersReportController::class, 'index']);
+    Route::get('/reports/unfulfilled', [UnfulfilledRequestsReportController::class, 'index']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-dashboard']], function () {
@@ -596,6 +602,14 @@ Route::get('/report/orders.pdf', [OutstandingOrdersReportController::class, 'pdf
 
 Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv'])
     ->name('report.orders.csv')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/unfulfilled.pdf', [UnfulfilledRequestsReportController::class, 'pdf'])
+    ->name('report.unfulfilled')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/unfulfilled.csv', [UnfulfilledRequestsReportController::class, 'csv'])
+    ->name('report.unfulfilled.csv')
     ->middleware(['auth', 'permission:view-reports']);
 
 // Offline order form (in-stock item types only, no quantities) — printed or
