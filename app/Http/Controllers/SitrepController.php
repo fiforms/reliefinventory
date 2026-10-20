@@ -34,6 +34,7 @@ class SitrepController extends Controller
             'donations_trend' => $metrics->donationsTrend(),
             'pipeline' => $metrics->pipelineCounts(),
             'county_breakdown' => $metrics->orderCountyBreakdown(),
+            'zip_breakdown' => $metrics->orderZipBreakdown(),
             'inventory_summary' => $metrics->inventorySummary(),
             'generated_at' => now(),
         ];

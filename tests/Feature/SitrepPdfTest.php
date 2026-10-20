@@ -30,7 +30,7 @@ test('the sitrep renders as one weasyprint letter page with its sections and cou
         ->and($info)->toMatch('/Page size:\s+612(\.\d+)? x 792(\.\d+)? pts/');
 
     $text = pdfText($path);
-    foreach (['Situation Report', 'Movement Summary', 'Current Pipeline', 'Orders by County', 'Stock on Hand', 'Thurston', 'Pierce', 'King'] as $expected) {
+    foreach (['Situation Report', 'Movement Summary', 'Current Pipeline', 'Orders by County', 'Orders by Zip', 'Stock on Hand', 'Thurston', 'Pierce', 'King'] as $expected) {
         expect($text)->toContain($expected);
     }
 })->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');

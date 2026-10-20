@@ -176,6 +176,37 @@ class WarehouseMetrics
     }
 
     /**
+     * Order counts by partner zip — feedback #38, requested alongside the
+     * county breakdown above for cost-sharing accounting. Same privacy
+     * posture as county: an aggregate count per zip, never a name, address,
+     * or individual order — nothing here that isn't already visible one
+     * step removed by pairing a public per-county population figure with
+     * this raw digit-string field.
+     *
+     * Capped to the top 20 (like inventorySummary()'s top_categories) —
+     * unlike county, a service area's distinct zip count can run well past
+     * what's readable on a dashboard card or safe from a PDF page-overflow
+     * (see CLAUDE.md's PDF section on this app's past page-break bugs).
+     * `zip_count` carries how many distinct zips exist so a caller can show
+     * "top 20 of N" rather than silently dropping the rest with no signal.
+     */
+    public function orderZipBreakdown(int $limit = 20): array
+    {
+        $rows = DB::table('orderdonations')
+            ->join('people', 'people.id', '=', 'orderdonations.person_id')
+            ->where('orderdonations.type', 'order')
+            ->selectRaw("COALESCE(NULLIF(people.zip, ''), 'Unspecified') as zip, count(*) as count")
+            ->groupBy('zip')
+            ->orderByDesc('count')
+            ->get();
+
+        return [
+            'rows' => $rows->take($limit)->map(fn ($row) => ['zip' => $row->zip, 'count' => (int) $row->count])->all(),
+            'zip_count' => $rows->count(),
+        ];
+    }
+
+    /**
      * Compact stock-on-hand summary — the full breakdown lives in the
      * Inventory Report; this is just enough for a dashboard card with a
      * link out to that report for detail.

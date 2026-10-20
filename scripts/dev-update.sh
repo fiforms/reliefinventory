@@ -10,6 +10,18 @@
 # deliberately without its backup tiering / maintenance-mode / health-check
 # machinery, since this box has no real user traffic to protect. It just pulls,
 # rebuilds what changed, migrates, and reloads.
+#
+# BRANCH=master (the default) tracks origin, same as production: fetch +
+# hard-reset to origin/master. Any other BRANCH is treated as a LOCAL-ONLY
+# branch instead (e.g. an autofix/* dev-autofix branch) — this box has no
+# push-capable git credentials by design (see scripts/AI_AGENT_ACCESS.md and
+# .claude/skills/dev-autofix/SKILL.md), so such a branch never exists on
+# origin to fetch. Previewing it just means checking out the local ref
+# as-is, with no network fetch at all.
+#
+# IMPORTANT for callers: this does `git reset --hard` on whichever branch is
+# selected. Commit your work on that branch FIRST — anything uncommitted in
+# the working tree when this runs is discarded, not just left behind.
 
 set -Eeuo pipefail
 
@@ -22,15 +34,31 @@ cd "$APP_DIR"
 echo "== dev-update: $(date -u +%FT%TZ) =="
 
 OLD_SHA="$(git rev-parse HEAD)"
-git fetch origin "$BRANCH"
-NEW_SHA="$(git rev-parse "origin/$BRANCH")"
 
-if [ "$OLD_SHA" = "$NEW_SHA" ]; then
-    echo "-- Already up to date at $OLD_SHA"
+if [ "$BRANCH" = "master" ]; then
+    git fetch origin "$BRANCH"
+    NEW_SHA="$(git rev-parse "origin/$BRANCH")"
+
+    if [ "$OLD_SHA" = "$NEW_SHA" ]; then
+        echo "-- Already up to date at $OLD_SHA"
+    else
+        echo "-- Updating $OLD_SHA -> $NEW_SHA"
+    fi
+    git checkout "$BRANCH"
+    git reset --hard "origin/$BRANCH"
 else
-    echo "-- Updating $OLD_SHA -> $NEW_SHA"
+    if ! git show-ref --verify --quiet "refs/heads/$BRANCH"; then
+        echo "-- No local branch named '$BRANCH', and this box never pushes to/fetches" >&2
+        echo "   arbitrary branches from origin — nothing to preview. Check the branch" >&2
+        echo "   name, or run with no BRANCH set to preview master instead." >&2
+        exit 1
+    fi
+
+    NEW_SHA="$(git rev-parse "$BRANCH")"
+    echo "-- Local-only branch '$BRANCH' at $NEW_SHA (not fetched from origin)"
+    git checkout "$BRANCH"
+    git reset --hard "$BRANCH"
 fi
-git reset --hard "origin/$BRANCH"
 
 CHANGED="$(git diff --name-only "$OLD_SHA" "$NEW_SHA")"
 
