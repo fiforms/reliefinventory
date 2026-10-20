@@ -252,3 +252,36 @@ test('old finished jobs lose their file but keep their row, at most hourly', fun
     // Throttled: a second call within the hour does nothing.
     expect(app(PrintQueueService::class)->purgeExpiredFiles())->toBe(0);
 });
+
+test('the printer overview shows every printer with status and waiting jobs, in menu order', function () {
+    $second = mgmtPrinter('Second', 'report', ['sort_order' => 20]);
+    $first = mgmtPrinter('First', 'report', ['sort_order' => 10]);
+    mgmtJob($first);
+    mgmtJob($first);
+    $admin = userWithPermissions('manage-devices');
+
+    $rows = $this->actingAs($admin)->getJson('/json/printer-overview')->assertOk()->json('printers');
+
+    expect(array_column($rows, 'name'))->toBe(['First', 'Second'])
+        ->and($rows[0])->toMatchArray(['status' => 'idle', 'waiting_jobs' => 2, 'failed_jobs' => 0])
+        ->and($rows[1]['waiting_jobs'])->toBe(0);
+});
+
+test('a drag-and-drop order is saved as sort_order and unknown ids are refused', function () {
+    $a = mgmtPrinter('A');
+    $b = mgmtPrinter('B');
+    $c = mgmtPrinter('C');
+    $admin = userWithPermissions('manage-devices');
+
+    $this->actingAs($admin)->postJson('/json/printers/reorder', ['ids' => [$c->id, $a->id, $b->id]])->assertOk();
+
+    expect([$c->fresh()->sort_order, $a->fresh()->sort_order, $b->fresh()->sort_order])->toBe([10, 20, 30]);
+    $this->actingAs($admin)->postJson('/json/printers/reorder', ['ids' => [$a->id, 999999]])->assertUnprocessable();
+    $this->actingAs(userWithPermissions('manage-print-queue'))->getJson('/json/printer-overview')->assertForbidden();
+});
+
+test('the printers page is manage-devices only and tells the page whether the queue can be cleared', function () {
+    $this->actingAs(userWithPermissions('manage-print-queue'))->get('/setup/printers')->assertForbidden();
+    $this->actingAs(userWithPermissions('manage-devices'))->get('/setup/printers')->assertOk()->assertInertia(fn ($page) => $page->where('canClearQueue', false));
+    $this->actingAs(userWithPermissions('manage-devices', 'manage-print-queue'))->get('/setup/printers')->assertInertia(fn ($page) => $page->where('canClearQueue', true));
+});

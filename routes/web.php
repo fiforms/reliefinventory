@@ -914,9 +914,20 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-de
     Route::post('/device-pairing-codes', [ManagedDeviceController::class, 'createPairingCode']);
 
     // Typing the print queues a print server reports (see PrinterAdminController).
+    Route::get('/printer-overview', [PrinterAdminController::class, 'overview']);
+    Route::post('/printers/reorder', [PrinterAdminController::class, 'reorder']);
     Route::put('/printers/{printer}', [PrinterAdminController::class, 'update']);
     Route::delete('/printers/{printer}', [PrinterAdminController::class, 'destroy']);
 });
+
+// All printers at a glance: drag-to-order and live status. Clearing a queue from here is the
+// existing manage-print-queue action (POST /json/print-jobs/clear).
+Route::get('/setup/printers', function () {
+    return Inertia::render('PrinterManagement', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/printers'),
+        'canClearQueue' => (bool) Auth::user()->hasPermission('manage-print-queue'),
+    ]);
+})->middleware(['auth', 'permission:manage-devices']);
 
 // Firmware (the app/OS release catalogue and where devices look for it) is its own permission,
 // narrower than manage-devices: only fleet admins should be able to publish a release.
