@@ -29,6 +29,12 @@ const props = defineProps({
 	type: String,
 	default: undefined,
   },
+  // Declared as a prop because an undeclared `autofocus` attribute falls through to the
+  // wrapper div, not the <input>, so the old hasAttribute check on the input never matched.
+  autofocus: {
+	type: Boolean,
+	default: false,
+  },
 });
 
 const input = ref(null);
@@ -45,7 +51,7 @@ const handleScanned = (code) => {
 };
 
 onMounted(() => {
-    if (input && input.value && input.value.hasAttribute('autofocus')) {
+    if (props.autofocus && input.value) {
         input.value.focus();
     }
 });
