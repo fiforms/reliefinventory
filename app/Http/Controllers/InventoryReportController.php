@@ -68,7 +68,7 @@ class InventoryReportController extends Controller
             fn ($r) => $r['on_hand'] !== 0 || $r['outdated'] !== 0 || $r['trashed'] !== 0 || $r['diverted'] !== 0
         )->values();
 
-        $csv = Writer::createFromString('');
+        $csv = Writer::fromString('');
         $csv->insertOne(['Item #', 'Name', 'Status', 'Category', 'Unit', 'On Hand', 'Received New', 'Outdated', 'Trashed', 'Diverted']);
         foreach ($records as $r) {
             $csv->insertOne([

@@ -12,11 +12,18 @@ use Illuminate\Validation\Rule;
 
 class PalletController extends Controller
 {
+    // Closed-out pallets (empty/shipped/collected/released/condemned) are kept forever as provenance, so they
+    // vastly outnumber live ones. The default list is the live ones; ask for a kind/status (GET
+    // /json/pallets/R/empty) or ?all=1 to see the rest. Always capped; ?limit=N changes the cap.
+    private const DEFAULT_LIMIT = 500;
+
+    private const MAX_LIMIT = 5000;
+
     /**
      * Display a listing of the pallets, optionally filtered by kind and/or
      * status (e.g. GET /json/pallets/R/sorting).
      */
-    public function index(?string $kind = null, ?string $status = null)
+    public function index(Request $request, ?string $kind = null, ?string $status = null)
     {
         $query = Pallet::with(['location', 'donor', 'destination', 'truck']);
 
@@ -26,8 +33,16 @@ class PalletController extends Controller
         if ($status) {
             $query->where('status', $status);
         }
+        if (! $kind && ! $status && ! $request->boolean('all')) {
+            $query->where(function ($q) {
+                foreach (PalletKind::TERMINAL_STATUSES as $k => $closed) {
+                    $q->orWhere(fn ($q2) => $q2->where('kind', $k)->whereNotIn('status', $closed));
+                }
+                $q->orWhere('status', PalletKind::MISSING);
+            });
+        }
 
-        $pallets = $query->orderBy('id', 'desc')->get();
+        $pallets = $query->orderBy('id', 'desc')->limit(min(max((int) $request->query('limit', self::DEFAULT_LIMIT), 1), self::MAX_LIMIT))->get();
 
         return response()->json([
             'records' => $pallets,
