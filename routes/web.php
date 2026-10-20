@@ -362,6 +362,11 @@ Route::get('/reports/unfulfilled', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/unfulfilled')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+Route::get('/reports/sorting-area', function () {
+    return Inertia::render('SortingAreaReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/sorting-area')]);
+})->middleware(['auth', 'permission:view-reports']);
+
 // Internal warehouse dashboard: full-detail view for management/admins.
 Route::get('/reports/dashboard', function () {
     return Inertia::render('WarehouseDashboard',
@@ -602,6 +607,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-repo
     Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
     Route::get('/reports/orders', [OutstandingOrdersReportController::class, 'index']);
     Route::get('/reports/unfulfilled', [UnfulfilledRequestsReportController::class, 'index']);
+    Route::get('/reports/sorting-area', [SortingAreaReportController::class, 'index']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-dashboard']], function () {
@@ -637,6 +643,10 @@ Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv
 
 Route::get('/report/unfulfilled.pdf', [UnfulfilledRequestsReportController::class, 'pdf'])
     ->name('report.unfulfilled')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/sorting-area.csv', [SortingAreaReportController::class, 'csv'])
+    ->name('report.sorting-area.csv')
     ->middleware(['auth', 'permission:view-reports']);
 
 Route::get('/report/unfulfilled.csv', [UnfulfilledRequestsReportController::class, 'csv'])

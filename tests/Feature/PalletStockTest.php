@@ -170,3 +170,21 @@ test('saving the pick path renumbers locations in the given order and keeps unli
         ->and($c->fresh()->PullSequence)->toBe(10)->and($b->fresh()->PullSequence)->toBe(30);
     $this->getJson('/json/locations')->assertJsonPath('records.0.code', 'C-1');
 });
+
+test('the sorting-area report shows sorted vs. put on pallets and what is still waiting', function () {
+    $this->actingAs(userWithPermissions('manage-pallets', 'view-reports', 'general-access'));
+    $item = stockItem(120); // sorted today
+    $this->postJson('/json/pallet-stock/fill', ['lines' => [['item_id' => $item->id, 'qty' => 80]]])->assertCreated();
+
+    $today = now()->toDateString();
+    $report = $this->getJson("/json/reports/sorting-area?from={$today}&to={$today}")->assertOk();
+    $report->assertJsonPath('items.0.sorted', 120)->assertJsonPath('items.0.moved', 80)->assertJsonPath('items.0.in_area', 40)
+        ->assertJsonPath('items.0.waiting_since', $today)->assertJsonPath('totals.in_area', 40);
+
+    // Sorted yesterday's range shows nothing sorted/moved, but the 40 are still waiting.
+    $yesterday = now()->subDay()->toDateString();
+    $this->getJson("/json/reports/sorting-area?from={$yesterday}&to={$yesterday}")
+        ->assertJsonPath('items.0.sorted', 0)->assertJsonPath('items.0.in_area', 40);
+
+    $this->get('/report/sorting-area.csv')->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+});

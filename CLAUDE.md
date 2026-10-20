@@ -140,7 +140,8 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   status/location, Open pallet button on sealed ones, `GET /json/order-filling/stock/{itemtypeId}`). The Inventory Report's item-type detail shows quantity by location (pallet's
   *current* location) plus the unassigned remainder. This corrects the older "no item-level stock-by-location" note — but items *not*
   put on a pallet (or picked without naming one) still can't be located. Not built yet: an end-of-day "sorted but never moved" report
-  (sorted today vs. assigned today), sorter→pallet tracking at sort time.
+  sorter→pallet tracking at sort time. The end-of-day check exists: `/reports/sorting-area` (`SortingAreaReportController`, on-screen + CSV,
+  no PDF/print yet) — per item sorted vs. put-on-pallets in a date range, plus what is *still* in the sorting area now and since when.
   **Pick path & pick plan:** the admin orders all locations once at `/setup/locations/pick-path` (`PickPath.vue`, drag-and-drop +
   "auto-order by aisle, snaking"; saves `locations.PullSequence` as 10,20,30… via `PUT /json/locations/order`). `App\Services\PickPlanner`
   turns a line's need into steps — sorting-area pool, then WHOLE sealed pallets (oldest first, while the need ≥ the pallet's qty, so
