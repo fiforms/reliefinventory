@@ -133,5 +133,31 @@ files/public/...      storage/app/public   (only with "include uploads")
   database (today only the feedback-aggregation shared secret) and login/remember cookies. Passwords and PINs
   are bcrypt, unaffected. Admins with `view-app-key` can reveal it on the Backup Files page (password re-entry,
   throttled, logged) to write it down. A restore without the key must blank anything encrypted with the old one.
-- **Restore** (a first-run-wizard option: chunked upload, manifest check, SQL load, files, migrate, blank
-  undecryptable values) is **not built yet**; for now restore by hand from `database/db.sql` and `files/`.
+
+### Restoring a backup zip — first-run wizard (`/install` → "Restore from a backup")
+
+Only onto a **brand-new instance** (`FirstRunService::needsSetup()`); creating or emptying an instance is deliberately
+not offered in the UI — start from a fresh database/volume. The wizard uploads the zip in resumable chunks (the same
+`ChunkedUpload` service the firmware page uses; `RI_RESTORE_CHUNK_BYTES`, `RI_RESTORE_MAX_BYTES`), then
+`php artisan restore:run <id>` takes over as a detached process (`RestoreService`):
+
+1. read `manifest.json`, run `BackupCompatibility` (format, no app key, safe paths, zip == manifest, **migration list
+   must not contain a migration this code lacks** — a backup from newer software is refused; an older one is
+   fine, the restore ends by migrating up), check disk space;
+2. unpack every entry to `<RI_BACKUP_DIR>/restore/<id>/work`, checking size and SHA-256 as it streams — **nothing
+   on the instance has changed up to here**, so a damaged or hostile zip is harmless;
+3. `db:wipe`, load `database/db.sql`, `migrate`. If this step fails the instance is reset to a clean migrated +
+   seeded state so the wizard works again (re-upload and retry);
+4. move `files/private` / `files/public` into the storage disks;
+5. blank every value in `config('backup.encrypted_columns')` that this instance's `APP_KEY` can't decrypt (all of
+   them, unless the operator set the same `APP_KEY` as the old system before restoring) and list them for the admin;
+6. clear machine-local rows pointing at files a backup never carries (`backups`, `device_releases` — re-upload
+   firmware — and unfinished `print_jobs`), then set the setup-complete latch if an Administrator exists (if the
+   backup has none the wizard stays open to create one).
+
+Progress lives in `<RI_BACKUP_DIR>/restore/status.json` (the database is being replaced, so it can't live there);
+the wizard polls `GET /install/restore/status`, which deliberately skips the session/CSRF/setup middleware.
+There are no logins yet, so the gates are the wizard's own: the instance must still need setup, `RI_SETUP_CODE`
+(if set) at the start, and the unguessable upload id for the chunk calls. As with the wizard itself, an
+internet-exposed fresh instance should set `RI_SETUP_CODE` — a restore can install any administrator the backup holds.
+Adding an encrypted model cast? Register it in `config/backup.php` (`encrypted_columns`) — a test enforces it.

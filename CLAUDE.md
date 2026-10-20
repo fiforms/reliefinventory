@@ -271,8 +271,12 @@ queued job (worker timeout / `retry_after` would kill or re-run it); one-at-a-ti
 Written to `RI_BACKUP_DIR` — **never under `storage/app`**, so a backup can't contain earlier backups. **The zip
 never contains `APP_KEY`/`.env`/`.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and
 logged, to `view-app-key` holders on that page. Only the feedback `shared_secret` (an `encrypted` cast) and cookies depend on
-it. Stage 2 — restore from the first-run wizard (chunked upload, manifest check, blank undecryptable values) — is not
-built. Details: `scripts/BACKUPS.md`.
+it; `config/backup.php`'s `encrypted_columns` registry (test-enforced against model casts) lists what a restore blanks.
+**Restore** is a first-run-wizard option only (`RestoreController`, `RestoreService`, `Setup/RestoreBackup.vue`, shared
+`ChunkedUpload` service also used by firmware uploads): fresh instances only, manifest + SHA-256 verification *before*
+anything is touched, backups from newer software refused via the **migration list** (not a version string), then
+`db:wipe` + load + `migrate`, files moved in, undecryptable values blanked. Progress lives in a status file, not the
+database (it's being replaced). Details: `scripts/BACKUPS.md`.
 
 ### PDF / label generation
 

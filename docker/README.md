@@ -81,6 +81,11 @@ Admins can also make a full backup **.zip** (database, optionally all uploaded f
 **Backup Files** in the app, then download it. These land in the same `backups/` directory, are deleted
 after `RI_BACKUP_KEEP_DAYS`, and never contain the application key (see `scripts/BACKUPS.md`).
 
+**Restoring** one onto a brand-new install: open the new server, choose **Restore from a backup** on the first-run
+screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. If you
+want the encrypted settings (e.g. the feedback shared secret) to survive, set `APP_KEY` in `compose.yaml` to the old
+system's key *before* the first start; otherwise they are cleared and listed for you to re-enter.
+
 ## Upgrading
 
 ```bash
