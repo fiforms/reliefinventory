@@ -61,7 +61,7 @@ FROM php-base AS runtime
 #   weasyprint          every PDF: pallet labels, sitrep, help guide, inventory report,
 #                       order form, BOL, pick sheets, outstanding orders
 #   fonts-*             glyph coverage so reports/labels never render tofu boxes
-#   mariadb-client      the scheduler's database dumps
+#   mariadb-client      the scheduler's and pre-migration database dumps
 #   curl                healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
         weasyprint \
@@ -72,9 +72,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY docker/entrypoint.sh /usr/local/bin/ri-entrypoint
 COPY docker/scheduler.sh /usr/local/bin/ri-scheduler
+COPY docker/db-backup.sh /usr/local/bin/ri-db-backup
 COPY docker/Caddyfile /etc/caddy/Caddyfile
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-reliefinventory.ini
-RUN chmod +x /usr/local/bin/ri-entrypoint /usr/local/bin/ri-scheduler
+RUN chmod +x /usr/local/bin/ri-entrypoint /usr/local/bin/ri-scheduler /usr/local/bin/ri-db-backup
 
 WORKDIR /var/www/html
 COPY --from=app-build /app /var/www/html

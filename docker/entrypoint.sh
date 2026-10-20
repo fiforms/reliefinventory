@@ -121,6 +121,29 @@ load_app_key() {
     export APP_KEY
 }
 
+# Dump the database before applying migrations that are about to change its
+# schema. Skipped on a fresh install (no migrations table yet) and when nothing
+# is pending. A failed dump aborts startup rather than migrating unprotected;
+# RI_PREMIGRATE_BACKUP=false is the explicit opt-out.
+pre_migrate_backup() {
+    if [ "${RI_PREMIGRATE_BACKUP:-true}" != true ]; then
+        log "pre-migration backup disabled (RI_PREMIGRATE_BACKUP)"
+        return 0
+    fi
+    local status
+    # migrate:status fails when there is no migrations table: a brand-new database.
+    status="$(php artisan migrate:status --no-ansi --no-interaction 2>/dev/null)" || return 0
+    # pending rows end in "Pending"; anchored so a migration *named* ..._pending can't match
+    printf '%s\n' "$status" | grep -Eq '[. ]Pending[[:space:]]*$' || return 0
+
+    log "pending migrations found — backing up the database first"
+    if ! ri-db-backup premigrate; then
+        log "pre-migration backup FAILED, so migrations were NOT run. Fix the backup directory/database access and restart,"
+        log "or set RI_PREMIGRATE_BACKUP=false to migrate without a backup."
+        exit 1
+    fi
+}
+
 # ---- roles --------------------------------------------------------------------
 case "$ROLE" in
 init-secrets)
@@ -129,6 +152,8 @@ init-secrets)
 web)
     load_app_key
     wait_for_db
+
+    pre_migrate_backup
 
     log "running migrations"
     php artisan migrate --force --no-interaction

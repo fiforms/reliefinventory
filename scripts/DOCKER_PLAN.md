@@ -32,6 +32,10 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   "managed by Docker" mode that hides them.
 - Reverb (`--profile realtime`) is wired but untested in the container.
 - Not yet run on real arm64 hardware (Pi) or in CI.
+- **Pre-migration backup** (2026-10-20): `web` runs `ri-db-backup premigrate` (`docker/db-backup.sh`, shared with the
+  scheduler) when `migrate:status` shows pending migrations on an existing database, and refuses to migrate if the dump
+  fails (`RI_PREMIGRATE_BACKUP=false` opts out). Untested in a real container build. Known gap: a crash-looping
+  failed migration re-dumps on every restart (timestamped, pruned by age).
 - Backups cover the database only; the `storage` volume (photos, print PDFs) is the operator's to back up.
 - Print servers/R Stations pointing at a containerised instance untested end to end.
 

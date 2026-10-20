@@ -84,11 +84,15 @@ docker compose pull
 docker compose up -d      # migrations run automatically when `app` starts
 ```
 
-The scheduler already keeps a daily dump in `backups/`; for an extra safety copy right before upgrading, run:
+If the new image has pending migrations, the `app` container dumps the database to `backups/` first
+(`reliefinventory-premigrate-<timestamp>.sql.gz`) and only then migrates. **If that dump fails, it does not migrate** —
+the container exits with a message in `docker compose logs app` (usually the backup directory isn't writable). Fix that
+and it retries on restart, or set `RI_PREMIGRATE_BACKUP: "false"` to migrate without a backup. A fresh install, or an
+upgrade with no new migrations, takes no extra dump. Pre-migration dumps are pruned with the daily ones
+(`RI_BACKUP_KEEP_DAYS`). This covers the database only — see "Data and backups" for `storage`.
 
-```bash
-docker compose exec db sh -c 'mariadb-dump -uroot -p"$MARIADB_ROOT_PASSWORD" --single-transaction "$MARIADB_DATABASE"' | gzip > pre-upgrade.sql.gz
-```
+**Rolling back:** an old image can't run against a migrated schema. Pin the previous version tag in `compose.yaml`
+(rather than `:latest`), restore the pre-migration dump (restore command above), then `docker compose up -d`.
 
 ## Print servers and R Stations
 
@@ -104,7 +108,7 @@ traffic to the `reverb` service (host port 8081). **Not yet tested in the contai
 ## Not available in the container
 
 The **System Administration** panel's *Install Update* and *Backup Now* buttons drive systemd on a bare-metal
-install and do nothing useful here; upgrade by pulling a new image (above) and rely on the scheduler's dumps.
+install and do nothing useful here; upgrade by pulling a new image (above); the pre-migration and daily dumps are your backups.
 
 ## Building the image yourself
 

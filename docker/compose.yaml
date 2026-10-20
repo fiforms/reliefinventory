@@ -67,6 +67,9 @@ x-settings: &settings
   # RI_BACKUP_ENABLED: "true"
   # RI_BACKUP_HOUR: 2                   # local hour (follows APP_TIMEZONE)
   # RI_BACKUP_KEEP_DAYS: 14
+  # An upgrade that has pending migrations dumps the database first (into the same
+  # ./backups) and won't migrate if the dump fails. Set to "false" to opt out.
+  # RI_PREMIGRATE_BACKUP: "true"
 
   # Passwords are generated for you. Only set these to pick your own, and only
   # BEFORE the first `docker compose up` (afterwards they're already in the
@@ -140,6 +143,11 @@ services:
     command: ["web"]
     ports:
       - "8080:8080"
+    volumes:
+      - storage:/var/www/html/storage
+      - secrets:/secrets:ro
+      # pre-migration dumps (taken when an upgrade has pending migrations) land beside the daily ones
+      - ./backups:/backups
     depends_on:
       db:
         condition: service_healthy
