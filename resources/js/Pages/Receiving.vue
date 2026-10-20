@@ -435,6 +435,13 @@ const containerTypeOptions = [
 						</div>
 					</div>
 
+					<template v-if="record.id && record.photo_path">
+						<h3 class="recv_subhead">Photo of the Shipment</h3>
+						<a :href="photoUrl(record)" target="_blank">
+							<img :src="photoUrl(record)" alt="Photo of the shipment" class="recv_photo" />
+						</a>
+					</template>
+
 					<template v-if="record.id && record.is_close_out_candidate">
 						<h3 class="recv_subhead">Daily Close-Out</h3>
 						<button @click="closeOut(record)" class="ri_defaultbutton">Close Out</button>
@@ -468,9 +475,9 @@ const containerTypeOptions = [
 						@captured="(file) => onPhotoCaptured(file, record)"
 						@close="webcamOpen = false"
 					/>
-					<p v-if="record.photo_path" class="ri_hint">
-						<a :href="`/json/receiving/${record.id}/photo`" target="_blank">View current photo</a>
-					</p>
+					<a v-if="record.photo_path" :href="photoUrl(record)" target="_blank">
+						<img :src="photoUrl(record)" alt="Photo of the shipment" class="recv_photo" />
+					</a>
 					<p v-if="photoError" class="ri_error">{{ photoError }}</p>
 				</template>
 
@@ -622,6 +629,7 @@ export default {
 			contactError: null,
 
 			photoError: null,
+			photoStamp: 0, // bumped on each upload so a retaken photo isn't served from the browser cache
 			webcamOpen: false,
 
 			confirmingCancel: false,
@@ -990,6 +998,9 @@ export default {
 			if (!file) return;
 			await this.uploadPhoto(file, record);
 		},
+		photoUrl(record) {
+			return `/json/receiving/${record.id}/photo?v=${this.photoStamp}`;
+		},
 		async uploadPhoto(file, record) {
 			this.photoError = null;
 			const formData = new FormData();
@@ -997,6 +1008,7 @@ export default {
 			try {
 				const response = await axios.post('/json/receiving/' + record.id + '/photo', formData);
 				record.photo_path = response.data.record.photo_path;
+				this.photoStamp++;
 			} catch (error) {
 				this.photoError = error.response?.data?.message || 'Could not upload photo.';
 			}
@@ -1148,6 +1160,14 @@ export default {
 	flex: 1;
 	min-width: 6em;
 }
+.recv_photo {
+	display: block;
+	max-width: 100%;
+	max-height: 24rem;
+	margin-top: 0.75em;
+	border-radius: 4px;
+}
+
 .recv_photobuttons {
 	display: flex;
 	gap: 0.5em;
