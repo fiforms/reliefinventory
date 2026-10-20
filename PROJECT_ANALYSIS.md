@@ -243,6 +243,13 @@ live/on-demand. What's still exactly as described below and NOT built: cross-fac
 persisted batch "allocation run," and the fuzzed three-state display for POD-type requesters (moot
 until a partner-facing/POD surface exists at all).
 
+**Update (2026-10-19, feedback #50):** the panel is no longer display-only. A manager can save an
+approved quantity per line (`orderlines.qty_approved`, approver + time, only while Ready to Fill); pick
+sheets and the fill screen then show only that quantity (`OrderLine::qty_to_pick`), and lines approved at
+0 drop off. `qty_requested` is kept, so requested vs. approved vs. filled can feed a "requested but not
+fulfilled" report (not built yet). Orders where nothing is picked now close as `Closed - Unfulfilled`
+instead of reaching Shipping (feedback #53).
+
 Three honest states per item, not a fuzzed range: **Available** (above a per-item threshold, no flag) / **Limited** (below threshold but > 0, "Limited availability" flag) / **Unavailable** (zero on hand, shown honestly — never disguised as "limited"). Threshold has a global default, overridable per item. Only POD-type requesters get this fuzzing; warehouse managers always see exact counts, and coordinators requesting from a resource site see real-ish numbers since they're making sourcing decisions.
 
 Requesting is always allowed regardless of displayed availability:

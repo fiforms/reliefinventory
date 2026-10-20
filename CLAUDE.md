@@ -104,8 +104,7 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   `OrderLine::qty_to_pick` (approved, else requested) on pick sheets and the fill screen, and lines
   approved at 0 are left off and need no fill. `qty_requested` is never changed, so requested vs.
   approved vs. filled stays reportable. Approving is optional — Print Pick Sheets and Start Filling
-  both work without ever opening the panel.
-  it. `donor_identification_pending`
+  both work without ever opening the panel. `donor_identification_pending`
   (plain boolean, not a status) flags a donation whose source needs follow-up — unlike `sort_hold` on item
   types, it never gates anything downstream (the goods are real/usable regardless), it's purely a
   find-it-later reminder. A donation flagged this way stays visible in Receiving's list even past
@@ -227,6 +226,13 @@ quantity on the Details screen (summed via `computeContainerCount()`) instead of
 re-enter those numbers as manual batches — it's idempotent, topping up only whatever's still short if
 re-entered, and a manual "Add Label(s)" line stays available underneath for one-off corrections.
 
+In-app Help guides (`resources/js/Pages/Help/*.vue`) are built on `Components/HelpPage.vue`, which always
+renders the "Print these instructions" `PrintMenu`. Adding a guide: add its slug to
+`HelpReportController::GUIDES`, write `resources/views/reports/help/<slug>.blade.php` extending
+`reports.help.layout`, and wrap the page in `<HelpPage guide="<slug>">` — the `/report/help/{guide}` route,
+the `help-<slug>` print-queue entry and the button all follow from `GUIDES`. The PDF content is a hand-kept
+copy of the Vue page's, so edit both.
+
 `QrScanner.vue` wraps `html5-qrcode` for camera-based barcode/QR scanning; keyboard-wedge USB/Bluetooth
 scanners work via plain text input + Enter-to-submit and don't need this component.
 
@@ -288,9 +294,15 @@ anything is touched, backups from newer software refused via the **migration lis
 `db:wipe` + load + `migrate`, files moved in, undecryptable values blanked. Progress lives in a status file, not the
 database (it's being replaced). Details: `scripts/BACKUPS.md`.
 
+These zips are separate from the **tiered scheduled backups** `scripts/update.sh` takes under `/var/backups/`
+(hourly systemd timer; a daily/weekly scheduled backup promoted into daily/monthly/yearly, plus an optional
+every-hour backup — `HOURLY_BACKUPS` in `storage/app/backup-settings.conf`, the "Also back up every hour"
+switch in System Admin, added 2026-10-19 — that stays in the Hourly tier only). Both kinds are full copies,
+never incremental.
+
 ### PDF / label generation
 
-Every PDF in the app — pallet labels (`PalletReportController`), the Situation Report, the Receiving Guide,
+Every PDF in the app — pallet labels (`PalletReportController`), the Situation Report, the Help guides,
 the inventory/outstanding-orders reports, the order form, BOL and pick sheets — is generated via
 `spatie/laravel-pdf` and rendered by **WeasyPrint** (`pontedilana/php-weasyprint`); barcodes come from
 `milon/barcode`. `UPCGenerator` (`app/Helpers`) derives a valid check-digit UPC-A from a 5-digit item
@@ -483,6 +495,9 @@ with the office") was also raised and is unbuilt — idea-stage only, no design 
 - Wrap multi-row writes (a transaction header plus its ledger/order lines) in `DB::transaction()`.
 - Don't use `env()` outside `config/*.php` files — read from `config()` instead, since `env()` returns
   null once config is cached in production.
+- Cloudflare Turnstile goes through `App\Services\TurnstileService` (registration, password reset, public
+  forms) — don't re-implement the check in a controller. Enabled-but-no-keys is a server misconfiguration:
+  callers refuse (and it's logged) rather than silently skipping the check on a public form.
 - New JSON endpoints go under the `prefix => 'json'` route groups in `routes/web.php`, gated by
   `permission:<key>` matching the resource being accessed (see the permission-key model above). If a new
   resource needs a new permission key, add it to `PermissionsSeeder`'s key list and default role bundles.
