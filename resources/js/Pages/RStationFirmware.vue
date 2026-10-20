@@ -16,8 +16,9 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
+import { useChunkedUpload } from '@/composables/chunkedUpload';
 import axios from 'axios';
-import { computed, onMounted, reactive, ref, watch } from 'vue';
+import { onMounted, reactive, ref, watch } from 'vue';
 
 defineProps({
 	breadcrumb: {
@@ -130,94 +131,44 @@ watch(() => upload.kind, (kind) => {
 
 const uploadFile = ref(null);
 const fileInput = ref(null);
-const task = reactive({ id: null, chunkSize: 0, received: 0, size: 0, running: false, cancelled: false, failed: false, file: null });
-const percent = computed(() => (task.size ? Math.floor((task.received / task.size) * 100) : 0));
-const MAX_RETRIES = 6;
-
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function sendChunks() {
-	task.running = true;
-	task.failed = false;
-	let failures = 0;
-	try {
-		// Re-sync with the server first: this is what makes "Resume" safe.
-		task.received = (await axios.get(`/json/device-releases/uploads/${task.id}`)).data.received;
-		while (task.received < task.size && !task.cancelled) {
-			const blob = task.file.slice(task.received, Math.min(task.received + task.chunkSize, task.size));
-			try {
-				const { data } = await axios.put(`/json/device-releases/uploads/${task.id}`, blob, {
-					params: { offset: task.received },
-					headers: { 'Content-Type': 'application/octet-stream' },
-					transformRequest: [(body) => body],
-				});
-				task.received = data.received;
-				failures = 0;
-			} catch (e) {
-				if (e.response?.status === 409) {
-					task.received = e.response.data.received; // carry on from where the server really is
-					continue;
-				}
-				if (e.response && e.response.status < 500 && e.response.status !== 429) throw e; // a refusal won't fix itself
-				if (++failures > MAX_RETRIES) throw e;
-				await sleep(Math.min(1000 * 2 ** failures, 15000)); // flaky network: back off and retry this chunk
-			}
-		}
-		if (task.cancelled) return false;
-		await axios.post(`/json/device-releases/uploads/${task.id}/complete`);
-		return true;
-	} catch (e) {
-		task.failed = true;
-		fail(e, 'The upload was interrupted. Choose Resume to carry on from where it stopped.');
-		return false;
-	} finally {
-		task.running = false;
-	}
-}
+const { task, percent, start, resume, cancel, reset } = useChunkedUpload('/json/device-releases/uploads');
 
 async function startUpload() {
 	if (!uploadFile.value) return;
 	error.value = '';
 	notice.value = '';
-	const file = uploadFile.value;
 	const metadata = Object.fromEntries(Object.entries(upload).filter(([, value]) => value !== ''));
+	const name = uploadFile.value.name;
 	try {
-		const { data } = await axios.post('/json/device-releases/uploads', { ...metadata, filename: file.name, size: file.size });
-		Object.assign(task, { id: data.upload_id, chunkSize: data.chunk_size, received: 0, size: file.size, cancelled: false, file });
+		await finished(await start(uploadFile.value, metadata), name);
 	} catch (e) {
-		fail(e, 'Could not start that upload.');
-		return;
+		// No upload id yet means the server refused to start it (validation); otherwise it was interrupted.
+		fail(e, task.id ? 'The upload was interrupted. Choose Resume to carry on from where it stopped.' : 'Could not start that upload.');
 	}
-	await finishTask();
 }
 
 async function resumeUpload() {
 	error.value = '';
-	await finishTask();
+	const name = task.file?.name;
+	try {
+		await finished(await resume(), name);
+	} catch (e) {
+		fail(e, 'The upload was interrupted. Choose Resume to carry on from where it stopped.');
+	}
 }
 
-async function finishTask() {
-	if (await sendChunks()) {
-		notice.value = `Uploaded ${task.file.name}. It is offered to no one until you tick a channel for it.`;
-		Object.assign(task, { id: null, file: null, received: 0, size: 0, failed: false });
-		uploadFile.value = null;
-		if (fileInput.value) fileInput.value.value = '';
-		upload.version = upload.required_base_version = upload.notes = '';
-		await fetchAll();
-	}
+async function finished(completed, name) {
+	if (!completed) return;
+	notice.value = `Uploaded ${name}. It is offered to no one until you tick a channel for it.`;
+	reset(); // the server already holds the file; nothing to delete
+	uploadFile.value = null;
+	if (fileInput.value) fileInput.value.value = '';
+	upload.version = upload.required_base_version = upload.notes = '';
+	await fetchAll();
 }
 
 async function cancelUpload() {
-	task.cancelled = true;
-	const id = task.id;
-	// Let an in-flight chunk finish, then discard what the server holds.
-	while (task.running) await sleep(100);
-	try {
-		if (id) await axios.delete(`/json/device-releases/uploads/${id}`);
-	} catch (e) {
-		// Already gone (or expired): nothing to clean up.
-	}
-	Object.assign(task, { id: null, file: null, received: 0, size: 0, failed: false, cancelled: false });
+	await cancel();
 	notice.value = 'Upload cancelled.';
 }
 

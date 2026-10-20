@@ -1,5 +1,5 @@
-// Resumable chunked upload client for ChunkedUpload.php's protocol (used by the first-run restore wizard;
-// the firmware page carries the same logic inline). start -> PUT consecutive raw chunks at explicit offsets ->
+// Resumable chunked upload client for ChunkedUpload.php's protocol (used by the first-run restore wizard
+// and the firmware page). start -> PUT consecutive raw chunks at explicit offsets ->
 // complete. The server is the source of truth for how much it has: every response carries `received`, and a
 // 409 (a chunk it already has, or one that skipped ahead) says where to carry on from, so a dropped
 // connection or a double-sent chunk can never corrupt the file. A failed upload keeps its server-side
@@ -69,17 +69,23 @@ export function useChunkedUpload(baseUrl) {
 		return sendChunks();
 	}
 
-	async function cancel() {
-		task.cancelled = true;
-		if (task.id && !task.running) {
-			try {
-				await axios.delete(`${baseUrl}/${task.id}`);
-			} catch {
-				/* already gone */
-			}
-		}
-		Object.assign(task, { id: null, received: 0, size: 0, failed: false, file: null });
+	/** Forget the current upload locally (after a finished one, or when cancelling). */
+	function reset() {
+		Object.assign(task, { id: null, chunkSize: 0, received: 0, size: 0, running: false, cancelled: false, failed: false, file: null });
 	}
 
-	return { task, percent, start, resume, cancel };
+	/** Stop, let any in-flight chunk finish, then discard what the server holds. */
+	async function cancel() {
+		task.cancelled = true;
+		const id = task.id;
+		while (task.running) await sleep(100);
+		try {
+			if (id) await axios.delete(`${baseUrl}/${id}`);
+		} catch {
+			/* already gone (or expired): nothing to clean up */
+		}
+		reset();
+	}
+
+	return { task, percent, start, resume, cancel, reset };
 }
