@@ -78,6 +78,17 @@ test('a simulated period is realistic and only the injected errors ever go negat
         ->and(DB::table('item_ledgers')->whereNotNull('pallet_id')->where('qty_added', '>', 0)->exists())->toBeTrue()
         ->and($summary['fill_rate_percent'])->toBeGreaterThan(30);
 
+    // Pallet-level stock is simulated too: many multi-item warehouse pallets, some stock left in the sorting area, and
+    // no pallet is ever recorded as holding less than nothing (over-picks hit the sorting-area pool, never a pallet).
+    $quantities = \App\Services\PalletStock::quantities();
+    expect($summary['counts']['warehouse_pallets'])->toBeGreaterThan(20)
+        ->and($summary['counts']['pallet_stock_assignments'])->toBeGreaterThan($summary['counts']['warehouse_pallets'])
+        ->and($summary['counts']['stock_still_in_sorting_area'])->toBeGreaterThan(0)
+        ->and($quantities->min('qty'))->toBeGreaterThanOrEqual(0)
+        ->and(DB::table('item_ledgers')->whereNotNull('stock_pallet_id')->where('qty_subtracted', '>', 0)->exists())->toBeTrue()
+        ->and(DB::table('pallets')->where('kind', 'W')->whereIn('status', ['sealed', 'open', 'empty'])->count())->toBe($summary['counts']['warehouse_pallets'])
+        ->and(DB::table('pallets')->where('kind', 'W')->where('status', 'open')->count())->toBeGreaterThan(0);
+
     // Nothing is claimed filled beyond what was requested-or-approved + a legitimately over-picked line.
     expect(DB::table('orderlines')->whereNotNull('qty_approved')->whereColumn('qty_approved', '>', 'qty_requested')->count())->toBe(0);
 

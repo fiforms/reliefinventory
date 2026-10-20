@@ -507,7 +507,11 @@ can't be seeded). In-memory stock makes every fill `min(to_pick, on_hand)`, so o
 deliberately injected over-picks (returned in the summary); tests replay the ledger in order to prove it. Same-day events run in
 a fixed phase order and the clock never runs backwards, so a fill is always stamped after the stock it picks. Simulated people
 carry `source_system = 'simulator'`. Progress lives in `storage/app/simulator-status.json` (`SimulationRun`), not the database.
-When you change anything an order/donation lifecycle writes, check the simulator still produces valid data.
+Pallet stock is simulated end to end (2026-10-20): a daily Mon–Sat `putaway` phase has the "forklift" fill multi-item W pallets from the
+in-memory sorting-area pool (some items skipped, some remainders left behind, so the Sorting Area report has content), and fills pick via
+`PickPlanner::planFor` against in-memory pallet state (whole sealed pallets, open pallets, oldest sealed opened) and record
+`stock_pallet_id`; over-picks hit the pool, never a pallet, so no pallet quantity goes negative. A default year ≈ 4,400 W pallets, 8,700
+assignments, 15k ledger rows, 18k pallet-history rows, ~85 s. When you change anything an order/donation lifecycle writes, check the simulator still produces valid data.
 
 `SlowQueryLog` (`config/slowlog.php`, off unless `RI_SLOW_QUERY_MS` > 0; the Docker stack sets 250) is a `DB::listen` + `RequestHandled`
 hook writing `storage/logs/slow-queries.jsonl`: slow queries (SQL shape only, never bindings) AND whole-request profiles (slow,
