@@ -59,6 +59,30 @@ async function showQr(url) {
   qrImage.value = await QRCode.toDataURL(url, { width: 320, margin: 3, errorCorrectionLevel: 'M', color: { dark: '#000000', light: '#ffffff' } })
 }
 
+// An external site as this device's server (the same address the wizard's Server step takes).
+const siteInput = ref('')
+const siteBusy = ref(false)
+const siteError = ref(null)
+const siteSaved = ref(false)
+async function saveSite(verify) {
+  siteBusy.value = true
+  siteError.value = null
+  siteSaved.value = false
+  try {
+    info.value = await request('/api/local/local-server/site', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url: siteInput.value, verify }),
+    })
+    siteSaved.value = true
+    siteInput.value = ''
+  } catch (err) {
+    siteError.value = err.message
+  } finally {
+    siteBusy.value = false
+  }
+}
+
 async function setHome(enabled) {
   await act('home', { enabled })
 }
@@ -159,12 +183,29 @@ onUnmounted(() => clearInterval(timer))
     <section v-if="info?.available" class="tile panel">
       <div class="panel-title"><h2>{{ t('settings.localServer.homeTitle') }}</h2></div>
       <p class="hint">{{ t('settings.localServer.homeHint') }}</p>
+      <p class="current">
+        <span class="hint">{{ t('settings.localServer.siteCurrent') }}</span>
+        <strong>{{ info.site_url || t('settings.localServer.siteNone') }}</strong>
+      </p>
       <p v-if="info.paired" class="pill warn note">{{ t('settings.localServer.homePaired') }}</p>
+
       <div class="actions">
         <span v-if="info.is_home" class="pill ok">{{ t('settings.localServer.homeOn') }}</span>
         <button v-if="!info.is_home" class="tile action" :disabled="working || info.paired" @click="setHome(true)">{{ t('settings.localServer.homeUse') }}</button>
-        <button v-else class="tile action" :disabled="working" @click="setHome(false)">{{ t('settings.localServer.homeStop') }}</button>
+        <button v-else class="tile action" :disabled="working || info.paired" @click="setHome(false)">{{ t('settings.localServer.homeStop') }}</button>
       </div>
+
+      <h3>{{ t('settings.localServer.siteTitle') }}</h3>
+      <p class="hint">{{ t('settings.localServer.siteHint') }}</p>
+      <form class="site-form" @submit.prevent="saveSite(true)">
+        <input v-model="siteInput" type="url" inputmode="url" placeholder="https://" autocomplete="off" autocapitalize="off" spellcheck="false" :disabled="siteBusy || info.paired">
+        <div class="actions">
+          <button type="submit" class="tile action" :disabled="siteBusy || info.paired || !siteInput.trim()">{{ t('settings.localServer.siteSave') }}</button>
+          <button v-if="siteError" type="button" class="tile action" :disabled="siteBusy" @click="saveSite(false)">{{ t('settings.localServer.siteAnyway') }}</button>
+        </div>
+      </form>
+      <p v-if="siteError" class="pill warn note">{{ siteError }}</p>
+      <p v-if="siteSaved" class="pill ok note">{{ t('settings.localServer.siteSaved') }}</p>
     </section>
 
     <section v-if="info?.available" class="tile panel">
@@ -240,6 +281,15 @@ onUnmounted(() => clearInterval(timer))
 }
 .urls strong {
   font-size: 1.15rem;
+}
+.current {
+  margin: 0 0 0.9rem;
+  overflow-wrap: anywhere;
+}
+.site-form {
+  display: grid;
+  gap: 0.8rem;
+  max-width: 28rem;
 }
 .qr {
   margin: 0 0 1rem;

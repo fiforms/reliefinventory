@@ -165,7 +165,19 @@ def test_low_space_only_matters_before_the_images_are_unpacked(paths, monkeypatc
 
 # --- "use as home": the device's own site -------------------------------------------------------
 
+class ServerUrlError(Exception):
+    pass
+
+
 class FakePairing:
+    ServerUrlError = ServerUrlError
+
+    def normalize_server_url(self, raw):
+        raw = raw.strip()
+        if not raw:
+            raise ServerUrlError("Enter the server's web address")
+        return (raw if "://" in raw else f"https://{raw}").rstrip("/")
+
     def __init__(self, tmp, confirmed=None, paired=False):
         self.SERVER_URL_FILE = tmp / "server-url"
         if confirmed:
@@ -188,9 +200,13 @@ class FakePairing:
         return host != "rstation-111111"
 
 
-def _home_server(paths, tmp_path, **kw):
+def _home_server(paths, tmp_path, probe_state="ok", **kw):
     root, data, run_dir, mount = paths
-    return LocalServer(root, data, run_dir, data_mount=mount, previous_home=tmp_path / "before", pairing=FakePairing(tmp_path, **kw))
+
+    async def probe(url):
+        return {"state": probe_state, "host": url.split("//")[-1], "detail": "timed out"}
+    return LocalServer(root, data, run_dir, data_mount=mount, previous_home=tmp_path / "before",
+                       pairing=FakePairing(tmp_path, **kw), probe=probe)
 
 
 def test_home_remembers_the_old_server_and_restores_it(paths, tmp_path):
@@ -223,6 +239,48 @@ def test_home_is_refused_while_paired_to_a_site(paths, tmp_path):
 
     assert caught.value.status == 409
     assert server.pairing.read_confirmed_server_url() == "https://relief.example.org"
+
+
+def test_external_site_can_be_set_after_setup_while_unpaired(paths, tmp_path):
+    server = _home_server(paths, tmp_path, confirmed="http://localhost:8080")
+    server.set_home(False)
+
+    run(server.set_site("relief.example.org"))
+
+    assert server.pairing.read_confirmed_server_url() == "https://relief.example.org"
+    assert server.home_state()["is_home"] is False
+    assert not (tmp_path / "before").exists()   # "go back" must not resurrect an older choice
+
+
+def test_external_site_must_answer_unless_staff_insist(paths, tmp_path):
+    server = _home_server(paths, tmp_path, probe_state="unreachable", confirmed="http://localhost:8080")
+
+    with pytest.raises(local_server.LocalServerError) as caught:
+        run(server.set_site("https://down.example.org"))
+    assert caught.value.status == 422 and "timed out" in str(caught.value)
+    assert server.pairing.read_confirmed_server_url() == "http://localhost:8080"
+
+    run(server.set_site("https://down.example.org", verify=False))
+    assert server.pairing.read_confirmed_server_url() == "https://down.example.org"
+
+
+def test_bad_address_is_a_422(paths, tmp_path):
+    with pytest.raises(local_server.LocalServerError) as caught:
+        run(_home_server(paths, tmp_path).set_site("  "))
+    assert caught.value.status == 422
+
+
+def test_site_is_locked_once_paired_until_unpair_or_factory_reset(paths, tmp_path):
+    server = _home_server(paths, tmp_path, confirmed="https://relief.example.org", paired=True)
+
+    with pytest.raises(local_server.LocalServerError) as caught:
+        run(server.set_site("https://other.example.org"))
+
+    assert caught.value.status == 409 and "Unpair" in str(caught.value)
+    assert server.pairing.read_confirmed_server_url() == "https://relief.example.org"
+    server.pairing.paired = False   # after an unpair (which keeps the address) it opens up again
+    run(server.set_site("https://other.example.org"))
+    assert server.pairing.read_confirmed_server_url() == "https://other.example.org"
 
 
 def test_status_carries_home_and_hostname_facts(paths, tmp_path):

@@ -61,10 +61,17 @@ async def _run(*argv: str, timeout: float = 10.0) -> tuple[int | None, str]:
 
 class LocalServer:
     def __init__(self, root: Path = ROOT, data: Path = DATA, run_dir: Path = RUN, data_mount: Path = Path("/data"),
-                 port: int = 8080, previous_home: Path = PREVIOUS_HOME, pairing=None):
+                 port: int = 8080, previous_home: Path = PREVIOUS_HOME, pairing=None, probe=None):
         self.root, self.data, self.run_dir, self.data_mount, self.port = root, data, run_dir, data_mount, port
         self.previous_home = previous_home
         self._pairing = pairing
+        self._probe = probe
+
+    async def probe(self, url: str) -> dict:
+        if self._probe is None:
+            import server_check  # platform module; late for the same reason as pairing
+            self._probe = server_check.probe
+        return await self._probe(url)
 
     @property
     def pairing(self):
@@ -82,9 +89,9 @@ class LocalServer:
     def home_state(self) -> dict:
         try:
             current = self.pairing.read_confirmed_server_url()
-            return {"is_home": current == self.home_url, "paired": self.pairing.is_paired()}
+            return {"is_home": current == self.home_url, "paired": self.pairing.is_paired(), "site_url": current}
         except Exception:  # the platform module is unavailable (tests) or /data is unreadable
-            return {"is_home": False, "paired": False}
+            return {"is_home": False, "paired": False, "site_url": None}
 
     def _hostname_change_pending(self, host: str) -> bool:
         """A new device name is saved but only takes effect (and starts being announced as .local) on a reboot."""
@@ -93,15 +100,39 @@ class LocalServer:
         except Exception:
             return False
 
+    def _require_unpaired(self) -> None:
+        if self.home_state()["paired"]:
+            raise LocalServerError(
+                409, "This device is paired with a site. Unpair it in Settings > Pairing (or do a factory reset) before changing its site.")
+
+    async def set_site(self, raw_url: str, verify: bool = True) -> None:
+        """Sets an external site as this device's server, from Settings, after the wizard has locked the address.
+
+        Same exception to the platform's lock as set_home(), same condition: refused once the device is paired, because
+        the pairing token belongs to the old site. Unpairing (which keeps the address) or a factory reset is what
+        opens it up again. An address is checked the way the wizard checks it (`GET {url}/up`) unless `verify` is
+        false — the "use it anyway" case for a site that is simply down right now."""
+        self._require_unpaired()
+        try:
+            url = self.pairing.normalize_server_url(raw_url)
+        except self.pairing.ServerUrlError as exc:
+            raise LocalServerError(422, str(exc))
+        if verify:
+            result = await self.probe(url)
+            if result["state"] != "ok":
+                why = f" ({result['detail']})" if result.get("detail") else ""
+                raise LocalServerError(422, f"Couldn't reach a server at {result['host']}{why}.")
+        self.pairing.write_server_url(url)
+        # An explicit choice replaces whatever "Go back" would have restored.
+        self.previous_home.unlink(missing_ok=True)
+
     def set_home(self, enabled: bool) -> None:
         """Points this device's confirmed server at the local server, remembering what it was, or puts that back.
 
         The platform locks the confirmed address once setup is done (SERVER_URL.md) because moving a device to
         another site invalidates its pairing; this is the one deliberate exception, and only while the device is
         not paired to a site — a paired token belongs to the old server and would silently stop working."""
-        state = self.home_state()
-        if state["paired"]:
-            raise LocalServerError(409, "This device is paired with a site. Remove it from that site's R Station Devices page first.")
+        self._require_unpaired()
         current = self.pairing.read_confirmed_server_url()
         if enabled:
             if current != self.home_url:

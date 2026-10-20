@@ -3,13 +3,18 @@
 Like the rest of /api/local, this only listens on loopback.
 """
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .local_server import LocalServer, LocalServerError
 
 
 class Home(BaseModel):
     enabled: bool
+
+
+class Site(BaseModel):
+    url: str = Field(max_length=2048)
+    verify: bool = True
 
 
 class Reset(BaseModel):
@@ -44,6 +49,14 @@ def build_router(server: LocalServer | None = None) -> APIRouter:
     async def home(body: Home):
         try:
             server.set_home(body.enabled)
+        except LocalServerError as exc:
+            raise HTTPException(exc.status, str(exc))
+        return await server.status()
+
+    @router.post("/api/local/local-server/site")
+    async def site(body: Site):
+        try:
+            await server.set_site(body.url, body.verify)
         except LocalServerError as exc:
             raise HTTPException(exc.status, str(exc))
         return await server.status()
