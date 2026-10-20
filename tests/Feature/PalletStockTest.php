@@ -87,3 +87,26 @@ test('the inventory report breaks an item type down by location with an unassign
         ->and($rec['locations'][0]['qty'])->toBe(96)
         ->and($rec['unassigned'])->toBe(64);
 });
+
+test('a pick with no pallet named uses the sorting-area pool first, then the oldest pallet, and never goes negative', function () {
+    $item = stockItem(100);
+    $first = Pallet::find($this->postJson('/json/pallet-stock/fill', ['lines' => [['item_id' => $item->id, 'qty' => 40]]])->json('record.id'));
+    $second = Pallet::find($this->postJson('/json/pallet-stock/fill', ['lines' => [['item_id' => $item->id, 'qty' => 50]]])->json('record.id'));
+    // 100 on hand: 40 + 50 on pallets, 10 still in the sorting area
+    $order = Transaction::create([
+        'type' => 'order', 'person_id' => Person::create(['first_name' => 'Pat', 'last_name' => 'Rivera'])->id,
+        'person_id_user' => User::factory()->create()->id, 'status_id' => Transaction::statusId(Transaction::STATUS_FILLING),
+        'order_date' => now()->toDateString(),
+    ]);
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $item->itemtype_id, 'qty_requested' => 60]);
+
+    $res = $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $item->id, 'qty' => 30])->assertCreated();
+    expect($res->json('records'))->toHaveCount(2); // 10 from the pool, 20 off the oldest pallet
+    expect(collect($res->json('records'))->pluck('qty_subtracted', 'stock_pallet_id')->all())->toBe(['' => 10, $first->id => 20]);
+    $this->getJson('/json/pallet-stock/staging')->assertJsonCount(0, 'records');
+    $this->getJson("/json/pallets/{$first->id}/contents")->assertJsonPath('record.contents.0.qty', 20);
+
+    $over = $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $item->id, 'qty' => 80])->assertCreated();
+    expect(collect($over->json('records'))->sum('qty_subtracted'))->toBe(80)->and($over->json('warning'))->toContain('10 more');
+    expect($first->fresh()->status)->toBe('empty')->and($second->fresh()->status)->toBe('empty');
+});

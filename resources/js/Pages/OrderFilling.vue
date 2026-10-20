@@ -333,7 +333,7 @@ export default {
 					'/json/order-filling/' + this.order.id + '/lines/' + line.id + '/fills',
 					{ item_id: itemId, qty, pallet_tag: entry.pallet_tag?.trim() || null }
 				);
-				line.item_ledgers = [...(line.item_ledgers || []), response.data.record];
+				line.item_ledgers = [...(line.item_ledgers || []), ...(response.data.records || [response.data.record])];
 				// keep the pallet: several picks in a row usually come off the same one
 				this.entryByLine[line.id] = { item_id: null, item: null, qty: null, pallet_tag: entry.pallet_tag };
 				if (response.data.warning) this.fillError = response.data.warning;

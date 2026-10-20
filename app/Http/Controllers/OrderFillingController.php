@@ -203,34 +203,73 @@ class OrderFillingController extends Controller
         }
 
         $warning = null;
-        $fill = DB::transaction(function () use ($order, $data, $line, $pallet, &$warning) {
-            $fill = $order->itemLedgers()->create([
-                'item_id' => $data['item_id'],
-                'order_line_id' => $line->id,
-                'stock_pallet_id' => $pallet?->id,
-                'qty_subtracted' => $data['qty'],
-                'disposition' => 'usable',
-                'person_id_user' => Auth::id(),
-            ]);
+        $fills = DB::transaction(function () use ($order, $data, $line, $pallet, &$warning) {
+            $itemId = (int) $data['item_id'];
+            $qty = (int) $data['qty'];
 
+            // [pallet|null, qty] chunks. A named pallet takes the whole pick. Otherwise the unassigned pool (the sorting
+            // area) goes first, and any overflow comes off the oldest pallets holding the item — so unassigned never
+            // goes negative just because a picker didn't scan a pallet. Only a true over-pick leaves a remainder.
+            $chunks = [];
             if ($pallet) {
-                $left = (int) PalletStock::quantities([$pallet->id], [(int) $data['item_id']])->sum('qty');
-                if ($left < 0) {
-                    $warning = "{$pallet->tag} was only recorded as holding ".($left + $data['qty']).' of this item — check the count.';
+                $chunks[] = [$pallet, $qty];
+            } else {
+                $overflow = $qty - max(0, PalletStock::unassigned($itemId));
+                if ($overflow > 0) {
+                    $holding = PalletStock::quantities(null, [$itemId])->filter(fn ($r) => $r['qty'] > 0)->sortBy('pallet_id');
+                    $pallets = Pallet::whereIn('id', $holding->pluck('pallet_id'))->whereIn('status', ['sealed', 'open'])->get()->keyBy('id');
+                    foreach ($holding as $row) {
+                        if ($overflow <= 0 || ! isset($pallets[$row['pallet_id']])) {
+                            continue;
+                        }
+                        $take = min($overflow, $row['qty']);
+                        $chunks[] = [$pallets[$row['pallet_id']], $take];
+                        $overflow -= $take;
+                    }
                 }
-                if ($pallet->status === 'sealed') {
-                    $pallet->transitionTo('open', null, 'Opened for picking');
+                $fromPallets = array_sum(array_column($chunks, 1));
+                if ($qty - $fromPallets > 0 || ! $chunks) {
+                    array_unshift($chunks, [null, $qty - $fromPallets]);
                 }
-                if (PalletStock::palletTotal($pallet->id) <= 0 && $pallet->status !== 'empty') {
-                    $pallet->transitionTo('empty', null, 'Picked clean');
+                if ($overflow > 0) {
+                    $warning = "That's {$overflow} more than the database says is in stock — check the count.";
                 }
             }
 
-            return $fill;
+            $fills = [];
+            foreach ($chunks as [$chunkPallet, $chunkQty]) {
+                $fills[] = $order->itemLedgers()->create([
+                    'item_id' => $itemId,
+                    'order_line_id' => $line->id,
+                    'stock_pallet_id' => $chunkPallet?->id,
+                    'qty_subtracted' => $chunkQty,
+                    'disposition' => 'usable',
+                    'person_id_user' => Auth::id(),
+                ]);
+
+                if ($chunkPallet) {
+                    if ($pallet && PalletStock::quantities([$pallet->id], [$itemId])->sum('qty') < 0) {
+                        $warning = "{$pallet->tag} was only recorded as holding ".(PalletStock::quantities([$pallet->id], [$itemId])->sum('qty') + $chunkQty).' of this item — check the count.';
+                    }
+                    if ($chunkPallet->status === 'sealed') {
+                        $chunkPallet->transitionTo('open', null, 'Opened for picking');
+                    }
+                    if (PalletStock::palletTotal($chunkPallet->id) <= 0 && $chunkPallet->status !== 'empty') {
+                        $chunkPallet->transitionTo('empty', null, 'Picked clean');
+                    }
+                }
+            }
+
+            return $fills;
         });
 
+        foreach ($fills as $fill) {
+            $fill->load(['item.itemtype']);
+        }
+
         return response()->json([
-            'record' => $fill->load(['item.itemtype']),
+            'record' => $fills[0],
+            'records' => $fills,
             'warning' => $warning,
         ], 201);
     }

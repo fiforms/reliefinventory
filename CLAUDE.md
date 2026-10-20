@@ -133,7 +133,9 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   the pick-up list), sealing it and setting its location in one step; a pallet can't take more than `PalletStock::unassigned()`
   (on-hand minus everything on pallets). "Unassigned" == what's still in the sorting area (plus pre-feature stock). Picking can name the
   pallet (`pallet_tag` on the fill POST — optional; sealed→open on first pick, →empty when its total hits 0; a count that goes negative
-  is accepted with a warning, never blocks a picker). The Inventory Report's item-type detail shows quantity by location (pallet's
+  is accepted with a warning, never blocks a picker). A pick with no pallet named takes from the unassigned pool first, then the oldest
+  sealed/open pallets holding the item (one ledger row per source — the fill POST returns `records`), so unassigned only goes negative
+  on a true over-pick. The Inventory Report's item-type detail shows quantity by location (pallet's
   *current* location) plus the unassigned remainder. This corrects the older "no item-level stock-by-location" note — but items *not*
   put on a pallet (or picked without naming one) still can't be located. Not built yet: an end-of-day "sorted but never moved" report
   (sorted today vs. assigned today), sorter→pallet tracking at sort time, a pick-from suggestion on the fill screen.
