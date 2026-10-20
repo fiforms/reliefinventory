@@ -1,4 +1,4 @@
-from products.portal import product, ping
+from products.rstation import product, ping
 
 
 def test_product_extends_the_core_contract():

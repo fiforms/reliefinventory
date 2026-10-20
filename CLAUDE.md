@@ -354,7 +354,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   platform's, claims one job per queue at a time, keeps the claim alive, and records every job in a ledger under
   `/data/print-station` so a restart never prints twice or loses a result. Real CUPS facts it relies on (an
   unreachable network printer reads "idle" until a job is attempted; only the printer message gives it away) are
-  in the spec §2. Run its tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal
+  in the spec §2. Run its tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation
   rstation/platform/local-app/run-tests.sh -q` (virtual-time fakes; `RI_CUPS_INTEGRATION=1` adds the real-CUPS
   ones, which create and remove throwaway loopback queues).
 - **The desktop print server** (2026-10-19) is `print-client/` — read its README. A Rust core (`print-client/core`:

@@ -2,7 +2,7 @@
 """Root helper: find, add and remove CUPS printers for Settings > Printers.
 
 Started on demand as slide-announcer-printer-setup.service by the backend
-(products/portal/backend/printer_setup.py). CUPS only lets an administrator
+(products/rstation/backend/printer_setup.py). CUPS only lets an administrator
 discover devices (CUPS-Get-Devices) and add or delete queues, and the backend
 deliberately holds no CUPS credential and never runs as root — so it asks this
 script, and this script (not the backend or the UI) decides what is acceptable:

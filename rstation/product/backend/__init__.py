@@ -31,7 +31,7 @@ def ping():
 
 
 product = Product(
-    name="portal",
+    name="rstation",
     # Where this product's server implements docs/DEVICE_CONTRACT.md.
     api_base="/api/devices",
     # The first-run wizard confirms which server this device belongs to (the

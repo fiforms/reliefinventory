@@ -2,7 +2,7 @@
 the offline/error classification on real hardware behaviour (see rstation/PRINT_CLIENT_SPEC.md
 section 2). Skipped unless RI_CUPS_INTEGRATION=1 and `lpadmin` is available:
 
-    RI_CUPS_INTEGRATION=1 PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal \\
+    RI_CUPS_INTEGRATION=1 PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation \\
         rstation/platform/local-app/run-tests.sh -q -k cups_integration
 
 It needs permission to add queues (membership of `lpadmin`, or root). It only ever creates

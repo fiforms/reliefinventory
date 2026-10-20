@@ -163,7 +163,7 @@ Issues identified October 8, 2026
    virtual time against fakes, against a real CUPS with throwaway loopback queues (opt-in:
    `RI_CUPS_INTEGRATION=1`), and end to end against the real web app + Reverb on the disposable test DB
    (job queued -> printed in ~1 s via the wake-up; an unreachable printer fails with CUPS' real message).
-   Run the tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=portal rstation/platform/local-app/run-tests.sh`.
+   Run the tests with `PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/local-app/run-tests.sh`.
  - **Done 2026-10-18: ran the Pi daemon on a real Pi with a real printer.** Paired a Pi, added a printer in
    CUPS (by hand), set it up on `/setup/devices`, and printed a report from the browser — it spooled and
    printed instantly. Not yet exercised: adding the queue through the Settings > Printers GUI. Product `VERSION` / `image/VERSION`

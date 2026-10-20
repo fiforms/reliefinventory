@@ -8,7 +8,7 @@ import SetupServer from './SetupServer.vue'
 import EscapeHint from './EscapeHint.vue'
 
 export default {
-  name: 'portal',
+  name: 'rstation',
   // Mounted at /kiosk, the page Chromium always starts on (the image has no
   // KIOSK_URL): a launcher that hands the browser to the confirmed server once
   // the first-run wizard is done — see Main.vue.
