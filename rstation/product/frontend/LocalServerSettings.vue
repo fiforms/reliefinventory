@@ -150,6 +150,18 @@ onUnmounted(() => clearInterval(timer))
       </template>
     </section>
 
+    <section v-if="info?.running && info.setup_pending" class="tile panel setup">
+      <div class="panel-title"><h2>{{ t('settings.localServer.setupTitle') }}</h2></div>
+      <p class="hint">{{ t('settings.localServer.setupHint') }}</p>
+      <p v-if="info.setup_code" class="code">{{ info.setup_code }}</p>
+      <ol class="steps">
+        <li>{{ t('settings.localServer.setupStep1') }}</li>
+        <li>{{ t('settings.localServer.setupStep2') }}</li>
+        <li>{{ t('settings.localServer.setupStep3') }}</li>
+      </ol>
+      <p class="hint note">{{ t('settings.localServer.setupReturn') }}</p>
+    </section>
+
     <section v-if="info?.running" class="tile panel">
       <div class="panel-title"><h2>{{ t('settings.localServer.connectTitle') }}</h2></div>
       <p class="hint">{{ t('settings.localServer.connectHint') }}</p>
@@ -173,11 +185,6 @@ onUnmounted(() => clearInterval(timer))
       </div>
       <p class="hint note">{{ t('settings.localServer.nameTrouble') }}</p>
 
-      <div v-if="info.setup_pending" class="setup">
-        <h3>{{ t('settings.localServer.setupTitle') }}</h3>
-        <p class="hint">{{ t('settings.localServer.setupHint') }}</p>
-        <p v-if="info.setup_code" class="code">{{ info.setup_code }}</p>
-      </div>
     </section>
 
     <section v-if="info?.available" class="tile panel">
@@ -305,14 +312,24 @@ onUnmounted(() => clearInterval(timer))
   font-size: 0.9rem;
 }
 .setup {
-  border-top: 1px solid var(--text-dim);
-  padding-top: 0.8rem;
+  border: 3px solid var(--accent, #4a90d9);
 }
 .code {
   font-family: monospace;
-  font-size: 2rem;
-  letter-spacing: 0.15em;
-  margin: 0.4rem 0 0;
+  font-size: 3.2rem;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-align: center;
+  margin: 0.4rem 0 0.9rem;
+  user-select: all;
+}
+.steps {
+  margin: 0;
+  padding-left: 1.5rem;
+  font-size: 1.1rem;
+}
+.steps li {
+  margin: 0.3rem 0;
 }
 h3 {
   margin: 1.2rem 0 0.4rem;

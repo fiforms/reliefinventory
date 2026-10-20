@@ -277,7 +277,7 @@ onUnmounted(() => clearInterval(timer))
           <div v-if="!p.added" class="add-form">
             <label>
               <span>{{ t('settings.printers.add.name') }}</span>
-              <input v-model="drafts[p.uri].name" maxlength="63" autocomplete="off" />
+              <input v-model="drafts[p.uri].name" type="text" maxlength="63" autocomplete="off" />
             </label>
             <DriverSelect v-model="drafts[p.uri].driver" :model="p.model" />
             <div class="actions">
@@ -295,11 +295,11 @@ onUnmounted(() => clearInterval(timer))
         <form class="add-form" @submit.prevent="addByAddress">
           <label>
             <span>{{ t('settings.printers.add.address') }}</span>
-            <input v-model="address" placeholder="192.168.1.50" autocomplete="off" autocapitalize="off" />
+            <input v-model="address" type="text" placeholder="192.168.1.50" autocomplete="off" autocapitalize="off" />
           </label>
           <label>
             <span>{{ t('settings.printers.add.name') }}</span>
-            <input v-model="addressDraft.name" maxlength="63" autocomplete="off" />
+            <input v-model="addressDraft.name" type="text" maxlength="63" autocomplete="off" />
           </label>
           <DriverSelect v-model="addressDraft.driver" />
           <div class="actions">
@@ -411,7 +411,7 @@ onUnmounted(() => clearInterval(timer))
 .add-form {
   display: grid;
   gap: 0.8rem;
-  max-width: 28rem;
+  max-width: 36rem;
   margin: 0.6rem 0 0;
 }
 .add-form label {
@@ -421,6 +421,10 @@ onUnmounted(() => clearInterval(timer))
 .add-form label span {
   color: var(--text-dim);
   font-weight: 600;
+}
+.add-form input {
+  width: 100%;
+  box-sizing: border-box;
 }
 .by-address {
   margin: 1.2rem 0 0;

@@ -59,7 +59,7 @@ async function search() {
     </label>
     <button type="button" class="link" @click="toggle">{{ t('settings.printers.add.findDriver') }}</button>
     <div v-if="open" class="driver-search">
-      <input v-model="query" :placeholder="t('settings.printers.add.driverQuery')" autocomplete="off" @keydown.enter.prevent="search" />
+      <input v-model="query" type="text" :placeholder="t('settings.printers.add.driverQuery')" autocomplete="off" @keydown.enter.prevent="search" />
       <button type="button" class="tile action" :disabled="busy || !query.trim()" @click="search">
         {{ busy ? t('settings.printers.add.searching') : t('settings.printers.add.searchDrivers') }}
       </button>
@@ -73,6 +73,17 @@ async function search() {
 <style scoped>
 label { display: grid; gap: 0.25rem; }
 label span { color: var(--text-dim); font-weight: 600; }
+select {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg);
+  border: var(--line) solid var(--border);
+  color: var(--text);
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  font-size: 1.1rem;
+  cursor: pointer;
+}
 .driver-search { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
 .driver-search input { flex: 1 1 14rem; }
 .driver-search .hint { flex-basis: 100%; margin: 0; }
