@@ -128,7 +128,7 @@ const stepTitle = computed(() => (step.value === 1 ? 'Create the administrator a
 				<div v-if="codeRequired" class="mt-4">
 					<InputLabel for="setup_code" value="Setup code" />
 					<TextInput id="setup_code" type="password" class="mt-1 block w-full" v-model="form.setup_code" autocomplete="off" />
-					<p class="mt-1 text-xs text-gray-500">The administrator of this server set a setup code (RI_SETUP_CODE).</p>
+					<p class="mt-1 text-xs text-gray-500">This server needs a setup code. On an R Station it is shown on the device under Settings &gt; Local server; with Docker it is RI_SETUP_CODE in your compose file.</p>
 					<InputError class="mt-2" :message="err('setup_code')" />
 				</div>
 
