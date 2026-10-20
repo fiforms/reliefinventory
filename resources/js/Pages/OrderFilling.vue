@@ -268,7 +268,7 @@ export default {
 					return;
 				}
 				this.orderLines.forEach((line) => {
-					this.entryByLine[line.id] = { item_id: null, item: null, qty: null };
+					this.entryByLine[line.id] = { item_id: null, item: null, qty: null, pallet_tag: '' };
 				});
 				this.view = 'fill';
 				await Promise.all([this.fetchStockHints(), this.fetchItems()]);
@@ -331,10 +331,12 @@ export default {
 			try {
 				const response = await axios.post(
 					'/json/order-filling/' + this.order.id + '/lines/' + line.id + '/fills',
-					{ item_id: itemId, qty }
+					{ item_id: itemId, qty, pallet_tag: entry.pallet_tag?.trim() || null }
 				);
 				line.item_ledgers = [...(line.item_ledgers || []), response.data.record];
-				this.entryByLine[line.id] = { item_id: null, item: null, qty: null };
+				// keep the pallet: several picks in a row usually come off the same one
+				this.entryByLine[line.id] = { item_id: null, item: null, qty: null, pallet_tag: entry.pallet_tag };
+				if (response.data.warning) this.fillError = response.data.warning;
 				// on-hand is a ledger sum the fill just changed — refresh it
 				this.fetchStockHints();
 			} catch (error) {
@@ -527,6 +529,14 @@ export default {
 									placeholder="Qty"
 									@keydown.enter.prevent="addFill(line)"
 								/>
+								<input
+									type="text"
+									v-model="entryByLine[line.id].pallet_tag"
+									class="ri_forminput of_pallet"
+									placeholder="From pallet (optional)"
+									title="Scan the warehouse pallet this came from so its count stays right"
+									@keydown.enter.prevent="addFill(line)"
+								/>
 								<button @click="addFill(line)" class="ri_defaultbutton">Add</button>
 							</div>
 							<ul v-if="(line.item_ledgers || []).length" class="of_filllist">
@@ -639,6 +649,9 @@ export default {
 	align-items: center;
 	gap: 6px;
 	flex-wrap: wrap;
+}
+.of_pallet {
+	width: 11em;
 }
 .of_qty {
 	max-width: 6em;

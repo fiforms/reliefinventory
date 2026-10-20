@@ -13,6 +13,7 @@ use App\Models\ItemType;
 use App\Models\Location;
 use App\Models\OrderLine;
 use App\Models\Pallet;
+use App\Models\PalletStockAssignment;
 use App\Models\PeopleRoles;
 use App\Models\Person;
 use App\Models\Transaction;
@@ -861,6 +862,7 @@ class WarehouseSimulator
         $loc = $this->rand->pick($this->racks);
         $pallet = Pallet::create(['kind' => 'W', 'status' => 'sealed', 'container_type' => 'pallet', 'location_id' => $loc->id, 'content_item_id' => $itemId, 'datepacked' => $this->today]);
         $pallet->statuses()->create(['status' => 'sealed', 'location_id' => $loc->id, 'notes' => 'Put away after sorting']);
+        PalletStockAssignment::create(['pallet_id' => $pallet->id, 'item_id' => $itemId, 'qty' => $qty, 'person_id_user' => $this->adminId, 'notes' => 'Put away after sorting']);
         $this->warehousePallets[$itemId][] = ['id' => $pallet->id, 'remaining' => $qty, 'opened' => false];
 
         if ($this->rand->chance(0.18)) {
@@ -868,9 +870,14 @@ class WarehouseSimulator
         }
     }
 
-    /** Take $qty of an item off its warehouse pallets, oldest first: first draw opens a pallet, the last empties it. */
-    private function drawFromPallets(int $itemId, int $qty): void
+    /**
+     * Take $qty of an item off its warehouse pallets, oldest first: first draw opens a pallet, the last empties it.
+     *
+     * @return array<int, array{0: ?int, 1: int}> [pallet id (null = unpalletized stock), qty] chunks summing to $qty
+     */
+    private function drawFromPallets(int $itemId, int $qty): array
     {
+        $chunks = [];
         while ($qty > 0 && ! empty($this->warehousePallets[$itemId])) {
             $entry = &$this->warehousePallets[$itemId][0];
             $take = min($qty, $entry['remaining']);
@@ -882,6 +889,7 @@ class WarehouseSimulator
             }
             $entry['remaining'] -= $take;
             $qty -= $take;
+            $chunks[] = [$pallet->id, $take];
 
             if ($entry['remaining'] <= 0) {
                 $pallet->transitionTo('empty', null, 'Picked clean');
@@ -889,6 +897,11 @@ class WarehouseSimulator
             }
             unset($entry);
         }
+        if ($qty > 0) {
+            $chunks[] = [null, $qty];
+        }
+
+        return $chunks;
     }
 
     private function movePallet(int $palletId): void
@@ -997,20 +1010,22 @@ class WarehouseSimulator
                 array_shift($this->errorDays);
             }
 
-            // Occasionally the picker records it in two trips.
-            $parts = ($take >= 4 && $this->rand->chance(0.1)) ? [(int) round($take * 0.6), $take - (int) round($take * 0.6)] : [$take];
-            foreach ($parts as $part) {
-                ItemLedger::create([
-                    'orderdonation_id' => $orderId, 'item_id' => $itemId, 'order_line_id' => $line['id'],
-                    'qty_subtracted' => $part, 'disposition' => 'usable', 'person_id_user' => $this->adminId,
-                ]);
-                $this->tick(5, 40);
+            // Draw from warehouse pallets first (their status changes happen as the picker works), then record
+            // each chunk against the pallet it came from; occasionally a picker records one chunk in two trips.
+            foreach ($this->drawFromPallets($itemId, $take) as [$palletId, $chunk]) {
+                $parts = ($chunk >= 4 && $this->rand->chance(0.1)) ? [(int) round($chunk * 0.6), $chunk - (int) round($chunk * 0.6)] : [$chunk];
+                foreach ($parts as $part) {
+                    ItemLedger::create([
+                        'orderdonation_id' => $orderId, 'item_id' => $itemId, 'order_line_id' => $line['id'], 'stock_pallet_id' => $palletId,
+                        'qty_subtracted' => $part, 'disposition' => 'usable', 'person_id_user' => $this->adminId,
+                    ]);
+                    $this->tick(5, 40);
+                }
             }
 
             $this->stock[$itemId] -= $take;
             $plan['picked'] += $take;
             $this->filledUnits += min($take, $line['requested']);
-            $this->drawFromPallets($itemId, $take);
         }
 
         $this->schedule($this->lag([0 => 75, 1 => 17, 2 => 8]), 'complete_fill', ['order' => $orderId]);

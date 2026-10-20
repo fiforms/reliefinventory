@@ -570,6 +570,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pa
     Route::delete('/palletstatus/{id}', [PalletStatusController::class, 'destroy']);
 
     // Pallets (five-kind model: Receiving/Warehouse/Shipping/Hold/Quarantine)
+    Route::get('/pallets/{id}/contents', [PalletStockController::class, 'contents'])->whereNumber('id');
+    Route::post('/pallets/{id}/contents/adjust', [PalletStockController::class, 'adjust'])->whereNumber('id');
+    Route::get('/pallet-stock/staging', [PalletStockController::class, 'staging']);
+    Route::post('/pallet-stock/fill', [PalletStockController::class, 'fill']);
     Route::get('/pallets', [PalletController::class, 'index']);
     Route::get('/pallets/{kind}', [PalletController::class, 'index']);
     Route::get('/pallets/{kind}/{status}', [PalletController::class, 'index']);

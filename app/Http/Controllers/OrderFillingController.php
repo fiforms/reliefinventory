@@ -7,7 +7,10 @@ namespace App\Http\Controllers;
 
 use App\Models\Item;
 use App\Models\OrderLine;
+use App\Models\Pallet;
 use App\Models\Transaction;
+use App\Services\PalletStock;
+use App\Support\PalletKind;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +47,9 @@ class OrderFillingController extends Controller
     private const FILL_VALIDATION = [
         'item_id' => 'required|exists:items,id',
         'qty' => 'required|integer|min:0',
+        // Optional: the warehouse pallet this was picked from (scanned tag or number). Keeps per-pallet
+        // quantities, and so "where is it", current; omitting it just draws down the unassigned pool.
+        'pallet_tag' => 'nullable|string',
     ];
 
     /**
@@ -187,16 +193,45 @@ class OrderFillingController extends Controller
             ], 422);
         }
 
-        $fill = $order->itemLedgers()->create([
-            'item_id' => $data['item_id'],
-            'order_line_id' => $line->id,
-            'qty_subtracted' => $data['qty'],
-            'disposition' => 'usable',
-            'person_id_user' => Auth::id(),
-        ]);
+        $pallet = null;
+        if (! empty($data['pallet_tag'])) {
+            $palletId = SortingSessionController::palletIdFromTag($data['pallet_tag']);
+            $pallet = $palletId ? Pallet::find($palletId) : null;
+            if (! $pallet || $pallet->kind !== PalletKind::WAREHOUSE) {
+                return response()->json(['errors' => ['pallet_tag' => ['Unknown Warehouse pallet tag.']]], 422);
+            }
+        }
+
+        $warning = null;
+        $fill = DB::transaction(function () use ($order, $data, $line, $pallet, &$warning) {
+            $fill = $order->itemLedgers()->create([
+                'item_id' => $data['item_id'],
+                'order_line_id' => $line->id,
+                'stock_pallet_id' => $pallet?->id,
+                'qty_subtracted' => $data['qty'],
+                'disposition' => 'usable',
+                'person_id_user' => Auth::id(),
+            ]);
+
+            if ($pallet) {
+                $left = (int) PalletStock::quantities([$pallet->id], [(int) $data['item_id']])->sum('qty');
+                if ($left < 0) {
+                    $warning = "{$pallet->tag} was only recorded as holding ".($left + $data['qty']).' of this item — check the count.';
+                }
+                if ($pallet->status === 'sealed') {
+                    $pallet->transitionTo('open', null, 'Opened for picking');
+                }
+                if (PalletStock::palletTotal($pallet->id) <= 0 && $pallet->status !== 'empty') {
+                    $pallet->transitionTo('empty', null, 'Picked clean');
+                }
+            }
+
+            return $fill;
+        });
 
         return response()->json([
             'record' => $fill->load(['item.itemtype']),
+            'warning' => $warning,
         ], 201);
     }
 

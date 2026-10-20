@@ -1,0 +1,174 @@
+<?php
+
+// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// Licensed under the GNU GPL v. 3. See LICENSE.md for details
+
+namespace App\Http\Controllers;
+
+use App\Models\Item;
+use App\Models\Pallet;
+use App\Models\PalletStockAssignment;
+use App\Services\PalletStock;
+use App\Support\PalletKind;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+
+/**
+ * Putting stock on warehouse (W) pallets. The core flow is one step as a pallet leaves the sorting area: scan (or
+ * create) the W pallet, enter what is on it, pick where it is going — it is recorded sealed at that location. Quantities
+ * come out of the pooled "unassigned" stock, so a pallet can never hold more than the ledger says exists.
+ */
+class PalletStockController extends Controller
+{
+    public function contents($id)
+    {
+        $pallet = Pallet::with('location:id,code')->findOrFail($id);
+
+        return response()->json(['record' => $this->payload($pallet)]);
+    }
+
+    /**
+     * What is still in the sorting area: on-hand not yet put on a pallet, per item, biggest first. It is the
+     * forklift driver's pick-up list. (Older stock that predates pallet tracking shows here too, until it's palletized.)
+     */
+    public function staging()
+    {
+        $onHand = DB::table('item_ledgers')->groupBy('item_id')
+            ->selectRaw("item_id, SUM(CASE WHEN COALESCE(disposition, 'usable') = 'usable' THEN COALESCE(qty_added, 0) ELSE 0 END)
+                - SUM(COALESCE(qty_subtracted, 0)) as qty")
+            ->pluck('qty', 'item_id');
+        $onPallets = PalletStock::quantities()->groupBy('item_id')->map(fn ($rows) => (int) $rows->sum('qty'));
+
+        $free = $onHand->map(fn ($qty, $itemId) => (int) $qty - ($onPallets[$itemId] ?? 0))->filter(fn ($qty) => $qty > 0)->sortDesc();
+        $items = Item::with('itemtype:id,name')->whereIn('id', $free->keys())->get()->keyBy('id');
+
+        return response()->json(['records' => $free->map(fn ($qty, $itemId) => [
+            'item_id' => $itemId,
+            'name' => $items[$itemId]->description ?? $items[$itemId]->itemtype?->name ?? '#'.$itemId,
+            'qty' => $qty,
+        ])->values()]);
+    }
+
+    /** Fill a W pallet (new, or an existing sealed/open one) and place it. */
+    public function fill(Request $request)
+    {
+        $data = $request->validate([
+            'pallet_id' => 'nullable|exists:pallets,id',
+            'location_id' => 'nullable|exists:locations,id',
+            'notes' => 'nullable|string|max:500',
+            'lines' => 'required|array|min:1|max:100',
+            'lines.*.item_id' => 'required|exists:items,id',
+            'lines.*.qty' => 'required|integer|min:1',
+        ]);
+
+        // Several lines for the same item are one demand on the pool.
+        $wanted = collect($data['lines'])->groupBy('item_id')->map(fn ($rows) => (int) $rows->sum('qty'));
+
+        return DB::transaction(function () use ($data, $wanted) {
+            // Serialise concurrent fills: two drivers must not both claim the last unassigned cases.
+            Item::whereIn('id', $wanted->keys())->orderBy('id')->lockForUpdate()->get();
+
+            foreach ($wanted as $itemId => $qty) {
+                $free = PalletStock::unassigned((int) $itemId);
+                if ($qty > $free) {
+                    $name = Item::find($itemId)?->description ?? "item #{$itemId}";
+
+                    return response()->json(['errors' => ['lines' => ["Only {$free} of \"{$name}\" are not already on a pallet — can't put {$qty} on this one."]]], 422);
+                }
+            }
+
+            if (! empty($data['pallet_id'])) {
+                $pallet = Pallet::findOrFail($data['pallet_id']);
+                if ($error = $this->notFillable($pallet)) {
+                    return response()->json(['errors' => ['pallet_id' => [$error]]], 422);
+                }
+            } else {
+                $pallet = Pallet::create([
+                    'kind' => PalletKind::WAREHOUSE,
+                    'status' => 'sealed',
+                    'container_type' => 'pallet',
+                    'location_id' => $data['location_id'] ?? null,
+                    'datepacked' => now()->toDateString(),
+                ]);
+                $pallet->statuses()->create(['location_id' => $pallet->location_id, 'status' => 'sealed', 'notes' => 'Filled and sealed']);
+            }
+
+            foreach ($data['lines'] as $line) {
+                PalletStockAssignment::create([
+                    'pallet_id' => $pallet->id,
+                    'item_id' => $line['item_id'],
+                    'qty' => $line['qty'],
+                    'person_id_user' => Auth::id(),
+                    'notes' => $data['notes'] ?? null,
+                ]);
+            }
+
+            if (! empty($data['location_id']) && (int) $data['location_id'] !== (int) $pallet->location_id) {
+                $pallet->transitionTo($pallet->status, (int) $data['location_id'], $data['notes'] ?? 'Placed after filling');
+            }
+
+            return response()->json(['message' => "Pallet {$pallet->tag} filled.", 'record' => $this->payload($pallet->fresh('location:id,code'))], 201);
+        });
+    }
+
+    /** Correct what the database believes is on a pallet (signed change; a pallet can't go below zero of an item). */
+    public function adjust(Request $request, $id)
+    {
+        $pallet = Pallet::findOrFail($id);
+        $data = $request->validate([
+            'item_id' => 'required|exists:items,id',
+            'qty' => 'required|integer|not_in:0',
+            'notes' => 'nullable|string|max:500',
+        ]);
+
+        return DB::transaction(function () use ($pallet, $data) {
+            Item::whereKey($data['item_id'])->lockForUpdate()->get();
+            $have = (int) PalletStock::quantities([$pallet->id], [(int) $data['item_id']])->sum('qty');
+
+            if ($data['qty'] < 0 && $have + $data['qty'] < 0) {
+                return response()->json(['errors' => ['qty' => ["That pallet only has {$have} of this item."]]], 422);
+            }
+            if ($data['qty'] > 0 && $data['qty'] > PalletStock::unassigned((int) $data['item_id'])) {
+                return response()->json(['errors' => ['qty' => ['Not enough unassigned stock of this item to add that many.']]], 422);
+            }
+
+            PalletStockAssignment::create($data + ['pallet_id' => $pallet->id, 'person_id_user' => Auth::id()]);
+
+            return response()->json(['record' => $this->payload($pallet->fresh('location:id,code'))]);
+        });
+    }
+
+    private function notFillable(Pallet $pallet): ?string
+    {
+        if ($pallet->kind !== PalletKind::WAREHOUSE) {
+            return 'That is a '.(PalletKind::LABELS[$pallet->kind] ?? $pallet->kind).' pallet, not a Warehouse pallet.';
+        }
+        if (! in_array($pallet->status, ['sealed', 'open'], true)) {
+            return "That pallet is {$pallet->status} and can't take more stock.";
+        }
+
+        return null;
+    }
+
+    /** Pallet plus its contents (items with quantity above zero). */
+    public static function payload(Pallet $pallet): array
+    {
+        $rows = PalletStock::quantities([$pallet->id])->filter(fn ($r) => $r['qty'] !== 0);
+        $items = Item::with('itemtype:id,name')->whereIn('id', $rows->pluck('item_id'))->get()->keyBy('id');
+
+        return [
+            'id' => $pallet->id,
+            'tag' => $pallet->tag,
+            'kind' => $pallet->kind,
+            'status' => $pallet->status,
+            'location_id' => $pallet->location_id,
+            'location' => $pallet->location,
+            'contents' => $rows->map(fn ($r) => [
+                'item_id' => $r['item_id'],
+                'name' => $items[$r['item_id']]->description ?? $items[$r['item_id']]->itemtype?->name ?? '#'.$r['item_id'],
+                'qty' => $r['qty'],
+            ])->values(),
+        ];
+    }
+}

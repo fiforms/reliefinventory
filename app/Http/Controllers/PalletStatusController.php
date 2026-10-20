@@ -138,6 +138,7 @@ class PalletStatusController extends Controller
             'location_id' => $pallet->location_id,
             'location' => $pallet->location,
             'last_moved_at' => $last?->created_at,
+            'contents' => $pallet->kind === PalletKind::WAREHOUSE ? PalletStockController::payload($pallet)['contents'] : null,
             'statuses' => $this->statusOptions($pallet->kind),
         ]]);
     }

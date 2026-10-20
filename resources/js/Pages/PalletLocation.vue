@@ -11,12 +11,13 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import axios from 'axios';
+import PrintMenu from '@/Components/PrintMenu.vue';
 
 defineProps({
 	breadcrumb: { type: Array },
 });
 
-const tab = ref('locations'); // 'locations' | 'record' | 'search' | 'recent'
+const tab = ref('locations'); // 'locations' | 'record' | 'fill' | 'search' | 'recent'
 
 // ---------- locations summary ----------
 const summary = ref(null);
@@ -120,6 +121,85 @@ async function recordMovement() {
 	}
 }
 
+
+// ---------- fill a warehouse pallet (leaving the sorting area) ----------
+const staging = ref(null); // what's still in the sorting area, i.e. on hand but not on a pallet
+const fill = ref({ tag: '', pallet: null, lines: [], locationCode: '', notes: '' });
+const fillError = ref(null);
+const fillResult = ref(null);
+const filling = ref(false);
+
+async function loadStaging() {
+	try {
+		staging.value = (await axios.get('/json/pallet-stock/staging')).data.records;
+	} catch (e) {
+		fillError.value = e.response?.data?.message || 'Could not load the sorting-area list.';
+	}
+}
+
+const stagingLeft = computed(() =>
+	(staging.value || [])
+		.map((row) => ({ ...row, left: row.qty - fill.value.lines.filter((l) => l.item_id === row.item_id).reduce((n, l) => n + (Number(l.qty) || 0), 0) }))
+		.filter((row) => row.left > 0),
+);
+
+function addFillLine(row) {
+	const existing = fill.value.lines.find((l) => l.item_id === row.item_id);
+	if (existing) existing.qty = row.qty;
+	else fill.value.lines.push({ item_id: row.item_id, name: row.name, qty: row.left ?? row.qty, max: row.qty });
+}
+
+async function pickFillPallet() {
+	fillError.value = null;
+	fill.value.pallet = null;
+	if (!fill.value.tag.trim()) return;
+	try {
+		const pallet = await lookupPallet(fill.value.tag);
+		if (pallet.kind !== 'W') {
+			fillError.value = `${pallet.tag} is a ${pallet.kind_label} pallet — use a Warehouse (W) pallet, or leave blank for a new one.`;
+			return;
+		}
+		fill.value.pallet = pallet;
+		if (pallet.location) fill.value.locationCode = pallet.location.code;
+	} catch (e) {
+		fillError.value = e.response?.data?.message || 'Could not look up that pallet.';
+	}
+}
+
+const fillLocation = computed(() => locationByCode(fill.value.locationCode));
+const fillTotal = computed(() => fill.value.lines.reduce((n, l) => n + (Number(l.qty) || 0), 0));
+
+async function submitFill() {
+	fillError.value = null;
+	fillResult.value = null;
+	if (!fill.value.lines.length) {
+		fillError.value = 'Add at least one item.';
+		return;
+	}
+	if (fill.value.locationCode.trim() && !fillLocation.value) {
+		fillError.value = `"${fill.value.locationCode}" is not a known active location.`;
+		return;
+	}
+	filling.value = true;
+	try {
+		const response = await axios.post('/json/pallet-stock/fill', {
+			pallet_id: fill.value.pallet?.id ?? null,
+			location_id: fillLocation.value?.id ?? null,
+			notes: fill.value.notes || null,
+			lines: fill.value.lines.map((l) => ({ item_id: l.item_id, qty: Number(l.qty) })),
+		});
+		fillResult.value = { ...response.data.record, isNew: !fill.value.pallet };
+		fill.value = { tag: '', pallet: null, lines: [], locationCode: '', notes: '' };
+		loadStaging();
+		loadSummary();
+	} catch (e) {
+		const errors = e.response?.data?.errors;
+		fillError.value = (errors && Object.values(errors).flat().join(' ')) || e.response?.data?.message || 'Could not save.';
+	} finally {
+		filling.value = false;
+	}
+}
+
 // ---------- pallet search ----------
 const search = ref({ tag: '', result: null, history: [], error: null });
 
@@ -155,6 +235,7 @@ function show(name) {
 	tab.value = name;
 	if (name === 'recent') loadRecent();
 	if (name === 'locations') loadSummary();
+	if (name === 'fill') loadStaging();
 }
 
 function formatDate(value) {
@@ -175,6 +256,7 @@ onMounted(loadSummary);
 			<div class="pm_tabs">
 				<button type="button" :class="['ri_formbutton', { pm_active: tab === 'locations' }]" @click="show('locations')">Locations</button>
 				<button type="button" :class="['ri_formbutton', { pm_active: tab === 'record' }]" @click="show('record')">Record Movement</button>
+				<button type="button" :class="['ri_formbutton', { pm_active: tab === 'fill' }]" @click="show('fill')">Fill Pallet</button>
 				<button type="button" :class="['ri_formbutton', { pm_active: tab === 'search' }]" @click="show('search')">Pallet Search</button>
 				<button type="button" :class="['ri_formbutton', { pm_active: tab === 'recent' }]" @click="show('recent')">Recent Movements</button>
 			</div>
@@ -240,6 +322,10 @@ onMounted(loadSummary);
 						<strong>{{ form.pallet.location ? 'at ' + form.pallet.location.code : 'with no location recorded' }}</strong>,
 						status <strong>{{ form.pallet.status }}</strong>.
 					</p>
+					<p v-if="form.pallet.contents && form.pallet.contents.length" class="pm_current">
+						On this pallet:
+						<span v-for="(c, i) in form.pallet.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < form.pallet.contents.length - 1">, </span></span>.
+					</p>
 
 					<div class="ri_fieldset">
 						<div class="ri_fieldlabel">Location:</div>
@@ -273,6 +359,79 @@ onMounted(loadSummary);
 				</template>
 			</div>
 
+			<!-- Fill pallet: stock leaving the sorting area goes onto a W pallet and is placed in one step -->
+			<div v-else-if="tab === 'fill'">
+				<p class="ri_hint">Build a Warehouse pallet from what's still in the sorting area, then seal it and say where it's going.</p>
+				<p v-if="fillError" class="ri_error">{{ fillError }}</p>
+				<div v-if="fillResult" class="pm_current">
+					<strong>{{ fillResult.tag }}</strong> sealed<span v-if="fillResult.location"> at <strong>{{ fillResult.location.code }}</strong></span>:
+					<span v-for="(c, i) in fillResult.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < fillResult.contents.length - 1">, </span></span>.
+					<PrintMenu v-if="fillResult.isNew" document-key="pallet-label" media="label_large" variant="form" label="Print Label"
+						:params="{ id: fillResult.id }" :download-href="'/report/pallet/' + fillResult.id" />
+				</div>
+
+				<h3 class="pm_sub">In the sorting area</h3>
+				<p v-if="!staging">Loading…</p>
+				<p v-else-if="!stagingLeft.length" class="ri_hint">Nothing waiting — everything sorted is already on a pallet.</p>
+				<div v-else class="pm_tablewrap">
+					<table class="ri_datatable" border="1">
+						<thead><tr><th>Item</th><th>Waiting</th><th></th></tr></thead>
+						<tbody>
+							<tr v-for="row in stagingLeft" :key="row.item_id">
+								<td>{{ row.name }}</td>
+								<td>{{ row.left }}</td>
+								<td><button type="button" class="ri_formbutton" @click="addFillLine(row)">Put all {{ row.left }} on pallet</button></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+
+				<h3 class="pm_sub">This pallet</h3>
+				<div class="ri_fieldset">
+					<div class="ri_fieldlabel">Pallet:</div>
+					<input v-model="fill.tag" class="ri_forminput" placeholder="Scan a W pallet, or leave blank for a new one" @keyup.enter="pickFillPallet" @change="pickFillPallet" />
+				</div>
+				<p v-if="fill.pallet" class="pm_current">
+					{{ fill.pallet.tag }} is {{ fill.pallet.status }}<span v-if="fill.pallet.location"> at {{ fill.pallet.location.code }}</span>; already holds
+					<span v-if="fill.pallet.contents && fill.pallet.contents.length">
+						<span v-for="(c, i) in fill.pallet.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < fill.pallet.contents.length - 1">, </span></span>.
+					</span>
+					<span v-else>nothing recorded.</span>
+				</p>
+				<p v-else-if="!fill.tag" class="ri_hint">A new pallet will be created.</p>
+
+				<div class="pm_tablewrap" v-if="fill.lines.length">
+					<table class="ri_datatable" border="1">
+						<thead><tr><th>Item</th><th>Quantity</th><th></th></tr></thead>
+						<tbody>
+							<tr v-for="(l, i) in fill.lines" :key="l.item_id">
+								<td>{{ l.name }}</td>
+								<td><input v-model.number="l.qty" type="number" min="1" :max="l.max" class="ri_forminput pm_qty" /></td>
+								<td><button type="button" class="ri_linkbutton" @click="fill.lines.splice(i, 1)">Remove</button></td>
+							</tr>
+						</tbody>
+					</table>
+				</div>
+				<p v-else class="ri_hint">Tap items above to put them on this pallet.</p>
+
+				<div class="ri_fieldset">
+					<div class="ri_fieldlabel">Location:</div>
+					<input v-model="fill.locationCode" class="ri_forminput" list="pm_locations" placeholder="Where it's going — scan or type a location" />
+					<datalist id="pm_locations">
+						<option v-for="code in locationCodes" :key="code" :value="code" />
+					</datalist>
+				</div>
+				<div class="ri_fieldset">
+					<div class="ri_fieldlabel">Notes:</div>
+					<input v-model="fill.notes" class="ri_forminput" />
+				</div>
+				<div class="ri_formactions">
+					<button type="button" class="ri_defaultbutton" :disabled="filling || !fill.lines.length" @click="submitFill">
+						Seal &amp; Place ({{ fillTotal }})
+					</button>
+				</div>
+			</div>
+
 			<!-- Pallet search -->
 			<div v-else-if="tab === 'search'">
 				<div class="ri_fieldset">
@@ -286,6 +445,10 @@ onMounted(loadSummary);
 						<strong>{{ search.result.tag }}</strong> ({{ search.result.kind_label }}) is
 						<strong>{{ search.result.location ? 'at ' + search.result.location.code : 'not at any recorded location' }}</strong>,
 						status <strong>{{ search.result.status }}</strong><span v-if="search.result.last_moved_at">, last updated {{ formatDate(search.result.last_moved_at) }}</span>.
+					</p>
+					<p v-if="search.result.contents && search.result.contents.length" class="pm_current">
+						On this pallet:
+						<span v-for="(c, i) in search.result.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < search.result.contents.length - 1">, </span></span>.
 					</p>
 					<button type="button" class="ri_formbutton" @click="openRecordFor(search.result)">Record Movement / Status</button>
 					<div class="pm_tablewrap">
@@ -360,6 +523,13 @@ onMounted(loadSummary);
 }
 .pm_current {
 	margin: 0.75em 0;
+}
+.pm_sub {
+	margin: 1em 0 0.25em;
+	font-weight: bold;
+}
+.pm_qty {
+	width: 6em;
 }
 .pm_mono {
 	font-family: monospace;

@@ -125,6 +125,18 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   satisfies) and `person_id_user` (nullable, actor audit; the table had none before Order Filling added
   it, and Sorting's own writes were updated in the same pass to stamp it too, so it isn't half-null by
   design).
+- **Stock by pallet / location** (2026-10-20) — `item_ledgers` stays pooled; where goods physically are comes from two append-only
+  sources summed by `App\Services\PalletStock`: `pallet_stock_assignments` (signed qty put on a Warehouse `W` pallet) and ledger rows
+  carrying `stock_pallet_id` (a fill picked from a pallet; sorting straight onto a pallet is a supported-but-unbuilt add-on). Nothing
+  stores a running total, so it can't drift. Core flow: goods are sorted into the sorting area, then a lead/forklift driver builds the W
+  pallet as it leaves (`PalletStockController::fill`, Inventory Movement > Fill Pallet — items come from `/json/pallet-stock/staging`,
+  the pick-up list), sealing it and setting its location in one step; a pallet can't take more than `PalletStock::unassigned()`
+  (on-hand minus everything on pallets). "Unassigned" == what's still in the sorting area (plus pre-feature stock). Picking can name the
+  pallet (`pallet_tag` on the fill POST — optional; sealed→open on first pick, →empty when its total hits 0; a count that goes negative
+  is accepted with a warning, never blocks a picker). The Inventory Report's item-type detail shows quantity by location (pallet's
+  *current* location) plus the unassigned remainder. This corrects the older "no item-level stock-by-location" note — but items *not*
+  put on a pallet (or picked without naming one) still can't be located. Not built yet: an end-of-day "sorted but never moved" report
+  (sorted today vs. assigned today), sorter→pallet tracking at sort time, a pick-from suggestion on the fill screen.
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
   unit that donation sorting scans to establish provenance. `container_type` widened over time to
   `pallet|gaylord|box|bag|tote` — a non-palletized arrival still gets a printable, trackable label.
