@@ -12,7 +12,7 @@ This is the Docker stack from `docker/compose.yaml` (web, queue, scheduler, Mari
 
 On a real Raspberry Pi, from an image built with `build-offline-bundle.sh` on the first attempt: the first-run
 wizard with `http://localhost:8080` as the server and pairing skipped; installing the self-hosted server from
-Settings > Local server (it took a few minutes and came up); completing the server's own first-run setup and
+Settings > Local server (first start took a few minutes, as the page says, and was acceptable); completing the server's own first-run setup and
 logging in; pairing the R Station with its own self-hosted server; and printing to a real printer through the
 station's own print server, with the whole loop on one device and no Internet. That covers the Docker engine and
 unit overrides, loading the baked-in images into `/data/docker`, the supervisor, the compose stack and the launcher.
@@ -96,8 +96,7 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
 - **Still unverified on hardware:** the Settings > Local server extras beyond the happy path (QR codes, setting an
   external site later, the erase/reset button, stop/start cycles and start-at-boot), an OTA update that ships a
   different image build (reload by image id), abrupt power loss, `.local` name resolution from phones and other
-  clients on a customer network, and measured memory use and first-start time on the Pi (the ~460 MB figure is from
-  an amd64 host). Unit tests use a fake `docker`/`systemctl` (`backend/test_local_server.py`).
+  clients on a customer network, and measured memory use on the Pi (the ~460 MB figure is from an amd64 host). Unit tests use a fake `docker`/`systemctl` (`backend/test_local_server.py`).
 - **Image size.** The .deb is ~475 MB; it sits in both root slots and so **every OTA
   bundle grows by that much**. If that proves painful: ship the local-server image only in a separate
   "offline" build, or move the tarball out of the rootfs onto the boot/data partition.
