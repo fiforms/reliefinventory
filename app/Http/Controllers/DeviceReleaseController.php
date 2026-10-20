@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DeviceRelease;
 use App\Models\FirmwareSetting;
+use App\Services\ChunkedUpload;
 use App\Services\DeviceReleaseResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -158,32 +159,18 @@ class DeviceReleaseController extends Controller
     // chunk is refused with the server's real offset, so a client can always resume), then
     // completes it. Bytes accumulate in a private part file owned by the uploading person.
 
-    private function uploadDir(string $id): string
+    private function uploads(): ChunkedUpload
     {
-        abort_unless(preg_match('/^[A-Za-z0-9]{40}$/', $id) === 1, 404);
-
-        return "device-uploads/{$id}";
+        return new ChunkedUpload(Storage::disk('local')->path('device-uploads'));
     }
 
     /** The upload's metadata, only for the person who started it. */
     private function loadUpload(string $id): array
     {
-        $disk = Storage::disk('local');
-        $dir = $this->uploadDir($id);
-        abort_unless($disk->exists("{$dir}/meta.json"), 404);
-        $meta = json_decode($disk->get("{$dir}/meta.json"), true);
+        $meta = $this->uploads()->meta($id);
         abort_unless(($meta['uploaded_by'] ?? null) === Auth::id(), 404);
 
         return $meta;
-    }
-
-    private function receivedBytes(string $id): int
-    {
-        $path = Storage::disk('local')->path($this->uploadDir($id).'/data.part');
-
-        clearstatcache(true, $path);
-
-        return is_file($path) ? filesize($path) : 0;
     }
 
     public function startUpload(Request $request)
@@ -196,22 +183,12 @@ class DeviceReleaseController extends Controller
             return $refusal;
         }
 
-        // Abandoned uploads would otherwise sit on disk forever.
-        $disk = Storage::disk('local');
-        foreach ($disk->directories('device-uploads') as $old) {
-            if ($disk->lastModified($old.'/meta.json') < now()->subDays(2)->timestamp) {
-                $disk->deleteDirectory($old);
-            }
-        }
-
-        $id = Str::random(40);
-        $disk->put($this->uploadDir($id).'/meta.json', json_encode([
+        $id = $this->uploads()->create([
             'metadata' => collect($data)->only(array_keys($this->metadataRules()))->all(),
             'filename' => $this->safeFilename($data['filename']),
             'size' => $data['size'],
             'uploaded_by' => Auth::id(),
-        ]));
-        touch($disk->path($this->uploadDir($id).'/data.part'));
+        ]);
 
         return response()->json(['upload_id' => $id, 'chunk_size' => config('devices.upload_chunk_bytes'), 'received' => 0], 201);
     }
@@ -220,44 +197,22 @@ class DeviceReleaseController extends Controller
     {
         $meta = $this->loadUpload($id);
 
-        return response()->json(['received' => $this->receivedBytes($id), 'size' => $meta['size']]);
+        return response()->json(['received' => $this->uploads()->received($id), 'size' => $meta['size']]);
     }
 
     public function uploadChunk(Request $request, string $id)
     {
-        $meta = $this->loadUpload($id);
-        $offset = (int) $request->query('offset', -1);
-        $path = Storage::disk('local')->path($this->uploadDir($id).'/data.part');
-        $body = $request->getContent();
+        $this->loadUpload($id);
+        [$status, $payload] = $this->uploads()->append($id, (int) $request->query('offset', -1), $request->getContent());
 
-        $handle = fopen($path, 'cb');
-        flock($handle, LOCK_EX);
-        try {
-            clearstatcache(true, $path);
-            $received = filesize($path);
-            if ($offset !== $received) {
-                return response()->json(['message' => 'Chunk is out of sequence.', 'received' => $received], 409);
-            }
-            if ($body === '' || $received + strlen($body) > $meta['size']) {
-                return response()->json(['message' => 'Chunk is empty or larger than the declared file.', 'received' => $received], 422);
-            }
-            fseek($handle, 0, SEEK_END);
-            fwrite($handle, $body);
-            fflush($handle);
-            $received += strlen($body);
-        } finally {
-            flock($handle, LOCK_UN);
-            fclose($handle);
-        }
-        touch(Storage::disk('local')->path($this->uploadDir($id).'/meta.json'));
-
-        return response()->json(['received' => $received, 'size' => $meta['size']]);
+        return response()->json($payload, $status);
     }
 
     public function finishUpload(string $id)
     {
         $meta = $this->loadUpload($id);
-        $received = $this->receivedBytes($id);
+        $uploads = $this->uploads();
+        $received = $uploads->received($id);
         if ($received !== $meta['size']) {
             return response()->json(['message' => "Upload is incomplete ({$received} of {$meta['size']} bytes).", 'received' => $received], 409);
         }
@@ -266,8 +221,8 @@ class DeviceReleaseController extends Controller
         $token = Str::random(40);
         $path = "device-releases/{$token}/{$meta['filename']}";
         $disk->makeDirectory("device-releases/{$token}");
-        rename($disk->path($this->uploadDir($id).'/data.part'), $disk->path($path));
-        $disk->deleteDirectory($this->uploadDir($id));
+        rename($uploads->partPath($id), $disk->path($path));
+        $uploads->delete($id);
 
         $release = $this->createRelease($meta['metadata'], $path, $token, $meta['filename'], $meta['size']);
 
@@ -277,7 +232,7 @@ class DeviceReleaseController extends Controller
     public function cancelUpload(string $id)
     {
         $this->loadUpload($id);
-        Storage::disk('local')->deleteDirectory($this->uploadDir($id));
+        $this->uploads()->delete($id);
 
         return response()->json(['message' => 'Upload cancelled.']);
     }

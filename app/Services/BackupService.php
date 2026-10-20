@@ -9,7 +9,6 @@ use App\Models\Backup;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
-use Symfony\Component\Process\Process as SymfonyProcess;
 use Throwable;
 use ZipArchive;
 
@@ -205,20 +204,8 @@ class BackupService
 
     private function dumpDatabase(string $to): void
     {
-        $connection = config('database.connections.'.config('database.default'));
-        $binary = trim((string) shell_exec('command -v mariadb-dump')) ?: trim((string) shell_exec('command -v mysqldump'));
-        if ($binary === '') {
-            throw new RuntimeException('mariadb-dump / mysqldump is not installed on this server.');
-        }
-        $extra = config('backup.dump_args') ?? (str_ends_with($binary, 'mariadb-dump') ? '--skip-ssl' : '');
-
-        $command = array_filter([
-            $binary, '--host='.$connection['host'], '--port='.$connection['port'], '--user='.$connection['username'],
-            '--single-transaction', '--no-tablespaces', '--routines', '--triggers', '--result-file='.$to,
-            ...array_filter(explode(' ', (string) $extra)), $connection['database'],
-        ]);
-        // Symfony's Process directly (not the facade) so Process::fake() in tests only ever intercepts spawn().
-        $process = new SymfonyProcess($command, null, ['MYSQL_PWD' => (string) ($connection['password'] ?? '')], null, null);
+        $tools = app(DatabaseTools::class);
+        $process = $tools->process($tools->dumpCommand($to));
         $process->run();
         if (! $process->isSuccessful() || ! is_file($to) || filesize($to) === 0) {
             throw new RuntimeException('Database dump failed: '.substr(trim($process->getErrorOutput()), 0, 300));
