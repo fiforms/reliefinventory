@@ -173,6 +173,10 @@ web)
         log "first run: open ${APP_URL:-the server address} in a browser to create the administrator (setup wizard)"
     fi
 
+    # MariaDB's slow log table is only readable by the app user after a one-time grant (best effort; see
+    # Setup > Testing Tools). Existing installs get it too, since it is not part of the database's first-run init.
+    php artisan slowlog:maintain --grant --no-interaction || true
+
     php artisan config:cache --no-interaction
     php artisan route:cache --no-interaction
     log "starting web server on :${RI_HTTP_PORT:-8080}"

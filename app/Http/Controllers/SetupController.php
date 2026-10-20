@@ -47,6 +47,8 @@ class SetupController extends Controller
             'email' => ['required', 'string', 'lowercase', 'email', 'max:255', 'unique:people,email'],
             'password' => ['required', 'confirmed', Password::defaults()],
             'example_data' => ['boolean'],
+            // The wizard's three-way choice. Older clients send only example_data.
+            'starting_data' => ['nullable', 'in:empty,example,simulation'],
             'setup_code' => [filled(config('app.setup_code')) ? 'required' : 'nullable', 'string'],
         ]);
 
@@ -55,7 +57,8 @@ class SetupController extends Controller
         }
 
         try {
-            $result = $firstRun->completeSetup($data, (bool) ($data['example_data'] ?? false));
+            $startingData = $data['starting_data'] ?? (($data['example_data'] ?? false) ? 'example' : 'empty');
+            $result = $firstRun->completeSetup($data, $startingData === 'example', $startingData === 'simulation');
         } catch (RuntimeException) {
             return redirect()->route('login');
         }
@@ -65,10 +68,15 @@ class SetupController extends Controller
         // Same as a real login: this browser earns device trust.
         $pinLogin->grantTrust($pinLogin->resolveDevice($request), $result['user']->id);
 
+        // The simulation keeps running after this response; its progress page is the useful place to land.
+        if ($result['simulation_started']) {
+            return redirect('/setup/testing')->with('status', 'Setup complete. The simulated warehouse year is being generated — this takes a minute or two.');
+        }
+
         return redirect()->route('dashboard')->with(
             'status',
             $result['demo_failed']
-                ? 'Setup complete, but the example data could not be loaded (see the server log). You can start entering real data.'
+                ? 'Setup complete, but the starting data could not be loaded (see the server log). You can start entering real data.'
                 : 'Setup complete. Welcome to Relief Inventory!'
         );
     }

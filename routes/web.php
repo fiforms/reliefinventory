@@ -229,6 +229,9 @@ Route::get('/setup/system', function () {
     ]);
 })->middleware(['auth']);
 
+// Testing Tools: the warehouse simulator and the slow-query log (JSON half is in the admin-system group below).
+Route::get('/setup/testing', [TestingToolsController::class, 'page'])->middleware(['auth', 'permission:admin-system']);
+
 Route::get('/setup/active-sessions', function () {
     return Inertia::render('ActiveSessions',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/active-sessions')]);
@@ -920,6 +923,11 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::post('/system/backup', [SystemController::class, 'backupNow']);
     Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
     Route::put('/system/offline-mode', [SystemController::class, 'saveOfflineMode']);
+
+    Route::get('/testing/status', [TestingToolsController::class, 'status']);
+    Route::post('/testing/simulation', [TestingToolsController::class, 'startSimulation']);
+    Route::get('/testing/slow-queries', [TestingToolsController::class, 'slowQueries']);
+    Route::delete('/testing/slow-queries', [TestingToolsController::class, 'clearSlowQueries']);
 
     Route::get('/active-sessions', [ActiveSessionController::class, 'index']);
     Route::get('/login-history', [ActiveSessionController::class, 'history']);

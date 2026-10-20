@@ -36,7 +36,8 @@ const form = useForm({
 	password: '',
 	password_confirmation: '',
 	setup_code: '',
-	example_data: false,
+	// 'empty' | 'example' | 'simulation'
+	starting_data: 'empty',
 });
 
 // Client-side check only to keep people from advancing with an obviously
@@ -152,19 +153,19 @@ const stepTitle = computed(() => (step.value === 1 ? 'Create the administrator a
 			<div v-show="step === 2" class="mt-3">
 				<p class="text-sm text-gray-600">
 					The standard categories, units and item catalog are always set up for you. Choose whether
-					to start with a clean slate or a populated demo.
+					to start with a clean slate or with sample data.
 				</p>
 
-				<label class="mt-4 flex cursor-pointer items-start gap-3 rounded border p-3" :class="!form.example_data ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
-					<input type="radio" class="mt-1" :value="false" v-model="form.example_data" />
+				<label class="mt-4 flex cursor-pointer items-start gap-3 rounded border p-3" :class="form.starting_data === 'empty' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+					<input type="radio" class="mt-1" value="empty" v-model="form.starting_data" />
 					<span>
 						<span class="block text-sm font-medium text-gray-900">Start empty <span class="text-xs font-normal text-blue-700">(recommended for real use)</span></span>
 						<span class="block text-xs text-gray-600">Nothing but the standard catalog. You enter your own donors, partners and stock.</span>
 					</span>
 				</label>
 
-				<label class="mt-3 flex cursor-pointer items-start gap-3 rounded border p-3" :class="form.example_data ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
-					<input type="radio" class="mt-1" :value="true" v-model="form.example_data" />
+				<label class="mt-3 flex cursor-pointer items-start gap-3 rounded border p-3" :class="form.starting_data === 'example' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+					<input type="radio" class="mt-1" value="example" v-model="form.starting_data" />
 					<span>
 						<span class="block text-sm font-medium text-gray-900">Load example data</span>
 						<span class="block text-xs text-gray-600">
@@ -174,17 +175,29 @@ const stepTitle = computed(() => (step.value === 1 ? 'Create the administrator a
 					</span>
 				</label>
 
-				<p v-if="form.example_data" class="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
-					Example data can't be removed from inside the app. If you later want a clean instance,
+				<label class="mt-3 flex cursor-pointer items-start gap-3 rounded border p-3" :class="form.starting_data === 'simulation' ? 'border-blue-500 bg-blue-50' : 'border-gray-200'">
+					<input type="radio" class="mt-1" value="simulation" v-model="form.starting_data" />
+					<span>
+						<span class="block text-sm font-medium text-gray-900">Simulate a year of activity <span class="text-xs font-normal text-gray-600">(for testing)</span></span>
+						<span class="block text-xs text-gray-600">
+							Generates about a year of fictional donations, sorting, partner requests, shipments and stock
+							movement &mdash; roughly 1,000 requests and 10,000+ inventory movements. Meant for testing screens,
+							reports and performance with a realistic amount of data. Takes a minute or two.
+						</span>
+					</span>
+				</label>
+
+				<p v-if="form.starting_data !== 'empty'" class="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900">
+					Example and simulated data can't be removed from inside the app. If you later want a clean instance,
 					you'll need to start over with a fresh database. Don't use this for a real operation.
 				</p>
 
-				<InputError class="mt-2" :message="form.errors.example_data" />
+				<InputError class="mt-2" :message="form.errors.starting_data" />
 
 				<div class="mt-6 flex items-center justify-between">
 					<SecondaryButton type="button" @click="step = 1" :disabled="form.processing">Back</SecondaryButton>
 					<PrimaryButton :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
-						{{ form.processing ? (form.example_data ? 'Setting up (loading examples…)' : 'Setting up…') : 'Finish setup' }}
+						{{ form.processing ? (form.starting_data === 'example' ? 'Setting up (loading examples…)' : 'Setting up…') : 'Finish setup' }}
 					</PrimaryButton>
 				</div>
 			</div>

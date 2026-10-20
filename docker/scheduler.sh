@@ -1,7 +1,8 @@
 #!/bin/bash
 # The container stand-in for the systemd timers the bare-metal install uses
 # (scripts/volunteer-sync.sh, scripts/update.sh --scheduled):
-#   hourly  php artisan volunteers:sync-active-windows, and backup:prune (expired on-demand backup zips)
+#   hourly  php artisan volunteers:sync-active-windows, backup:prune (expired on-demand backup zips) and
+#           slowlog:maintain --prune (keeps MariaDB's slow-log table from growing forever)
 #   daily   a backup zip (database; RI_BACKUP_SCOPE=full adds the uploaded files) in $RI_BACKUP_DIR (default /backups)
 #
 #   RI_BACKUP_ENABLED     true|false (default true)
@@ -26,6 +27,7 @@ log "started (volunteer sync hourly; backup ${RI_BACKUP_ENABLED:-true} daily at 
 while true; do
     php artisan volunteers:sync-active-windows --no-interaction || log "volunteer sync failed"
     php artisan backup:prune --no-interaction || log "backup prune failed"
+    php artisan slowlog:maintain --prune --no-interaction || log "slow log prune failed"
 
     if [ "${RI_BACKUP_ENABLED:-true}" = true ] && [ "$(date +%-H)" -ge "$BACKUP_HOUR" ] && ! backup_done_today; then
         ri-db-backup || true

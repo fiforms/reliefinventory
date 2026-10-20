@@ -1,10 +1,15 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Providers;
 
+use App\Services\SlowQueryLog;
+use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -15,7 +20,8 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        // One instance per process: it counts queries across a whole request.
+        $this->app->singleton(SlowQueryLog::class);
     }
 
     /**
@@ -24,6 +30,12 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Slow-query log (config/slowlog.php). Off unless RI_SLOW_QUERY_MS is set, so a normal install pays nothing.
+        if (config('slowlog.threshold_ms') > 0) {
+            DB::listen(fn ($query) => app(SlowQueryLog::class)->observe($query));
+            Event::listen(RequestHandled::class, fn ($e) => app(SlowQueryLog::class)->finishRequest($e->request, $e->response));
+        }
 
         // Behind a TLS-terminating reverse proxy (typical for the Docker
         // image) this makes URLs/redirects use the public scheme and host.

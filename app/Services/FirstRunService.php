@@ -8,6 +8,7 @@ namespace App\Services;
 use App\Models\PeopleRoles;
 use App\Models\SetupState;
 use App\Models\User;
+use App\Services\Simulator\SimulationRun;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\PermissionsSeeder;
 use Database\Seeders\WarehouseActivitySeeder;
@@ -112,14 +113,16 @@ class FirstRunService
     /**
      * The wizard's single write: essentials + administrator + latch together
      * (row-locked so two simultaneous submissions can't both win), then the
-     * optional example data.
+     * optional example data, or the warehouse simulator (a year of generated
+     * activity, run in a detached process — it takes a minute or two, far
+     * longer than a request can wait).
      *
      * @param  array{email:string,password:string,first_name:string,last_name:string}  $admin
-     * @return array{user: User, demo_failed: bool}
+     * @return array{user: User, demo_failed: bool, simulation_started: bool}
      *
      * @throws RuntimeException if setup was already completed
      */
-    public function completeSetup(array $admin, bool $withExampleData): array
+    public function completeSetup(array $admin, bool $withExampleData, bool $withSimulation = false): array
     {
         $user = DB::transaction(function () use ($admin) {
             $state = SetupState::query()->lockForUpdate()->find(1);
@@ -135,6 +138,17 @@ class FirstRunService
         });
 
         $demoFailed = false;
+        $simulationStarted = false;
+        if ($withSimulation && ! $withExampleData) {
+            try {
+                $simulationStarted = app(SimulationRun::class)->start();
+                $demoFailed = ! $simulationStarted;
+            } catch (Throwable $e) {
+                $demoFailed = true;
+                Log::error('First-run simulation could not be started', ['exception' => $e]);
+            }
+        }
+
         if ($withExampleData) {
             // Deliberately outside the transaction above: a failure here must
             // leave a working instance with its administrator, not roll back
@@ -149,6 +163,6 @@ class FirstRunService
             }
         }
 
-        return ['user' => $user, 'demo_failed' => $demoFailed];
+        return ['user' => $user, 'demo_failed' => $demoFailed, 'simulation_started' => $simulationStarted];
     }
 }
