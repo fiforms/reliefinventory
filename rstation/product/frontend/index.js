@@ -57,9 +57,10 @@ export default {
           intro: 'Enter the web address of the Relief Inventory site this device belongs to.',
           label: 'Server address',
           hint: 'For example https://relief.example.org. This can’t be changed later without a factory reset.',
-          offlineHint: 'No Internet? Enter http://localhost:8080 to use the server this device can run itself (Settings > Local server). If it says it can’t reach it yet, choose “Use this address anyway”.',
+          offlineHint: 'No Internet? Enter http://localhost:8080 to use the server this device can run itself (Settings > Local server). If it says it can’t reach it yet, choose “Use this address anyway”. Or leave this empty and skip: you can set it up later in Settings > Local server.',
           locked: 'This device is set up for this server. To use a different one, do a factory reset.',
           useAnyway: 'Use this address anyway',
+          skip: 'Skip — set up later',
         },
       },
       settings: {
@@ -218,9 +219,10 @@ export default {
           intro: 'Ingrese la dirección web del sitio de Relief Inventory al que pertenece este dispositivo.',
           label: 'Dirección del servidor',
           hint: 'Por ejemplo https://relief.example.org. No se puede cambiar después sin un restablecimiento de fábrica.',
-          offlineHint: '¿Sin Internet? Ingrese http://localhost:8080 para usar el servidor que este dispositivo puede ejecutar por sí mismo (Configuración > Servidor local). Si dice que aún no puede conectarse, elija “Usar esta dirección de todos modos”.',
+          offlineHint: '¿Sin Internet? Ingrese http://localhost:8080 para usar el servidor que este dispositivo puede ejecutar por sí mismo (Configuración > Servidor local). Si dice que aún no puede conectarse, elija “Usar esta dirección de todos modos”. O deje esto vacío y omita: puede configurarlo después en Configuración > Servidor local.',
           locked: 'Este dispositivo está configurado para este servidor. Para usar otro, haga un restablecimiento de fábrica.',
           useAnyway: 'Usar esta dirección de todos modos',
+          skip: 'Omitir — configurar después',
         },
       },
       settings: {

@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { request } from '@core/api.js'
@@ -45,7 +45,10 @@ async function save(verify) {
   router.push(nextPath('server'))
 }
 
-const next = () => (status.value?.server_url_locked ? router.push(nextPath('server')) : save(true))
+// An empty field can be skipped (no Internet and no site yet): the launcher then offers Settings, where
+// Settings > Local server can make this device's own server its site, and Pairing can be done later.
+const skipping = computed(() => !!status.value && !status.value.server_url_locked && !url.value.trim())
+const next = () => (status.value?.server_url_locked || skipping.value ? router.push(nextPath('server')) : save(true))
 </script>
 
 <template>
@@ -82,7 +85,7 @@ const next = () => (status.value?.server_url_locked ? router.push(nextPath('serv
       {{ t('setup.server.useAnyway') }}
     </button>
 
-    <WizardNav :back="prevPath('server')" :next-disabled="saving || !status || (!status.server_url_locked && !url.trim())" autofocus-next @next="next" />
+    <WizardNav :back="prevPath('server')" :next-label="skipping ? t('setup.server.skip') : null" :next-disabled="saving || !status" autofocus-next @next="next" />
   </div>
 </template>
 
