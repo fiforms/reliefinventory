@@ -160,14 +160,14 @@ test('only a Delivered order can be approved', function () {
         ->assertStatus(409);
 });
 
-test('rejecting a Delivered order sends it back to Shipped, clears the file, and records the reason', function () {
+test('rejecting a Delivered order moves it to Delivered - Waiting on BOL, clears the file, and records the reason', function () {
     $order = shippingOrder(Transaction::STATUS_DELIVERED);
     $path = UploadedFile::fake()->create('signed-bol.jpg', 10, 'image/jpeg')->store('signed-bols', 'local');
     $order->update(['signed_bol_path' => $path]);
     $user = userWithPermissions('manage-orders');
 
     $this->actingAs($user)->postJson('/json/shipping/'.$order->id.'/reject', ['reason' => 'Signature page is missing.'])
-        ->assertOk()->assertJsonPath('record.status.name', Transaction::STATUS_SHIPPED);
+        ->assertOk()->assertJsonPath('record.status.name', Transaction::STATUS_DELIVERED_AWAITING_BOL);
 
     $order->refresh();
     expect($order->signed_bol_path)->toBeNull()
@@ -184,9 +184,9 @@ test('only a Delivered order can be rejected', function () {
         ->assertStatus(409);
 });
 
-test('a re-uploaded BOL after rejection clears the old rejection reason', function () {
+test('a re-uploaded BOL after rejection clears the old rejection reason and goes back to Delivered for review', function () {
     $driver = Driver::create(['name' => 'Sam Carrier', 'phone' => '555-0200']);
-    $order = shippingOrder(Transaction::STATUS_SHIPPED);
+    $order = shippingOrder(Transaction::STATUS_DELIVERED_AWAITING_BOL);
     $order->update(['driver_id' => $driver->id, 'bol_rejection_reason' => 'Blurry photo.']);
 
     $this->actingAs(userWithPermissions('manage-orders'))
@@ -195,8 +195,26 @@ test('a re-uploaded BOL after rejection clears the old rejection reason', functi
     Auth::logout();
 
     $this->postJson('/driver-portal/login', ['phone' => '555-0200', 'pin' => '97531'])->assertOk();
+    $this->getJson('/driver-portal/loads')->assertOk()->assertJsonPath('current.0.id', $order->id);
     $this->postJson('/driver-portal/loads/'.$order->id.'/bol', ['file' => UploadedFile::fake()->create('signed-bol.jpg', 10, 'image/jpeg')])
         ->assertOk();
 
-    expect($order->fresh()->bol_rejection_reason)->toBeNull();
+    $order->refresh();
+    expect($order->bol_rejection_reason)->toBeNull()
+        ->and($order->status->name)->toBe(Transaction::STATUS_DELIVERED);
+});
+
+test('a rejected BOL shows on Shipping in its own Waiting on BOL bucket, and stays an open order', function () {
+    $order = shippingOrder(Transaction::STATUS_DELIVERED_AWAITING_BOL);
+    $order->update(['bol_rejection_reason' => 'Blurry photo.']);
+    $user = userWithPermissions('manage-orders');
+
+    $this->actingAs($user)->getJson('/json/shipping')->assertOk()
+        ->assertJsonCount(1, 'awaiting_bol')
+        ->assertJsonPath('awaiting_bol.0.bol_rejection_reason', 'Blurry photo.')
+        ->assertJsonCount(0, 'delivered')
+        ->assertJsonCount(0, 'shipped');
+
+    $this->actingAs($user)->getJson('/json/orders')->assertOk()
+        ->assertJsonPath('open.0.id', $order->id);
 });

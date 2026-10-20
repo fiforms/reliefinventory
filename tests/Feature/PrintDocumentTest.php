@@ -63,6 +63,7 @@ test('every parameterless report renders through the registry and queues a job',
     ['sitrep', 'view-sitrep'],
     ['order-form', 'manage-orders'],
     ['help-receiving', 'general-access'],
+    ['help-sorting', 'general-access'],
 ]);
 
 test('a pallet label is queued on a large-label printer', function () {

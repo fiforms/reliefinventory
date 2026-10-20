@@ -34,6 +34,7 @@ export default {
 			search: '',
 			categoryFilter: '',
 			showAll: false, // false = only itemtypes with any recorded activity
+			newOnly: false, // only itemtypes with anything sorted as New
 			expanded: {},
 		};
 	},
@@ -48,6 +49,7 @@ export default {
 			const q = this.search.trim().toLowerCase();
 			return this.records.filter((r) => {
 				if (!this.showAll && !this.hasActivity(r)) return false;
+				if (this.newOnly && !r.received_new) return false;
 				if (this.categoryFilter && r.category !== this.categoryFilter) return false;
 				if (q && !(
 					(r.display_number || '').toLowerCase().includes(q) ||
@@ -59,10 +61,11 @@ export default {
 		totals() {
 			return this.filtered.reduce((acc, r) => ({
 				on_hand: acc.on_hand + r.on_hand,
+				received_new: acc.received_new + r.received_new,
 				outdated: acc.outdated + r.outdated,
 				trashed: acc.trashed + r.trashed,
 				diverted: acc.diverted + r.diverted,
-			}), { on_hand: 0, outdated: 0, trashed: 0, diverted: 0 });
+			}), { on_hand: 0, received_new: 0, outdated: 0, trashed: 0, diverted: 0 });
 		},
 	},
 	methods: {
@@ -119,6 +122,10 @@ export default {
 					<input type="checkbox" v-model="showAll" />
 					Show full catalog (including items never received)
 				</label>
+				<label class="inv_toggle" title="Usable goods recorded as New at sorting (all-time — stock is pooled once sorted, so this isn't a count of new items still on the shelf)">
+					<input type="checkbox" v-model="newOnly" />
+					Only items received new
+				</label>
 			</div>
 
 			<div class="inv_tablewrap"><table class="ri_datatable" border="1">
@@ -130,6 +137,7 @@ export default {
 						<th>Category</th>
 						<th>Unit</th>
 						<th>On Hand</th>
+						<th title="Usable goods recorded as New at sorting, all-time">Received New</th>
 						<th>Outdated</th>
 						<th>Trashed</th>
 						<th>Diverted</th>
@@ -147,22 +155,24 @@ export default {
 							<td>{{ record.category }}</td>
 							<td>{{ record.unit }}</td>
 							<td class="inv_num" :class="{ inv_zero: record.on_hand === 0 }">{{ record.on_hand }}</td>
+							<td class="inv_num">{{ record.received_new || '' }}</td>
 							<td class="inv_num">{{ record.outdated || '' }}</td>
 							<td class="inv_num">{{ record.trashed || '' }}</td>
 							<td class="inv_num">{{ record.diverted || '' }}</td>
 						</tr>
 						<tr v-if="expanded[record.id]" class="inv_detailrow">
 							<td></td>
-							<td colspan="8">
+							<td colspan="9">
 								<table class="inv_subtable" v-if="record.items.length">
 									<thead>
-										<tr><th>Item / SKU</th><th>UPC</th><th>On Hand</th><th>Outdated</th><th>Trashed</th><th>Diverted</th></tr>
+										<tr><th>Item / SKU</th><th>UPC</th><th>On Hand</th><th>Received New</th><th>Outdated</th><th>Trashed</th><th>Diverted</th></tr>
 									</thead>
 									<tbody>
 										<tr v-for="item in record.items" :key="item.id">
 											<td>{{ item.description }}</td>
 											<td>{{ item.upc }}</td>
 											<td class="inv_num">{{ item.on_hand }}</td>
+											<td class="inv_num">{{ item.received_new || '' }}</td>
 											<td class="inv_num">{{ item.outdated || '' }}</td>
 											<td class="inv_num">{{ item.trashed || '' }}</td>
 											<td class="inv_num">{{ item.diverted || '' }}</td>
@@ -174,13 +184,14 @@ export default {
 						</tr>
 					</template>
 					<tr v-if="!filtered.length && !loading">
-						<td colspan="9" class="inv_empty">No item types match.</td>
+						<td colspan="10" class="inv_empty">No item types match.</td>
 					</tr>
 				</tbody>
 				<tfoot v-if="filtered.length">
 					<tr class="inv_totalsrow">
 						<td colspan="5">Totals ({{ filtered.length }} item type{{ filtered.length === 1 ? '' : 's' }})</td>
 						<td class="inv_num">{{ totals.on_hand }}</td>
+						<td class="inv_num">{{ totals.received_new || '' }}</td>
 						<td class="inv_num">{{ totals.outdated || '' }}</td>
 						<td class="inv_num">{{ totals.trashed || '' }}</td>
 						<td class="inv_num">{{ totals.diverted || '' }}</td>

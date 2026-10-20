@@ -80,7 +80,9 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   a stored, server-controlled status lifecycle (never a free-form dropdown) with `status_changed_at`
   auto-tracked on every transition (see `Transaction::booted()`): donations go
   `Received → Sorting → Complete` (or `Logged`, for non-donation intake categories); orders go
-  `New Order → Ready to Fill → Filling → Filled → Shipped`, and only `New Order` is intake-editable —
+  `New Order → Ready to Fill → Filling → Filled → Ready to Ship → Shipped → Delivered → Completed`
+  (a rejected signed BOL goes `Delivered → Delivered - Waiting on BOL → Delivered` on re-upload — the
+  goods did arrive, so it never drops back to Shipped), and only `New Order` is intake-editable —
   order lines can't be changed once filling has started (`OrderController::rejectIfLocked`). Filling
   itself (Order Filling/Picking, 2026-08-27 — `OrderFillingController` + `OrderFilling.vue`) is a
   separate write surface layered on the same order: `Ready to Fill` → `Filling` happens either by
@@ -89,15 +91,20 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   transactional + row-locked so two staff printing at once can't double-grab an order); a fill record
   is an `item_ledgers` row tied to the `OrderLine` it satisfies via `order_line_id`, append-only
   (multiple fills per line are summed, never overwritten) regardless of which path produced it — both
-  ultimately call the same `POST .../lines/{lineId}/fills` endpoint. `Filling` → `Filled` requires every
-  line to have at least one fill record (a deliberate zero counts as "don't have this"). Shipped is not
-  yet reachable — see `order-fulfillment-lifecycle-design`, not built. The same build also added a
-  non-blocking "Review Allocation" panel to `OrderFilling.vue`: wherever total requested across
-  `Ready to Fill` orders exceeds on-hand for an itemtype, it shows a straight-proportional suggested
-  split per line alongside that line's optional, self-reported `need_level`
-  (critical/moderate/low, on `orderlines`) — purely informational, computed live from
+  ultimately call the same `POST .../lines/{lineId}/fills` endpoint. Completing filling requires every
+  line with something to pick to have at least one fill record (a deliberate zero counts as "don't have
+  this"); if nothing at all was picked the order goes to the terminal `Closed - Unfulfilled` instead of
+  `Filled`, and never reaches Shipping. The same build also added a "Review Allocation" panel to
+  `OrderFilling.vue`: wherever total requested across `Ready to Fill` orders exceeds on-hand for an
+  itemtype, it shows a straight-proportional suggested split per line alongside that line's optional,
+  self-reported `need_level` (critical/moderate/low, on `orderlines`), computed live from
   `config('inventory.low_stock_threshold')` (overridable per itemtype via
-  `itemtypes.low_stock_threshold`); Print Pick Sheets and Start Filling both work without ever opening
+  `itemtypes.low_stock_threshold`). Since 2026-10-19 a manager can save an approved quantity per line
+  there (`orderlines.qty_approved` + approver/time, only while `Ready to Fill`); pickers then see only
+  `OrderLine::qty_to_pick` (approved, else requested) on pick sheets and the fill screen, and lines
+  approved at 0 are left off and need no fill. `qty_requested` is never changed, so requested vs.
+  approved vs. filled stays reportable. Approving is optional — Print Pick Sheets and Start Filling
+  both work without ever opening the panel.
   it. `donor_identification_pending`
   (plain boolean, not a status) flags a donation whose source needs follow-up — unlike `sort_hold` on item
   types, it never gates anything downstream (the goods are real/usable regardless), it's purely a
@@ -107,7 +114,10 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   source of truth for inventory. Carries `pallet_id` on sorting's addition rows (per-donation/pallet provenance — fill/subtraction rows
   don't carry it, since stock is pooled once sorted) and a `disposition` field
   (usable/outdated/trashed/diverted) from scan-driven sorting — only `usable` counts toward stock-on-hand;
-  the others feed donor-quality reporting. `WarehouseMetrics` (`app/Services`) and
+  the others feed donor-quality reporting. Usable sorting rows also carry `item_condition` (`new`/`used`,
+  null on older rows; named so because CONDITION is reserved in MariaDB) — sorters pick New or Usable, both
+  count toward on-hand, and the Inventory Report's "Received New" column sums the new ones (all-time
+  received, not new-on-shelf, since fills don't record condition). `WarehouseMetrics` (`app/Services`) and
   `InventoryReportController` both aggregate this ledger (usable additions − subtractions) — that used to
   be a known gap ("nothing computes stock-on-hand"); it isn't anymore. `qty_subtracted` itself was always
   0 in production until Order Filling/Picking (2026-08-27) — see that section below. Also carries

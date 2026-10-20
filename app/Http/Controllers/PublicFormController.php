@@ -10,13 +10,12 @@ use App\Models\Form;
 use App\Models\FormAnswer;
 use App\Models\FormQuestion;
 use App\Models\FormSubmission;
-use App\Models\OfflineModeSetting;
 use App\Models\User;
 use App\Notifications\FormSubmissionReceived;
+use App\Services\TurnstileService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Validation\ValidationException;
@@ -33,6 +32,8 @@ use Inertia\Inertia;
  */
 class PublicFormController extends Controller
 {
+    public function __construct(private TurnstileService $turnstile) {}
+
     public function show(string $slug)
     {
         $form = Form::where('slug', $slug)->where('status', Form::STATUS_ACTIVE)->with('questions')->firstOrFail();
@@ -40,11 +41,15 @@ class PublicFormController extends Controller
         $this->assertAccessAllowed($form);
 
         $turnstileEnabled = $this->turnstileRequired();
+        // Enabled with no keys: say so on the page instead of rendering an
+        // empty widget that can never produce the token submit() demands.
+        $turnstileUnavailable = $turnstileEnabled && $this->turnstile->misconfigured();
 
         return Inertia::render('PublicForm', [
             'form' => $form,
-            'turnstile_enabled' => $turnstileEnabled,
-            'turnstile_site_key' => $turnstileEnabled ? config('services.turnstile.site_key') : null,
+            'turnstile_enabled' => $turnstileEnabled && ! $turnstileUnavailable,
+            'turnstile_site_key' => $turnstileEnabled && ! $turnstileUnavailable ? $this->turnstile->siteKey() : null,
+            'turnstile_unavailable' => $turnstileUnavailable,
         ]);
     }
 
@@ -55,6 +60,11 @@ class PublicFormController extends Controller
         $this->assertAccessAllowed($form);
 
         $turnstileEnabled = $this->turnstileRequired();
+        if ($turnstileEnabled && $this->turnstile->misconfigured()) {
+            return response()->json([
+                'message' => 'This form can\'t accept submissions right now because its spam protection isn\'t set up on this server. Please contact the organization that sent you this link.',
+            ], 503);
+        }
 
         $rules = [
             'answers' => 'required|array',
@@ -66,17 +76,7 @@ class PublicFormController extends Controller
         $data = $request->validate($rules);
 
         if ($turnstileEnabled) {
-            $response = Http::asForm()->post('https://challenges.cloudflare.com/turnstile/v0/siteverify', [
-                'secret' => config('services.turnstile.secret_key'),
-                'response' => $data['cf-turnstile-response'],
-                'remoteip' => $request->ip(),
-            ])->json();
-
-            if (! ($response['success'] ?? false)) {
-                throw ValidationException::withMessages([
-                    'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
-                ]);
-            }
+            $this->turnstile->verify($data['cf-turnstile-response'], $request->ip());
         }
 
         $questionsById = $form->questions->keyBy('id');
@@ -142,7 +142,7 @@ class PublicFormController extends Controller
 
     private function turnstileRequired(): bool
     {
-        return ! Auth::check() && config('services.turnstile.enabled') && ! OfflineModeSetting::isOffline();
+        return ! Auth::check() && $this->turnstile->enabled();
     }
 
     private function notify(Form $form, FormSubmission $submission): void

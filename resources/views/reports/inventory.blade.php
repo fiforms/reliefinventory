@@ -105,13 +105,14 @@
         <table>
             <thead>
                 <tr>
-                    <th class="category-heading" colspan="7">{{ $category ?? 'Uncategorized' }}</th>
+                    <th class="category-heading" colspan="8">{{ $category ?? 'Uncategorized' }}</th>
                 </tr>
                 <tr>
                     <th>Item #</th>
                     <th>Name</th>
                     <th>Unit</th>
                     <th class="num">On Hand</th>
+                    <th class="num">Received New</th>
                     <th class="num">Outdated</th>
                     <th class="num">Trashed</th>
                     <th class="num">Diverted</th>
@@ -124,6 +125,7 @@
                         <td>{{ $row['name'] }}</td>
                         <td>{{ $row['unit'] }}</td>
                         <td class="num">{{ $row['on_hand'] }}</td>
+                        <td class="num">{{ $row['received_new'] ?: '' }}</td>
                         <td class="num loss">{{ $row['outdated'] ?: '' }}</td>
                         <td class="num loss">{{ $row['trashed'] ?: '' }}</td>
                         <td class="num">{{ $row['diverted'] ?: '' }}</td>
@@ -141,6 +143,7 @@
                 <tr class="totals">
                     <td colspan="3">Totals ({{ $records->count() }} item type{{ $records->count() === 1 ? '' : 's' }})</td>
                     <td class="num">{{ $records->sum('on_hand') }}</td>
+                    <td class="num">{{ $records->sum('received_new') ?: '' }}</td>
                     <td class="num">{{ $records->sum('outdated') ?: '' }}</td>
                     <td class="num">{{ $records->sum('trashed') ?: '' }}</td>
                     <td class="num">{{ $records->sum('diverted') ?: '' }}</td>

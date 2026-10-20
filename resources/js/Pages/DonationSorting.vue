@@ -13,7 +13,8 @@
 	    a crash or dropped connection never loses more than the current line.
 	  - Each line records a disposition: usable goods count into inventory,
 	    while outdated / trashed / diverted quantities feed donor-quality
-	    reporting.
+	    reporting. Usable goods are further marked New or Usable (used, good
+	    condition) via item_condition — both count toward on-hand the same.
 	  - Sorters can add new items (and item types / categories) on the fly
 	    when unfamiliar goods show up.
 	  - Finishing a pallet is one tap ("Pallet Empty") plus an optional
@@ -38,12 +39,23 @@ import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import axios from 'axios';
 
+// One button per choice. New and Usable are both disposition 'usable' (both
+// count into inventory) and differ only in item_condition, which exists so
+// new goods can be reported separately.
 const DISPOSITIONS = [
-	{ value: 'usable',   label: 'Usable',   hint: 'Counted into inventory' },
-	{ value: 'outdated', label: 'Outdated', hint: 'Expired on arrival - discarded' },
-	{ value: 'trashed',  label: 'Trash',    hint: 'Damaged or unusable - discarded' },
-	{ value: 'diverted', label: 'Divert',   hint: 'Usable, but passed to another organization' },
+	{ key: 'new',      value: 'usable',   condition: 'new',  label: 'New',      hint: 'Unused, in original packaging - counted into inventory' },
+	{ key: 'usable',   value: 'usable',   condition: 'used', label: 'Usable',   hint: 'Used or opened, in good condition - counted into inventory' },
+	{ key: 'outdated', value: 'outdated', condition: null,   label: 'Outdated', hint: 'Expired on arrival - discarded' },
+	{ key: 'trashed',  value: 'trashed',  condition: null,   label: 'Trash',    hint: 'Damaged or unusable - discarded' },
+	{ key: 'diverted', value: 'diverted', condition: null,   label: 'Divert',   hint: 'Usable, but passed to another organization' },
 ];
+
+// The button a saved line corresponds to (lines sorted before item_condition
+// existed have none, and show as plain Usable).
+function dispositionFor(disposition, condition) {
+	return DISPOSITIONS.find((d) => d.value === disposition && (d.condition === condition || d.condition === null))
+		|| DISPOSITIONS.find((d) => d.value === disposition);
+}
 
 export default {
 	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
@@ -83,7 +95,7 @@ export default {
 			emptyingPallet: false,
 
 			// line entry
-			entry: { item_id: null, qty: null, disposition: 'usable' },
+			entry: { item_id: null, qty: null, choice: 'usable' },
 			lineError: null,
 			nextTempId: -1,
 			confirmingLineKey: null,
@@ -180,7 +192,7 @@ export default {
 			this.emptyingPallet = false;
 			this.confirmingComplete = false;
 			this.confirmingLineKey = null;
-			this.entry = { item_id: null, qty: null, disposition: 'usable' };
+			this.entry = { item_id: null, qty: null, choice: 'usable' };
 			this.view = 'session';
 			this.$nextTick(() => this.$refs.palletInput?.focus());
 		},
@@ -361,8 +373,8 @@ export default {
 		itemChosen() {
 			this.$refs.qtyInput?.focus();
 		},
-		setDisposition(value) {
-			this.entry.disposition = value;
+		setDisposition(key) {
+			this.entry.choice = key;
 		},
 		addLine() {
 			this.lineError = null;
@@ -381,7 +393,8 @@ export default {
 				item_id: this.entry.item_id,
 				item: this.entry.item || null,
 				qty_added: qty,
-				disposition: this.entry.disposition,
+				disposition: DISPOSITIONS.find((d) => d.key === this.entry.choice).value,
+				item_condition: DISPOSITIONS.find((d) => d.key === this.entry.choice).condition,
 				pallet_id: this.pallet ? this.pallet.id : null,
 				pallet: this.pallet,
 				created_at: new Date().toISOString(),
@@ -392,7 +405,7 @@ export default {
 
 			// reset for the next scan; keep the disposition (runs of similar
 			// goods are common) and, of course, the pallet context
-			this.entry = { item_id: null, item: null, qty: null, disposition: this.entry.disposition };
+			this.entry = { item_id: null, item: null, qty: null, choice: this.entry.choice };
 			this.$refs.itemSelect?.focus();
 		},
 		findLineIndex(line) {
@@ -407,6 +420,7 @@ export default {
 					item_id: line.item_id,
 					qty: line.qty_added,
 					disposition: line.disposition,
+					item_condition: line.item_condition ?? null,
 					pallet_tag: line.pallet_id ? String(line.pallet_id) : null,
 				});
 				const idx = this.findLineIndex(line);
@@ -460,8 +474,11 @@ export default {
 			const date = new Date(line.created_at);
 			return isNaN(date) ? '' : date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 		},
-		dispositionLabel(value) {
-			return (DISPOSITIONS.find((d) => d.value === value) || {}).label || value;
+		dispositionLabel(line) {
+			return dispositionFor(line.disposition, line.item_condition ?? null)?.label || line.disposition;
+		},
+		dispositionKey(line) {
+			return dispositionFor(line.disposition, line.item_condition ?? null)?.key || line.disposition;
 		},
 
 		// ---------- quick-add item ----------
@@ -809,11 +826,11 @@ export default {
 				<div class="sort_dispositions">
 					<button
 						v-for="d in dispositions"
-						:key="d.value"
+						:key="d.key"
 						:title="d.hint"
 						class="sort_disp"
-						:class="['sort_disp_' + d.value, entry.disposition === d.value ? 'sort_disp_on' : '']"
-						@click="setDisposition(d.value)"
+						:class="['sort_disp_' + d.key, entry.choice === d.key ? 'sort_disp_on' : '']"
+						@click="setDisposition(d.key)"
 					>{{ d.label }}</button>
 				</div>
 				<button @click="addLine" class="ri_defaultbutton">Add</button>
@@ -833,7 +850,7 @@ export default {
 						<td>{{ lineTime(line) }}</td>
 						<td>{{ line.item ? (line.item.name || line.item.description) : '(item #' + line.item_id + ')' }}</td>
 						<td>{{ line.qty_added }}</td>
-						<td><span class="sort_badge" :class="'sort_disp_' + line.disposition">{{ dispositionLabel(line.disposition) }}</span></td>
+						<td><span class="sort_badge" :class="'sort_disp_' + dispositionKey(line)">{{ dispositionLabel(line) }}</span></td>
 						<td>{{ line.pallet ? palletTagStr(line.pallet.id) : (line.pallet_id ? palletTagStr(line.pallet_id) : '-') }}</td>
 						<td class="sort_line_actions">
 							<span v-if="line.status === 'saving'">saving...</span>
@@ -1056,6 +1073,11 @@ export default {
 	opacity: 1;
 	font-weight: bold;
 	border-width: 2px;
+}
+.sort_disp_new.sort_disp_on, .sort_badge.sort_disp_new {
+	background: #ccfbf1;
+	border-color: #0d9488;
+	color: #134e4a;
 }
 .sort_disp_usable.sort_disp_on, .sort_badge.sort_disp_usable {
 	background: #dcfce7;

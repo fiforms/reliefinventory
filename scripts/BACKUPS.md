@@ -5,7 +5,7 @@ Backups are made by `scripts/update.sh` (every full update backs up first; the
 `/var/backups/reliefinventory/`:
 
 ```
-hourly/<YYYYmmdd-HHMMSS>/    every backup, scheduled or on-demand  keep KEEP_HOURLY  (48)
+hourly/<YYYYmmdd-HHMMSS>/    every backup: hourly, scheduled, or on-demand  keep KEEP_HOURLY (48)
 daily/<stamp>/               that day's scheduled backup           keep KEEP_DAILY   (14)
 monthly/<stamp>/             first daily promotion of the month    keep KEEP_MONTHLY (12)
 yearly/<stamp>/              first daily promotion of the year     keep KEEP_YEARLY  (3)
@@ -32,6 +32,21 @@ revision the data matched). Daily/monthly/yearly copies are **hardlink
 promotions** (`cp -al`) of the underlying hourly backup — promotion itself costs
 no disk space; space is only held by however many distinct snapshots the tiers
 retain.
+
+## Hourly backups (optional)
+
+With `HOURLY_BACKUPS=1` ("Also back up every hour" on `/setup/system`), each firing
+of the hourly timer also takes a backup if none has been taken yet that hour
+(tracked in `/var/backups/reliefinventory/.last-hourly`). These are ordinary
+`hourly/` entries — never promoted — so `KEEP_HOURLY` decides how far back they
+reach (48 = two days). The daily/weekly scheduled backup and its promotion into
+`daily/`/`monthly/`/`yearly/` are unaffected; an hour in which the scheduled backup
+runs doesn't take a second hourly one. Off by default: without it, `hourly/` only
+holds the scheduled and on-demand backups, so on a quiet instance it looks just like
+`daily/`.
+
+Every backup is a full copy (gzipped mysqldump + storage tarball), not incremental —
+simple to restore from any single directory, which matters more here than disk space.
 
 ## Schedule settings
 

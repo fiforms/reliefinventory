@@ -1,12 +1,14 @@
 <?php
 
-// The Receiving Guide renders through the weasyprint driver (US Letter, multi-page prose).
+// Every Help guide renders through the weasyprint driver (US Letter, multi-page prose),
+// with its margins on @page so they hold past the first page.
 
 use App\Http\Controllers\HelpReportController;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-test('the receiving guide renders as weasyprint letter pages with its content', function () {
+test('a help guide renders as weasyprint letter pages with its content', function (string $guide, array $expected) {
     $path = tempnam(sys_get_temp_dir(), 'help').'.pdf';
-    app(HelpReportController::class)->receivingBuilder()->save($path);
+    app(HelpReportController::class)->builder($guide)->save($path);
 
     $info = pdfInfo($path);
     expect($info)->toContain('WeasyPrint')
@@ -14,10 +16,17 @@ test('the receiving guide renders as weasyprint letter pages with its content', 
         ->and($info)->toMatch('/Page size:\s+612(\.\d+)? x 792(\.\d+)? pts/');
 
     $text = pdfText($path);
-    foreach (['Receiving Guide', 'Welcoming the driver', 'Step by step', 'ready to go to the staging area'] as $expected) {
-        expect($text)->toContain($expected);
+    foreach ($expected as $phrase) {
+        expect($text)->toContain($phrase);
     }
-})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+})->with([
+    'receiving' => ['receiving', ['Receiving Guide', 'Welcoming the driver', 'Step by step', 'ready to go to the staging area']],
+    'sorting' => ['sorting', ['Donation Sorting Guide', 'Working a pallet', 'Pallet Empty', 'Complete Session']],
+])->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
+test('an unknown help guide is a 404', function () {
+    app(HelpReportController::class)->builder('nonexistent');
+})->throws(NotFoundHttpException::class);
 
 /*
  * Chrome comparison (removed 2026-10-19, kept for reference).
@@ -39,7 +48,7 @@ test('the receiving guide renders as weasyprint letter pages with its content', 
 // function renderGuide(string $driver): string
 // {
 //     $path = tempnam(sys_get_temp_dir(), 'help').'.pdf';
-//     app(HelpReportController::class)->receivingBuilder()->driver($driver)->save($path);
+//     app(HelpReportController::class)->builder('receiving')->driver($driver)->save($path);
 //
 //     return $path;
 // }

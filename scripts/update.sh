@@ -9,11 +9,12 @@
 #
 #   bash scripts/update.sh                     full update
 #   bash scripts/update.sh --backup-only       backup now, nothing else
-#   bash scripts/update.sh --scheduled         backup only if one is due (systemd timer)
+#   bash scripts/update.sh --scheduled         backup only if one is due (hourly systemd timer)
 #   bash scripts/update.sh --seed-permissions  full update + PermissionsSeeder
 #
-# Backups are tiered: every backup (scheduled or on-demand — a full update's
-# pre-update backup, or "Back Up Now" from the admin panel) lands in hourly/,
+# Backups are tiered: every backup (scheduled, hourly if HOURLY_BACKUPS=1, or
+# on-demand — a full update's pre-update backup, or "Back Up Now" from the
+# admin panel) lands in hourly/,
 # kept a short while so a bad update can be rolled back to whichever attempt
 # preceded it. Only the once-a-day *scheduled* backup is also promoted (as a
 # hardlink, so promotion costs no space) into daily/, and the first such
@@ -115,31 +116,48 @@ setting() { # setting <key> <default> <valid-regex>
 BACKUP_FREQUENCY="$(setting BACKUP_FREQUENCY daily 'daily|weekly')"
 BACKUP_HOUR="$(setting BACKUP_HOUR 2 '[0-9]|1[0-9]|2[0-3]')"          # 0-23, in BACKUP_TZ
 BACKUP_DOW="$(setting BACKUP_DOW 7 '[1-7]')"                          # weekly only: 1=Mon..7=Sun
+HOURLY_BACKUPS="$(setting HOURLY_BACKUPS 0 '0|1')"                    # 1 = also back up every hour
 BACKUP_TZ="$(setting BACKUP_TZ America/Los_Angeles '[A-Za-z0-9_/+-]+')"
 KEEP_HOURLY="$(setting KEEP_HOURLY 48 '[0-9]{1,4}')"          # every raw backup, scheduled or on-demand
 KEEP_DAILY="$(setting KEEP_DAILY 14 '[0-9]{1,3}')"
 KEEP_MONTHLY="$(setting KEEP_MONTHLY 12 '[0-9]{1,3}')"
 KEEP_YEARLY="$(setting KEEP_YEARLY 3 '[0-9]{1,2}')"
 
-# --scheduled (the hourly systemd timer) only proceeds when a backup is due:
-# we're at/past the configured hour in the configured timezone (>= rather than
-# ==, so a reboot that skips the exact hour still catches up later that day),
-# on the right weekday for weekly mode, and none has run yet that day.
+# --scheduled (the hourly systemd timer) only proceeds when a backup is due.
+# Two independent reasons a run can be due:
+#  - the daily/weekly backup: we're at/past the configured hour in the
+#    configured timezone (>= rather than ==, so a reboot that skips the exact
+#    hour still catches up later that day), on the right weekday for weekly
+#    mode, and none has run yet that day. Only this one is promoted into
+#    daily/ (and from there monthly/ and yearly/).
+#  - an hourly backup, when HOURLY_BACKUPS=1: none has run yet this hour.
+#    These only ever land in hourly/ (kept KEEP_HOURLY deep), same as an
+#    on-demand backup.
 MARKER="$BACKUP_DIR/.last-scheduled"
+HOURLY_MARKER="$BACKUP_DIR/.last-hourly"
+DAILY_DUE=0
 if [ "$SCHEDULED" -eq 1 ]; then
     NOW_HOUR=$((10#$(TZ="$BACKUP_TZ" date +%H)))
     TODAY="$(TZ="$BACKUP_TZ" date +%Y%m%d)"
+    THIS_HOUR="$(TZ="$BACKUP_TZ" date +%Y%m%d%H)"
     NOW_DOW="$(TZ="$BACKUP_TZ" date +%u)"
     if [ "$NOW_HOUR" -lt "$BACKUP_HOUR" ]; then
-        echo "Scheduled check: not due yet (before $BACKUP_HOUR:00 $BACKUP_TZ)"; exit 0
+        echo "Scheduled check: daily backup not due yet (before $BACKUP_HOUR:00 $BACKUP_TZ)"
+    elif [ "$BACKUP_FREQUENCY" = "weekly" ] && [ "$NOW_DOW" -ne "$BACKUP_DOW" ]; then
+        echo "Scheduled check: daily backup not due (weekly, day $BACKUP_DOW)"
+    elif [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$TODAY" ]; then
+        echo "Scheduled check: already backed up today"
+    else
+        DAILY_DUE=1
     fi
-    if [ "$BACKUP_FREQUENCY" = "weekly" ] && [ "$NOW_DOW" -ne "$BACKUP_DOW" ]; then
-        echo "Scheduled check: not due (weekly, day $BACKUP_DOW)"; exit 0
+
+    if [ "$DAILY_DUE" -eq 1 ]; then
+        echo "Scheduled backup due ($BACKUP_FREQUENCY at $BACKUP_HOUR:00 $BACKUP_TZ)"
+    elif [ "$HOURLY_BACKUPS" -eq 1 ] && ! { [ -f "$HOURLY_MARKER" ] && [ "$(cat "$HOURLY_MARKER")" = "$THIS_HOUR" ]; }; then
+        echo "Hourly backup due"
+    else
+        exit 0
     fi
-    if [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$TODAY" ]; then
-        echo "Scheduled check: already backed up today"; exit 0
-    fi
-    echo "Scheduled backup due ($BACKUP_FREQUENCY at $BACKUP_HOUR:00 $BACKUP_TZ)"
 fi
 
 # Run a command as the app user, in the app dir, with the app user's HOME so
@@ -233,7 +251,7 @@ promote() { # promote <tier> <stamp-prefix>
         cp -al "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP"
     fi
 }
-if [ "$SCHEDULED" -eq 1 ]; then
+if [ "$DAILY_DUE" -eq 1 ]; then
     promote daily "$TODAY"
     promote monthly "$(TZ="$BACKUP_TZ" date +%Y%m)"
     promote yearly "$(TZ="$BACKUP_TZ" date +%Y)"
@@ -261,8 +279,11 @@ prune_tier "$BACKUP_DIR/daily" "$KEEP_DAILY"
 prune_tier "$BACKUP_DIR/monthly" "$KEEP_MONTHLY"
 prune_tier "$BACKUP_DIR/yearly" "$KEEP_YEARLY"
 
-if [ "$SCHEDULED" -eq 1 ]; then
+if [ "$DAILY_DUE" -eq 1 ]; then
     echo "$TODAY" > "$MARKER"
+fi
+if [ "$SCHEDULED" -eq 1 ]; then
+    echo "$THIS_HOUR" > "$HOURLY_MARKER"
 fi
 
 if [ "$BACKUP_ONLY" -eq 1 ]; then

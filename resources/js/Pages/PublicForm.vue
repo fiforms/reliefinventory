@@ -19,6 +19,9 @@ const props = defineProps({
 	form: { type: Object, required: true },
 	turnstile_enabled: { type: Boolean, default: false },
 	turnstile_site_key: { type: String, default: null },
+	// Turnstile is switched on but this server has no keys for it, so the
+	// form can't be submitted — say so instead of showing a dead widget.
+	turnstile_unavailable: { type: Boolean, default: false },
 });
 
 const answers = reactive({});
@@ -71,7 +74,7 @@ async function submit() {
 			errors.value = e.response.data.errors || {};
 			generalError.value = e.response.data.message || null;
 		} else {
-			generalError.value = 'Something went wrong. Please try again.';
+			generalError.value = e.response?.data?.message || 'Something went wrong. Please try again.';
 		}
 	} finally {
 		submitting.value = false;
@@ -181,10 +184,14 @@ async function submit() {
 				</div>
 
 				<div v-if="turnstile_enabled" class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
+				<div v-if="turnstile_unavailable" class="rounded-md bg-amber-50 border border-amber-300 text-amber-900 text-sm p-3">
+					This form can't accept submissions right now because its spam protection isn't set up on
+					this server. Please contact the organization that sent you this link.
+				</div>
 
 				<button
 					@click="submit"
-					:disabled="submitting"
+					:disabled="submitting || turnstile_unavailable"
 					class="w-full bg-indigo-600 text-white rounded-md py-2 font-medium disabled:opacity-50"
 				>
 					{{ submitting ? 'Submitting...' : 'Submit' }}

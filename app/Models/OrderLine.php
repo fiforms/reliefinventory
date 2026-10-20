@@ -1,4 +1,5 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -21,6 +22,26 @@ class OrderLine extends Model
         'comments',
         'need_level',
     ];
+
+    // qty_approved/approved_by_person_id/approved_at are deliberately not
+    // fillable — only OrderFillingController::approveAllocation sets them.
+    protected $casts = [
+        'qty_approved' => 'integer',
+        'approved_at' => 'datetime',
+    ];
+
+    protected $appends = ['qty_to_pick'];
+
+    /**
+     * What a picker should pull: the approved (allocated) quantity once a
+     * manager has set one, otherwise the full request. A line whose
+     * quantity to pick is 0 is left off pick sheets and the fill screen and
+     * needs no fill record before the order can be completed.
+     */
+    public function getQtyToPickAttribute(): int
+    {
+        return (int) ($this->qty_approved ?? $this->qty_requested);
+    }
 
     /**
      * Relationship: Each order line belongs to a transaction (order/donation).

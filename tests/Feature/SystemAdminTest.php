@@ -97,6 +97,28 @@ test('backup settings round-trip through the conf file', function () {
     @unlink(config('system.settings_file'));
 });
 
+test('the hourly backup switch round-trips as HOURLY_BACKUPS=0/1 and defaults to off', function () {
+    config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings-hourly.conf']);
+    @unlink(config('system.settings_file'));
+    $admin = userWithPermissions('admin-system');
+
+    $this->actingAs($admin)->get('/json/system/status')->assertJsonPath('backup_settings.hourly', false);
+
+    $settings = ['frequency' => 'daily', 'hour' => 2, 'dow' => 7, 'tz' => 'America/Los_Angeles',
+        'keep_hourly' => 48, 'keep_daily' => 14, 'keep_monthly' => 12, 'keep_yearly' => 3];
+
+    $this->actingAs($admin)->put('/json/system/backup-settings', $settings + ['hourly' => true])
+        ->assertOk()->assertJsonPath('backup_settings.hourly', true);
+    expect(file_get_contents(config('system.settings_file')))->toContain('HOURLY_BACKUPS=1');
+
+    // omitting it (an older client) turns it off rather than erroring
+    $this->actingAs($admin)->put('/json/system/backup-settings', $settings)
+        ->assertOk()->assertJsonPath('backup_settings.hourly', false);
+    expect(file_get_contents(config('system.settings_file')))->toContain('HOURLY_BACKUPS=0');
+
+    @unlink(config('system.settings_file'));
+});
+
 test('a stale running status is surfaced as stalled instead of blocking retry forever', function () {
     $statusFile = sys_get_temp_dir().'/ri-test-update-status.json';
     config(['system.update_status_file' => $statusFile]);
@@ -156,7 +178,7 @@ test('offline mode round-trips through the singleton setting and status endpoint
 });
 
 test('saving offline mode requires the admin-system permission', function () {
-    $this->actingAs(App\Models\User::factory()->create())
+    $this->actingAs(User::factory()->create())
         ->putJson('/json/system/offline-mode', ['enabled' => true])
         ->assertForbidden();
 });

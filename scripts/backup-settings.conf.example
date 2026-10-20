@@ -15,6 +15,11 @@ BACKUP_HOUR=2
 # Weekly mode only: day of week, 1=Monday .. 7=Sunday.
 BACKUP_DOW=7
 
+# 1 = also take a backup every hour (on top of the daily/weekly one above).
+# Hourly backups stay in hourly/ only (see KEEP_HOURLY); they're never
+# promoted into daily/monthly/yearly.
+HOURLY_BACKUPS=0
+
 # IANA timezone the schedule is expressed in — set to where the deployment
 # is operating, not where the server lives.
 BACKUP_TZ=America/Los_Angeles

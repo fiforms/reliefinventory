@@ -38,6 +38,7 @@ export default {
 			readyToShip: [],
 			shipped: [],
 			delivered: [],
+			awaitingBol: [],
 			completed: [],
 			drivers: [],
 			loading: false,
@@ -92,6 +93,7 @@ export default {
 				this.readyToShip = response.data.ready_to_ship || [];
 				this.shipped = response.data.shipped || [];
 				this.delivered = response.data.delivered || [];
+				this.awaitingBol = response.data.awaiting_bol || [];
 				this.completed = response.data.completed || [];
 				this.drivers = response.data.drivers || [];
 			} catch (e) {
@@ -357,7 +359,7 @@ export default {
 			</table></div>
 
 			<h2 class="ri_datatable_head ship_sectionhead">Delivered — Pending Review ({{ delivered.length }})</h2>
-			<p class="ship_hint">Signed BOL uploaded by the driver. Review it to approve (moves to Completed) or reject (kicks it back to the driver).</p>
+			<p class="ship_hint">Signed BOL uploaded by the driver. Review it to approve (moves to Completed) or reject (moves to Waiting on BOL, back to the driver).</p>
 			<div class="ship_tablewrap"><table class="ri_datatable" border="1">
 				<thead>
 					<tr><th>Order #</th><th>Partner</th><th>Driver</th><th>Delivered</th><th></th></tr>
@@ -371,6 +373,24 @@ export default {
 						<td><button class="ri_defaultbutton" @click="openReview(order)">Review</button></td>
 					</tr>
 					<tr v-if="!delivered.length && !loading"><td colspan="5" class="ship_empty">Nothing awaiting review.</td></tr>
+				</tbody>
+			</table></div>
+
+			<h2 class="ri_datatable_head ship_sectionhead">Delivered — Waiting on BOL ({{ awaitingBol.length }})</h2>
+			<p class="ship_hint">Delivered, but the uploaded signed BOL was rejected. Waiting for the driver to upload a usable one through the Driver Portal.</p>
+			<div class="ship_tablewrap"><table class="ri_datatable" border="1">
+				<thead>
+					<tr><th>Order #</th><th>Partner</th><th>Driver</th><th>Rejected</th><th>Reason</th></tr>
+				</thead>
+				<tbody>
+					<tr v-for="order in awaitingBol" :key="order.id">
+						<td>{{ order.id }}</td>
+						<td>{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</td>
+						<td>{{ order.driver?.name }}<span v-if="order.driver?.phone"> — {{ order.driver.phone }}</span></td>
+						<td>{{ order.status_changed_at ? new Date(order.status_changed_at).toLocaleDateString() : '' }}</td>
+						<td>{{ order.bol_rejection_reason || '—' }}</td>
+					</tr>
+					<tr v-if="!awaitingBol.length && !loading"><td colspan="5" class="ship_empty">No rejected BOLs outstanding.</td></tr>
 				</tbody>
 			</table></div>
 

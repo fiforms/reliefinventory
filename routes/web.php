@@ -297,11 +297,12 @@ Route::get('/help/sorting', function () {
 })->middleware(['auth']);
 
 // Printable PDF version of a help guide — same no-permission-gate rule as
-// the guide pages themselves. Route/controller named generically so more
-// guides (e.g. /report/help/sorting) can be added without redesigning this.
-Route::get('/report/help/receiving',
-    [HelpReportController::class, 'receiving'])
-    ->name('report.help.receiving')
+// the guide pages themselves. One route for every guide listed in
+// HelpReportController::GUIDES.
+Route::get('/report/help/{guide}',
+    [HelpReportController::class, 'show'])
+    ->whereIn('guide', array_keys(HelpReportController::GUIDES))
+    ->name('report.help')
     ->middleware(['auth']);
 
 Route::get('/report/pallet/{id}',
@@ -464,6 +465,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::get('/order-filling', [OrderFillingController::class, 'index']);
     Route::patch('/order-filling/{id}/start', [OrderFillingController::class, 'start']);
     Route::post('/order-filling/print-pick-sheets', [OrderFillingController::class, 'printPickSheets']);
+    Route::put('/order-filling/allocations', [OrderFillingController::class, 'approveAllocation']);
     Route::patch('/order-filling/{id}/complete', [OrderFillingController::class, 'completeFilling']);
     Route::post('/order-filling/{id}/lines/{lineId}/fills', [OrderFillingController::class, 'storeFill']);
     Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);

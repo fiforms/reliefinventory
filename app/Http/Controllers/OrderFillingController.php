@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Item;
+use App\Models\OrderLine;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -239,10 +240,64 @@ class OrderFillingController extends Controller
     }
 
     /**
-     * Filling -> Filled, once every requested line has at least one fill
-     * record (even a deliberate zero-quantity one — "don't have this,
-     * filled 0"). Mirrors the legacy Apps Script system's isPullSheetReady()
-     * rule: every line accounted for, zero counts as accounted for.
+     * Save approved (allocated) quantities from the Review Allocation panel
+     * (feedback #50). Only for orders still Ready to Fill — once a pick
+     * sheet is printed or filling starts, the picker's number is fixed.
+     * qty_approved = null clears an approval (back to the full request).
+     * Never above what was requested; qty_requested itself is untouched.
+     */
+    public function approveAllocation(Request $request)
+    {
+        $data = $request->validate([
+            'lines' => 'required|array|min:1',
+            'lines.*.id' => 'required|integer|distinct|exists:orderlines,id',
+            'lines.*.qty_approved' => 'present|nullable|integer|min:0',
+        ]);
+
+        return DB::transaction(function () use ($data) {
+            $readyToFill = Transaction::statusId(Transaction::STATUS_READY_TO_FILL);
+            $lines = OrderLine::whereIn('id', collect($data['lines'])->pluck('id'))
+                ->with('transaction')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+
+            $errors = [];
+            foreach ($data['lines'] as $i => $entry) {
+                $line = $lines[$entry['id']];
+                if ($line->transaction?->type !== 'order' || (int) $line->transaction->status_id !== $readyToFill) {
+                    $errors["lines.$i.id"] = ['Approved quantities can only be changed while an order is Ready to Fill.'];
+                } elseif ($entry['qty_approved'] !== null && $entry['qty_approved'] > $line->qty_requested) {
+                    $errors["lines.$i.qty_approved"] = ['Approved quantity can\'t be more than was requested ('.$line->qty_requested.').'];
+                }
+            }
+            if ($errors) {
+                return response()->json(['message' => 'Some approved quantities could not be saved.', 'errors' => $errors], 422);
+            }
+
+            foreach ($data['lines'] as $entry) {
+                $line = $lines[$entry['id']];
+                $line->qty_approved = $entry['qty_approved'];
+                $line->approved_by_person_id = $entry['qty_approved'] === null ? null : Auth::id();
+                $line->approved_at = $entry['qty_approved'] === null ? null : now();
+                $line->save();
+            }
+
+            return response()->json(['records' => $lines->values()->map->only(['id', 'qty_requested', 'qty_approved', 'qty_to_pick'])]);
+        });
+    }
+
+    /**
+     * Filling -> Filled, once every line with something to pick has at least
+     * one fill record (even a deliberate zero-quantity one — "don't have
+     * this, filled 0"). Mirrors the legacy Apps Script system's
+     * isPullSheetReady() rule: every line accounted for, zero counts as
+     * accounted for. A line approved at 0 has nothing to pick, so it needs
+     * no fill record.
+     *
+     * If nothing at all was picked (every fill is 0, or every line was
+     * approved at 0), the order goes to Closed - Unfulfilled instead —
+     * terminal, never offered to Shipping (feedback #53).
      */
     public function completeFilling(Request $request, $id)
     {
@@ -253,7 +308,9 @@ class OrderFillingController extends Controller
             ], 409));
         }
 
-        if ($order->orderLines()->doesntHave('itemLedgers')->exists()) {
+        $unaccounted = $order->orderLines()->withCount('itemLedgers')->get()
+            ->filter(fn (OrderLine $line) => $line->qty_to_pick > 0 && $line->item_ledgers_count === 0);
+        if ($unaccounted->isNotEmpty()) {
             return response()->json([
                 'message' => 'Every line needs at least one fill record (even a zero-quantity one) before completing.',
             ], 422);
@@ -263,7 +320,12 @@ class OrderFillingController extends Controller
             'pallet_count' => 'nullable|integer|min:1',
         ]);
 
-        $order->update([
+        $nothingPicked = (int) $order->itemLedgers()->whereNotNull('order_line_id')->sum('qty_subtracted') === 0;
+
+        $order->update($nothingPicked ? [
+            'status_id' => Transaction::statusId(Transaction::STATUS_CLOSED_UNFULFILLED),
+            'pallet_count' => null,
+        ] : [
             'status_id' => Transaction::statusId(Transaction::STATUS_FILLED),
             'pallet_count' => $data['pallet_count'] ?? null,
         ]);

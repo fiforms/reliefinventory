@@ -64,13 +64,26 @@ class Transaction extends Model
     // terminus — added same-day (2026-08-27) once Mark asked for a
     // sign-off step: a manager reviews the uploaded signed BOL on the
     // Shipping page and either approves it (-> Completed, this order
-    // type's real terminus now) or rejects it, which sends the order back
-    // to Shipped so the driver sees it again in the Driver Portal and
+    // type's real terminus now) or rejects it (-> Delivered - Waiting on
+    // BOL, below), so the driver sees it again in the Driver Portal and
     // re-uploads (bol_rejection_reason carries why, shown on their load
     // card). See ShippingController::approve()/reject().
     public const STATUS_DELIVERED = 'Delivered';
 
     public const STATUS_COMPLETED = 'Completed';
+
+    // Delivered, but the manager rejected the uploaded signed BOL
+    // (ShippingController::reject) — the goods did arrive, so this stays a
+    // delivered state rather than going back to Shipped (feedback #54). The
+    // driver sees it in the Driver Portal and re-uploads, which moves it
+    // back to Delivered for another review.
+    public const STATUS_DELIVERED_AWAITING_BOL = 'Delivered - Waiting on BOL';
+
+    // Terminal: filling completed with nothing actually picked (every line
+    // filled at 0, or approved at 0). Never goes to Shipping (feedback #53);
+    // its lines still carry qty_requested, so it feeds "requested but not
+    // fulfilled" reporting.
+    public const STATUS_CLOSED_UNFULFILLED = 'Closed - Unfulfilled';
 
     // Define the table associated with the model
     protected $table = 'orderdonations';

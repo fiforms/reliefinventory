@@ -23,7 +23,7 @@ import BarBreakdownCard from '@/Components/Dashboard/BarBreakdownCard.vue';
 import axios from 'axios';
 
 const DONATION_STAGE_LABELS = { Received: 'Received', Sorting: 'Sorting', Complete: 'Complete' };
-const ORDER_STAGE_LABELS = { 'New Order': 'New Order', Filling: 'Filling', Filled: 'Filled', Shipped: 'Shipped' };
+const ORDER_STAGE_LABELS = { 'New Order': 'New Order', Filling: 'Filling', Filled: 'Filled', Shipped: 'Shipped', 'Delivered - Waiting on BOL': 'Waiting on BOL' };
 
 export default {
 	components: { AuthenticatedLayout, Head, Link, PeriodStatCard, BarBreakdownCard },
