@@ -19,7 +19,21 @@ const RETRY_MS = 2000
 const { t } = useI18n()
 const router = useRouter()
 const noServer = ref(false)
+const waitingLocal = ref(false)
 let timer = null
+
+// A server on this very device (Settings > Local server, http://localhost:8080) takes a minute or two
+// to come up at boot, and Chromium shows an error page rather than retrying; wait for it here instead.
+// no-cors: the answer can't be read from another origin, but any answer at all proves it is listening.
+const isLocalServer = (url) => /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:\d+)?(\/|$)/i.test(url)
+async function localServerIsUp(url) {
+  try {
+    await fetch(new URL('/up', url), { mode: 'no-cors', cache: 'no-store', signal: AbortSignal.timeout(4000) })
+    return true
+  } catch {
+    return false
+  }
+}
 
 async function launch() {
   try {
@@ -29,10 +43,14 @@ async function launch() {
       return
     }
     if (status.server_url) {
-      window.location.replace(status.server_url + SITE_PATH)
-      return
+      waitingLocal.value = isLocalServer(status.server_url) && !(await localServerIsUp(status.server_url))
+      if (!waitingLocal.value) {
+        window.location.replace(status.server_url + SITE_PATH)
+        return
+      }
+    } else {
+      noServer.value = true
     }
-    noServer.value = true
   } catch {
     // the backend is still starting; try again
   }
@@ -47,6 +65,7 @@ onUnmounted(() => clearTimeout(timer))
   <main class="launcher">
     <h1>R Station</h1>
     <p v-if="noServer">{{ t('launcher.noServer') }} <router-link to="/settings">{{ t('launcher.settings') }}</router-link></p>
+    <p v-else-if="waitingLocal">{{ t('launcher.waitingLocal') }} <router-link to="/settings/local-server">{{ t('launcher.localSettings') }}</router-link></p>
     <p v-else>{{ t('launcher.opening') }}</p>
   </main>
 </template>

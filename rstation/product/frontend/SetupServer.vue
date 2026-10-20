@@ -73,6 +73,7 @@ const next = () => (status.value?.server_url_locked ? router.push(nextPath('serv
         >
       </label>
       <p class="hint">{{ t('setup.server.hint') }}</p>
+      <p class="hint">{{ t('setup.server.offlineHint') }}</p>
     </template>
 
     <p v-if="error" class="pill warn">{{ error }}</p>
