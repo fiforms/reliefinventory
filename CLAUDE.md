@@ -131,11 +131,13 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   stores a running total, so it can't drift. Core flow: goods are sorted into the sorting area, then a lead/forklift driver builds the W
   pallet as it leaves (`PalletStockController::fill`, Inventory Movement > Fill Pallet — items come from `/json/pallet-stock/staging`,
   the pick-up list), sealing it and setting its location in one step; a pallet can't take more than `PalletStock::unassigned()`
-  (on-hand minus everything on pallets). "Unassigned" == what's still in the sorting area (plus pre-feature stock). Picking can name the
-  pallet (`pallet_tag` on the fill POST — optional; sealed→open on first pick, →empty when its total hits 0; a count that goes negative
-  is accepted with a warning, never blocks a picker). A pick with no pallet named takes from the unassigned pool first, then the oldest
-  sealed/open pallets holding the item (one ledger row per source — the fill POST returns `records`), so unassigned only goes negative
-  on a true over-pick. The Inventory Report's item-type detail shows quantity by location (pallet's
+  (on-hand minus everything on pallets). "Unassigned" == what's still in the sorting area (plus pre-feature stock). Picking: a *sealed* pallet can never
+  be picked from until someone opens it (`POST /json/order-filling/pallets/{id}/open`); only `open` pallets are picked from. A fill with no
+  pallet named takes the unassigned pool first, then the oldest *open* pallets (split across them; one ledger row per source, the POST
+  returns `records`); if it's still short and *sealed* pallets hold the item it is refused (422, nothing written, `sealed_pallets` lists
+  what to open) rather than guessing; if no pallet holds it, it's accepted as a true over-pick with a warning (the only way unassigned goes
+  negative). A pallet empties automatically when its total hits 0. `OrderFilling.vue` shows each line's "Where it is" (pool + pallets with
+  status/location, Open pallet button on sealed ones, `GET /json/order-filling/stock/{itemtypeId}`). The Inventory Report's item-type detail shows quantity by location (pallet's
   *current* location) plus the unassigned remainder. This corrects the older "no item-level stock-by-location" note — but items *not*
   put on a pallet (or picked without naming one) still can't be located. Not built yet: an end-of-day "sorted but never moved" report
   (sorted today vs. assigned today), sorter→pallet tracking at sort time, a pick-from suggestion on the fill screen.

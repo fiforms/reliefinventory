@@ -200,6 +200,11 @@ class OrderFillingController extends Controller
             if (! $pallet || $pallet->kind !== PalletKind::WAREHOUSE) {
                 return response()->json(['errors' => ['pallet_tag' => ['Unknown Warehouse pallet tag.']]], 422);
             }
+            if ($pallet->status !== 'open') {
+                return response()->json(['errors' => ['pallet_tag' => [$pallet->status === 'sealed'
+                    ? "{$pallet->tag} is sealed — open it first, then pick from it."
+                    : "{$pallet->tag} is {$pallet->status} and can't be picked from."]]], 422);
+            }
         }
 
         $warning = null;
@@ -217,14 +222,27 @@ class OrderFillingController extends Controller
                 $overflow = $qty - max(0, PalletStock::unassigned($itemId));
                 if ($overflow > 0) {
                     $holding = PalletStock::quantities(null, [$itemId])->filter(fn ($r) => $r['qty'] > 0)->sortBy('pallet_id');
-                    $pallets = Pallet::whereIn('id', $holding->pluck('pallet_id'))->whereIn('status', ['sealed', 'open'])->get()->keyBy('id');
+                    $pallets = Pallet::with('location:id,code')->whereIn('id', $holding->pluck('pallet_id'))->get()->keyBy('id');
                     foreach ($holding as $row) {
-                        if ($overflow <= 0 || ! isset($pallets[$row['pallet_id']])) {
-                            continue;
+                        $candidate = $pallets[$row['pallet_id']] ?? null;
+                        if ($overflow <= 0 || ! $candidate || $candidate->status !== 'open') {
+                            continue; // only open pallets are drawn from, oldest first
                         }
                         $take = min($overflow, $row['qty']);
-                        $chunks[] = [$pallets[$row['pallet_id']], $take];
+                        $chunks[] = [$candidate, $take];
                         $overflow -= $take;
+                    }
+
+                    // Still short, but sealed pallets hold the item: the picker has to open one — never silently.
+                    $sealed = $holding->filter(fn ($r) => ($pallets[$r['pallet_id']] ?? null)?->status === 'sealed');
+                    if ($overflow > 0 && $sealed->isNotEmpty()) {
+                        abort(response()->json([
+                            'message' => "Only ".($qty - $overflow)." of {$qty} can come from the sorting area and open pallets. Open a sealed pallet to pick the other {$overflow}.",
+                            'sealed_pallets' => $sealed->map(fn ($r) => [
+                                'id' => $r['pallet_id'], 'tag' => $pallets[$r['pallet_id']]->tag,
+                                'location' => $pallets[$r['pallet_id']]->location?->code, 'qty' => $r['qty'],
+                            ])->values(),
+                        ], 422));
                     }
                 }
                 $fromPallets = array_sum(array_column($chunks, 1));
@@ -251,9 +269,6 @@ class OrderFillingController extends Controller
                     if ($pallet && PalletStock::quantities([$pallet->id], [$itemId])->sum('qty') < 0) {
                         $warning = "{$pallet->tag} was only recorded as holding ".(PalletStock::quantities([$pallet->id], [$itemId])->sum('qty') + $chunkQty).' of this item — check the count.';
                     }
-                    if ($chunkPallet->status === 'sealed') {
-                        $chunkPallet->transitionTo('open', null, 'Opened for picking');
-                    }
                     if (PalletStock::palletTotal($chunkPallet->id) <= 0 && $chunkPallet->status !== 'empty') {
                         $chunkPallet->transitionTo('empty', null, 'Picked clean');
                     }
@@ -272,6 +287,46 @@ class OrderFillingController extends Controller
             'records' => $fills,
             'warning' => $warning,
         ], 201);
+    }
+
+    /**
+     * Where an item type's stock is, for the picker: the sorting-area pool plus every warehouse pallet holding it,
+     * oldest first, with status and location — so a sealed pallet that has to be opened first is obvious.
+     */
+    public function stock($itemtypeId)
+    {
+        $items = Item::where('itemtype_id', $itemtypeId)->get(['id', 'description'])->keyBy('id');
+        $rows = PalletStock::quantities(null, $items->keys()->all())->filter(fn ($r) => $r['qty'] > 0)->sortBy('pallet_id');
+        $pallets = Pallet::with('location:id,code')->whereIn('id', $rows->pluck('pallet_id'))->get()->keyBy('id');
+
+        return response()->json([
+            'unassigned' => (int) $items->keys()->sum(fn ($id) => max(0, PalletStock::unassigned($id))),
+            'pallets' => $rows->map(fn ($r) => [
+                'id' => $r['pallet_id'],
+                'tag' => $pallets[$r['pallet_id']]->tag,
+                'status' => $pallets[$r['pallet_id']]->status,
+                'location' => $pallets[$r['pallet_id']]->location?->code,
+                'item_id' => $r['item_id'],
+                'item' => $items[$r['item_id']]->description,
+                'qty' => $r['qty'],
+            ])->values(),
+        ]);
+    }
+
+    /** Open a sealed warehouse pallet so it can be picked from. */
+    public function openPallet($id)
+    {
+        $pallet = Pallet::findOrFail($id);
+        if ($pallet->kind !== PalletKind::WAREHOUSE) {
+            return response()->json(['message' => 'Only Warehouse pallets are opened for picking.'], 422);
+        }
+        if ($pallet->status === 'sealed') {
+            $pallet->transitionTo('open', null, 'Opened for picking');
+        } elseif ($pallet->status !== 'open') {
+            return response()->json(['message' => "{$pallet->tag} is {$pallet->status} and can't be opened."], 422);
+        }
+
+        return response()->json(['record' => ['id' => $pallet->id, 'tag' => $pallet->tag, 'status' => $pallet->fresh()->status]]);
     }
 
     public function updateFill(Request $request, $id, $lineId, $fillId)

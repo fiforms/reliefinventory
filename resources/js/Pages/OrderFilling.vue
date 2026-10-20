@@ -76,6 +76,9 @@ export default {
 
 			// add-a-fill-record entry, per line (keyed by line id)
 			entryByLine: {},
+			// where each itemtype's stock is (sorting-area pool + warehouse pallets), keyed by itemtype id
+			palletStock: {},
+			openingPalletId: null,
 			showScanner: false,
 			scanningLineId: null,
 
@@ -180,6 +183,34 @@ export default {
 			this.seedApprovalDrafts();
 		},
 
+		// ---------- where to pick from ----------
+		async fetchPalletStock() {
+			const ids = [...new Set(this.pickableLines.map((l) => l.itemtype_id))];
+			await Promise.all(ids.map(async (id) => {
+				try {
+					this.palletStock[id] = (await axios.get('/json/order-filling/stock/' + id)).data;
+				} catch (error) {
+					this.palletStock[id] = null;
+				}
+			}));
+		},
+		async openPallet(pallet) {
+			this.openingPalletId = pallet.id;
+			this.fillError = null;
+			try {
+				await axios.post('/json/order-filling/pallets/' + pallet.id + '/open');
+				await this.fetchPalletStock();
+			} catch (error) {
+				this.fillError = error.response?.data?.message || 'Could not open that pallet.';
+			} finally {
+				this.openingPalletId = null;
+			}
+		},
+		usePallet(line, pallet) {
+			this.entryByLine[line.id].pallet_tag = pallet.tag;
+			this.$nextTick(() => this.$refs['qtyInput_' + line.id]?.[0]?.focus());
+		},
+
 		// ---------- allocation approval ----------
 		seedApprovalDrafts() {
 			const drafts = {};
@@ -271,7 +302,7 @@ export default {
 					this.entryByLine[line.id] = { item_id: null, item: null, qty: null, pallet_tag: '' };
 				});
 				this.view = 'fill';
-				await Promise.all([this.fetchStockHints(), this.fetchItems()]);
+				await Promise.all([this.fetchStockHints(), this.fetchItems(), this.fetchPalletStock()]);
 			} catch (error) {
 				this.listError = 'Could not open that order.';
 			}
@@ -339,10 +370,12 @@ export default {
 				if (response.data.warning) this.fillError = response.data.warning;
 				// on-hand is a ledger sum the fill just changed — refresh it
 				this.fetchStockHints();
+				this.fetchPalletStock();
 			} catch (error) {
 				this.fillError = error.response?.data?.message
 					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
 					|| 'Could not record that fill.';
+				this.fetchPalletStock();
 			}
 		},
 		async deleteFill(line, fill) {
@@ -533,11 +566,29 @@ export default {
 									type="text"
 									v-model="entryByLine[line.id].pallet_tag"
 									class="ri_forminput of_pallet"
-									placeholder="From pallet (optional)"
-									title="Scan the warehouse pallet this came from so its count stays right"
+									placeholder="From open pallet (optional)"
+									title="Leave blank to take from the sorting area, then the oldest open pallets. A sealed pallet must be opened first."
 									@keydown.enter.prevent="addFill(line)"
 								/>
 								<button @click="addFill(line)" class="ri_defaultbutton">Add</button>
+							</div>
+							<div v-if="palletStock[line.itemtype_id]" class="of_where">
+								<span class="of_where_title">Where it is:</span>
+								<span class="of_where_chip">Sorting area: {{ palletStock[line.itemtype_id].unassigned }}</span>
+								<span v-for="p in palletStock[line.itemtype_id].pallets" :key="p.id + '-' + p.item_id"
+									class="of_where_chip" :class="'of_pallet_' + p.status">
+									{{ p.tag }}<span v-if="p.location"> @ {{ p.location }}</span>: {{ p.qty }}
+									<template v-if="p.status === 'open'">
+										<strong>open</strong>
+										<button type="button" class="ri_linkbutton" @click="usePallet(line, p)">Pick from</button>
+									</template>
+									<template v-else-if="p.status === 'sealed'">
+										<strong>sealed</strong>
+										<button type="button" class="ri_formbutton" :disabled="openingPalletId === p.id" @click="openPallet(p)">Open pallet</button>
+									</template>
+									<template v-else><strong>{{ p.status }}</strong></template>
+								</span>
+								<span v-if="!palletStock[line.itemtype_id].pallets.length" class="of_hint">no pallets recorded for this item</span>
 							</div>
 							<ul v-if="(line.item_ledgers || []).length" class="of_filllist">
 								<li v-for="fill in line.item_ledgers" :key="fill.id">
@@ -649,6 +700,23 @@ export default {
 	align-items: center;
 	gap: 6px;
 	flex-wrap: wrap;
+}
+.of_where {
+	margin: 0.4em 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4em;
+	align-items: center;
+	font-size: 0.9em;
+}
+.of_where_chip {
+	border: 1px solid currentColor;
+	border-radius: 4px;
+	padding: 0.1em 0.5em;
+}
+.of_pallet_sealed {
+	opacity: 0.85;
+	border-style: dashed;
 }
 .of_pallet {
 	width: 11em;

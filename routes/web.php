@@ -489,6 +489,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::post('/order-filling/print-pick-sheets', [OrderFillingController::class, 'printPickSheets']);
     Route::put('/order-filling/allocations', [OrderFillingController::class, 'approveAllocation']);
     Route::patch('/order-filling/{id}/complete', [OrderFillingController::class, 'completeFilling']);
+    Route::get('/order-filling/stock/{itemtypeId}', [OrderFillingController::class, 'stock'])->whereNumber('itemtypeId');
+    Route::post('/order-filling/pallets/{id}/open', [OrderFillingController::class, 'openPallet'])->whereNumber('id');
     Route::post('/order-filling/{id}/lines/{lineId}/fills', [OrderFillingController::class, 'storeFill']);
     Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);
     Route::delete('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'destroyFill']);
