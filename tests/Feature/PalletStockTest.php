@@ -69,7 +69,9 @@ test('a sealed pallet must be opened before it can be picked from; then it draws
 
     $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $item->id, 'qty' => 25, 'pallet_tag' => $pallet->tag])
         ->assertStatus(422)->assertJsonPath('errors.pallet_tag.0', fn ($m) => str_contains($m, 'open it first'));
-    $this->getJson("/json/order-filling/stock/{$item->itemtype_id}")->assertJsonPath('pallets.0.status', 'sealed')->assertJsonPath('unassigned', 40);
+    $plan = $this->getJson("/json/order-filling/{$order->id}/plan")->assertOk()->json('lines.'.$line->id);
+    expect(collect($plan['steps'])->pluck('qty', 'kind')->all())->toBe(['pool' => 40, 'pallet' => 20]); // pool of 40 first, then 20 of the sealed 60 (opened first)
+    expect(collect($plan['steps'])->firstWhere('kind', 'pallet')['needs_open'])->toBeTrue();
 
     $this->postJson("/json/order-filling/pallets/{$pallet->id}/open")->assertOk()->assertJsonPath('record.status', 'open');
     $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $item->id, 'qty' => 25, 'pallet_tag' => $pallet->tag])->assertCreated();
@@ -137,4 +139,34 @@ test('with the pool and one open pallet short, pick the pool first then split to
 
     $res = $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $item->id, 'qty' => 7])->assertCreated();
     expect(collect($res->json('records'))->pluck('qty_subtracted', 'stock_pallet_id')->all())->toBe(['' => 3, $pallet->id => 4]);
+});
+
+test('a sealed pallet can leave whole without being opened first, but only whole', function () {
+    $item = stockItem(80);
+    $pallet = Pallet::find($this->postJson('/json/pallet-stock/fill', ['lines' => [['item_id' => $item->id, 'qty' => 80]]])->json('record.id'));
+    $order = Transaction::create([
+        'type' => 'order', 'person_id' => Person::create(['first_name' => 'Pat', 'last_name' => 'Rivera'])->id,
+        'person_id_user' => User::factory()->create()->id, 'status_id' => Transaction::statusId(Transaction::STATUS_FILLING),
+        'order_date' => now()->toDateString(),
+    ]);
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $item->itemtype_id, 'qty_requested' => 80]);
+    $url = "/json/order-filling/{$order->id}/lines/{$line->id}/fills";
+
+    $this->postJson($url, ['item_id' => $item->id, 'qty' => 79, 'pallet_tag' => $pallet->tag])->assertStatus(422);
+    $this->postJson($url, ['item_id' => $item->id, 'qty' => 80, 'pallet_tag' => $pallet->tag])->assertCreated();
+    expect($pallet->fresh()->status)->toBe('empty');
+    expect($pallet->statuses()->pluck('status')->all())->toBe(['sealed', 'open', 'empty']);
+});
+
+test('saving the pick path renumbers locations in the given order and keeps unlisted ones after', function () {
+    $this->actingAs(userWithPermissions('manage-locations', 'general-access'));
+    $a = rack('A-1');
+    $b = rack('B-1');
+    $c = rack('C-1');
+
+    $this->putJson('/json/locations/order', ['ids' => [$c->id, $a->id]])->assertOk();
+
+    expect(Location::orderBy('PullSequence')->pluck('code')->all())->toBe(['C-1', 'A-1', 'B-1'])
+        ->and($c->fresh()->PullSequence)->toBe(10)->and($b->fresh()->PullSequence)->toBe(30);
+    $this->getJson('/json/locations')->assertJsonPath('records.0.code', 'C-1');
 });

@@ -140,7 +140,15 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   status/location, Open pallet button on sealed ones, `GET /json/order-filling/stock/{itemtypeId}`). The Inventory Report's item-type detail shows quantity by location (pallet's
   *current* location) plus the unassigned remainder. This corrects the older "no item-level stock-by-location" note — but items *not*
   put on a pallet (or picked without naming one) still can't be located. Not built yet: an end-of-day "sorted but never moved" report
-  (sorted today vs. assigned today), sorter→pallet tracking at sort time, a pick-from suggestion on the fill screen.
+  (sorted today vs. assigned today), sorter→pallet tracking at sort time.
+  **Pick path & pick plan:** the admin orders all locations once at `/setup/locations/pick-path` (`PickPath.vue`, drag-and-drop +
+  "auto-order by aisle, snaking"; saves `locations.PullSequence` as 10,20,30… via `PUT /json/locations/order`). `App\Services\PickPlanner`
+  turns a line's need into steps — sorting-area pool, then WHOLE sealed pallets (oldest first, while the need ≥ the pallet's qty, so
+  they ship intact), then open pallets oldest first, then the oldest sealed pallet opened for the last of it — to minimise broken
+  pallets in a shipment; steps/lines come back in pick-path order. `GET /json/order-filling/{id}/plan` feeds `OrderFilling.vue` (lines
+  sorted along the path, a "Pick:" row per line with Use / Open pallet), and `pickSheetsBuilder` plans the whole print batch together
+  (`planMany`, reserving as it goes) and prints Where per line. A named sealed pallet may be picked only if the pick takes the whole
+  pallet (recorded sealed→open→empty); partial picks need it opened first. Plans are advisory — nothing is reserved between calls.
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
   unit that donation sorting scans to establish provenance. `container_type` widened over time to
   `pallet|gaylord|box|bag|tote` — a non-palletized arrival still gets a printable, trackable label.

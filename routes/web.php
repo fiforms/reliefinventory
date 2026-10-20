@@ -191,6 +191,11 @@ Route::get('/setup/categories', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/categories')]);
 })->middleware(['auth', 'permission:manage-categories']);
 
+Route::get('/setup/locations/pick-path', function () {
+    return Inertia::render('PickPath',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations/pick-path')]);
+})->middleware(['auth', 'permission:manage-locations']);
+
 Route::get('/setup/locations', function () {
     return Inertia::render('LocationEntry',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations')]);
@@ -489,7 +494,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::post('/order-filling/print-pick-sheets', [OrderFillingController::class, 'printPickSheets']);
     Route::put('/order-filling/allocations', [OrderFillingController::class, 'approveAllocation']);
     Route::patch('/order-filling/{id}/complete', [OrderFillingController::class, 'completeFilling']);
-    Route::get('/order-filling/stock/{itemtypeId}', [OrderFillingController::class, 'stock'])->whereNumber('itemtypeId');
+    Route::get('/order-filling/{id}/plan', [OrderFillingController::class, 'plan'])->whereNumber('id');
     Route::post('/order-filling/pallets/{id}/open', [OrderFillingController::class, 'openPallet'])->whereNumber('id');
     Route::post('/order-filling/{id}/lines/{lineId}/fills', [OrderFillingController::class, 'storeFill']);
     Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);
@@ -542,6 +547,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ca
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-locations']], function () {
     Route::get('/locations', [LocationController::class, 'index']);
+    Route::put('/locations/order', [LocationController::class, 'reorder']);
     Route::post('/locations', [LocationController::class, 'store']);
     Route::put('/locations/{id}', [LocationController::class, 'update']);
     Route::delete('/locations/{id}', [LocationController::class, 'destroy']);
