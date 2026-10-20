@@ -153,40 +153,42 @@
         </div>
     </div>
 
-    <div class="section">
-        <h2>Orders by County</h2>
-        @if(count($data['county_breakdown']))
-            <table>
-                <thead><tr><th>County</th><th class="num">Orders</th></tr></thead>
-                <tbody>
-                    @foreach($data['county_breakdown'] as $row)
-                        <tr><td>{{ $row['county'] }}</td><td class="num">{{ $row['count'] }}</td></tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @else
-            <p>No orders placed yet.</p>
-        @endif
-    </div>
-
     @php
         $zipShown = count($data['zip_breakdown']['rows']);
         $zipTotal = $data['zip_breakdown']['zip_count'];
     @endphp
-    <div class="section">
-        <h2>Orders by Zip @if($zipShown < $zipTotal)(top {{ $zipShown }} of {{ $zipTotal }})@endif</h2>
-        @if($zipShown)
-            <table>
-                <thead><tr><th>Zip</th><th class="num">Orders</th></tr></thead>
-                <tbody>
-                    @foreach($data['zip_breakdown']['rows'] as $row)
-                        <tr><td>{{ $row['zip'] }}</td><td class="num">{{ $row['count'] }}</td></tr>
-                    @endforeach
-                </tbody>
-            </table>
-        @else
-            <p>No orders placed yet.</p>
-        @endif
+    {{-- County and zip side by side so the report stays on one page. --}}
+    <div class="stat_grid">
+        <div class="section stat_col">
+            <h2>Orders by County</h2>
+            @if(count($data['county_breakdown']))
+                <table>
+                    <thead><tr><th>County</th><th class="num">Orders</th></tr></thead>
+                    <tbody>
+                        @foreach($data['county_breakdown'] as $row)
+                            <tr><td>{{ $row['county'] }}</td><td class="num">{{ $row['count'] }}</td></tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            @else
+                <p>No orders placed yet.</p>
+            @endif
+        </div>
+        <div class="section stat_col">
+            <h2>Orders by Zip @if($zipShown < $zipTotal)(top {{ $zipShown }} of {{ $zipTotal }})@endif</h2>
+            @if($zipShown)
+                <table>
+                    <thead><tr><th>Zip</th><th class="num">Orders</th></tr></thead>
+                    <tbody>
+                        @foreach($data['zip_breakdown']['rows'] as $row)
+                            <tr><td>{{ $row['zip'] }}</td><td class="num">{{ $row['count'] }}</td></tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            @else
+                <p>No orders placed yet.</p>
+            @endif
+        </div>
     </div>
 
     <div class="section">
