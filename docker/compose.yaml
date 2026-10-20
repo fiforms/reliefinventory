@@ -59,6 +59,13 @@ x-settings: &settings
   # MAIL_FROM_ADDRESS: relief-inventory@example.com
   # FEEDBACK_NOTIFY_EMAIL: developer@example.com
 
+  # Slow-query log: the app records every database query slower than this many
+  # milliseconds (with the page that ran it) and MariaDB keeps its own slow log
+  # (see the `db` service). View both at Setup > Testing Tools, or:
+  #   docker compose exec app php artisan slowlog:show
+  # Set to 0 to turn the app-side recording off.
+  RI_SLOW_QUERY_MS: 250
+
   # Credit line on the welcome page.
   # HOSTED_BY: Example Relief Org
   # HOSTED_LINK: https://example.org
@@ -124,6 +131,9 @@ services:
   db:
     image: mariadb:11
     restart: unless-stopped
+    # MariaDB's own slow-query log, written to the mysql.slow_log table (the app reads it for
+    # Setup > Testing Tools; the scheduler empties it when it gets big). 0.25 s matches RI_SLOW_QUERY_MS above.
+    command: ["--slow-query-log=1", "--long-query-time=0.25", "--log-output=TABLE"]
     environment:
       MARIADB_DATABASE: reliefinventory
       MARIADB_USER: reliefinventory

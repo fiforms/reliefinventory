@@ -116,6 +116,22 @@ Everything works without it (browsers and print servers poll). To enable Laravel
 each means), start with `docker compose --profile realtime up -d`, and make your reverse proxy forward WebSocket
 traffic to the `reverb` service (host port 8081). **Not yet tested in the container** — verify before relying on it.
 
+## Testing with realistic data, and finding slow screens
+
+To test the screens, reports and performance before you have real data, pick **Simulate a year of activity** in the
+setup wizard (or, on an instance that is still empty, **Setup > Testing Tools > Start simulation**, or
+`docker compose exec app php artisan simulate:warehouse`). It fills the instance with about a year of fictional
+donations, sorting, requests and shipments (~1,200 requests, ~12,000 inventory movements, about a minute). It refuses to
+run once the instance has any data, and simulated data can't be removed from the app — to start clean, remove the
+volumes (`docker compose down -v`; this deletes everything). See `scripts/SIMULATOR.md`.
+
+The stack also records what is slow. `RI_SLOW_QUERY_MS: 250` in the settings block makes the app log every database
+query slower than that, and every page/endpoint that is slow, runs 60+ queries or sends 1 MB+; MariaDB's own slow log
+(`--slow-query-log`, 0.25 s) is switched on in the `db` service and the app is granted read access to it at start-up.
+Read both at **Setup > Testing Tools**, or `docker compose exec app php artisan slowlog:show` (`--requests` for whole
+pages, `--recent` for newest first). The scheduler empties MariaDB's table when it passes 20,000 rows; the app's own log
+is two files of at most 5 MB. Set `RI_SLOW_QUERY_MS: 0` to turn the app-side recording off.
+
 ## Not available in the container
 
 The **System Administration** panel's *Install Update* and *Backup Now* buttons drive systemd on a bare-metal
