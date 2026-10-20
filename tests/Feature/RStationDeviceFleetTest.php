@@ -344,3 +344,48 @@ test('another instance\'s device can ask this catalogue directly, without a toke
     $this->postJson('/api/devices/update-check', ['channel' => 'stable'])->assertStatus(422);
     $this->postJson('/api/devices/update-check', ['architecture' => 'aarch64', 'channel' => 'bogus'])->assertStatus(422);
 });
+
+test('images and the print client are download-only, for anyone who can pair devices', function () {
+    Storage::fake('local');
+    $uploader = userWithPermissions('manage-firmware');
+    $pairer = userWithPermissions('manage-devices');
+    $nobody = userWithPermissions('general-access');
+
+    $upload = fn ($meta, $name = 'file.bin') => $this->actingAs($uploader)->postJson('/json/device-releases', [
+        'file' => UploadedFile::fake()->createWithContent($name, 'payload'), 'version' => '1.0.0',
+    ] + $meta);
+
+    $vm = $upload(['kind' => 'os', 'architecture' => 'x86_64', 'release_type' => 'vm_image'], 'ri.img.xz')->assertCreated()->json('record');
+    $sd = $upload(['kind' => 'os', 'architecture' => 'aarch64', 'release_type' => 'disk_image'], 'ri-pi.img.xz')->assertCreated()->json('record');
+    $pc = $upload(['kind' => 'print_client', 'architecture' => 'macos-arm64', 'release_type' => 'full'], 'ri-print.dmg')->assertCreated()->json('record');
+
+    // Unknown platforms, non-full print clients and images outside the OS kind are refused.
+    $upload(['kind' => 'print_client', 'architecture' => 'beos', 'release_type' => 'full'])->assertStatus(422);
+    $upload(['kind' => 'print_client', 'architecture' => 'windows', 'release_type' => 'hotfix', 'required_base_version' => '1'])->assertStatus(422);
+    $upload(['kind' => 'app', 'architecture' => 'aarch64', 'release_type' => 'vm_image'])->assertStatus(422);
+
+    $this->actingAs($pairer)->getJson('/json/device-downloads')->assertOk()->assertJsonCount(3, 'records');
+    foreach ([$vm, $sd, $pc] as $record) {
+        $this->actingAs($pairer)->get($record['download_url'])->assertOk();
+        $this->actingAs($nobody)->get($record['download_url'])->assertForbidden();
+        $this->actingAs($pairer)->get('/api/devices/artifacts/'.DeviceRelease::find($record['id'])->download_token.'/'.$record['filename'])->assertNotFound();
+    }
+    $this->actingAs($nobody)->getJson('/json/device-downloads')->assertForbidden();
+});
+
+test('a new image or print client upload expires the older one for the same platform only', function () {
+    Storage::fake('local');
+    $uploader = userWithPermissions('manage-firmware');
+    $upload = fn ($meta, $version) => $this->actingAs($uploader)->postJson('/json/device-releases', [
+        'file' => UploadedFile::fake()->createWithContent('f-'.$version.'.bin', 'payload'), 'version' => $version,
+    ] + $meta)->assertCreated()->json('record');
+
+    $win1 = $upload(['kind' => 'print_client', 'architecture' => 'windows', 'release_type' => 'full'], '1.0');
+    $mac = $upload(['kind' => 'print_client', 'architecture' => 'macos-x64', 'release_type' => 'full'], '1.0');
+    $vm = $upload(['kind' => 'os', 'architecture' => 'x86_64', 'release_type' => 'vm_image'], '1.0');
+    $win2 = $upload(['kind' => 'print_client', 'architecture' => 'windows', 'release_type' => 'full'], '1.1');
+    $vm2 = $upload(['kind' => 'os', 'architecture' => 'x86_64', 'release_type' => 'vm_image'], '1.1');
+
+    expect(DeviceRelease::pluck('id')->all())->toEqualCanonicalizing([$mac['id'], $win2['id'], $vm2['id']]);
+    expect(Storage::disk('local')->directories('device-releases'))->toHaveCount(3); // the old files went too
+});

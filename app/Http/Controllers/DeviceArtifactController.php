@@ -20,6 +20,7 @@ class DeviceArtifactController extends Controller
     public function download(string $token, string $filename)
     {
         $release = DeviceRelease::where('download_token', $token)->firstOrFail();
+        abort_if($release->isDownloadOnly(), 404); // people-only files: see DeviceDownloadController
         abort_unless(Storage::disk('local')->exists($release->storage_path), 404);
 
         return response()->file(Storage::disk('local')->path($release->storage_path), [

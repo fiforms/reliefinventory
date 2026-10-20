@@ -83,7 +83,7 @@ class DeviceReleaseResolver
     /**
      * Tag a release onto a channel, evicting the sibling in the same slot:
      * (kind, architecture, channel) for full, plus one slot per
-     * required_base_version for hotfixes. disk_image is never offered over
+     * required_base_version for hotfixes. disk_image and vm_image are never offered over
      * the heartbeat but is tagged the same way, one per slot.
      */
     public function tag(DeviceRelease $release, string $channel): void

@@ -25,7 +25,10 @@ class DeviceReleaseController extends Controller
 {
     public function index()
     {
-        return response()->json(['records' => DeviceRelease::orderByDesc('created_at')->get()]);
+        return response()->json([
+            'records' => DeviceRelease::orderByDesc('created_at')->get(),
+            'platforms' => DeviceRelease::PRINT_CLIENT_PLATFORMS,
+        ]);
     }
 
     /** Where this instance's R Stations look for firmware: null = its own releases (below). */
@@ -50,10 +53,10 @@ class DeviceReleaseController extends Controller
     private function metadataRules(): array
     {
         return [
-            'kind' => ['required', Rule::in(['app', 'os'])],
+            'kind' => ['required', Rule::in(['app', 'os', 'print_client'])],
             'version' => 'required|string|max:255',
             'architecture' => 'required|string|max:255',
-            'release_type' => ['required', Rule::in(['full', 'hotfix', 'disk_image'])],
+            'release_type' => ['required', Rule::in(['full', 'hotfix', 'disk_image', 'vm_image'])],
             'required_base_version' => 'required_if:release_type,hotfix|nullable|string|max:255',
             'notes' => 'nullable|string',
         ];
@@ -61,8 +64,20 @@ class DeviceReleaseController extends Controller
 
     private function appReleasesMustBeFull(array $data): ?JsonResponse
     {
-        if ($data['kind'] === 'app' && $data['release_type'] !== 'full') {
-            return response()->json(['message' => 'App releases are always full.', 'errors' => ['release_type' => ['App releases are always full.']]], 422);
+        if (in_array($data['kind'], ['app', 'print_client'], true) && $data['release_type'] !== 'full') {
+            $message = $data['kind'] === 'app' ? 'App releases are always full.' : 'Print client releases are always full.';
+
+            return response()->json(['message' => $message, 'errors' => ['release_type' => [$message]]], 422);
+        }
+        if ($data['kind'] === 'print_client' && ! isset(DeviceRelease::PRINT_CLIENT_PLATFORMS[$data['architecture']])) {
+            $message = 'Pick one of: '.implode(', ', array_keys(DeviceRelease::PRINT_CLIENT_PLATFORMS)).'.';
+
+            return response()->json(['message' => $message, 'errors' => ['architecture' => [$message]]], 422);
+        }
+        if (in_array($data['release_type'], DeviceRelease::IMAGE_TYPES, true) && $data['kind'] !== 'os') {
+            $message = 'Disk and virtual machine images belong under the OS kind.';
+
+            return response()->json(['message' => $message, 'errors' => ['kind' => [$message]]], 422);
         }
 
         return null;
@@ -76,7 +91,7 @@ class DeviceReleaseController extends Controller
     /** Records a release whose bytes are already on the local disk at $path. */
     private function createRelease(array $data, string $path, string $token, string $filename, int $size): DeviceRelease
     {
-        return DeviceRelease::create([
+        $release = DeviceRelease::create([
             'kind' => $data['kind'],
             'version' => $data['version'],
             'architecture' => $data['architecture'],
@@ -91,6 +106,32 @@ class DeviceReleaseController extends Controller
             'channels' => [],
             'uploaded_by' => Auth::id(),
         ]);
+
+        $this->expireSupersededDownloads($release);
+
+        return $release;
+    }
+
+    /**
+     * Download-only files keep just the latest upload per platform: a new print client replaces the
+     * older one for the same platform, a new SD card / VM image the older one of the same type and
+     * architecture. The superseded rows and their files are deleted (there is no channel to protect).
+     */
+    private function expireSupersededDownloads(DeviceRelease $release): void
+    {
+        if (! $release->isDownloadOnly()) {
+            return;
+        }
+
+        DeviceRelease::where('kind', $release->kind)
+            ->where('release_type', $release->release_type)
+            ->where('architecture', $release->architecture)
+            ->where('id', '!=', $release->id)
+            ->get()
+            ->each(function (DeviceRelease $old) {
+                Storage::disk('local')->deleteDirectory(dirname($old->storage_path));
+                $old->delete();
+            });
     }
 
     /** One-shot upload — fine for small files; large firmware goes through the chunked endpoints below. */

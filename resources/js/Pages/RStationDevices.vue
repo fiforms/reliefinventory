@@ -43,12 +43,17 @@ const channels = ref([]);
 const media = ref([]);
 const locations = ref([]);
 const savingId = ref(null);
+const downloads = ref([]);
+const platforms = ref({});
 
 async function fetchAll() {
-	const [d, l] = await Promise.all([
+	const [d, l, dl] = await Promise.all([
 		axios.get('/json/managed-devices'),
 		axios.get('/json/kiosk-locations'),
+		axios.get('/json/device-downloads'),
 	]);
+	downloads.value = dl.data.records;
+	platforms.value = dl.data.platforms;
 	devices.value = d.data.records;
 	functions.value = d.data.functions;
 	channels.value = d.data.channels;
@@ -59,6 +64,21 @@ async function fetchAll() {
 
 function fail(e, fallback) {
 	error.value = e.response?.data?.message || fallback;
+}
+
+// ---- Downloads (images + print client; uploaded on the Firmware page) ----
+const imageDownloads = computed(() => downloads.value.filter((r) => r.kind !== 'print_client'));
+const printClientDownloads = computed(() => downloads.value.filter((r) => r.kind === 'print_client'));
+
+function downloadLabel(release) {
+	return release.kind === 'print_client'
+		? platforms.value[release.architecture] || release.architecture
+		: release.release_type === 'vm_image' ? 'Virtual Machine Image' : 'Raspberry Pi SD Card Image';
+}
+
+function formatSize(bytes) {
+	if (bytes > 1073741824) return `${(bytes / 1073741824).toFixed(2)} GB`;
+	return bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
 }
 
 // ---- Pairing ----
@@ -211,6 +231,32 @@ onMounted(fetchAll);
 					<span class="text-3xl font-mono tracking-widest">{{ pairingCode.code }}</span>
 					<span class="ml-3 text-sm text-gray-600">Enter this on the device's (or print server's) setup screen. Single use; expires {{ new Date(pairingCode.expires_at).toLocaleTimeString() }}.</span>
 				</div>
+			</section>
+
+			<!-- Downloads -->
+			<section class="bg-white shadow rounded-lg p-6 space-y-3">
+				<h2 class="text-lg font-semibold">Downloads</h2>
+				<p v-if="!downloads.length" class="text-sm text-gray-400">Nothing has been uploaded for download yet.</p>
+				<template v-if="imageDownloads.length">
+					<h3 class="font-medium text-sm">Images</h3>
+					<ul class="text-sm space-y-1">
+						<li v-for="r in imageDownloads" :key="r.id">
+							<a :href="r.download_url" class="underline text-blue-700">{{ downloadLabel(r) }} {{ r.version }}</a>
+							<span class="text-gray-500"> — {{ r.architecture }}, {{ formatSize(r.size_bytes) }}</span>
+							<span v-if="r.notes" class="text-gray-500"> — {{ r.notes }}</span>
+						</li>
+					</ul>
+				</template>
+				<template v-if="printClientDownloads.length">
+					<h3 class="font-medium text-sm pt-1">RI Print Client</h3>
+					<ul class="text-sm space-y-1">
+						<li v-for="r in printClientDownloads" :key="r.id">
+							<a :href="r.download_url" class="underline text-blue-700">{{ downloadLabel(r) }} {{ r.version }}</a>
+							<span class="text-gray-500"> — {{ formatSize(r.size_bytes) }}</span>
+							<span v-if="r.notes" class="text-gray-500"> — {{ r.notes }}</span>
+						</li>
+					</ul>
+				</template>
 			</section>
 
 			<!-- Devices -->

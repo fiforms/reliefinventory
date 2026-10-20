@@ -913,6 +913,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-de
     Route::delete('/managed-devices/{managedDevice}', [ManagedDeviceController::class, 'destroy']);
     Route::post('/device-pairing-codes', [ManagedDeviceController::class, 'createPairingCode']);
 
+    // Images and the print client: for anyone who can pair a device (uploaded under manage-firmware).
+    Route::get('/device-downloads', [DeviceDownloadController::class, 'index']);
+    Route::get('/device-downloads/{deviceRelease}/{filename}', [DeviceDownloadController::class, 'download']);
+
     // Typing the print queues a print server reports (see PrinterAdminController).
     Route::get('/printer-overview', [PrinterAdminController::class, 'overview']);
     Route::post('/printers/reorder', [PrinterAdminController::class, 'reorder']);

@@ -17,7 +17,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import axios from 'axios';
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref, watch } from 'vue';
 
 defineProps({
 	breadcrumb: {
@@ -30,10 +30,12 @@ const CHANNELS = ['stable', 'testing', 'developer'];
 const error = ref('');
 const notice = ref('');
 const releases = ref([]);
+const platforms = ref({});
 
 async function fetchAll() {
 	const [r, s] = await Promise.all([axios.get('/json/device-releases'), axios.get('/json/firmware-source')]);
 	releases.value = r.data.records;
+	platforms.value = r.data.platforms || {};
 	sourceUrl.value = s.data.source_url || '';
 	savedSource.value = s.data.source_url || '';
 }
@@ -87,6 +89,22 @@ async function deleteRelease(release) {
 	}
 }
 
+const IMAGE_LABELS = { disk_image: 'Raspberry Pi SD Card Image', vm_image: 'Virtual Machine Image' };
+
+// Images and the print client are downloaded by people (anyone who can pair a device), never
+// offered to devices — so they have no update channels.
+const isDownloadOnly = (release) => release.kind === 'print_client' || release.release_type in IMAGE_LABELS;
+
+function releaseLabel(release) {
+	if (release.kind === 'print_client') return 'RI Print Client';
+	return IMAGE_LABELS[release.release_type] || release.kind;
+}
+
+function releaseDetail(release) {
+	const platform = release.kind === 'print_client' ? platforms.value[release.architecture] || release.architecture : release.architecture;
+	return IMAGE_LABELS[release.release_type] || release.kind === 'print_client' ? platform : `${release.release_type}, ${platform}`;
+}
+
 function formatSize(bytes) {
 	if (bytes > 1073741824) return `${(bytes / 1073741824).toFixed(2)} GB`;
 	return bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
@@ -99,6 +117,17 @@ function formatSize(bytes) {
 // connection or a double-sent chunk can never corrupt the file. A failed upload keeps its
 // server-side progress and can be resumed with the same file.
 const upload = reactive({ kind: 'app', version: '', architecture: 'aarch64', release_type: 'full', required_base_version: '', notes: '' });
+// The print client has no type choices (always full) and picks a platform instead of typing an architecture.
+watch(() => upload.kind, (kind) => {
+	if (kind === 'print_client') {
+		upload.release_type = 'full';
+		upload.architecture = 'windows';
+	} else if (upload.architecture in platforms.value) {
+		upload.architecture = 'aarch64';
+	}
+	if (kind === 'app') upload.release_type = 'full';
+});
+
 const uploadFile = ref(null);
 const fileInput = ref(null);
 const task = reactive({ id: null, chunkSize: 0, received: 0, size: 0, running: false, cancelled: false, failed: false, file: null });
@@ -242,13 +271,16 @@ onMounted(fetchAll);
 					<tbody>
 						<tr v-for="release in releases" :key="release.id" class="border-t">
 							<td class="py-2">
-								<div><strong>{{ release.kind }}</strong> {{ release.version }}
-									<span class="text-gray-500">({{ release.release_type }}, {{ release.architecture }}, {{ formatSize(release.size_bytes) }})</span>
+								<div><strong>{{ releaseLabel(release) }}</strong> {{ release.version }}
+									<span class="text-gray-500">({{ releaseDetail(release) }}, {{ formatSize(release.size_bytes) }})</span>
 								</div>
 								<div v-if="release.required_base_version" class="text-xs text-gray-500">applies on top of {{ release.required_base_version }}</div>
 								<div class="text-xs text-gray-400">{{ release.filename }}</div>
 							</td>
-							<td>
+							<td v-if="isDownloadOnly(release)" class="text-gray-500">
+								Download only — available to anyone who can pair devices
+							</td>
+							<td v-else>
 								<label v-for="c in CHANNELS" :key="c" class="mr-3 whitespace-nowrap">
 									<input type="checkbox" :checked="release.channels?.includes(c)" @change="toggleTag(release, c)" class="rounded border-gray-300" />
 									{{ c }}
@@ -269,14 +301,16 @@ onMounted(fetchAll);
 						<select v-model="upload.kind" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
 							<option value="app">App (.tar.gz)</option>
 							<option value="os">OS bundle (.raucb)</option>
+							<option value="print_client">RI Print Client (installer)</option>
 						</select>
 					</label>
 					<label class="block">
 						<span class="text-gray-700">Type</span>
-						<select v-model="upload.release_type" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+						<select v-model="upload.release_type" :disabled="upload.kind === 'print_client'" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
 							<option value="full">Full</option>
 							<option v-if="upload.kind === 'os'" value="hotfix">Hotfix (small, on top of one base version)</option>
-							<option v-if="upload.kind === 'os'" value="disk_image">Disk image (SD card re-flash; never auto-offered)</option>
+							<option v-if="upload.kind === 'os'" value="disk_image">Raspberry Pi SD Card Image (SD card re-flash; never auto-offered)</option>
+							<option v-if="upload.kind === 'os'" value="vm_image">Virtual Machine Image (.img.xz; never auto-offered)</option>
 						</select>
 					</label>
 					<label class="block">
@@ -284,8 +318,11 @@ onMounted(fetchAll);
 						<input type="text" v-model="upload.version" placeholder="e.g. 0.4.0_0.1.1" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
 					</label>
 					<label class="block">
-						<span class="text-gray-700">Architecture</span>
-						<input type="text" v-model="upload.architecture" placeholder="aarch64" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+						<span class="text-gray-700">{{ upload.kind === 'print_client' ? 'Platform' : 'Architecture' }}</span>
+						<select v-if="upload.kind === 'print_client'" v-model="upload.architecture" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+							<option v-for="(label, key) in platforms" :key="key" :value="key">{{ label }}</option>
+						</select>
+						<input v-else type="text" v-model="upload.architecture" placeholder="aarch64" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
 					</label>
 					<label v-if="upload.release_type === 'hotfix'" class="block sm:col-span-2">
 						<span class="text-gray-700">Required base version (exact)</span>
@@ -323,7 +360,9 @@ onMounted(fetchAll);
 				<p class="text-xs text-gray-500">
 					Large files are sent in small pieces, so there is no practical size limit and a dropped connection resumes
 					where it stopped (keep this page open while it uploads). A newly uploaded release is offered to no one
-					until you tick a channel. Ticking a channel replaces whatever release held that slot there (one full
+					until you tick a channel (Raspberry Pi SD card images, virtual machine images and the print client never
+					go to devices; anyone who can pair a device downloads them from the Devices page, and only the latest upload
+					per platform or image type is kept — uploading a new one deletes the older one). Ticking a channel replaces whatever release held that slot there (one full
 					release per kind and architecture, one hotfix per base version). Devices are only ever offered newer
 					versions, never downgrades.
 				</p>
