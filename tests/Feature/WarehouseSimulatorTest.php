@@ -195,3 +195,13 @@ test('a detached run that is refused at the door says why instead of staying at 
     $status = app(SimulationRun::class)->status();
     expect($status['state'])->toBe('failed')->and($status['error'])->toContain('drivers');
 });
+
+test('the detached run is started with the configured php binary, not the web server binary', function () {
+    // Under FrankenPHP (the Docker image) PHP_BINARY is `frankenphp`, which can't run artisan.
+    config(['backup.php_binary' => '/usr/local/bin/php-cli-test']);
+    Process::fake();
+
+    expect(app(App\Services\Simulator\SimulationRun::class)->start(30, 50, 1, 0))->toBeTrue();
+
+    Process::assertRan(fn ($p) => str_contains($p->command, "'/usr/local/bin/php-cli-test' artisan simulate:warehouse") && ! str_contains($p->command, PHP_BINARY.' artisan'));
+});

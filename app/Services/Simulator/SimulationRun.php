@@ -57,7 +57,7 @@ class SimulationRun
 
         $this->write(['state' => 'running', 'day' => 0, 'total' => $days, 'message' => 'Starting…', 'started_at' => now()->toIso8601String(), 'pid' => null]);
 
-        $php = escapeshellarg(PHP_BINARY);
+        $php = escapeshellarg(config('backup.php_binary')); // not PHP_BINARY: under FrankenPHP that is the frankenphp server binary
         $log = escapeshellarg(storage_path('logs/simulator.log'));
         $args = "--yes --days={$days} --orders={$orders} --errors={$errors}".($seed !== null ? " --seed={$seed}" : '');
         Process::path(base_path())->run("setsid -f {$php} artisan simulate:warehouse {$args} >> {$log} 2>&1 < /dev/null");
