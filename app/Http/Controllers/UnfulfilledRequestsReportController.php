@@ -77,7 +77,7 @@ class UnfulfilledRequestsReportController extends Controller
     {
         $report = $this->buildReport($this->filters($request));
 
-        $csv = Writer::createFromString('');
+        $csv = Writer::fromString('');
         $csv->insertOne(['Item #', 'Item', 'Category', 'Unit', 'County', 'Zip', 'Requests', 'Qty Requested',
             'Qty Filled', 'Qty Not Filled', 'Cut at Allocation', 'Short at Picking']);
         foreach ($report['items'] as $item) {

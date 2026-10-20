@@ -6,6 +6,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class MenuItem extends Model
 {
@@ -42,12 +43,14 @@ class MenuItem extends Model
         // one-time query-driven behavior the tile's own link carries.
         $menuItem = self::whereRaw("SUBSTRING_INDEX(link_url, '?', 1) = ?", [$url])->first();
 
+        // A page can exist without a menu entry (reachable by URL only, e.g. /pallet-management): show its
+        // path-derived name rather than crashing the page render.
         $breadcrumbs = [[
             'href' => $url,
-            'title' => $menuItem->link_text,
+            'title' => $menuItem?->link_text ?? Str::headline(basename($url)),
         ]];
 
-        $page = $menuItem->page;
+        $page = $menuItem?->page;
 
         while ($page && $page->id > 1) {
 
@@ -57,7 +60,7 @@ class MenuItem extends Model
             ]);
 
             $linkingmenu = self::where('link_url', '#'.$page->hashtag)->first();
-            $page = $linkingmenu->page;
+            $page = $linkingmenu?->page;
         }
 
         return $breadcrumbs;

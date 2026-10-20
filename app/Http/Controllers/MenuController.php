@@ -21,13 +21,16 @@ class MenuController extends Controller
         // Fetch all pages with their associated menu items, then drop any
         // item the user's effective permissions don't cover. A null
         // permission_key means "visible to everyone authenticated".
+        // hasPermission() recomputes the whole effective set (three queries) on every call, so ask once.
+        $allowed = array_flip($user->effectivePermissionKeys());
+
         $pages = Page::with(['menuItems' => function ($query) {
             $query->orderBy('order');
         }])->get();
 
-        $pages->each(function ($page) use ($user) {
+        $pages->each(function ($page) use ($allowed) {
             $page->setRelation('menuItems', $page->menuItems->filter(
-                fn ($item) => ! $item->permission_key || $user->hasPermission($item->permission_key)
+                fn ($item) => ! $item->permission_key || isset($allowed[$item->permission_key])
             )->values());
         });
 

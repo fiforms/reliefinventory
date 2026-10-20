@@ -26,11 +26,21 @@ class PalletStatusController extends Controller
         'notes' => 'nullable|string',
     ];
 
-    public function index()
+    // The history only ever grows (every scan, move and status change is a row), so the list is the most
+    // recent movements, not all of them. ?pallet_id=N gives one pallet's full history; ?limit=N changes the cap.
+    private const DEFAULT_LIMIT = 300;
+
+    private const MAX_LIMIT = 2000;
+
+    public function index(Request $request)
     {
-        $palletStatuses = PalletStatus::with(['pallet', 'location'])
-            ->orderBy('created_at', 'desc')
-            ->get();
+        $query = PalletStatus::with(['pallet', 'location'])->orderByDesc('created_at')->orderByDesc('id');
+
+        if ($request->filled('pallet_id')) {
+            $query->where('pallet_id', (int) $request->query('pallet_id'));
+        }
+
+        $palletStatuses = $query->limit(min(max((int) $request->query('limit', self::DEFAULT_LIMIT), 1), self::MAX_LIMIT))->get();
 
         return response()->json([
             'records' => $palletStatuses,

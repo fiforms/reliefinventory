@@ -26,14 +26,27 @@ class DonationOfferController extends Controller
     // shouldn't be evaluated blind. Used everywhere a record is returned so
     // the frontend never has to merge a partially-loaded response over one
     // that already had history.
-    private const WITH = [
-        'person.orderDonations.status',
-        'person.donationOffers.statusLogs',
-        'contactPerson',
-        'enteredBy',
-        'statusLogs.changedBy',
-        'donation',
-    ];
+    /**
+     * The donor-history sections only show id/date/status/type, so the donor's other transactions and offers
+     * are loaded as just those columns — whole rows (with all their JSON and text fields) made the list
+     * megabytes. status_date reads the newest status-log row, so logs keep id/offer/created_at.
+     */
+    private static function relations(): array
+    {
+        $names = fn ($q) => $q->select('people.id', 'first_name', 'last_name', 'organization');
+
+        return [
+            'person.orderDonations' => fn ($q) => $q->select('orderdonations.id', 'person_id', 'type', 'order_date', 'status_id', 'created_at'),
+            'person.orderDonations.status',
+            'person.donationOffers' => fn ($q) => $q->select('donation_offers.id', 'person_id', 'status', 'donation_id', 'created_at'),
+            'person.donationOffers.statusLogs' => fn ($q) => $q->select('donation_offer_status_log.id', 'donation_offer_id', 'created_at'),
+            // Names only: these render as "by <full name>" / a link, nothing reads their other fields.
+            'contactPerson' => $names,
+            'enteredBy' => $names,
+            'statusLogs.changedBy' => $names,
+            'donation' => fn ($q) => $q->select('orderdonations.id', 'person_id', 'type', 'order_date', 'status_id'),
+        ];
+    }
 
     /**
      * All offers, RIForm {records, templates} shape. The ETA-sorted
@@ -46,11 +59,18 @@ class DonationOfferController extends Controller
      */
     public function index(Request $request)
     {
-        $query = DonationOffer::with(self::WITH)->orderByDesc('id');
+        $query = DonationOffer::with(self::relations())->orderByDesc('id');
         if ($status = $request->query('status')) {
             $query->where('status', $status);
+            $records = $query->limit(500)->get();
+        } else {
+            // Every offer still open, plus only the most recent closed ones (refused/diverted/cancelled/
+            // received pile up for good and nothing needs the whole archive in one response).
+            $closed = [DonationOffer::STATUS_REFUSED, DonationOffer::STATUS_DIVERTED, DonationOffer::STATUS_CANCELLED, DonationOffer::STATUS_RECEIVED];
+            $open = (clone $query)->whereNotIn('status', $closed)->get();
+            $recentClosed = (clone $query)->whereIn('status', $closed)->limit(150)->get();
+            $records = $open->concat($recentClosed)->sortByDesc('id')->values();
         }
-        $records = $query->get();
 
         $records->each(function (DonationOffer $offer) {
             $offer->is_overdue = $offer->status === DonationOffer::STATUS_PENDING
@@ -134,7 +154,7 @@ class DonationOfferController extends Controller
             'notes' => $data['notes'] ?? null,
         ]);
 
-        return response()->json(['record' => $offer->fresh(self::WITH)], 201);
+        return response()->json(['record' => $offer->fresh(self::relations())], 201);
     }
 
     /**
@@ -159,7 +179,7 @@ class DonationOfferController extends Controller
 
         $donationOffer->update($data);
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 
     /**
@@ -195,7 +215,7 @@ class DonationOfferController extends Controller
             $data['notes'],
         );
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 
     public function approve(Request $request, DonationOffer $donationOffer)
@@ -224,7 +244,7 @@ class DonationOfferController extends Controller
             $data['notes'] ?? null,
         );
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 
     public function refuse(Request $request, DonationOffer $donationOffer)
@@ -247,7 +267,7 @@ class DonationOfferController extends Controller
             $data['notes'] ?? null,
         );
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 
     public function divert(Request $request, DonationOffer $donationOffer)
@@ -270,7 +290,7 @@ class DonationOfferController extends Controller
             $data['notes'] ?? null,
         );
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 
     public function cancel(Request $request, DonationOffer $donationOffer)
@@ -293,7 +313,7 @@ class DonationOfferController extends Controller
             $data['notes'] ?? null,
         );
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 
     /**
@@ -327,6 +347,6 @@ class DonationOfferController extends Controller
             $data['notes'] ?? null,
         );
 
-        return response()->json(['record' => $donationOffer->fresh(self::WITH)]);
+        return response()->json(['record' => $donationOffer->fresh(self::relations())]);
     }
 }

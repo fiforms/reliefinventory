@@ -59,7 +59,7 @@ class OutstandingOrdersReportController extends Controller
     {
         $records = $this->buildRecords();
 
-        $csv = Writer::createFromString('');
+        $csv = Writer::fromString('');
         $csv->insertOne(['Order #', 'Partner', 'Status', 'Order Date', 'Needed By', 'Fulfillment', 'Lines', 'Qty Requested']);
         foreach ($records as $r) {
             $csv->insertOne([

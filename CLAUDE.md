@@ -191,7 +191,7 @@ slot (added 2026-08-22) renders in the title bar itself, next to the default New
 for a page-level navigation button that should sit alongside it rather than down in `#listactions`
 (`Receiving.vue`'s "Donation Offers" link to `/receiving/offers`); it's wrapped in a `.ri_titleactions`
 span (float + margin, styled in `app.css`) so the spacing lives in RIForm itself, not per-caller. There's
-still no pagination for large lists (a known gap), and `selectRecord` selects by the record object itself,
+still no pagination in RIForm (a known gap), so lists that only grow are bounded server-side instead — pallet history newest 300, pallets live-only unless a kind/status or `?all=1`, offers open + 150 closed (`ListPayloadLimitsTest`); do the same for any new history-style list, and `selectRecord` selects by the record object itself,
 not list position, so it stays correct under filtering. RIForm also supports an optional `#actions` slot
 (scoped: `editing, record, confirmingDelete, save, cancel, delete, keepRecord`) replacing its default
 Save/Cancel/Delete/Back-to-List bar for a page that needs a different action flow — `save(keepOpen)`

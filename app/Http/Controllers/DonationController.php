@@ -29,11 +29,15 @@ class DonationController extends Controller
      *
      * @return \Illuminate\Http\JsonResponse
      */
-    public function index()
+    public function index(Request $request)
     {
-        // Retrieve all orders with donations and their item ledger lines
+        // Newest first and capped (default 100, ?limit= up to 500): each donation carries all of its ledger
+        // lines, so "all of them" is megabytes. Nothing in the UI uses this list now (Receiving and Sorting
+        // have their own bounded ones).
         $orders = Transaction::where('type', 'donation')
         ->with(['itemLedgers.item.itemtype','enteredBy'])
+        ->orderByDesc('id')
+        ->limit(min(max((int) $request->query('limit', 100), 1), 500))
         ->get();
         
         return response()->json([
