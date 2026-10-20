@@ -60,6 +60,7 @@ test('every parameterless report renders through the registry and queues a job',
 })->with([
     ['inventory-report', 'view-reports'],
     ['outstanding-orders', 'view-reports'],
+    ['unfulfilled-requests', 'view-reports'],
     ['sitrep', 'view-sitrep'],
     ['order-form', 'manage-orders'],
     ['help-receiving', 'general-access'],
