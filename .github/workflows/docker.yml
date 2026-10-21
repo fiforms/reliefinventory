@@ -1,16 +1,25 @@
 name: Docker image (multi-arch)
 
-# Manual only: Actions tab > "Docker image (multi-arch)" > Run workflow.
-# Builds linux/amd64 and linux/arm64 in parallel, each on a native runner (no emulation), then
-# merges them into one multi-arch manifest, ghcr.io/<repo>:<tag>, so `docker compose pull` on
-# any server gets the right architecture. With "push" unticked it is just a build check of both.
+# Two ways to publish, both building linux/amd64 and linux/arm64 in parallel on native runners (no
+# emulation) and merging them into one multi-arch manifest, ghcr.io/<repo>:<tag>:
+#
+#   * RELEASE (the normal path): publish a GitHub Release (this creates the tag, e.g. v1.4.0). The image is
+#     pushed as :1.4.0 and :latest, so `docker compose pull` on a production server (compose.yaml follows
+#     :latest) picks up the newest *release*, never an unreleased merge. A release marked "pre-release" is
+#     pushed under its version only; :latest does not move.
+#   * MANUAL (Actions tab > "Docker image (multi-arch)" > Run workflow): builds whatever branch you pick.
+#     The default tag is `edge`, for the demo/test instance; production never follows it. With "push"
+#     unticked it is just a build check of both architectures. Never type `latest` here by hand: that is
+#     what a release does.
 on:
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Image tag to publish (e.g. latest, or a version)'
+        description: 'Image tag to publish (edge for testing; releases are published by creating a GitHub Release)'
         required: true
-        default: latest
+        default: edge
       push:
         description: 'Push to GitHub Container Registry'
         type: boolean
@@ -37,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
       - uses: docker/login-action@v3
-        if: inputs.push
+        if: ${{ github.event_name == 'release' || inputs.push }}
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -50,19 +59,19 @@ jobs:
           context: .
           platforms: ${{ matrix.platform }}
           # Push by digest only, with no tag; the merge job below attaches the real tag to both.
-          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ inputs.push }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'release' || inputs.push }}
           build-args: |
             RI_GIT_COMMIT=${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Export digest
-        if: inputs.push
+        if: ${{ github.event_name == 'release' || inputs.push }}
         run: |
           mkdir -p "${RUNNER_TEMP}/digests"
           digest="${{ steps.build.outputs.digest }}"
           touch "${RUNNER_TEMP}/digests/${digest#sha256:}"
       - uses: actions/upload-artifact@v4
-        if: inputs.push
+        if: ${{ github.event_name == 'release' || inputs.push }}
         with:
           name: digests-${{ matrix.arch }}
           path: ${{ runner.temp }}/digests/*
@@ -71,7 +80,7 @@ jobs:
 
   merge:
     needs: build
-    if: inputs.push
+    if: ${{ github.event_name == 'release' || inputs.push }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -85,13 +94,37 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Work out the tags
+        id: tags
+        env:
+          EVENT: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$EVENT" = release ]; then
+              version="$RELEASE_TAG"
+              version="${version#v}"
+              tags="$version"
+              if [ "$PRERELEASE" != true ]; then tags="$tags latest"; fi
+          else
+              tag="$INPUT_TAG"
+              if [ "$tag" = latest ]; then
+                  echo "::error::'latest' is only published by creating a GitHub Release"
+                  exit 1
+              fi
+              tags="$tag"
+          fi
+          echo "tags=$tags" >> "$GITHUB_OUTPUT"
       - name: Create and push the multi-arch manifest
         working-directory: ${{ runner.temp }}/digests
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          docker buildx imagetools create -t "${IMAGE}:${{ inputs.tag }}" \
+          targets=""
+          for t in ${{ steps.tags.outputs.tags }}; do targets="$targets -t ${IMAGE}:${t}"; done
+          docker buildx imagetools create $targets \
             $(printf "${IMAGE}@sha256:%s " *)
       - name: Show the result
         run: |
           IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
-          docker buildx imagetools inspect "${IMAGE}:${{ inputs.tag }}"
+          for t in ${{ steps.tags.outputs.tags }}; do docker buildx imagetools inspect "${IMAGE}:${t}"; done

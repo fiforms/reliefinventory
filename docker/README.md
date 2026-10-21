@@ -95,6 +95,12 @@ docker compose pull
 docker compose up -d      # migrations run automatically when `app` starts
 ```
 
+`compose.yaml` follows `:latest`, which is the newest **published release** (a GitHub Release), not whatever was
+last merged — new work only reaches your server once it has been released. Release notes say what changed and whether
+the upgrade migrates the database. Only the newest release is supported, so we recommend staying on `:latest`. You can
+pin one release (`:1.4.0`) to delay an upgrade briefly, but not to stay on an old version long-term. `:edge` is an
+unreleased development build for the test instance; don't point real data at it.
+
 If the new image has pending migrations, the `app` container backs up the database to `backups/` first
 (`relief-backup-<timestamp>-database-premigrate.zip`) and only then migrates. **If that backup fails, it does not migrate** —
 the container exits with a message in `docker compose logs app` (usually the backup directory isn't writable). Fix that
@@ -102,8 +108,13 @@ and it retries on restart, or set `RI_PREMIGRATE_BACKUP: "false"` to migrate wit
 upgrade with no new migrations, takes no extra dump. Pre-migration backups are pruned with the daily ones
 (`RI_BACKUP_KEEP_DAYS`). This covers the database only — see "Data and backups" for `storage`.
 
-**Rolling back:** an old image can't run against a migrated schema. Pin the previous version tag in `compose.yaml`
-(rather than `:latest`), restore the pre-migration dump (restore command above), then `docker compose up -d`.
+**Rolling back:** an old image can't run against a migrated schema (it doesn't contain the newer migrations' undo code).
+Pin the previous version tag in `compose.yaml` (rather than `:latest`), restore the pre-migration dump (restore command
+above), then `docker compose up -d`. Anything entered since the upgrade is lost with that restore.
+
+**Downgrade guard:** if an older image is started on a database a newer one has already migrated (say, someone pins
+`:1.3.0` after running `:1.4.0`), the `app` container refuses to start, changes nothing, and logs what to do (`docker compose
+logs app`) — go back to `:latest`, or restore the pre-migration backup as above.
 
 ## Print servers and R Stations
 

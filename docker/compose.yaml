@@ -91,6 +91,14 @@ x-settings: &settings
 # ============================================================================
 
 x-app: &app
+  # Which version you run. `latest` is the newest published release (GitHub Releases), so
+  # `docker compose pull && docker compose up -d` upgrades you to it. Leave it on `latest`: the
+  # software is changing quickly and only the current release is supported.
+  #   :latest   the newest release (recommended)
+  #   :1.4.0    pin one release (e.g. to hold off an upgrade for a few days). Only the newest
+  #             release gets fixes, and you can't go back to an older one once a newer one
+  #             has migrated the database (see README.md > Upgrading).
+  #   :edge     unreleased development builds, for testing only. Never use it with real data.
   image: ghcr.io/fiforms/reliefinventory:latest
   # (only used by `docker compose build`, i.e. when working from a git checkout)
   build:
