@@ -219,14 +219,18 @@ fn main() {
             tray = tray.icon(tray_icon(&engine.status()));
             tray.build(app)?;
 
-            // Start hidden when launched at login on an already-paired Windows/macOS machine. On
-            // Linux the window always opens: some desktops (stock GNOME) show no tray icon, and an
-            // invisible app there would be unreachable.
-            let hidden = std::env::args().any(|a| a == "--hidden")
-                && engine.is_paired()
-                && !cfg!(target_os = "linux");
-            if !hidden {
+            // Launched at login on an already-paired machine: stay out of the way. Windows/macOS start
+            // hidden in the tray. Linux can't rely on a tray (stock GNOME shows none), so there the window
+            // opens minimized instead, still reachable from the taskbar/dock. Unpaired, the window always
+            // opens: there's a pairing code to enter.
+            let at_login = std::env::args().any(|a| a == "--hidden") && engine.is_paired();
+            if !(at_login && !cfg!(target_os = "linux")) {
                 show_main(app.handle());
+                if at_login {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.minimize();
+                    }
+                }
             }
 
             // Run the engine, and mirror its status to the window and the tray tooltip.

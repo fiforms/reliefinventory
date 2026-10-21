@@ -127,6 +127,13 @@ async function toggleAutostart() {
             </form>
         </section>
 
+        <section v-if="!paired && autostart !== null" class="card settings">
+            <label class="check">
+                <input type="checkbox" :checked="autostart" @change="toggleAutostart" />
+                Start RI Print when I sign in to this computer
+            </label>
+        </section>
+
         <!-- Paired: status -->
         <template v-else>
             <section class="card">
