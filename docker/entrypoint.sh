@@ -144,6 +144,18 @@ pre_migrate_backup() {
     fi
 }
 
+# Refuse to start an OLDER image on a database a newer one has migrated: it can't undo those migrations (the
+# undo code ships with the newer image) and would run against a schema it doesn't understand. Nothing is changed.
+refuse_downgrade() {
+    if ! php artisan migrate:check-downgrade --no-interaction >&2; then
+        local last
+        last="$(ls -1t "${RI_BACKUP_DIR:-/backups}"/relief-backup-*-premigrate.zip 2>/dev/null | head -n1)"
+        [ -n "$last" ] && log "most recent pre-migration backup: $last (restore: docker compose exec app php artisan backup:restore <file> --force, using the matching older image)"
+        log "refusing to start; the database was not touched."
+        exit 1
+    fi
+}
+
 # ---- roles --------------------------------------------------------------------
 case "$ROLE" in
 init-secrets)
@@ -153,6 +165,7 @@ web)
     load_app_key
     wait_for_db
 
+    refuse_downgrade
     pre_migrate_backup
 
     log "running migrations"
