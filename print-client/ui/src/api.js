@@ -68,3 +68,6 @@ export const openPortal = (serverUrl) =>
     inTauri ? invoke('open_portal_cmd') : Promise.resolve(window.open(`${serverUrl}/dashboard`, '_blank'))
 export const getAutostart = () => (inTauri ? invoke('get_autostart') : Promise.resolve(true))
 export const setAutostart = (enabled) => (inTauri ? invoke('set_autostart', { enabled }) : Promise.resolve(enabled))
+export const appVersion = () => (inTauri ? invoke('app_version') : Promise.resolve('0.1.0'))
+export const openExternal = (url) => (inTauri ? invoke('open_external', { url }) : Promise.resolve(window.open(url, '_blank')))
+export const openPrinterSettings = () => (inTauri ? invoke('open_printer_settings') : Promise.resolve())
