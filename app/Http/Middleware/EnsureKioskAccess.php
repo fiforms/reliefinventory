@@ -5,6 +5,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\ManagedDevice;
 use App\Services\PinLoginService;
 use Closure;
 use Illuminate\Http\Request;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Auth;
  * KioskModeController/PinLoginService) — nothing in the sign-in flow
  * depends on Auth::id() (a kiosk sign-in is the volunteer's own record,
  * not staff data entry), so the guest path needs no special-casing
- * downstream. manage-kiosk also passes: the read routes here (GET
+ * downstream. A device-session R Station set to Volunteer check-in passes too. manage-kiosk also passes: the read routes here (GET
  * /kiosk-suggestions in particular) are shared by the Kiosk Settings admin
  * page, which is gated manage-kiosk and doesn't necessarily grant
  * operate-kiosk — someone configuring kiosk settings still needs to see
@@ -35,6 +36,12 @@ class EnsureKioskAccess
 
         $device = app(PinLoginService::class)->deviceFromCookie($request);
         if ($device && $device->isInKioskMode()) {
+            return $next($request);
+        }
+
+        // A paired R Station set to Volunteer check-in is a kiosk by virtue of its pairing (device
+        // session — see DeviceSessionController); no PIN/trusted-device kiosk lock needed.
+        if (ManagedDevice::fromRequest($request)?->kiosk_function === 'volunteer_checkin') {
             return $next($request);
         }
 

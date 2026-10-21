@@ -29,4 +29,13 @@ class DashboardController extends Controller
             'generated_at' => now()->toIso8601String(),
         ]);
     }
+
+    /**
+     * The same numbers for an unattended R Station display (no login): aggregates only — the donor
+     * quality block is left out, since a wall screen is seen by whoever walks past.
+     */
+    public function display(WarehouseMetrics $metrics)
+    {
+        return response()->json(collect($this->index($metrics)->getData(true))->except('donor_quality'));
+    }
 }

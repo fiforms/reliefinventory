@@ -24,6 +24,9 @@ return [
     'functions' => [
         'volunteer_checkin' => ['label' => 'Volunteer check-in', 'path' => '/volunteers/kiosk'],
         'inventory_sorting' => ['label' => 'Inventory sorting', 'path' => '/donation-sorting'],
+        // Chrome-free, auto-refreshing stats screens for an always-on display (no login; see DeviceSessionController).
+        'status_sitrep' => ['label' => 'Situation report display', 'path' => '/display/sitrep'],
+        'status_dashboard' => ['label' => 'Warehouse stats display', 'path' => '/display/dashboard'],
         'driver_checkin' => ['label' => 'Driver check-in/out', 'path' => null],
         'print_station' => ['label' => 'Print station (headless)', 'path' => null],
     ],

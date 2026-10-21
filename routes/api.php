@@ -7,6 +7,7 @@ use App\Http\Controllers\DeviceArtifactController;
 use App\Http\Controllers\DeviceHeartbeatController;
 use App\Http\Controllers\DevicePairController;
 use App\Http\Controllers\DevicePrintJobController;
+use App\Http\Controllers\DeviceSessionController;
 use App\Http\Controllers\DeviceUpdateCheckController;
 use Illuminate\Support\Facades\Route;
 
@@ -17,6 +18,8 @@ use Illuminate\Support\Facades\Route;
 Route::prefix('devices')->group(function () {
     Route::post('/pair', [DevicePairController::class, 'pair'])->middleware('throttle:10,1');
     Route::post('/heartbeat', [DeviceHeartbeatController::class, 'heartbeat'])->middleware('device-auth');
+    // Browser handoff for kiosk pages with nobody logged in (DeviceSessionController).
+    Route::post('/session-ticket', [DeviceSessionController::class, 'ticket'])->middleware(['device-auth', 'throttle:30,1']);
     // Print-server endpoints (rstation/PRINT_SERVER.md). Throttled because a
     // polling client otherwise has no limit; several servers behind one NAT
     // share the per-IP bucket, hence the generous ceiling.
