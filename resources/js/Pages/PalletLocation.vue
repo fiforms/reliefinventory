@@ -41,11 +41,14 @@ const statusColumns = computed(() => {
 	return [...seen].sort();
 });
 
-function breakdown(bucket) {
-	return Object.entries(bucket.by_status || {})
-		.map(([status, n]) => `${n} ${status}`)
-		.join(', ');
-}
+// One flat list of table rows: each real location, then the "no location"/"archived" buckets when non-empty.
+const locationRows = computed(() => {
+	const rows = (summary.value?.locations || []).map((l) => ({ key: l.id, label: l.code, total: l.total, by_status: l.by_status || {}, zero: !l.total }));
+	const s = summary.value;
+	if (s?.no_location?.total) rows.push({ key: 'none', label: 'No location recorded', total: s.no_location.total, by_status: s.no_location.by_status || {}, special: true });
+	if (s?.other_locations?.total) rows.push({ key: 'other', label: 'Archived / other locations', total: s.other_locations.total, by_status: s.other_locations.by_status || {}, special: true });
+	return rows;
+});
 
 const locationCodes = computed(() => (summary.value?.locations || []).map((l) => l.code));
 
@@ -146,9 +149,26 @@ const fillError = ref(null);
 const fillResult = ref(null);
 const filling = ref(false);
 
+// item_id -> its item type, so SKUs of one ACS item type can be shown together. Best effort: without
+// it (no permission, request failed) every SKU just shows as its own row.
+const itemTypes = ref({});
+
+async function loadItemTypes() {
+	if (Object.keys(itemTypes.value).length) return;
+	try {
+		const records = (await axios.get('/json/items')).data.records;
+		itemTypes.value = Object.fromEntries(
+			records.filter((i) => i.itemtype).map((i) => [i.id, { id: i.itemtype.id, number: i.itemtype.display_number, name: i.itemtype.name }]),
+		);
+	} catch (e) {
+		// leave ungrouped
+	}
+}
+
 async function loadStaging() {
 	try {
-		staging.value = (await axios.get('/json/pallet-stock/staging')).data.records;
+		const [records] = await Promise.all([axios.get('/json/pallet-stock/staging').then((r) => r.data.records), loadItemTypes()]);
+		staging.value = records;
 	} catch (e) {
 		fillError.value = e.response?.data?.message || 'Could not load the sorting-area list.';
 	}
@@ -159,6 +179,32 @@ const stagingLeft = computed(() =>
 		.map((row) => ({ ...row, left: row.qty - fill.value.lines.filter((l) => l.item_id === row.item_id).reduce((n, l) => n + (Number(l.qty) || 0), 0) }))
 		.filter((row) => row.left > 0),
 );
+
+// Sorting-area rows grouped by item type (one group per ACS number); a type with a single SKU stays a plain row.
+const stagingGroups = computed(() => {
+	const groups = new Map();
+	for (const row of stagingLeft.value) {
+		const type = itemTypes.value[row.item_id];
+		const key = type ? `t${type.id}` : `i${row.item_id}`;
+		if (!groups.has(key)) groups.set(key, { key, type, rows: [], left: 0 });
+		const g = groups.get(key);
+		g.rows.push(row);
+		g.left += row.left;
+	}
+	return [...groups.values()];
+});
+
+const expandedGroups = ref(new Set());
+
+function toggleGroup(key) {
+	const next = new Set(expandedGroups.value);
+	if (!next.delete(key)) next.add(key);
+	expandedGroups.value = next;
+}
+
+function addGroup(group) {
+	group.rows.forEach(addFillLine);
+}
 
 function addFillLine(row) {
 	const existing = fill.value.lines.find((l) => l.item_id === row.item_id);
@@ -292,47 +338,38 @@ onMounted(loadSummary);
 							</tr>
 						</thead>
 						<tbody>
-							<tr v-for="l in summary.locations" :key="l.id" :class="{ pm_zero: !l.total, pm_clickable: l.total }" @click="l.total && toggleLocation(l.id, l.code)">
-								<td>{{ openLocation?.key === l.id ? '▾' : '▸' }} {{ l.code }}</td>
-								<td>{{ l.total }}</td>
-								<td v-for="s in statusColumns" :key="s">{{ l.by_status[s] || '' }}</td>
-							</tr>
-							<tr v-if="summary.no_location.total" class="pm_nolocation pm_clickable" @click="toggleLocation('none', 'No location recorded')">
-								<td>{{ openLocation?.key === 'none' ? '▾' : '▸' }} No location recorded</td>
-								<td>{{ summary.no_location.total }}</td>
-								<td v-for="s in statusColumns" :key="s">{{ summary.no_location.by_status[s] || '' }}</td>
-							</tr>
-							<tr v-if="summary.other_locations.total" class="pm_nolocation pm_clickable" @click="toggleLocation('other', 'Archived / other locations')">
-								<td>{{ openLocation?.key === 'other' ? '▾' : '▸' }} Archived / other locations</td>
-								<td>{{ summary.other_locations.total }}</td>
-								<td v-for="s in statusColumns" :key="s">{{ summary.other_locations.by_status[s] || '' }}</td>
-							</tr>
+							<template v-for="r in locationRows" :key="r.key">
+								<tr :class="{ pm_zero: r.zero, pm_nolocation: r.special, pm_clickable: r.total }" @click="r.total && toggleLocation(r.key, r.label)">
+									<td>{{ openLocation?.key === r.key ? '▾' : '▸' }} {{ r.label }}</td>
+									<td>{{ r.total }}</td>
+									<td v-for="s in statusColumns" :key="s">{{ r.by_status[s] || '' }}</td>
+								</tr>
+								<tr v-if="openLocation?.key === r.key" class="pm_drillrow">
+									<td :colspan="2 + statusColumns.length">
+										<p v-if="openLocation.error" class="ri_error">{{ openLocation.error }}</p>
+										<p v-else-if="!openLocation.pallets">Loading…</p>
+										<table v-else class="ri_datatable" border="1">
+											<thead>
+												<tr><th>Pallet</th><th>Type</th><th>Status</th><th>Last moved</th></tr>
+											</thead>
+											<tbody>
+												<tr v-for="p in openLocation.pallets" :key="p.id">
+													<td class="pm_mono">{{ p.tag }}</td>
+													<td>{{ p.kind_label }}</td>
+													<td>{{ p.status }}</td>
+													<td>{{ formatDate(p.last_moved_at) }}</td>
+												</tr>
+												<tr v-if="!openLocation.pallets.length"><td colspan="4">No live pallets here.</td></tr>
+											</tbody>
+										</table>
+									</td>
+								</tr>
+							</template>
 							<tr v-if="!summary.locations.length">
 								<td :colspan="2 + statusColumns.length">No active locations are set up yet.</td>
 							</tr>
 						</tbody>
 					</table>
-				</div>
-				<div v-if="openLocation" class="pm_drill">
-					<h3 class="pm_sub">Pallets in {{ openLocation.label }}</h3>
-					<p v-if="openLocation.error" class="ri_error">{{ openLocation.error }}</p>
-					<p v-else-if="!openLocation.pallets">Loading…</p>
-					<div v-else class="pm_tablewrap">
-						<table class="ri_datatable" border="1">
-							<thead>
-								<tr><th>Pallet</th><th>Type</th><th>Status</th><th>Last moved</th></tr>
-							</thead>
-							<tbody>
-								<tr v-for="p in openLocation.pallets" :key="p.id">
-									<td class="pm_mono">{{ p.tag }}</td>
-									<td>{{ p.kind_label }}</td>
-									<td>{{ p.status }}</td>
-									<td>{{ formatDate(p.last_moved_at) }}</td>
-								</tr>
-								<tr v-if="!openLocation.pallets.length"><td colspan="4">No live pallets here.</td></tr>
-							</tbody>
-						</table>
-					</div>
 				</div>
 				<p class="ri_hint">Click a location to list its pallets. Counts are live pallets only — shipped, collected, released, condemned and missing pallets aren't included.</p>
 			</div>
@@ -408,26 +445,23 @@ onMounted(loadSummary);
 						:params="{ id: fillResult.id }" :download-href="'/report/pallet/' + fillResult.id" />
 				</div>
 
-				<h3 class="pm_sub">In the sorting area</h3>
-				<p v-if="!staging">Loading…</p>
-				<p v-else-if="!stagingLeft.length" class="ri_hint">Nothing waiting — everything sorted is already on a pallet.</p>
-				<div v-else class="pm_tablewrap">
-					<table class="ri_datatable" border="1">
-						<thead><tr><th>Item</th><th>Waiting</th><th></th></tr></thead>
-						<tbody>
-							<tr v-for="row in stagingLeft" :key="row.item_id">
-								<td>{{ row.name }}</td>
-								<td>{{ row.left }}</td>
-								<td><button type="button" class="ri_formbutton" @click="addFillLine(row)">Put all {{ row.left }} on pallet</button></td>
-							</tr>
-						</tbody>
-					</table>
-				</div>
-
 				<h3 class="pm_sub">This pallet</h3>
-				<div class="ri_fieldset">
-					<div class="ri_fieldlabel">Pallet:</div>
-					<input v-model="fill.tag" class="ri_forminput" placeholder="Scan a W pallet, or leave blank for a new one" @keyup.enter="pickFillPallet" @change="pickFillPallet" />
+				<div class="pm_fillrow">
+					<label class="pm_fillfield">
+						<span class="ri_fieldlabel">Pallet:</span>
+						<input v-model="fill.tag" class="ri_forminput" placeholder="Scan a W pallet, or blank for new" @keyup.enter="pickFillPallet" @change="pickFillPallet" />
+					</label>
+					<label class="pm_fillfield">
+						<span class="ri_fieldlabel">Location:</span>
+						<input v-model="fill.locationCode" class="ri_forminput" list="pm_locations" placeholder="Where it's going" />
+						<datalist id="pm_locations">
+							<option v-for="code in locationCodes" :key="code" :value="code" />
+						</datalist>
+					</label>
+					<label class="pm_fillfield">
+						<span class="ri_fieldlabel">Notes:</span>
+						<input v-model="fill.notes" class="ri_forminput" />
+					</label>
 				</div>
 				<p v-if="fill.pallet" class="pm_current">
 					{{ fill.pallet.tag }} is {{ fill.pallet.status }}<span v-if="fill.pallet.location"> at {{ fill.pallet.location.code }}</span>; already holds
@@ -450,23 +484,42 @@ onMounted(loadSummary);
 						</tbody>
 					</table>
 				</div>
-				<p v-else class="ri_hint">Tap items above to put them on this pallet.</p>
+				<p v-else class="ri_hint">Tap items below to put them on this pallet.</p>
 
-				<div class="ri_fieldset">
-					<div class="ri_fieldlabel">Location:</div>
-					<input v-model="fill.locationCode" class="ri_forminput" list="pm_locations" placeholder="Where it's going — scan or type a location" />
-					<datalist id="pm_locations">
-						<option v-for="code in locationCodes" :key="code" :value="code" />
-					</datalist>
-				</div>
-				<div class="ri_fieldset">
-					<div class="ri_fieldlabel">Notes:</div>
-					<input v-model="fill.notes" class="ri_forminput" />
-				</div>
 				<div class="ri_formactions">
 					<button type="button" class="ri_defaultbutton" :disabled="filling || !fill.lines.length" @click="submitFill">
 						Seal &amp; Place ({{ fillTotal }})
 					</button>
+				</div>
+
+				<h3 class="pm_sub">In the sorting area</h3>
+				<p v-if="!staging">Loading…</p>
+				<p v-else-if="!stagingLeft.length" class="ri_hint">Nothing waiting — everything sorted is already on a pallet.</p>
+				<div v-else class="pm_tablewrap">
+					<table class="ri_datatable" border="1">
+						<thead><tr><th>Item</th><th>Waiting</th><th></th></tr></thead>
+						<tbody>
+							<template v-for="g in stagingGroups" :key="g.key">
+								<tr v-if="g.rows.length === 1">
+									<td>{{ g.type?.number ? 'ACS #' + g.type.number + ' ' : '' }}{{ g.rows[0].name }}</td>
+									<td>{{ g.left }}</td>
+									<td><button type="button" class="ri_formbutton" @click="addFillLine(g.rows[0])">Put all {{ g.left }} on pallet</button></td>
+								</tr>
+								<template v-else>
+									<tr class="pm_group pm_clickable" @click="toggleGroup(g.key)">
+										<td>{{ expandedGroups.has(g.key) ? '▾' : '▸' }} ACS #{{ g.type.number }} ({{ g.type.name }}) — {{ g.rows.length }} items</td>
+										<td>{{ g.left }}</td>
+										<td><button type="button" class="ri_formbutton" @click.stop="addGroup(g)">Put all {{ g.left }} on pallet</button></td>
+									</tr>
+									<tr v-for="row in expandedGroups.has(g.key) ? g.rows : []" :key="row.item_id" class="pm_sku">
+										<td>{{ row.name }}</td>
+										<td>{{ row.left }}</td>
+										<td><button type="button" class="ri_formbutton" @click="addFillLine(row)">Put all {{ row.left }} on pallet</button></td>
+									</tr>
+								</template>
+							</template>
+						</tbody>
+					</table>
 				</div>
 			</div>
 
@@ -556,8 +609,8 @@ onMounted(loadSummary);
 .pm_clickable {
 	cursor: pointer;
 }
-.pm_drill {
-	margin-top: 1em;
+.pm_drillrow > td {
+	padding: 0.5em 0.75em 0.75em 2em;
 }
 .pm_zero {
 	opacity: 0.55;
@@ -571,6 +624,23 @@ onMounted(loadSummary);
 .pm_sub {
 	margin: 1em 0 0.25em;
 	font-weight: bold;
+}
+.pm_fillrow {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5em 1em;
+	margin: 0.5em 0;
+}
+.pm_fillfield {
+	display: flex;
+	align-items: center;
+	gap: 0.4em;
+}
+.pm_group {
+	font-weight: bold;
+}
+.pm_sku > td:first-child {
+	padding-left: 2em;
 }
 .pm_qty {
 	width: 6em;
