@@ -106,6 +106,9 @@ export default {
 			itemModal: this.blankItemModal(),
 			itemModalSaving: false,
 			itemModalError: null,
+
+			// barcode scan -> item (confirmed mappings first, online suggestion on a miss)
+			upcResolving: false,
 		};
 	},
 	computed: {
@@ -481,11 +484,53 @@ export default {
 			return dispositionFor(line.disposition, line.item_condition ?? null)?.key || line.disposition;
 		},
 
+		// ---------- barcode scan -> item ----------
+		// A scanned barcode is looked up server-side: our own confirmed
+		// mappings first (no network), and only for a barcode we've never
+		// seen an online suggestion, which the sorter reviews and confirms
+		// before it is stored. See UpcController / UpcResolver.
+		async onBarcodeScan(text) {
+			this.lineError = null;
+			this.upcResolving = true;
+			try {
+				const response = await axios.get('/json/upc/resolve', { params: { code: text } });
+				const result = response.data;
+				if (result.status === 'matched') {
+					await this.applyScanMatch(result);
+				} else {
+					this.openItemModalForScan(result);
+				}
+			} catch (error) {
+				this.lineError = error.response?.data?.message || 'Could not look up that barcode. Search for the item instead.';
+				this.$refs.itemSelect?.clearSelection();
+			} finally {
+				this.upcResolving = false;
+			}
+		},
+		async applyScanMatch(result) {
+			const select = this.$refs.itemSelect;
+			const known = select.optionlist.find((option) => option.id === result.item.id);
+			if (known) {
+				select.selectOption(known);
+			} else {
+				await select.refresh(result.item.id);
+			}
+			// a case adds all the single units in it; the sorter can still change the number
+			if (result.qty) this.entry.qty = result.qty;
+		},
+		// show the barcode the way it is printed: UPC-A / EAN-13 without the GTIN-14 padding zeros
+		displayCode(code) {
+			return code.startsWith('00') ? code.slice(2) : code.startsWith('0') ? code.slice(1) : code;
+		},
+
 		// ---------- quick-add item ----------
 		blankItemModal() {
 			return {
 				description: '',
 				upc: '',
+				scan: null, // set when opened from an unknown barcode scan: { kind, online, suggestion, guessItem, source }
+				kind: 'each',
+				case_qty: null,
 				itemtype_id: null,
 				creatingType: false,
 				newTypeName: '',
@@ -500,6 +545,44 @@ export default {
 			this.itemModal.description = searchText || '';
 			this.itemModalError = null;
 			this.showItemModal = true;
+		},
+		// An unknown barcode opens the normal Add New Item screen, prefilled: the
+		// scanned UPC, whatever an online lookup suggested (the sorter checks it),
+		// and, for a carton whose single-item barcode we already carry, that
+		// item's type and description. Saving adds a SKU row to the master list.
+		openItemModalForScan(result) {
+			const suggestion = result.suggestion;
+			const guess = result.guess_item;
+			this.itemModal = this.blankItemModal();
+			this.itemModal.upc = this.displayCode(result.code);
+			this.itemModal.kind = result.kind;
+			this.itemModal.itemtype_id = guess?.itemtype_id ?? null;
+			this.itemModal.description = guess?.description
+				|| [suggestion?.brand, suggestion?.description, suggestion?.size_text].filter(Boolean).join(' ');
+			this.itemModal.scan = { code: result.code, online: result.online, suggestion, guessItem: guess };
+			this.itemModalError = null;
+			this.showItemModal = true;
+		},
+		scanNote() {
+			const scan = this.itemModal.scan;
+			if (scan.guessItem) {
+				return 'This looks like a case of ' + scan.guessItem.name + ' (its single-item barcode is already in the master list). Check it, and enter how many are inside.';
+			}
+			if (scan.suggestion) {
+				const unit = scan.suggestion.code !== scan.code ? ' (for the single item inside the case)' : '';
+				return 'Suggested by ' + scan.suggestion.source_name + unit + ' - check it against the product in front of you.';
+			}
+			return {
+				none: 'Not found in Open Food Facts or Open Products Facts - enter the details by hand.',
+				unavailable: 'The online lookup is not responding right now - enter the details by hand.',
+				throttled: 'Too many online lookups this minute - enter the details by hand.',
+				disabled: 'Online lookup is off - enter the details by hand.',
+			}[scan.online] || '';
+		},
+		closeItemModal() {
+			const fromScan = !!this.itemModal.scan;
+			this.showItemModal = false;
+			if (fromScan) this.$refs.itemSelect?.clearSelection(); // drop the unresolved barcode text
 		},
 		startNewType(name) {
 			this.itemModal.creatingType = true;
@@ -517,6 +600,11 @@ export default {
 
 			if (!modal.description.trim()) {
 				this.itemModalError = 'A description is required.';
+				return;
+			}
+			const caseQty = parseInt(modal.case_qty, 10);
+			if (modal.scan && modal.kind === 'carton' && !(caseQty >= 2)) {
+				this.itemModalError = 'Enter how many items are in one case.';
 				return;
 			}
 			if (!modal.creatingType && !modal.itemtype_id) {
@@ -552,16 +640,25 @@ export default {
 					invalidateOptions('/json/itemtypes/noitems');
 				}
 
-				const response = await axios.post('/json/items', {
+				const payload = {
 					itemtype_id: itemtypeId,
 					description: modal.description.trim(),
 					upc: modal.upc.trim() || null,
-				});
+				};
+				if (modal.scan && modal.kind === 'carton') {
+					// a case is just another SKU row with its own UPC: package "Case", Case Qty N
+					payload.case_qty = caseQty;
+					const packages = (await axios.get('/json/packagetypes')).data.records || [];
+					const casePackage = packages.find((p) => /^case$/i.test(p.singular));
+					if (casePackage) payload.packagetypes_id = casePackage.id;
+				}
+				const response = await axios.post('/json/items', payload);
 				const newItem = response.data.record;
 
 				invalidateOptions('/json/items');
 				this.showItemModal = false;
 				await this.$refs.itemSelect?.refresh(newItem.id);
+				if (modal.scan && modal.kind === 'carton') this.entry.qty = caseQty;
 				this.$refs.qtyInput?.focus();
 			} catch (error) {
 				this.itemModalError = error.response?.data?.message
@@ -810,9 +907,12 @@ export default {
 						:searchfields="['name', 'upc', 'description']"
 						placeholder="Scan UPC or search items..."
 						:allowcreate="true"
+						:scanDigits="true"
 						@selected="(item) => { entry.item = item; if (item) itemChosen(); }"
 						@create="openItemModal"
+						@scan="onBarcodeScan"
 					/>
+					<span v-if="upcResolving" class="sort_notice">Looking up barcode...</span>
 				</div>
 				<input
 					ref="qtyInput"
@@ -891,10 +991,23 @@ export default {
 		</div>
 
 		<!-- ======================= QUICK-ADD ITEM MODAL ======================= -->
-		<div v-if="showItemModal" class="sort_modal_overlay" @click.self="showItemModal = false">
+		<div v-if="showItemModal" class="sort_modal_overlay" @click.self="closeItemModal">
 			<div class="sort_modal">
 				<h3>Add New Item</h3>
 				<p v-if="itemModalError" class="sort_error">{{ itemModalError }}</p>
+				<template v-if="itemModal.scan">
+					<p class="sort_upc_note">{{ scanNote() }}</p>
+					<img v-if="itemModal.scan.suggestion?.image_url" :src="itemModal.scan.suggestion.image_url" alt="" class="sort_upc_image" />
+					<div class="sort_field">
+						<label>This barcode is on:</label>
+						<label class="sort_upc_radio"><input type="radio" value="each" v-model="itemModal.kind" /> One item</label>
+						<label class="sort_upc_radio"><input type="radio" value="carton" v-model="itemModal.kind" /> A case / multipack</label>
+					</div>
+					<div class="sort_field" v-if="itemModal.kind === 'carton'">
+						<label>Items per case:</label>
+						<input type="number" min="2" v-model="itemModal.case_qty" class="ri_forminput sort_qty" />
+					</div>
+				</template>
 
 				<div class="sort_field">
 					<label>Description:</label>
@@ -954,7 +1067,7 @@ export default {
 					<button @click="saveItemModal" class="ri_defaultbutton" :disabled="itemModalSaving">
 						{{ itemModalSaving ? 'Saving...' : 'Save Item' }}
 					</button>
-					<button @click="showItemModal = false" class="ri_formbutton">Cancel</button>
+					<button @click="closeItemModal" class="ri_formbutton">Cancel</button>
 				</div>
 			</div>
 		</div>
@@ -1210,6 +1323,19 @@ export default {
 	font-weight: bold;
 	font-size: 1.1rem;
 	margin-bottom: 12px;
+}
+.sort_upc_note {
+	color: #374151;
+	margin: 6px 0;
+}
+.sort_upc_image {
+	max-height: 90px;
+	margin: 4px 0 8px;
+	border-radius: 6px;
+}
+.sort_upc_radio {
+	font-weight: normal !important;
+	min-width: 0 !important;
 }
 .sort_modal_buttons {
 	display: flex;

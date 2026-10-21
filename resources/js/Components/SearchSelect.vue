@@ -49,9 +49,16 @@
 	                 to whichever state is entered elsewhere on the record).
 	                 The already-selected option is still resolved/displayed
 	                 even if it wouldn't pass the filter.
+	  scanDigits   - treat an Enter on text that is all digits at a barcode length
+	                 (8, 12, 13 or 14) as a barcode scan: an exact match on a
+	                 searchable field still wins, otherwise emit `scan` instead
+	                 of picking whichever row happens to be highlighted. The
+	                 page decides what an unknown barcode means (e.g. the UPC
+	                 lookup in DonationSorting).
 	  placeholder, enabled, allowcreate, autofocus
 
-	Events: update:modelValue, selected(object|null), create(searchText)
+	Events: update:modelValue, selected(object|null), create(searchText),
+	        scan(digits)
 -->
 
 <script>
@@ -110,6 +117,7 @@ export default {
 		allowcreate: { type: Boolean, default: false },
 		autofocus: { type: Boolean, default: false },
 		openOnFocus: { type: Boolean, default: true },
+		scanDigits: { type: Boolean, default: false },
 		// Optional (option) => boolean predicate narrowing which options are
 		// browsable/searchable — e.g. counties scoped to whichever state is
 		// currently entered elsewhere on the same record. The already-
@@ -118,7 +126,7 @@ export default {
 		// existing selection (same contract as ComboBox's `filter` prop).
 		filter: { type: Function, default: null },
 	},
-	emits: ["update:modelValue", "selected", "create"],
+	emits: ["update:modelValue", "selected", "create", "scan"],
 	data() {
 		return {
 			search: "",
@@ -272,6 +280,12 @@ export default {
 			// A scanned barcode arrives as text + Enter: exact match wins first
 			if (this.exactMatch) {
 				this.selectOption(this.exactMatch);
+				return;
+			}
+			const typed = this.search.trim();
+			if (this.scanDigits && /^\d+$/.test(typed) && [8, 12, 13, 14].includes(typed.length)) {
+				this.isOpen = false;
+				this.$emit("scan", typed);
 				return;
 			}
 			const visible = this.filteredOptions;

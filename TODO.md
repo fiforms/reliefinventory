@@ -234,3 +234,16 @@ Issues identified October 8, 2026
    "Database + uploaded files" zips (manual) or a filesystem backup — so consider a scheduled `--scope=full` job or a setting.
    Tier backups are downloadable from the page (group-readable by the web user). `setup:reset` exists for starting over
    after a failed forced restore (typed-phrase, terminal-only).
+
+15. Barcode (UPC) lookup — built 2026-10-21 (branch `upc-lookup`), see CLAUDE.md "Barcode scan → item"
+ - **Open:** using the same scan resolver on Order Filling / Order Entry; how a "Case" row's quantity should count in orders and
+   the inventory report (sorting records single units: the scan prefills `case_qty × size`); who confirmed/where a UPC came from
+   isn't recorded (items has no such columns); a Help guide paragraph.
+ - **Other free sources, deliberately not wired in yet** (add under `config/upc.php` `sources` + a case in
+   `UpcLookupService::parse()`): UPCitemdb (broad general merchandise; free Explorer plan 100 lookups+searches/day, no key, `/prod/trial`
+   — read its terms before storing anything from it); BarcodeFinder (advertises 1,000/day free, unverified against its own docs).
+   Paid/tiny-free and not worth it now: Go-UPC, Barcode Lookup, Barcode Report.
+ - **Bulk dump, if online-per-scan ever isn't enough** (e.g. a site with no Internet): Open Food Facts and Open Products Facts publish
+   full exports (JSONL, CSV, Parquet, Mongo dump; ODbL — attribution required). Import a filtered copy into a local table and query
+   it ahead of the online chain; the food dataset is large, so filter by country/category. Not built.
+

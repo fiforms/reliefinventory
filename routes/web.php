@@ -683,6 +683,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-so
     // Sorting sessions (scan-driven donation sorting; lines autosave one at a time)
     Route::get('/sorting-sessions', [SortingSessionController::class, 'index']);
     Route::post('/sorting-sessions', [SortingSessionController::class, 'store']);
+    // Barcode scan -> item (our own items.upc first; an online suggestion only on a miss)
+    Route::get('/upc/resolve', [UpcController::class, 'resolve']);
     Route::get('/sorting-sessions/pallet/{tag}', [SortingSessionController::class, 'pallet']);
     Route::post('/sorting-sessions/pallet/{tag}/empty', [SortingSessionController::class, 'palletEmpty']);
     Route::get('/sorting-sessions/{id}', [SortingSessionController::class, 'show']);
