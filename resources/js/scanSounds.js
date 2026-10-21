@@ -65,6 +65,14 @@ export function playScanMatched() {
 	play(() => tone(1400, 0, 0.12));
 }
 
+/** Barcode matched a case/carton: two quick rising beeps (distinct from the single match beep). */
+export function playScanCarton() {
+	play(() => {
+		tone(900, 0, 0.09);
+		tone(1500, 0.11, 0.12);
+	});
+}
+
 /** Barcode not in the catalog (the add-item form is opening): one lower, longer tone. */
 export function playScanUnknown() {
 	play(() => tone(330, 0, 0.28, 'triangle'));

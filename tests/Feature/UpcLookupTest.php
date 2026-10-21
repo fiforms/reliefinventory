@@ -4,10 +4,12 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Helpers\Gtin;
+use App\Models\CartonCode;
 use App\Models\Category;
 use App\Models\Item;
 use App\Models\ItemType;
 use App\Models\OfflineModeSetting;
+use App\Models\Person;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
@@ -206,4 +208,113 @@ test('an unknown carton also tries its guessed single-unit code online', functio
 
 test('barcode lookup needs sorting permission', function () {
     $this->actingAs(userWithPermissions('general-access'))->getJson('/json/upc/resolve?code='.UPC_EACH)->assertForbidden();
+});
+
+test('resolve with online=0 answers from the catalog without any network wait', function () {
+    Http::fake();
+    $sorter = userWithPermissions('manage-sorting');
+
+    $this->actingAs($sorter)->getJson('/json/upc/resolve?online=0&code='.UPC_EACH)
+        ->assertOk()->assertJsonPath('status', 'unknown')->assertJsonPath('online', 'pending')->assertJsonPath('suggestion', null);
+    Http::assertNothingSent();
+
+    $item = upcItem('Tissues', UPC_EACH);
+    $this->actingAs($sorter)->getJson('/json/upc/resolve?online=0&code='.UPC_EACH)
+        ->assertJsonPath('status', 'matched')->assertJsonPath('item.id', $item->id);
+});
+
+test('suggest returns just the online half, and nothing for a code we already know', function () {
+    Http::fake(['world.openfoodfacts.org/*' => Http::response(offProduct())]);
+    $sorter = userWithPermissions('manage-sorting');
+
+    $this->actingAs($sorter)->getJson('/json/upc/suggest?code='.UPC_EACH)
+        ->assertOk()->assertJsonPath('online', 'found')->assertJsonPath('suggestion.description', 'Kleenex Tissues');
+
+    upcItem('Tissues', UPC_EACH);
+    Http::fake();
+    $this->actingAs($sorter)->getJson('/json/upc/suggest?code='.UPC_EACH)
+        ->assertOk()->assertJsonPath('online', 'skipped')->assertJsonPath('suggestion', null);
+    $this->actingAs(userWithPermissions('general-access'))->getJson('/json/upc/suggest?code='.UPC_EACH)->assertForbidden();
+});
+
+// A real case: carton 10842515008167 holds 6 packs of 5 of the single item 842515006715.
+// The carton's item number (00816) differs from the single's (00671), so the exact-guess
+// fails; only the manufacturer prefix (842515) is shared.
+const CARTON_REAL = '10842515008167';
+const SINGLE_REAL = '842515006715';
+
+test('an unknown carton whose item number differs offers same-manufacturer items as candidates', function () {
+    $apricots = upcItem('Sunny Fruit Organic Apricots 1.76 oz', SINGLE_REAL);
+    upcItem('Other brand', UPC_EACH);
+    Http::fake();
+
+    $this->actingAs(userWithPermissions('manage-sorting'))->getJson('/json/upc/resolve?online=0&code='.CARTON_REAL)
+        ->assertOk()->assertJsonPath('status', 'unknown')->assertJsonPath('kind', 'carton')
+        ->assertJsonPath('guess_item', null)
+        ->assertJsonCount(1, 'candidates')->assertJsonPath('candidates.0.id', $apricots->id);
+});
+
+test('confirming a carton maps it to the single item with packs x items, and later scans select that item with the quantity', function () {
+    $apricots = upcItem('Sunny Fruit Organic Apricots 1.76 oz', SINGLE_REAL);
+    $sorter = userWithPermissions('manage-sorting');
+    Http::fake();
+
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => CARTON_REAL, 'item_id' => $apricots->id])
+        ->assertStatus(422)->assertJsonValidationErrors('qty_per_carton');
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => '10842515008168', 'item_id' => $apricots->id, 'qty_per_carton' => 30])
+        ->assertStatus(422)->assertJsonValidationErrors('code'); // bad check digit
+
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => CARTON_REAL, 'item_id' => $apricots->id, 'inner_packs' => 6, 'items_per_pack' => 5])
+        ->assertCreated()->assertJsonPath('status', 'matched')->assertJsonPath('qty', 30)->assertJsonPath('kind', 'carton');
+
+    $this->actingAs($sorter)->getJson('/json/upc/resolve?code='.CARTON_REAL)
+        ->assertJsonPath('status', 'matched')->assertJsonPath('item.id', $apricots->id)->assertJsonPath('qty', 30)
+        ->assertJsonPath('inner_packs', 6)->assertJsonPath('items_per_pack', 5);
+    Http::assertNothingSent();
+
+    // a typed total also works, and re-confirming updates instead of duplicating
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => CARTON_REAL, 'item_id' => $apricots->id, 'qty_per_carton' => 36])->assertCreated();
+    expect(CartonCode::count())->toBe(1)->and(CartonCode::first()->qty_per_carton)->toBe(36);
+});
+
+test('carton codes: sorting permission to confirm, item permission to review or remove', function () {
+    $item = upcItem('Soup', SINGLE_REAL);
+    $this->actingAs(userWithPermissions('general-access'))
+        ->postJson('/json/upc/cartons', ['code' => CARTON_REAL, 'item_id' => $item->id, 'qty_per_carton' => 30])->assertForbidden();
+
+    $sorter = userWithPermissions('manage-sorting');
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => CARTON_REAL, 'item_id' => $item->id, 'qty_per_carton' => 30])->assertCreated();
+    expect(CartonCode::first()->person_id_user)->toBe($sorter->id);
+
+    $this->actingAs($sorter)->getJson('/json/carton-codes')->assertForbidden();
+    $admin = userWithPermissions('manage-items');
+    $this->actingAs($admin)->getJson('/json/carton-codes')->assertOk()->assertJsonCount(1, 'records');
+    $this->actingAs($admin)->deleteJson('/json/carton-codes/'.CartonCode::first()->id)->assertOk();
+    expect(CartonCode::count())->toBe(0);
+});
+
+test('a carton whose item number matches the single is recognised outright (10845561000871 holds 12 of 845561000874)', function () {
+    $item = upcItem('Single item', '845561000874');
+    Http::fake();
+    $sorter = userWithPermissions('manage-sorting');
+
+    $this->actingAs($sorter)->getJson('/json/upc/resolve?online=0&code=10845561000871')
+        ->assertOk()->assertJsonPath('status', 'unknown')->assertJsonPath('kind', 'carton')
+        ->assertJsonPath('guess_item.id', $item->id)->assertJsonPath('candidates', []);
+
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => '10845561000871', 'item_id' => $item->id, 'qty_per_carton' => 12])
+        ->assertCreated()->assertJsonPath('qty', 12);
+    Http::assertNothingSent();
+});
+
+test('the Carton Barcodes screen is for item managers and the list says who added each carton', function () {
+    $item = upcItem('Soup', SINGLE_REAL);
+    $sorter = userWithPermissions('manage-sorting');
+    $this->actingAs($sorter)->postJson('/json/upc/cartons', ['code' => CARTON_REAL, 'item_id' => $item->id, 'inner_packs' => 6, 'items_per_pack' => 5])->assertCreated();
+
+    $this->actingAs($sorter)->get('/setup/carton-codes')->assertForbidden();
+    $admin = userWithPermissions('manage-items');
+    $this->actingAs($admin)->getJson('/json/carton-codes')
+        ->assertOk()->assertJsonPath('total', 1)->assertJsonPath('records.0.qty_per_carton', 30)
+        ->assertJsonPath('records.0.inner_packs', 6)->assertJsonPath('records.0.entered_by_name', Person::find($sorter->id)->full_name)->assertJsonMissingPath('records.0.entered_by');
 });

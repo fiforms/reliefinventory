@@ -7,6 +7,7 @@ namespace App\Services\Upc;
 
 use App\Helpers\Gtin;
 use App\Http\Controllers\ItemController;
+use App\Models\CartonCode;
 use App\Models\Item;
 
 /**
@@ -24,11 +25,28 @@ class UpcResolver
 {
     public function __construct(private UpcLookupService $lookup) {}
 
-    public function resolve(string $scanned): array
+    /**
+     * @param  bool  $online  false = answer from our own catalog only and report
+     *                        the online suggestion as 'pending' (fetch it with suggest()),
+     *                        so the screen can react at once instead of waiting on the network
+     */
+    public function resolve(string $scanned, bool $online = true): array
     {
         $code = Gtin::normalize($scanned);
         if ($code === null) {
             return ['status' => 'invalid', 'message' => 'That does not look like a UPC/EAN barcode (8, 12, 13 or 14 digits).'];
+        }
+
+        // A confirmed carton: report the single-unit row inside it and how many units a carton holds.
+        $carton = CartonCode::with(['item.itemtype', 'item.packagetype'])->where('code', $code)->first();
+        if ($carton && $carton->item) {
+            $item = $carton->item;
+            $item->name = ItemController::displayName($item);
+
+            return [
+                'status' => 'matched', 'code' => $code, 'kind' => 'carton', 'qty' => $carton->qty_per_carton, 'item' => $item,
+                'inner_packs' => $carton->inner_packs, 'items_per_pack' => $carton->items_per_pack,
+            ];
         }
 
         if ($item = $this->find($code)) {
@@ -49,9 +67,11 @@ class UpcResolver
             $guessItem->name = ItemController::displayName($guessItem);
         }
 
-        $online = $guessItem
-            ? ['status' => 'skipped']
-            : $this->lookup->lookup(array_values(array_filter([$code, $eachCode])));
+        $lookup = match (true) {
+            $guessItem !== null => ['status' => 'skipped'],
+            ! $online => ['status' => 'pending'],
+            default => $this->lookup->lookup(array_values(array_filter([$code, $eachCode]))),
+        };
 
         return [
             'status' => 'unknown',
@@ -59,9 +79,53 @@ class UpcResolver
             'kind' => $kind,
             'each_code' => $eachCode,
             'guess_item' => $guessItem,
-            'online' => $online['status'],
-            'suggestion' => $online['suggestion'] ?? null,
+            // not the exact single-unit code, but other items from the same manufacturer (GS1 company prefix)
+            'candidates' => ($kind === 'carton' && ! $guessItem) ? $this->sameManufacturer($code) : [],
+            'online' => $lookup['status'],
+            'suggestion' => $lookup['suggestion'] ?? null,
         ];
+    }
+
+    /** The online half of resolve(): a suggestion for an unknown, valid barcode (never throws). */
+    public function suggest(string $scanned): array
+    {
+        $result = $this->resolve($scanned, true);
+
+        return $result['status'] === 'unknown'
+            ? ['online' => $result['online'], 'suggestion' => $result['suggestion']]
+            : ['online' => 'skipped', 'suggestion' => null];
+    }
+
+    /**
+     * Items whose UPC starts with the carton's manufacturer prefix. A carton's
+     * item number often differs from the single item's (it did for
+     * 10842515008167 vs 842515006715), but both start with the same company
+     * prefix, so this narrows "what is in it?" to a few likely rows.
+     *
+     * @return array<int, array{id:int,name:string,upc:string}>
+     */
+    private function sameManufacturer(string $cartonCode): array
+    {
+        // the item-level GTIN-14 this carton would wrap starts '0' + the carton's 12-digit body
+        $prefix = '0'.substr($cartonCode, 1, 7); // '0' + first 7 body digits (6-digit UPC company prefix + number system)
+        $patterns = array_filter([
+            substr($prefix, 2).'%' => $prefix[0] === '0' && $prefix[1] === '0',
+            substr($prefix, 1).'%' => $prefix[0] === '0',
+            $prefix.'%' => true,
+        ]);
+
+        $items = Item::with('itemtype')->whereNotNull('upc')
+            ->where(function ($query) use ($patterns) {
+                foreach (array_keys($patterns) as $pattern) {
+                    $query->orWhere('upc', 'like', $pattern);
+                }
+            })->limit(10)->get();
+
+        return $items->map(fn (Item $item) => [
+            'id' => $item->id,
+            'name' => ItemController::displayName($item),
+            'upc' => $item->upc,
+        ])->all();
     }
 
     private function find(string $code): ?Item
