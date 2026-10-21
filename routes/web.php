@@ -161,8 +161,10 @@ Route::get('/donation-sorting', function () {
 })->middleware(['auth', 'permission:manage-sorting']);
 
 Route::get('/inventory-movement', function () {
-    return Inertia::render('PalletLocation',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/inventory-movement')]);
+    return Inertia::render('PalletLocation', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/inventory-movement'),
+        'canAdjust' => (bool) auth()->user()?->hasPermission('adjust-inventory'),
+    ]);
 })->middleware(['auth', 'permission:manage-pallets']);
 
 Route::get('/pallet-management', function () {
@@ -614,6 +616,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pa
     Route::post('/pallets/{id}/contents/adjust', [PalletStockController::class, 'adjust'])->whereNumber('id');
     Route::get('/pallet-stock/staging', [PalletStockController::class, 'staging']);
     Route::post('/pallet-stock/fill', [PalletStockController::class, 'fill']);
+    Route::post('/pallet-stock/{id}/open', [PalletStockController::class, 'open'])->whereNumber('id');
+    Route::post('/pallet-stock/{id}/seal', [PalletStockController::class, 'seal'])->whereNumber('id');
     Route::get('/pallets', [PalletController::class, 'index']);
     Route::get('/pallets/{kind}', [PalletController::class, 'index']);
     Route::get('/pallets/{kind}/{status}', [PalletController::class, 'index']);
@@ -621,6 +625,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pa
     Route::put('/pallets/{id}', [PalletController::class, 'update']);
     Route::delete('/pallets/{id}', [PalletController::class, 'destroy']);
 });
+
+// Manual inventory adjustments of a pallet's contents are their own permission, beyond ordinary stock movements.
+Route::post('/json/pallet-stock/{id}/adjust-inventory', [PalletStockController::class, 'adjustInventory'])
+    ->whereNumber('id')->middleware(['auth', 'permission:adjust-inventory']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-itemtypes']], function () {
     Route::get('/itemtypes', [ItemTypeController::class, 'index']);

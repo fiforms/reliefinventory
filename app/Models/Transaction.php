@@ -103,6 +103,7 @@ class Transaction extends Model
         'donor_identification_pending', // flagged for donor follow-up — see the 2026_08_15 migration
         'status_id',  // Status ID associated with the order-donation relation
         'order_date', // Date of the transaction — staff-editable, defaults to today (see ReceivingController)
+        'adjustment_reason', // type = adjustment only: see PalletStockController::ADJUSTMENT_REASONS
         'comments',   // Additional notes
         'container_count',
         'manifest',

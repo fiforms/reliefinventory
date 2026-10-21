@@ -146,6 +146,9 @@ class PermissionsSeeder extends Seeder
         // stays under manage-devices (they hang off a paired print server).
         'print-documents' => 'Send documents to a site printer and see your own print jobs',
         'manage-print-queue' => 'See, cancel, retry, and divert any print job in the print queue',
+        // Changing what is recorded on a warehouse pallet by hand (shrinkage, recounts) alters stock itself, so it is
+        // separate from ordinary pallet movement (manage-pallets). Office/Administrator by default.
+        'adjust-inventory' => 'Manually adjust the quantities recorded on a warehouse pallet, with a reason',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -180,6 +183,7 @@ class PermissionsSeeder extends Seeder
         'operate-kiosk',
         'review-form-submissions',
         'manage-print-queue',
+        'adjust-inventory',
     ];
 
     /**

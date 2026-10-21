@@ -15,10 +15,12 @@ import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import axios from 'axios';
 import PrintMenu from '@/Components/PrintMenu.vue';
+import SearchSelect from '@/Components/SearchSelect.vue';
 import { playScanError, playScanMatched, scanSoundsEnabled, setScanSoundsEnabled } from '@/scanSounds';
 
-defineProps({
+const props = defineProps({
 	breadcrumb: { type: Array },
+	canAdjust: { type: Boolean, default: false }, // the adjust-inventory permission
 });
 
 const tab = ref('pallet'); // 'pallet' (scan-driven, the default) | 'locations' | 'recent'
@@ -141,11 +143,19 @@ async function showPallet(tag) {
 	}
 }
 
+let lastShownTag = null;
+
 async function applyPallet(pallet) {
+	const samePallet = lastShownTag === pallet.tag;
 	current.value = pallet;
 	move.value = { locationCode: pallet.location?.code || '', status: pallet.status, notes: '' };
 	fill.value.locationCode = pallet.location?.code || '';
 	fill.value.expires = null;
+	if (!samePallet) {
+		mode.value = 'add';
+		adj.value = { rows: [], reason: '', notes: '' };
+	}
+	lastShownTag = pallet.tag;
 	history.value = [];
 	try {
 		history.value = (await axios.get('/json/palletstatus', { params: { pallet_id: pallet.id, limit: 20 } })).data.records;
@@ -156,6 +166,8 @@ async function applyPallet(pallet) {
 
 function clearPallet() {
 	current.value = null;
+	lastShownTag = null;
+	mode.value = 'add';
 	history.value = [];
 	fill.value.locationCode = '';
 	fill.value.expires = null;
@@ -308,11 +320,99 @@ function addFillLine(row) {
 	else fill.value.lines.push({ item_id: row.item_id, name: row.name, qty: row.left ?? row.qty, max: row.qty, expires_on: row.expires_on || null });
 }
 
-// The pallet the lines will go onto: the one on screen when it is a Warehouse pallet still taking stock, else a new one.
+// The pallet the lines will go onto: the one on screen when it is an unsealed Warehouse pallet, else a new one.
 const fillTarget = computed(() => {
 	const p = current.value;
-	return p && p.kind === 'W' && ['sealed', 'open'].includes(p.status) ? p : null;
+	return p && p.kind === 'W' && p.status === 'open' ? p : null;
 });
+
+// ---- sealed / open, and the two ways to change an open pallet (never both at once) ----
+const isWarehouse = computed(() => current.value?.kind === 'W');
+const canAdjust = computed(() => props.canAdjust && !!fillTarget.value && !!current.value.location_id); // permitted, open and already placed
+const mode = ref('add'); // 'add' (from the sorting area) | 'adjust' (correct what is on the pallet)
+const adj = ref({ rows: [], reason: '', notes: '' });
+const adjError = ref(null);
+const adjusting = ref(false);
+const adjPick = ref(null);
+const sealing = ref(false);
+const ADJUST_REASONS = [
+	['shrinkage', 'Shrinkage'],
+	['damaged', 'Damaged items'],
+	['correcting_count', 'Correcting count'],
+	['correcting_item_type', 'Correcting item type'],
+	['other', 'Other'],
+];
+const adjPending = computed(() => adj.value.rows.some((r) => String(r.delta).trim() !== ''));
+const adjChanges = computed(() => adj.value.rows.map((r) => ({ ...r, n: parseInt(r.delta, 10) })).filter((r) => Number.isInteger(r.n) && r.n !== 0));
+
+function resetAdjust() {
+	adj.value = { rows: (current.value?.contents || []).map((c) => ({ item_id: c.item_id, name: c.name, qty: c.qty, delta: '' })), reason: '', notes: '' };
+	adjError.value = null;
+}
+
+function setMode(m) {
+	mode.value = m;
+	if (m === 'adjust') resetAdjust();
+}
+
+function addAdjustItem(item) {
+	adjPick.value = null;
+	if (!item || adj.value.rows.some((r) => r.item_id === item.id)) return;
+	adj.value.rows.push({ item_id: item.id, name: item.name || item.description, qty: 0, delta: '' });
+}
+
+async function sealOrUnseal(action) {
+	const pallet = current.value;
+	sealing.value = true;
+	scanMessage.value = null;
+	try {
+		await axios.post(`/json/pallet-stock/${pallet.id}/${action}`);
+		scanMessage.value = { ok: true, text: `${pallet.tag}: ${action === 'open' ? 'unsealed' : 're-sealed'}.` };
+		playScanMatched();
+		await applyPallet(await lookupPallet(pallet.tag));
+	} catch (e) {
+		scanMessage.value = { ok: false, text: errorText(e, 'Could not change the seal.') };
+		playScanError();
+	} finally {
+		sealing.value = false;
+		focusScan();
+	}
+}
+
+async function submitAdjust() {
+	adjError.value = null;
+	if (!adjChanges.value.length) {
+		adjError.value = 'Enter at least one change (use a minus sign to remove).';
+		return;
+	}
+	if (!adj.value.reason) {
+		adjError.value = 'Choose a reason.';
+		return;
+	}
+	if (adj.value.reason === 'other' && !adj.value.notes.trim()) {
+		adjError.value = 'Say what the reason is in the notes.';
+		return;
+	}
+	adjusting.value = true;
+	try {
+		const pallet = current.value;
+		await axios.post(`/json/pallet-stock/${pallet.id}/adjust-inventory`, {
+			reason: adj.value.reason,
+			notes: adj.value.notes || null,
+			lines: adjChanges.value.map((r) => ({ item_id: r.item_id, qty: r.n })),
+		});
+		scanMessage.value = { ok: true, text: `${pallet.tag}: inventory adjusted.` };
+		playScanMatched();
+		await applyPallet(await lookupPallet(pallet.tag));
+		resetAdjust();
+	} catch (e) {
+		adjError.value = errorText(e, 'Could not save the adjustment.');
+		playScanError();
+	} finally {
+		adjusting.value = false;
+		focusScan();
+	}
+}
 
 const fillLocation = computed(() => locationByCode(fill.value.locationCode));
 const suggestedExpiry = computed(() => {
@@ -514,7 +614,7 @@ onMounted(() => {
 							<span class="ri_fieldlabel">Location:</span>
 							<input v-model="move.locationCode" class="ri_forminput" list="pm_locations" placeholder="Unknown — scan or type a location" />
 						</label>
-						<label class="pm_fillfield">
+						<label v-if="!isWarehouse" class="pm_fillfield">
 							<span class="ri_fieldlabel">Status:</span>
 							<select v-model="move.status" class="ri_forminput">
 								<option v-for="st in current.statuses" :key="st.id" :value="st.id">{{ st.name }}</option>
@@ -525,7 +625,10 @@ onMounted(() => {
 							<input v-model="move.notes" class="ri_forminput" />
 						</label>
 						<button type="button" class="ri_defaultbutton" :disabled="saving" @click="recordMovement">{{ saveLabel }}</button>
+						<button v-if="isWarehouse && current.status === 'sealed'" type="button" class="ri_formbutton" :disabled="sealing" @click="sealOrUnseal('open')">Unseal</button>
+						<button v-if="isWarehouse && current.status === 'open'" type="button" class="ri_formbutton" :disabled="sealing" @click="sealOrUnseal('seal')">Re-seal</button>
 					</div>
+					<p v-if="isWarehouse && current.status === 'sealed'" class="ri_hint">This pallet is sealed. Unseal it to add items or adjust what is on it.</p>
 
 					<h3 class="pm_sub">Pallet Contents</h3>
 					<template v-if="current.contents">
@@ -556,7 +659,55 @@ onMounted(() => {
 				<p v-else class="ri_hint">Scan a pallet to see where it is, what is on it and move it — or build a new Warehouse pallet below.</p>
 
 				<!-- put stock from the sorting area onto this (or a new) Warehouse pallet -->
-				<div v-if="!current || fillTarget">
+				<div v-if="canAdjust" class="pm_modes">
+					<button type="button" :class="['ri_formbutton', { pm_active: mode === 'add' }]" :disabled="adjPending" :title="adjPending ? 'Finish or clear the adjustment first' : ''" @click="setMode('add')">Add from sorting area</button>
+					<button type="button" :class="['ri_formbutton', { pm_active: mode === 'adjust' }]" :disabled="fill.lines.length > 0" :title="fill.lines.length ? 'Finish or clear the items staged to add first' : ''" @click="setMode('adjust')">Adjust inventory</button>
+				</div>
+
+				<!-- adjust what is on an unsealed, placed pallet -->
+				<div v-if="canAdjust && mode === 'adjust'">
+					<h3 class="pm_sub">Adjust inventory on {{ current.tag }}</h3>
+					<p class="ri_hint">Correct what is on this pallet. Use a minus sign to remove (-3), a plain number to add. This is logged as an inventory adjustment, separate from adding stock from the sorting area.</p>
+					<p v-if="adjError" class="ri_error">{{ adjError }}</p>
+					<div class="pm_tablewrap">
+						<table class="ri_datatable" border="1">
+							<thead><tr><th>Item</th><th>Now</th><th>Change</th><th>After</th></tr></thead>
+							<tbody>
+								<tr v-for="r in adj.rows" :key="r.item_id">
+									<td>{{ r.name }}</td>
+									<td>{{ r.qty }}</td>
+									<td><input v-model="r.delta" type="text" inputmode="numeric" autocomplete="off" class="ri_forminput pm_qty" placeholder="0" @focus="$event.target.select()" /></td>
+									<td>{{ Number.isInteger(parseInt(r.delta, 10)) ? r.qty + parseInt(r.delta, 10) : r.qty }}</td>
+								</tr>
+								<tr v-if="!adj.rows.length"><td colspan="4">Nothing is recorded on this pallet — add an item below.</td></tr>
+							</tbody>
+						</table>
+					</div>
+					<div class="pm_fillrow">
+						<span class="pm_fillfield">
+							<span class="ri_fieldlabel">Another item:</span>
+							<SearchSelect v-model="adjPick" optionsource="/json/items" display="name" :searchfields="['name', 'upc', 'description']"
+								placeholder="Search items..." :smartOpen="true" :debounce="150" :openOnFocus="false" @selected="addAdjustItem" />
+						</span>
+					</div>
+					<div class="pm_fillrow">
+						<label class="pm_fillfield">
+							<span class="ri_fieldlabel">Reason:</span>
+							<select v-model="adj.reason" class="ri_forminput">
+								<option value="" disabled>Choose a reason…</option>
+								<option v-for="[key, label] in ADJUST_REASONS" :key="key" :value="key">{{ label }}</option>
+							</select>
+						</label>
+						<label class="pm_fillfield">
+							<span class="ri_fieldlabel">Notes<span v-if="adj.reason === 'other'"> (required)</span>:</span>
+							<input v-model="adj.notes" class="ri_forminput" />
+						</label>
+						<button type="button" class="ri_defaultbutton" :disabled="adjusting || !adjChanges.length" @click="submitAdjust">Record Adjustment ({{ adjChanges.length }})</button>
+						<button type="button" class="ri_formbutton" :disabled="!adjPending" @click="resetAdjust">Clear</button>
+					</div>
+				</div>
+
+				<div v-if="!current || (fillTarget && mode === 'add')">
 					<h3 class="pm_sub">{{ fillTarget ? 'Add items to ' + fillTarget.tag : 'Build a new Warehouse pallet' }}</h3>
 					<p v-if="!fillTarget" class="ri_hint">Tap items in the sorting area below, set where it is going, then Seal &amp; Place. Scan an existing Warehouse pallet instead to add to that one.</p>
 
@@ -590,7 +741,7 @@ onMounted(() => {
 							<input v-model="fill.notes" class="ri_forminput" />
 						</label>
 						<button type="button" class="ri_defaultbutton" :disabled="filling || !fill.lines.length" @click="submitFill">
-							Seal &amp; Place ({{ fillTotal }})
+							{{ fillTarget ? 'Add to pallet' : 'Seal & Place' }} ({{ fillTotal }})
 						</button>
 					</div>
 
@@ -627,7 +778,7 @@ onMounted(() => {
 						</table>
 					</div>
 				</div>
-				<p v-else-if="fill.lines.length" class="ri_hint">{{ fill.lines.length }} item line(s) are staged for a Warehouse pallet — use Clear / new pallet to go back to them.</p>
+				<p v-else-if="fill.lines.length && !(fillTarget && mode === 'adjust')" class="ri_hint">{{ fill.lines.length }} item line(s) are staged for a Warehouse pallet — use Clear / new pallet to go back to them.</p>
 
 				<div v-if="current" class="pm_history">
 					<h3 class="pm_sub">Movement History</h3>
@@ -730,6 +881,11 @@ onMounted(() => {
 }
 .pm_sku > td:first-child {
 	padding-left: 2em;
+}
+.pm_modes {
+	display: flex;
+	gap: 0.5em;
+	margin: 0.75em 0 0.25em;
 }
 .pm_scanbar {
 	display: flex;
