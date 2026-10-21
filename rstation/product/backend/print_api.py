@@ -103,6 +103,10 @@ class PrintApi:
     async def heartbeat(self, payload: dict) -> dict:
         return (await self._request("POST", "heartbeat", json=payload)).json()
 
+    async def session_ticket(self) -> str:
+        """A single-use ticket the browser trades for a device-session cookie (DeviceSessionController)."""
+        return (await self._request("POST", "session-ticket", json={})).json()["ticket"]
+
     async def jobs(self) -> list[dict]:
         return (await self._request("GET", "print-jobs")).json().get("jobs", [])
 

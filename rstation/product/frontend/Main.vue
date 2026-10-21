@@ -8,8 +8,11 @@ import { request } from '@core/api.js'
 // this local app (the image has no KIOSK_URL), so a fresh device gets the
 // first-run wizard (the router sends /kiosk there until setup is done); once it
 // is, this hands the browser to the Relief Inventory site chosen in the wizard.
-// The path is the site's sign-in page for now; the heartbeat's kiosk_path can
-// replace it later (IMPLEMENTATION.md §2).
+// Where it lands depends on the Function an admin chose for this device: a paired device first
+// trades the backend's token for a single-use ticket (POST /api/local/browser-ticket) and opens
+// {server}/device-session/{ticket}, which gives the browser a session for that Function's page
+// (a stats display, the volunteer kiosk, …) with nobody logged in. A device with no page for its
+// Function, an unpaired one, or any failure along the way gets the site's sign-in page, as before.
 //
 // If the escape hatch had to restart the browser (platform/docs/ESCAPE_HATCH.md),
 // this opens Settings once instead of going straight back to the site.
@@ -35,6 +38,17 @@ async function localServerIsUp(url) {
   }
 }
 
+// The URL to hand the browser to. Never throws: the ticket is an optimisation over plain sign-in.
+async function destination(serverUrl) {
+  try {
+    const { ticket } = await request('/api/local/browser-ticket', { method: 'POST' })
+    if (ticket) return `${serverUrl}/device-session/${encodeURIComponent(ticket)}`
+  } catch {
+    // fall through to sign-in
+  }
+  return serverUrl + SITE_PATH
+}
+
 async function launch() {
   try {
     const status = await request('/api/local/status')
@@ -45,7 +59,7 @@ async function launch() {
     if (status.server_url) {
       waitingLocal.value = isLocalServer(status.server_url) && !(await localServerIsUp(status.server_url))
       if (!waitingLocal.value) {
-        window.location.replace(status.server_url + SITE_PATH)
+        window.location.replace(await destination(status.server_url))
         return
       }
     } else {

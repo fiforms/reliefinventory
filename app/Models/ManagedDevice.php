@@ -6,6 +6,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 /**
@@ -16,6 +17,8 @@ use Illuminate\Support\Str;
  */
 class ManagedDevice extends Model
 {
+    public const SESSION_COOKIE = 'device_session';
+
     protected $fillable = [
         'name', 'kiosk_location_id', 'update_channel', 'os_auto_update_enabled', 'kiosk_function',
         'language', 'revoked_at',
@@ -34,7 +37,7 @@ class ManagedDevice extends Model
     protected $appends = ['online', 'revoked', 'device_type'];
 
     // The wake-up channel name is a capability: never serialize it to the admin UI.
-    protected $hidden = ['wake_channel'];
+    protected $hidden = ['wake_channel', 'session_token_hash'];
 
     public function location()
     {
@@ -75,8 +78,41 @@ class ManagedDevice extends Model
         $this->token_hash = self::hashToken($token);
         // A re-pair also rotates the wake-up channel, so a previous holder can't keep listening.
         $this->wake_channel = null;
+        // ...and ends any browser session the previous pairing had.
+        $this->session_token_hash = null;
 
         return $token;
+    }
+
+    /**
+     * Starts the device's browser session (the cookie that opens its allow-listed pages with nobody
+     * logged in); returns the plaintext cookie value. One live session per device: issuing a new one
+     * (every launcher run does) replaces the old.
+     */
+    public function issueSessionToken(): string
+    {
+        $token = Str::random(60);
+        $this->session_token_hash = self::hashToken($token);
+        $this->save();
+
+        return $token;
+    }
+
+    /** The device behind a browser's session cookie, or null (no cookie, unknown, or revoked). */
+    public static function fromSessionToken(?string $token): ?self
+    {
+        if (! $token) {
+            return null;
+        }
+        $device = static::where('session_token_hash', self::hashToken($token))->first();
+
+        return $device && ! $device->revoked_at ? $device : null;
+    }
+
+    /** The paired device a request's browser is, if any — see EnsureDeviceAccess. */
+    public static function fromRequest(Request $request): ?self
+    {
+        return static::fromSessionToken($request->cookie(self::SESSION_COOKIE));
     }
 
     /**

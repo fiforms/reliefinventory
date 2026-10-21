@@ -59,6 +59,7 @@ class ManagedDeviceController extends Controller
         $managedDevice->update(['revoked_at' => now()]);
         $managedDevice->token_hash = null;
         $managedDevice->wake_channel = null;
+        $managedDevice->session_token_hash = null;
         $managedDevice->save();
 
         return response()->json(['message' => 'Device revoked.', 'record' => $managedDevice]);

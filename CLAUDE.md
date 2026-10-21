@@ -662,3 +662,17 @@ hands its one Chromium tab to the remote site, a core daemon (`slide-announcer-e
 by `product/image/enable`) returns it to local Settings on Ctrl+Alt+Home, Ctrl+Alt+S, or holding the remote's
 Home for 3 s, redirecting via `slide-announcer-kiosk-navigate` (DevTools) and falling back to a kiosk restart
 plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Confirmed working on a real Pi (2026-10-18).
+
+**Device sessions — pages with nobody logged in** (2026-10-21, `DeviceSessionController`, `EnsureDeviceAccess`, `DeviceSessionTicket`):
+a paired R Station's *browser* has no credential of its own (only the Pi's local backend holds the bearer token, and it must never
+reach the browser). The launcher (`Main.vue`) has the backend mint a single-use, 60 s ticket (`POST /api/devices/session-ticket`,
+`device-auth`) and opens `/device-session/{ticket}`, which sets an HttpOnly `device_session` cookie (hash in
+`managed_devices.session_token_hash`; one live session per device, re-minted each launch) and redirects to the page for the device's
+**Function** (`config/devices.php` `path`) — never a client-supplied path; no page / bad ticket → `/login`. The cookie is **not a login**
+(`Auth::user()` stays null; never set actor fields from it): the `display-access:<permission>,<function>…` middleware admits a logged-in
+user with that permission OR a device whose current Function is listed, and `EnsureKioskAccess` admits a `volunteer_checkin` device (the
+sign-in kiosk works from the pairing alone — no Trusted Device/PIN kiosk lock). Revoke, re-pair (`issueToken()`) or changing the
+Function ends access immediately. Pages: chrome-free `/display/sitrep` and `/display/dashboard` (`Pages/Display/Stats.vue`,
+`DisplayLayout.vue` with a small bottom-left "Log in" link — the Pi's on-screen Settings button is bottom-right; self-refreshing from
+`/json/display/*`; the dashboard variant drops `donor_quality`). To add a page for devices: add a Function in `config/devices.php`, a
+`display-access` route pair, and nothing else. Tests: `DeviceSessionTest`; Pi side `product/backend/test_browser_session_api.py`.

@@ -11,6 +11,7 @@ use App\Http\Middleware\RedirectToSetup;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\KioskLocation;
+use App\Models\ManagedDevice;
 use App\Models\KioskSetting;
 use App\Models\MenuItem;
 use App\Services\PinLoginService;
@@ -131,7 +132,8 @@ Route::get('/volunteers/kiosk', function () {
     // kiosk mode here).
     $device = app(PinLoginService::class)->deviceFromCookie(request());
     $activeLocations = KioskLocation::where('active', true)->get();
-    $location = $device?->kioskLocation ?: ($activeLocations->count() === 1 ? $activeLocations->first() : null);
+    // A paired R Station's location is its pairing's (device session — DeviceSessionController).
+    $location = ManagedDevice::fromRequest(request())?->location ?: $device?->kioskLocation ?: ($activeLocations->count() === 1 ? $activeLocations->first() : null);
 
     return Inertia::render('VolunteerKiosk', [
         'breadcrumb' => Auth::check() ? MenuItem::getBreadcrumb('/volunteers/kiosk') : [],
@@ -377,6 +379,23 @@ Route::get('/reports/dashboard', function () {
     return Inertia::render('WarehouseDashboard',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/dashboard')]);
 })->middleware(['auth', 'permission:view-dashboard']);
+
+// Browser handoff for a paired R Station (see DeviceSessionController): trades a single-use ticket for
+// the device-session cookie, then lands on the device's Function page. Unauthenticated by design.
+Route::get('/device-session/{ticket}', [DeviceSessionController::class, 'start'])->middleware('throttle:30,1');
+
+// Chrome-free, auto-refreshing stats screens for an always-on R Station display, shown with nobody
+// logged in (display-access = the matching permission OR a device session with that Function).
+Route::get('/display/sitrep', function () {
+    return Inertia::render('Display/Stats', ['mode' => 'sitrep']);
+})->middleware('display-access:view-sitrep,status_sitrep');
+Route::get('/display/dashboard', function () {
+    return Inertia::render('Display/Stats', ['mode' => 'dashboard']);
+})->middleware('display-access:view-dashboard,status_dashboard');
+Route::group(['prefix' => 'json/display'], function () {
+    Route::get('/sitrep', [SitrepController::class, 'index'])->middleware('display-access:view-sitrep,status_sitrep');
+    Route::get('/dashboard', [DashboardController::class, 'display'])->middleware('display-access:view-dashboard,status_dashboard');
+});
 
 // External Situation Report: restricted subset of the same data, meant to
 // be shared outside the organization (FEMA/state liaisons) — see

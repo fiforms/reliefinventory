@@ -17,6 +17,7 @@ from fastapi import APIRouter
 
 from product import Product
 
+from .browser_session_api import build_router as browser_session_router
 from .local_server_api import build_router as local_server_router
 from .print_station import default_station
 from .printers_api import build_router as printers_router
@@ -38,7 +39,7 @@ product = Product(
     # frontend's `setupSteps` supplies the step); the boot yaml's server_url is
     # only its default. See platform/docs/SERVER_URL.md.
     confirm_server_url=True,
-    routers=[router, printers_router(station.cups), local_server_router()],
+    routers=[router, printers_router(station.cups), local_server_router(), browser_session_router(station.api)],
     # Claims print jobs from the website and prints them (see print_station.py).
     background_tasks=[station.run],
     # Appears as `portal` and `print_station` in GET /api/local/status.
