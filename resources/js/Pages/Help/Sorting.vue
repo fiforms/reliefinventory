@@ -89,6 +89,15 @@ defineProps({
 					selected, since runs of the same kind of goods are common.
 				</li>
 				<li>
+					Scanning a run of single items? After an item is picked, scan the next
+					barcode straight into the <strong>Qty</strong> box: the item you were on is
+					saved with a quantity of 1 (or its case quantity) and the new barcode is looked
+					up. Type a number and press Enter instead when there's more than one. Scanning
+					the <em>same</em> item again, straight into the <strong>Qty</strong> box, counts it
+					instead: scan each of ten identical items and the quantity climbs to 10; scan a
+					different item and the count is saved.
+				</li>
+				<li>
 					Don't recognize an item? Type its name into the item search and choose
 					<strong>Add "…" as a new item</strong> to open the quick-add form. A brand
 					new item type needs a description, a unit (e.g. Each, Pound), and a

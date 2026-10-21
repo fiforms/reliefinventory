@@ -28,7 +28,7 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, router } from '@inertiajs/vue3';
 import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
 import QrScanner from '@/Components/QrScanner.vue';
 import TextArea from '@/Components/TextArea.vue';
@@ -38,7 +38,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import axios from 'axios';
-import { playScanError, playScanMatched, playScanUnknown, scanSoundsEnabled, setScanSoundsEnabled } from '@/scanSounds';
+import { playScanCarton, playScanError, playScanMatched, playScanUnknown, scanSoundsEnabled, setScanSoundsEnabled } from '@/scanSounds';
 
 // One button per choice. New and Usable are both disposition 'usable' (both
 // count into inventory) and differ only in item_condition, which exists so
@@ -81,6 +81,8 @@ export default {
 			notice: null,
 			editingDonor: false,
 			confirmingComplete: false,
+			confirmingConsolidate: false,
+			consolidating: false,
 
 			// donor quick-add
 			creatingDonor: false,
@@ -110,7 +112,10 @@ export default {
 
 			// barcode scan -> item (confirmed mappings first, online suggestion on a miss)
 			upcResolving: false,
+			qtyBurst: { startValue: '', digits: '', lastT: 0 }, // a scanner's keystroke burst in the Qty box
+			cartonDialog: null, // an unknown carton barcode being mapped to the item inside it
 			scanSounds: scanSoundsEnabled(),
+			modalScanBuffer: '',
 		};
 	},
 	computed: {
@@ -122,6 +127,18 @@ export default {
 		// dock; ad-hoc untagged sessions have no Receiving record.
 		fromReceiving() {
 			return !!(this.session && ((this.session.pallets_count ?? 0) > 0 || this.session.manifest));
+		},
+		// How many saved lines "Combine duplicate lines" would remove (an estimate:
+		// the server also keeps different people and different days apart).
+		mergeableCount() {
+			const saved = this.lines.filter((line) => line.id != null && line.status === 'saved' && line.qty_added > 0);
+			const groups = new Set(saved.map((line) =>
+				[line.item_id, line.pallet_id ?? 0, line.disposition, line.item_condition ?? ''].join('|')));
+			return saved.length - groups.size;
+		},
+		// Something would be lost by leaving: an item picked but not added, or lines still saving / failed.
+		hasUnsavedWork() {
+			return this.view === 'session' && !this.readonly && (!!this.entry.item_id || this.pendingCount > 0);
 		},
 		failedLines() {
 			return this.lines.filter((line) => line.status === 'failed');
@@ -200,6 +217,16 @@ export default {
 			this.entry = { item_id: null, qty: null, choice: 'usable' };
 			this.view = 'session';
 			this.$nextTick(() => this.$refs.palletInput?.focus());
+		},
+		// The "All Sessions" button: back to the list without losing the item being entered.
+		// This is an in-page view switch (no router visit), so the navigation guards never see it.
+		async leaveSession() {
+			if (!this.readonly) {
+				if (!(await this.flushPendingWork())) return;
+				if (this.pendingCount > 0 && !window.confirm(
+					this.pendingCount + ' line(s) have not finished saving and will be lost. Leave anyway?')) return;
+			}
+			await this.closeSession();
 		},
 		async closeSession() {
 			this.view = 'list';
@@ -293,8 +320,27 @@ export default {
 				this.donorSaving = false;
 			}
 		},
+		// An item picked but not yet added (quantity still in the box) is real work that
+		// Complete must not drop: add it, then wait for in-flight saves to land.
+		async flushPendingWork() {
+			if (this.entry.item_id) {
+				const raw = String(this.entry.qty ?? '').trim();
+				if (!/^\d{1,7}$/.test(raw) || parseInt(raw, 10) < 1) {
+					this.lineError = 'Enter a quantity for the selected item (or clear it) before completing.';
+					this.$refs.qtyInput?.focus();
+					return false;
+				}
+				this.addLine();
+			}
+			const deadline = Date.now() + 10000;
+			while (this.lines.some((line) => line.status === 'saving') && Date.now() < deadline) {
+				await new Promise((resolve) => setTimeout(resolve, 100));
+			}
+			return true;
+		},
 		async completeSession() {
-			// Two-step inline confirm when lines haven't reached the server.
+			if (!(await this.flushPendingWork())) return;
+			// Two-step inline confirm when lines still haven't reached the server (failed saves).
 			if (this.pendingCount > 0 && !this.confirmingComplete) {
 				this.confirmingComplete = true;
 				return;
@@ -303,6 +349,68 @@ export default {
 			await this.patchSession({ completed: true });
 			if (!this.headerError) {
 				await this.closeSession();
+			}
+		},
+		// ---------- leaving the page with unsaved work ----------
+		leaveMessage() {
+			return 'This sorting session has an item that is not saved yet (or lines still saving). Leave anyway?';
+		},
+		// Menu / link navigation (Inertia visits): returning false cancels the visit.
+		onInertiaBefore() {
+			if (this.hasUnsavedWork && !window.confirm(this.leaveMessage())) return false;
+		},
+		// Refresh, close tab, typed URL.
+		onBeforeUnload(event) {
+			if (!this.hasUnsavedWork) return;
+			event.preventDefault();
+			event.returnValue = '';
+		},
+		// Browser Back/Forward inside the app: Inertia can't veto these, but the Navigation API
+		// (Chromium) lets us cancel the traversal. Browsers without it just leave without a prompt.
+		onNavigate(event) {
+			if (!this.hasUnsavedWork || !event.cancelable || event.hashChange || event.downloadRequest) return;
+			if (event.navigationType === 'traverse' && event.destination?.sameDocument && !window.confirm(this.leaveMessage())) {
+				event.preventDefault();
+			}
+		},
+		// Keep the scanner's target ready: after any click on the page (a disposition
+		// button, blank space...) put focus back where the next scan should go -
+		// the Qty box if an item is already chosen (a scan there saves it as 1 and
+		// moves on), otherwise the item box. Never steals focus from a field the
+		// sorter is typing in (Qty, comments, pallet tag, donor search...), nor
+		// while a modal is open.
+		refocusScanTarget() {
+			if (this.view !== 'session' || this.readonly || this.showItemModal || this.showScanner || this.cartonDialog) return;
+			setTimeout(() => {
+				const el = document.activeElement;
+				if (el && el !== document.body && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
+				if (this.entry.item_id) this.$refs.qtyInput?.focus();
+				else this.$refs.itemSelect?.focus();
+			}, 0);
+		},
+		// Sorters may scan every unit; this folds identical lines (same item, pallet,
+		// disposition and condition) into one with the summed quantity. Not undoable,
+		// so it takes a second click.
+		async consolidateLines() {
+			if (!this.confirmingConsolidate) {
+				this.confirmingConsolidate = true;
+				return;
+			}
+			this.confirmingConsolidate = false;
+			this.consolidating = true;
+			this.headerError = null;
+			try {
+				const response = await axios.post('/json/sorting-sessions/' + this.session.id + '/consolidate');
+				const unsaved = this.lines.filter((line) => line.id == null);
+				this.lines = [...unsaved, ...(response.data.record.item_ledgers || []).map((line) => ({ ...line, status: 'saved' }))];
+				const merged = response.data.merged;
+				this.notice = merged
+					? 'Combined ' + merged + ' duplicate line' + (merged === 1 ? '' : 's') + '.'
+					: 'No duplicate lines to combine.';
+			} catch (error) {
+				this.headerError = error.response?.data?.message || 'Could not combine the lines. Try again.';
+			} finally {
+				this.consolidating = false;
 			}
 		},
 		async reopenSession() {
@@ -375,11 +483,78 @@ export default {
 		},
 
 		// ---------- line entry (autosaved per line) ----------
+		// An item was picked (scanned or searched): quantity defaults to 1 and is selected, so
+		// "Enter" saves one, "3" + Enter saves three, and scanning the next item saves this one as 1.
+		// A carton scan then overrides it with the carton's count (prefillQty again).
 		itemChosen() {
-			this.$refs.qtyInput?.focus();
+			this.prefillQty(1);
 		},
 		setDisposition(key) {
 			this.entry.choice = key;
+		},
+		// Enter in the Qty box. A long all-digit entry there is a barcode scanned
+		// instead of a quantity: save the current item (qty 1, or its case
+		// quantity if the scan had prefilled one) and handle the code as the
+		// next item scan - so "scan, scan, scan" logs one of each, while
+		// "scan, type a qty, Enter" still works. Read the raw field text:
+		// v-model on a number input would drop a UPC's leading zero.
+		onQtyEnter() {
+			const raw = String(this.$refs.qtyInput?.value ?? '').trim();
+			const burst = this.qtyBurst;
+			this.qtyBurst = { startValue: '', digits: '', lastT: 0 };
+
+			// What was scanned, and what the quantity was before the scan typed over/after it.
+			let scanned = null;
+			let before = '';
+			if (burst.digits.length >= 8 && raw.endsWith(burst.digits)) {
+				scanned = burst.digits;
+				before = burst.startValue.trim();
+			} else if (/^\d{8,}$/.test(raw)) {
+				scanned = raw; // arrived without keystrokes (paste): nothing to recover the old quantity from
+			}
+			if (!scanned) {
+				this.addLine();
+				return;
+			}
+
+			const previous = /^\d{1,7}$/.test(before) && parseInt(before, 10) >= 1 ? parseInt(before, 10) : (this.entry.defaultQty || 1);
+			this.lineError = null;
+
+			// The same item again: count it (one more, or one more carton) instead of saving.
+			if (this.entry.item_id && this.entry.scanCode && this.normalize14(scanned) === this.entry.scanCode) {
+				this.prefillQty(previous + (this.entry.scanUnit || 1));
+				playScanMatched();
+				return;
+			}
+
+			// A different barcode: save the item being counted with its running quantity, then look this one up.
+			if (this.entry.item_id) {
+				this.entry.qty = previous;
+				this.addLine();
+			} else {
+				this.entry.qty = null;
+			}
+			this.onBarcodeScan(scanned);
+		},
+		// Tracks a scanner's burst of digits in the Qty box. A scan types over (or after) the number
+		// that was there, so remember the field's value when the burst starts - that is the running
+		// quantity - and the digits that follow it.
+		onQtyKeydown(event) {
+			if (event.ctrlKey || event.metaKey || event.altKey) return;
+			if (/^\d$/.test(event.key)) {
+				const now = performance.now();
+				if (this.qtyBurst.digits === '' || now - this.qtyBurst.lastT > 80) {
+					this.qtyBurst = { startValue: event.target.value, digits: '', lastT: now };
+				}
+				this.qtyBurst.digits += event.key;
+				this.qtyBurst.lastT = now;
+			} else if (event.key !== 'Enter' && event.key !== 'Shift') {
+				this.qtyBurst = { startValue: '', digits: '', lastT: 0 };
+			}
+		},
+		// Barcodes compare as 14 digits, so UPC-A, EAN-13 and GTIN-14 spellings of one code match.
+		normalize14(code) {
+			return String(code).padStart(14, '0');
 		},
 		addLine() {
 			this.lineError = null;
@@ -495,14 +670,21 @@ export default {
 			this.lineError = null;
 			this.upcResolving = true;
 			try {
-				const response = await axios.get('/json/upc/resolve', { params: { code: text } });
+				// online=0: our own catalog only, so a miss is known (and heard) at once;
+				// the slower online suggestion is fetched separately below.
+				const response = await axios.get('/json/upc/resolve', { params: { code: text, online: 0 } });
 				const result = response.data;
 				if (result.status === 'matched') {
 					await this.applyScanMatch(result);
-					playScanMatched();
-				} else {
-					this.openItemModalForScan(result);
+					if (result.kind === 'carton') playScanCarton();
+					else playScanMatched();
+				} else if (result.kind === 'carton') {
 					playScanUnknown();
+					this.openCartonDialog(result);
+				} else {
+					playScanUnknown();
+					this.openItemModalForScan(result);
+					if (result.online === 'pending') this.fetchSuggestion(result.code);
 				}
 			} catch (error) {
 				playScanError();
@@ -513,9 +695,29 @@ export default {
 			}
 		},
 		// The item box matched the barcode against its own loaded list (no server lookup).
-		onScanMatchedLocally(item) {
-			if ((item.case_qty ?? 0) > 1) this.entry.qty = Math.round(item.case_qty * (parseFloat(item.size) || 1));
-			playScanMatched();
+		onScanMatchedLocally(item, typed) {
+			this.entry.scanCode = this.normalize14(typed);
+			this.entry.scanUnit = (item.case_qty ?? 0) > 1 ? Math.round(item.case_qty * (parseFloat(item.size) || 1)) : 1;
+			if ((item.case_qty ?? 0) > 1) {
+				this.prefillQty(Math.round(item.case_qty * (parseFloat(item.size) || 1)));
+				playScanCarton();
+			} else {
+				playScanMatched();
+			}
+		},
+		// A scan filled in the quantity (a carton's count). Select it again once the field
+		// has the new text - writing the value clears the selection, and without it the
+		// next scan's digits would be appended to it ("30" + the barcode) instead of
+		// replacing it. defaultQty is what "scan the next item" saves this line with.
+		prefillQty(qty) {
+			this.entry.qty = this.entry.defaultQty = qty;
+			this.$nextTick(() => {
+				const field = this.$refs.qtyInput;
+				if (field) {
+					field.focus();
+					field.select();
+				}
+			});
 		},
 		toggleScanSounds() {
 			this.scanSounds = !this.scanSounds;
@@ -531,7 +733,10 @@ export default {
 				await select.refresh(result.item.id);
 			}
 			// a case adds all the single units in it; the sorter can still change the number
-			if (result.qty) this.entry.qty = result.qty;
+			if (result.qty) this.prefillQty(result.qty);
+			// remember which scan picked this item, so scanning it again just counts up
+			this.entry.scanCode = result.code;
+			this.entry.scanUnit = result.qty || 1;
 		},
 		// show the barcode the way it is printed: UPC-A / EAN-13 without the GTIN-14 padding zeros
 		displayCode(code) {
@@ -543,9 +748,8 @@ export default {
 			return {
 				description: '',
 				upc: '',
-				scan: null, // set when opened from an unknown barcode scan: { kind, online, suggestion, guessItem, source }
-				kind: 'each',
-				case_qty: null,
+				scan: null, // set when opened from an unknown barcode scan: { code, online, suggestion }
+				kind: 'each', // switching to 'carton' hands the barcode to the carton dialog
 				itemtype_id: null,
 				creatingType: false,
 				newTypeName: '',
@@ -574,27 +778,56 @@ export default {
 		// item's type and description. Saving adds a SKU row to the master list.
 		openItemModalForScan(result) {
 			const suggestion = result.suggestion;
-			const guess = result.guess_item;
 			this.itemModal = this.blankItemModal();
 			this.itemModal.upc = this.displayCode(result.code);
-			this.itemModal.kind = result.kind;
-			this.itemModal.itemtype_id = guess?.itemtype_id ?? null;
-			this.itemModal.description = guess?.description
-				|| [suggestion?.brand, suggestion?.description, suggestion?.size_text].filter(Boolean).join(' ');
-			this.itemModal.scan = { code: result.code, online: result.online, suggestion, guessItem: guess };
+			this.itemModal.description = [suggestion?.brand, suggestion?.description, suggestion?.size_text].filter(Boolean).join(' ');
+			this.modalScanBuffer = '';
+			this.itemModal.scan = { code: result.code, online: result.online, suggestion };
 			this.itemModalError = null;
 			this.showItemModal = true;
+			// Park focus on the modal itself, not the item box behind it, so the
+			// next scan can't append to the old barcode there (see onModalStrayKey).
+			this.$nextTick(() => this.$refs.itemModalBox?.focus());
+		},
+		// Keys typed while the modal box itself has focus (no field selected) are
+		// a scanner firing again before the sorter chose a match: discard them and
+		// repeat the "not found" tone so they know the form is still waiting.
+		onModalStrayKey(event) {
+			if (event.key === 'Enter') {
+				if (this.modalScanBuffer.length >= 8) playScanUnknown();
+				this.modalScanBuffer = '';
+				event.preventDefault();
+			} else if (/^\d$/.test(event.key)) {
+				this.modalScanBuffer += event.key;
+				event.preventDefault();
+			} // anything else (Tab to reach the fields, Escape) behaves normally
+		},
+		// The online half of an unknown scan, filled into the already-open form when it
+		// arrives. Skipped if the sorter has moved on, and never overwrites a description
+		// they have started typing.
+		async fetchSuggestion(code) {
+			let outcome;
+			try {
+				outcome = (await axios.get('/json/upc/suggest', { params: { code } })).data;
+			} catch (error) {
+				outcome = { online: 'unavailable', suggestion: null };
+			}
+			const modal = this.itemModal;
+			if (!this.showItemModal || !modal.scan || modal.scan.code !== code) return;
+			modal.scan.online = outcome.online;
+			modal.scan.suggestion = outcome.suggestion;
+			const suggestion = outcome.suggestion;
+			if (suggestion && !modal.description.trim()) {
+				modal.description = [suggestion.brand, suggestion.description, suggestion.size_text].filter(Boolean).join(' ');
+			}
 		},
 		scanNote() {
 			const scan = this.itemModal.scan;
-			if (scan.guessItem) {
-				return 'This looks like a case of ' + scan.guessItem.name + ' (its single-item barcode is already in the master list). Check it, and enter how many are inside.';
-			}
 			if (scan.suggestion) {
-				const unit = scan.suggestion.code !== scan.code ? ' (for the single item inside the case)' : '';
-				return 'Suggested by ' + scan.suggestion.source_name + unit + ' - check it against the product in front of you.';
+				return 'Suggested by ' + scan.suggestion.source_name + ' - check it against the product in front of you.';
 			}
 			return {
+				pending: 'Looking up product details online...',
 				none: 'Not found in Open Food Facts or Open Products Facts - enter the details by hand.',
 				unavailable: 'The online lookup is not responding right now - enter the details by hand.',
 				throttled: 'Too many online lookups this minute - enter the details by hand.',
@@ -604,7 +837,109 @@ export default {
 		closeItemModal() {
 			const fromScan = !!this.itemModal.scan;
 			this.showItemModal = false;
-			if (fromScan) this.$refs.itemSelect?.clearSelection(); // drop the unresolved barcode text
+			if (this.cartonDialog) {
+				this.$nextTick(() => this.$refs.cartonItemSelect?.focus()); // back to the carton dialog underneath
+			} else if (fromScan) {
+				this.$refs.itemSelect?.clearSelection(); // drop the unresolved barcode text
+			}
+		},
+		// The radio on a scanned item's form: this barcode is really a case/multipack of items we
+		// already carry, so map it to the item inside instead of adding a new row.
+		switchToCarton() {
+			const code = this.itemModal.scan?.code;
+			this.itemModal.kind = 'each';
+			this.showItemModal = false;
+			if (code) this.openCartonDialog({ code, guess_item: null, candidates: [] });
+		},
+
+		// ---------- carton barcode -> the item inside ----------
+		// A carton is not a new product: its barcode is mapped to the single-unit item row
+		// it holds, plus how many units a carton has (packs x items per pack). Scanning that
+		// carton later selects the item with the quantity filled in.
+		openCartonDialog(result) {
+			this.cartonDialog = {
+				code: result.code,
+				guessItem: result.guess_item || null,
+				candidates: result.candidates || [],
+				item_id: result.guess_item?.id ?? null,
+				packs: '1',
+				per_pack: '',
+				error: null,
+				saving: false,
+			};
+			this.$nextTick(() => {
+				if (this.cartonDialog.item_id) this.$refs.cartonPerPack?.focus();
+				else this.$refs.cartonItemSelect?.focus();
+			});
+		},
+		cartonTotal() {
+			const d = this.cartonDialog;
+			return (parseInt(d.packs, 10) || 0) * (parseInt(d.per_pack, 10) || 0);
+		},
+		// A single item scanned inside the carton dialog: select the matching row, or add it.
+		async onCartonItemScan(text) {
+			const d = this.cartonDialog;
+			d.error = null;
+			try {
+				const result = (await axios.get('/json/upc/resolve', { params: { code: text, online: 0 } })).data;
+				if (result.status === 'matched') {
+					const select = this.$refs.cartonItemSelect;
+					const known = select.optionlist.find((option) => option.id === result.item.id);
+					if (known) select.selectOption(known);
+					else await select.refresh(result.item.id);
+					playScanMatched();
+					this.$refs.cartonPerPack?.focus();
+				} else {
+					playScanUnknown();
+					this.openItemModalForScan(result);
+					if (result.online === 'pending') this.fetchSuggestion(result.code);
+				}
+			} catch (error) {
+				playScanError();
+				d.error = error.response?.data?.message || 'Could not look up that barcode.';
+				this.$refs.cartonItemSelect?.clearSelection();
+			}
+		},
+		async saveCartonDialog() {
+			const d = this.cartonDialog;
+			d.error = null;
+			if (!d.item_id) {
+				d.error = 'Choose (or scan) the item that is inside the carton.';
+				return;
+			}
+			if (this.cartonTotal() < 1) {
+				d.error = 'Enter how many packs are in the carton and how many items are in each pack.';
+				return;
+			}
+			d.saving = true;
+			try {
+				const response = await axios.post('/json/upc/cartons', {
+					code: d.code,
+					item_id: d.item_id,
+					inner_packs: parseInt(d.packs, 10),
+					items_per_pack: parseInt(d.per_pack, 10),
+				});
+				this.cartonDialog = null;
+				await this.applyScanMatch(response.data);
+				playScanCarton();
+			} catch (error) {
+				d.error = error.response?.data?.message
+					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
+					|| 'Could not save the carton.';
+			} finally {
+				d.saving = false;
+			}
+		},
+		cancelCartonDialog() {
+			this.cartonDialog = null;
+			this.$refs.itemSelect?.clearSelection();
+		},
+		// "This is actually a single retail item": add it as a new item row instead.
+		cartonIsSingle() {
+			const code = this.cartonDialog.code;
+			this.cartonDialog = null;
+			this.openItemModalForScan({ code, kind: 'each', online: 'pending', suggestion: null });
+			this.fetchSuggestion(code);
 		},
 		startNewType(name) {
 			this.itemModal.creatingType = true;
@@ -622,11 +957,6 @@ export default {
 
 			if (!modal.description.trim()) {
 				this.itemModalError = 'A description is required.';
-				return;
-			}
-			const caseQty = parseInt(modal.case_qty, 10);
-			if (modal.scan && modal.kind === 'carton' && !(caseQty >= 2)) {
-				this.itemModalError = 'Enter how many items are in one case.';
 				return;
 			}
 			if (!modal.creatingType && !modal.itemtype_id) {
@@ -667,20 +997,22 @@ export default {
 					description: modal.description.trim(),
 					upc: modal.upc.trim() || null,
 				};
-				if (modal.scan && modal.kind === 'carton') {
-					// a case is just another SKU row with its own UPC: package "Case", Case Qty N
-					payload.case_qty = caseQty;
-					const packages = (await axios.get('/json/packagetypes')).data.records || [];
-					const casePackage = packages.find((p) => /^case$/i.test(p.singular));
-					if (casePackage) payload.packagetypes_id = casePackage.id;
-				}
 				const response = await axios.post('/json/items', payload);
 				const newItem = response.data.record;
 
 				invalidateOptions('/json/items');
 				this.showItemModal = false;
+				if (this.cartonDialog) {
+					// added from the carton dialog: it is the item inside the carton
+					await this.$refs.cartonItemSelect?.refresh(newItem.id);
+					this.$refs.cartonPerPack?.focus();
+					return;
+				}
 				await this.$refs.itemSelect?.refresh(newItem.id);
-				if (modal.scan && modal.kind === 'carton') this.entry.qty = caseQty;
+				if (modal.scan) {
+					this.entry.scanCode = modal.scan.code;
+					this.entry.scanUnit = 1;
+				}
 				this.$refs.qtyInput?.focus();
 			} catch (error) {
 				this.itemModalError = error.response?.data?.message
@@ -695,10 +1027,18 @@ export default {
 		this.fetchSessions();
 	},
 	mounted() {
+		this.removeInertiaGuard = router.on('before', this.onInertiaBefore);
+		window.addEventListener('beforeunload', this.onBeforeUnload);
+		window.navigation?.addEventListener('navigate', this.onNavigate);
+		window.addEventListener('click', this.refocusScanTarget);
 		window.addEventListener('online', this.autoRetry);
 		this.retryTimer = setInterval(this.autoRetry, 30000);
 	},
 	unmounted() {
+		this.removeInertiaGuard?.();
+		window.removeEventListener('beforeunload', this.onBeforeUnload);
+		window.navigation?.removeEventListener('navigate', this.onNavigate);
+		window.removeEventListener('click', this.refocusScanTarget);
 		window.removeEventListener('online', this.autoRetry);
 		clearInterval(this.retryTimer);
 	},
@@ -789,7 +1129,7 @@ export default {
 		<!-- ======================= ACTIVE SESSION ======================= -->
 		<div v-else-if="session" class="sort_container">
 			<div class="sort_topbar">
-				<button @click="closeSession" class="ri_formbutton">&larr; All Sessions</button>
+				<button @click="leaveSession" class="ri_formbutton">&larr; All Sessions</button>
 				<span class="sort_title">
 					Sorting Session &mdash; {{ session.order_date }}
 					<span v-if="readonly" class="sort_completed_badge">Completed</span>
@@ -803,11 +1143,25 @@ export default {
 					<span v-else class="sort_saved">All changes saved</span>
 				</span>
 				<template v-if="!readonly">
+					<button v-if="confirmingConsolidate" @click="confirmingConsolidate = false" class="ri_linkbutton">Cancel</button>
+					<button v-if="mergeableCount > 0 || confirmingConsolidate" @click="consolidateLines"
+						:disabled="consolidating || pendingCount > 0"
+						:class="confirmingConsolidate ? 'ri_deletebutton' : 'ri_formbutton'"
+						title="Add up identical lines (same item, pallet, disposition and condition) into one">
+						{{ confirmingConsolidate
+							? 'Combine ' + mergeableCount + ' duplicate line(s)? Cannot be undone'
+							: 'Combine duplicate lines' }}
+					</button>
 					<button v-if="confirmingComplete" @click="confirmingComplete = false" class="ri_linkbutton">Keep Sorting</button>
 					<button @click="completeSession" :class="confirmingComplete ? 'ri_deletebutton' : 'ri_defaultbutton'">
 						{{ confirmingComplete
 							? 'Complete with ' + pendingCount + ' unsaved line(s)' + (failedLines.length ? ' (' + failedLines.length + ' failed)' : '') + '?'
 							: 'Complete Session' }}
+					</button>
+					<button type="button" @click="toggleScanSounds" class="sort_sound_toggle"
+						:aria-label="scanSounds ? 'Scan sounds on' : 'Scan sounds off'"
+						:title="scanSounds ? 'Scan sounds on (beep = matched, low tone = not found). Click to mute.' : 'Scan sounds off. Click to turn on.'">
+						{{ scanSounds ? '🔊' : '🔇' }}
 					</button>
 				</template>
 				<button v-else @click="reopenSession" class="ri_defaultbutton">Reopen Session</button>
@@ -820,15 +1174,15 @@ export default {
 			     so it shows read-only with an explicit Edit; ad-hoc untagged
 			     sessions edit the donor directly. -->
 			<div class="sort_header">
-				<div class="sort_field">
+				<div class="sort_field sort_field_stacked sort_header_donor">
 					<label>Donor / Source:</label>
-					<template v-if="readonly || (fromReceiving && !editingDonor)">
+					<div v-if="readonly || (fromReceiving && !editingDonor)" class="sort_donor_read">
 						<span>
 							{{ personLabel(session.person) }}
 							<em v-if="fromReceiving" class="sort_donor_src">(recorded at receiving)</em>
 						</span>
 						<button v-if="!readonly" @click="editingDonor = true" class="ri_linkbutton">Edit</button>
-					</template>
+					</div>
 					<SearchSelect
 						v-else
 						ref="donorSelect"
@@ -864,11 +1218,11 @@ export default {
 						</div>
 					</Modal>
 				</div>
-				<div class="sort_field">
+				<div class="sort_field sort_field_stacked sort_header_comments">
 					<label>Comments:</label>
 					<TextArea v-model="session.comments" :enabled="!readonly" @change="commentsChanged" />
 				</div>
-				<div class="sort_field">
+				<div class="sort_field sort_header_check">
 					<label class="sort_checkbox">
 						<input
 							type="checkbox"
@@ -930,24 +1284,30 @@ export default {
 						placeholder="Scan UPC or search items..."
 						:allowcreate="true"
 						:scanDigits="true"
-						@selected="(item) => { entry.item = item; if (item) itemChosen(); }"
+						:smartOpen="true"
+						:debounce="150"
+						:openOnFocus="false"
+						@selected="(item) => { entry.item = item; entry.defaultQty = null; entry.scanCode = null; entry.scanUnit = 1; if (item) itemChosen(); }"
 						@create="openItemModal"
 						@scan="onBarcodeScan"
 						@scanmatch="onScanMatchedLocally"
 					/>
 					<span v-if="upcResolving" class="sort_notice">Looking up barcode...</span>
-					<button type="button" @click="toggleScanSounds" class="ri_linkbutton" :title="'Beeps when a scan matches an item, a lower tone when it does not'">
-						Scan sounds: {{ scanSounds ? 'on' : 'off' }}
-					</button>
 				</div>
+				<!-- type=text on purpose: a number input's v-model rewrites "012..." to 12...,
+				     which drops a scanned UPC's leading zero when a scan lands here -->
 				<input
 					ref="qtyInput"
-					type="number"
-					min="1"
+					type="text"
+					inputmode="numeric"
+					autocomplete="off"
 					v-model="entry.qty"
 					class="ri_forminput sort_qty"
 					placeholder="Qty"
-					@keydown.enter.prevent="addLine"
+					title="Type a quantity and press Enter - or scan the next barcode to save this item as 1 and move on"
+					@focus="$event.target.select()"
+					@keydown="onQtyKeydown"
+					@keydown.enter.prevent="onQtyEnter"
 				/>
 				<div class="sort_dispositions">
 					<button
@@ -1016,22 +1376,75 @@ export default {
 			</div>
 		</div>
 
+		<!-- ======================= UNKNOWN CARTON MODAL ======================= -->
+		<div v-if="cartonDialog" class="sort_modal_overlay">
+			<div class="sort_modal">
+				<h3>New Carton Barcode {{ displayCode(cartonDialog.code) }}</h3>
+				<p v-if="cartonDialog.error" class="sort_error">{{ cartonDialog.error }}</p>
+				<p class="sort_upc_note" v-if="cartonDialog.guessItem">
+					This carton's number matches <strong>{{ cartonDialog.guessItem.name }}</strong>. Check that, then enter how many are inside.
+				</p>
+				<p class="sort_upc_note" v-else>
+					We haven't seen this carton before. <strong>Scan one of the single items inside it</strong> (or search for it) so every future scan of this carton counts the items for you.
+				</p>
+
+				<div class="sort_field sort_field_stacked">
+					<label>Item inside the carton:</label>
+					<SearchSelect
+						ref="cartonItemSelect"
+						v-model="cartonDialog.item_id"
+						optionsource="/json/items"
+						display="name"
+						:searchfields="['name', 'upc', 'description']"
+						placeholder="Scan a single item, or search..."
+						:allowcreate="true"
+						:scanDigits="true"
+						:smartOpen="true"
+						:debounce="150"
+						:openOnFocus="false"
+						@scan="onCartonItemScan"
+						@create="openItemModal"
+					/>
+				</div>
+				<div class="sort_field" v-if="cartonDialog.candidates.length && !cartonDialog.item_id">
+					<label>Same manufacturer:</label>
+					<button v-for="candidate in cartonDialog.candidates" :key="candidate.id" type="button"
+						class="ri_formbutton" @click="cartonDialog.item_id = candidate.id">{{ candidate.name }}</button>
+				</div>
+				<div class="sort_field">
+					<label>Packs in the carton:</label>
+					<input type="text" inputmode="numeric" v-model="cartonDialog.packs" class="ri_forminput sort_qty" />
+					<label>Items in each pack:</label>
+					<input ref="cartonPerPack" type="text" inputmode="numeric" v-model="cartonDialog.per_pack" class="ri_forminput sort_qty"
+						@keydown.enter.prevent="saveCartonDialog" />
+				</div>
+				<p class="sort_upc_note">
+					= <strong>{{ cartonTotal() }}</strong> items per carton
+					<span class="sort_donor_src">(loose items with no inner packs: leave Packs at 1 and put the count in Items in each pack)</span>
+				</p>
+
+				<div class="sort_modal_buttons">
+					<button @click="saveCartonDialog" class="ri_defaultbutton" :disabled="cartonDialog.saving">
+						{{ cartonDialog.saving ? 'Saving...' : 'Confirm & Use' }}
+					</button>
+					<button @click="cancelCartonDialog" class="ri_formbutton">Cancel</button>
+					<button @click="cartonIsSingle" class="ri_linkbutton">This is a single item, not a carton</button>
+				</div>
+			</div>
+		</div>
+
 		<!-- ======================= QUICK-ADD ITEM MODAL ======================= -->
 		<div v-if="showItemModal" class="sort_modal_overlay" @click.self="closeItemModal">
-			<div class="sort_modal">
+			<div class="sort_modal" ref="itemModalBox" tabindex="-1" @keydown.self="onModalStrayKey">
 				<h3>Add New Item</h3>
 				<p v-if="itemModalError" class="sort_error">{{ itemModalError }}</p>
 				<template v-if="itemModal.scan">
 					<p class="sort_upc_note">{{ scanNote() }}</p>
 					<img v-if="itemModal.scan.suggestion?.image_url" :src="itemModal.scan.suggestion.image_url" alt="" class="sort_upc_image" />
-					<div class="sort_field">
+					<div class="sort_field" v-if="!cartonDialog">
 						<label>This barcode is on:</label>
 						<label class="sort_upc_radio"><input type="radio" value="each" v-model="itemModal.kind" /> One item</label>
-						<label class="sort_upc_radio"><input type="radio" value="carton" v-model="itemModal.kind" /> A case / multipack</label>
-					</div>
-					<div class="sort_field" v-if="itemModal.kind === 'carton'">
-						<label>Items per case:</label>
-						<input type="number" min="2" v-model="itemModal.case_qty" class="ri_forminput sort_qty" />
+						<label class="sort_upc_radio"><input type="radio" value="carton" v-model="itemModal.kind" @change="switchToCarton" /> A case of items already in the list</label>
 					</div>
 				</template>
 
@@ -1150,6 +1563,38 @@ export default {
 .sort_field label {
 	font-weight: bold;
 	min-width: 8em;
+}
+.sort_field_stacked {
+	flex-direction: column;
+	align-items: stretch; /* caption above the field, field full width */
+	gap: 4px;
+}
+.sort_field_stacked label {
+	min-width: 0;
+}
+.sort_header_donor {
+	flex: 0 1 24rem;
+	min-width: 16rem;
+}
+.sort_header_comments {
+	flex: 1 1 18rem; /* takes the rest of the row, out to the right margin */
+}
+.sort_header_check {
+	flex-basis: 100%;
+}
+.sort_donor_read {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 2.4rem;
+}
+.sort_sound_toggle {
+	font-size: 1.3rem;
+	line-height: 1;
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 2px 4px;
 }
 .sort_pallet {
 	display: flex;
@@ -1344,6 +1789,9 @@ export default {
 	width: min(560px, 94vw);
 	max-height: 90vh;
 	overflow-y: auto;
+}
+.sort_modal:focus {
+	outline: none; /* focused only to catch stray scans; no visible ring */
 }
 .sort_modal h3 {
 	font-weight: bold;
