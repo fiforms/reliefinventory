@@ -38,6 +38,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import axios from 'axios';
+import { playScanError, playScanMatched, playScanUnknown, scanSoundsEnabled, setScanSoundsEnabled } from '@/scanSounds';
 
 // One button per choice. New and Usable are both disposition 'usable' (both
 // count into inventory) and differ only in item_condition, which exists so
@@ -109,6 +110,7 @@ export default {
 
 			// barcode scan -> item (confirmed mappings first, online suggestion on a miss)
 			upcResolving: false,
+			scanSounds: scanSoundsEnabled(),
 		};
 	},
 	computed: {
@@ -497,15 +499,28 @@ export default {
 				const result = response.data;
 				if (result.status === 'matched') {
 					await this.applyScanMatch(result);
+					playScanMatched();
 				} else {
 					this.openItemModalForScan(result);
+					playScanUnknown();
 				}
 			} catch (error) {
+				playScanError();
 				this.lineError = error.response?.data?.message || 'Could not look up that barcode. Search for the item instead.';
 				this.$refs.itemSelect?.clearSelection();
 			} finally {
 				this.upcResolving = false;
 			}
+		},
+		// The item box matched the barcode against its own loaded list (no server lookup).
+		onScanMatchedLocally(item) {
+			if ((item.case_qty ?? 0) > 1) this.entry.qty = Math.round(item.case_qty * (parseFloat(item.size) || 1));
+			playScanMatched();
+		},
+		toggleScanSounds() {
+			this.scanSounds = !this.scanSounds;
+			setScanSoundsEnabled(this.scanSounds);
+			if (this.scanSounds) playScanMatched(); // preview what it sounds like
 		},
 		async applyScanMatch(result) {
 			const select = this.$refs.itemSelect;
@@ -918,8 +933,12 @@ export default {
 						@selected="(item) => { entry.item = item; if (item) itemChosen(); }"
 						@create="openItemModal"
 						@scan="onBarcodeScan"
+						@scanmatch="onScanMatchedLocally"
 					/>
 					<span v-if="upcResolving" class="sort_notice">Looking up barcode...</span>
+					<button type="button" @click="toggleScanSounds" class="ri_linkbutton" :title="'Beeps when a scan matches an item, a lower tone when it does not'">
+						Scan sounds: {{ scanSounds ? 'on' : 'off' }}
+					</button>
 				</div>
 				<input
 					ref="qtyInput"

@@ -58,7 +58,8 @@
 	  placeholder, enabled, allowcreate, autofocus
 
 	Events: update:modelValue, selected(object|null), create(searchText),
-	        scan(digits)
+	        scan(digits), scanmatch(option) — with scanDigits, a barcode that
+	        exactly matched an already-loaded option (emitted after `selected`)
 -->
 
 <script>
@@ -126,7 +127,7 @@ export default {
 		// existing selection (same contract as ComboBox's `filter` prop).
 		filter: { type: Function, default: null },
 	},
-	emits: ["update:modelValue", "selected", "create", "scan"],
+	emits: ["update:modelValue", "selected", "create", "scan", "scanmatch"],
 	data() {
 		return {
 			search: "",
@@ -310,11 +311,15 @@ export default {
 		},
 		onEnter() {
 			// A scanned barcode arrives as text + Enter: exact match wins first
+			const typed = this.search.trim();
 			if (this.exactMatch) {
-				this.selectOption(this.exactMatch);
+				const match = this.exactMatch;
+				this.selectOption(match);
+				if (this.scanDigits && /^\d+$/.test(typed) && [8, 12, 13, 14].includes(typed.length)) {
+					this.$emit("scanmatch", match); // a barcode hit a loaded option directly: no lookup needed
+				}
 				return;
 			}
-			const typed = this.search.trim();
 			if (this.scanDigits && /^\d+$/.test(typed) && [8, 12, 13, 14].includes(typed.length)) {
 				this.isOpen = false;
 				this.$emit("scan", typed);
