@@ -689,6 +689,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-so
     Route::post('/sorting-sessions/pallet/{tag}/empty', [SortingSessionController::class, 'palletEmpty']);
     Route::get('/sorting-sessions/{id}', [SortingSessionController::class, 'show']);
     Route::patch('/sorting-sessions/{id}', [SortingSessionController::class, 'update']);
+    Route::post('/sorting-sessions/{id}/consolidate', [SortingSessionController::class, 'consolidate']);
     Route::post('/sorting-sessions/{id}/lines', [SortingSessionController::class, 'storeLine']);
     Route::put('/sorting-sessions/{id}/lines/{lineId}', [SortingSessionController::class, 'updateLine']);
     Route::delete('/sorting-sessions/{id}/lines/{lineId}', [SortingSessionController::class, 'destroyLine']);

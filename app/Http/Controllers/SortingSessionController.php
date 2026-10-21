@@ -11,6 +11,7 @@ use App\Models\Transaction;
 use App\Support\PalletKind;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Scan-driven donation sorting sessions.
@@ -342,5 +343,53 @@ class SortingSessionController extends Controller
         $session->itemLedgers()->findOrFail($lineId)->delete();
 
         return response()->json(['success' => true]);
+    }
+
+    /**
+     * Combine duplicate lines in this session: scanning every item one at a
+     * time is quicker for sorters, but a pallet of 40 identical cans shouldn't
+     * stay 40 rows. Lines merge only when everything that matters downstream is
+     * identical — item, source pallet, disposition, new/used condition, who
+     * entered it, and the calendar day (the Sorting Area report counts by day)
+     * — so totals, provenance and the audit trail are unchanged; the earliest
+     * row of each group keeps the summed quantity and the rest are removed.
+     * That is not undoable (a single mistaken scan can no longer be deleted on
+     * its own), which is why the UI asks first. Completed sessions are
+     * read-only like every other line write.
+     */
+    public function consolidate($id)
+    {
+        $session = Transaction::where('type', 'donation')->with('status')->findOrFail($id);
+        $this->rejectIfCompleted($session);
+
+        $merged = DB::transaction(function () use ($session) {
+            $lines = $session->itemLedgers()->where('qty_added', '>', 0)->orderBy('id')->lockForUpdate()->get();
+
+            $removed = 0;
+            $lines->groupBy(fn ($line) => implode('|', [
+                $line->item_id,
+                $line->pallet_id ?? 0,
+                $line->disposition,
+                $line->item_condition ?? '',
+                $line->person_id_user ?? 0,
+                $line->created_at?->toDateString(),
+            ]))->each(function ($group) use (&$removed) {
+                if ($group->count() < 2) {
+                    return;
+                }
+                $keep = $group->first();
+                $keep->qty_added = $group->sum('qty_added');
+                $keep->save();
+                $group->skip(1)->each->delete();
+                $removed += $group->count() - 1;
+            });
+
+            return $removed;
+        });
+
+        return response()->json([
+            'merged' => $merged,
+            'record' => Transaction::with(self::WITH_RELATIONS)->withCount('pallets')->findOrFail($id),
+        ]);
     }
 }
