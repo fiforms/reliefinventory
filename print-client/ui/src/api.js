@@ -1,6 +1,6 @@
 // Thin wrapper over the Tauri commands in src-tauri/src/main.rs. Outside Tauri (plain `npm run dev`
 // in a browser) it serves mock data, so the UI can be developed and screenshotted without the
-// native shell: add ?mock=setup | paired | problems | revoked to the URL.
+// native shell: add ?mock=setup | paired | problems | revoked | http to the URL.
 import { invoke } from '@tauri-apps/api/core'
 import { listen } from '@tauri-apps/api/event'
 
@@ -46,6 +46,7 @@ function mockStatus(kind) {
             ],
         }
     }
+    if (kind === 'http') return { ...paired, server_url: 'http://192.168.1.20:8000' }
     return paired
 }
 
