@@ -542,7 +542,14 @@ export default {
 		},
 		openItemModal(searchText) {
 			this.itemModal = this.blankItemModal();
-			this.itemModal.description = searchText || '';
+			// A scanned barcode with no match lands here as all-digit text — that's
+			// the new item's UPC, not its description.
+			const text = (searchText || '').trim();
+			if (/^\d{6,14}$/.test(text)) {
+				this.itemModal.upc = text;
+			} else {
+				this.itemModal.description = text;
+			}
 			this.itemModalError = null;
 			this.showItemModal = true;
 		},
