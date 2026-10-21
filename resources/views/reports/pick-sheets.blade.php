@@ -136,7 +136,7 @@
                                     @if($step['kind'] === 'pool')
                                         Sorting area &times;{{ $step['qty'] }}
                                     @else
-                                        <strong>{{ $step['location'] ?? 'no location' }}</strong> {{ $step['tag'] }} &times;{{ $step['qty'] }}@if(!empty($step['expires_on'])) (exp {{ $step['expires_on'] }})@endif @if($step['needs_open']) <em>(open pallet first)</em>@endif
+                                        <strong>{{ $step['location'] ?? 'no location' }}</strong> {{ $step['tag'] }} &times;{{ $step['qty'] }}@if(!empty($step['expires_on'])) (exp {{ $step['expires_on'] }})@endif @if(!empty($step['whole'])) <em>(take the whole pallet)</em>@elseif($step['needs_open']) <em>(open pallet first)</em>@endif
                                     @endif
                                 </div>
                             @endforeach

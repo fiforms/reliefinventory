@@ -269,3 +269,31 @@ test('adjusting a pallet needs its own permission beyond moving stock', function
     $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", ['reason' => 'shrinkage', 'lines' => [['item_id' => $item->id, 'qty' => -1]]])->assertForbidden();
     $this->postJson("/json/pallet-stock/{$id}/seal")->assertOk(); // ordinary movement permission still seals/unseals
 });
+
+test('a sealed pallet with other items on it is not taken whole, and undoing a pick that emptied a pallet reopens it', function () {
+    $this->actingAs(userWithPermissions('manage-pallets', 'manage-orders', 'view-reports', 'general-access', 'adjust-inventory'));
+    $a = stockItem(30);
+    $b = Item::create(['itemtype_id' => ItemType::create(['name' => 'Tarps', 'unit_id' => $a->itemtype->unit_id, 'category_id' => $a->itemtype->category_id])->id, 'packagetypes_id' => $a->packagetypes_id, 'description' => 'Tarp']);
+    $donation = Transaction::first();
+    ItemLedger::create(['orderdonation_id' => $donation->id, 'item_id' => $b->id, 'qty_added' => 10, 'disposition' => 'usable']);
+
+    $pallet = $this->postJson('/json/pallet-stock/fill', ['location_id' => rack('D4')->id, 'lines' => [['item_id' => $a->id, 'qty' => 27], ['item_id' => $b->id, 'qty' => 10]]])->assertCreated()->json('record');
+
+    $order = Transaction::create(['type' => 'order', 'person_id' => Person::first()->id, 'person_id_user' => User::factory()->create()->id, 'status_id' => Transaction::statusId(Transaction::STATUS_FILLING), 'order_date' => now()->toDateString()]);
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $a->itemtype_id, 'qty_requested' => 27]);
+
+    // 27 of item A is everything of A but not everything on the pallet: opening is required
+    $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $a->id, 'qty' => 27, 'pallet_tag' => $pallet['tag']])->assertStatus(422);
+    $plan = $this->getJson("/json/order-filling/{$order->id}/plan")->json('lines.'.$line->id);
+    expect(collect($plan['steps'])->firstWhere('kind', 'pallet')['whole'])->toBeFalse();
+
+    // open it, pick all of A (pallet still holds B), then undo: nothing weird. Pick B too to empty it, then undo that.
+    $this->postJson("/json/order-filling/pallets/{$pallet['id']}/open")->assertOk();
+    $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $a->id, 'qty' => 27, 'pallet_tag' => $pallet['tag']])->assertCreated();
+    $lineB = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $b->itemtype_id, 'qty_requested' => 10]);
+    $fillB = $this->postJson("/json/order-filling/{$order->id}/lines/{$lineB->id}/fills", ['item_id' => $b->id, 'qty' => 10, 'pallet_tag' => $pallet['tag']])->assertCreated()->json('record.id');
+    expect(Pallet::find($pallet['id'])->status)->toBe('empty');
+
+    $this->deleteJson("/json/order-filling/{$order->id}/lines/{$lineB->id}/fills/{$fillB}")->assertOk();
+    expect(Pallet::find($pallet['id'])->status)->toBe('open');
+});

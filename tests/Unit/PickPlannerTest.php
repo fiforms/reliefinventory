@@ -80,3 +80,16 @@ test('expiring pallets are picked before undated ones, earliest date first', fun
     ]), 60);
     expect(summarize($open))->toBe(['4:10o', '5:50o'])->and($open['steps'][1]['expires_on'])->toBe('2027-03-01');
 });
+
+test('a sealed pallet that also holds other items is never "whole" for one item — it has to be opened', function () {
+    $plan = PickPlanner::planFor(planHoldings([], [
+        ['pallet_id' => 1, 'status' => 'sealed', 'qty' => 27, 'pallet_total' => 37], // 27 of ours + 10 of something else
+        ['pallet_id' => 2, 'status' => 'open', 'qty' => 9],
+    ]), 36);
+
+    expect(summarize($plan))->toBe(['1:27s', '2:9o'])
+        ->and($plan['steps'][0]['whole'])->toBeFalse()->and($plan['steps'][0]['needs_open'])->toBeTrue();
+
+    $solo = PickPlanner::planFor(planHoldings([], [['pallet_id' => 1, 'status' => 'sealed', 'qty' => 27, 'pallet_total' => 27]]), 27);
+    expect($solo['steps'][0]['whole'])->toBeTrue();
+});

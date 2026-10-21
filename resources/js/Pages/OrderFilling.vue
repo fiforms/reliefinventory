@@ -600,7 +600,9 @@ export default {
 										</template>
 										<em v-else>open</em>
 									</template>
-									<button type="button" class="ri_linkbutton" @click="useStep(line, step)">Use</button>
+									<button type="button" class="ri_formbutton of_use" :disabled="step.status === 'sealed' && !step.whole"
+										:title="step.status === 'sealed' && !step.whole ? 'Open the pallet first' : 'Fill the entry row from this step'"
+										@click="useStep(line, step)">Use</button>
 								</span>
 								<span v-if="plans[line.id].short > 0" class="of_hint">{{ plans[line.id].short }} not found in stock</span>
 								<span v-if="!plans[line.id].steps.length && !(plans[line.id].short > 0)" class="of_hint">fully picked</span>
@@ -727,7 +729,15 @@ export default {
 .of_where_chip {
 	border: 1px solid currentColor;
 	border-radius: 4px;
-	padding: 0.1em 0.5em;
+	padding: 0.2em 0.5em;
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0.5em;
+}
+.of_where_chip .ri_formbutton {
+	padding: 0.1em 0.7em;
+	font-size: 0.95em;
 }
 .of_pallet_sealed {
 	opacity: 0.85;

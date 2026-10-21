@@ -13,7 +13,7 @@ use App\Models\Pallet;
  *
  * For a need of N:
  *  1. the sorting-area pool (loose, not yet on a pallet);
- *  2. whole SEALED pallets, expiring ones first (earliest date first), then oldest first, while the remaining need is at least that pallet's quantity — a full
+ *  2. whole SEALED pallets (the item is everything on the pallet), expiring ones first (earliest date first), then oldest first, while the remaining need is at least that pallet's quantity — a full
  *     pallet ships intact and needs no opening;
  *  3. the rest from OPEN pallets, expiring first then oldest (they're already broken, so finishing one costs nothing);
  *  4. only if that still isn't enough, open the next remaining SEALED pallet in the same order for the last of it.
@@ -51,6 +51,9 @@ class PickPlanner
             }
         }
 
+        // A pallet only ships "whole" when the item picked is everything on it, so each pallet's total across ALL items.
+        $palletTotals = $rows->isEmpty() ? collect() : PalletStock::quantities($rows->pluck('pallet_id')->unique()->all())->groupBy('pallet_id')->map(fn ($g) => (int) $g->sum('qty'));
+
         $held = [];
         foreach ($rows as $r) {
             $pallet = $pallets[$r['pallet_id']] ?? null;
@@ -60,7 +63,7 @@ class PickPlanner
             $held[] = [
                 'pallet_id' => $pallet->id, 'tag' => $pallet->tag, 'status' => $pallet->status,
                 'location' => $pallet->location?->code, 'sequence' => $pallet->location?->PullSequence,
-                'expires_on' => $pallet->earliest_expiry,
+                'expires_on' => $pallet->earliest_expiry, 'pallet_total' => $palletTotals[$pallet->id] ?? $r['qty'],
                 'item_id' => $r['item_id'], 'item' => $items[$r['item_id']]->description, 'qty' => $r['qty'],
             ];
         }
@@ -91,12 +94,14 @@ class PickPlanner
         $open = $byAge('open');
         $taken = [];
 
-        $step = fn (array $h, int $qty, bool $needsOpen) => array_merge($h, ['kind' => 'pallet', 'qty' => $qty, 'needs_open' => $needsOpen, 'whole' => $qty === $h['qty']]);
+        // Whole = this pick is the entire pallet: all of this item AND nothing else on it (the picking endpoint checks the same).
+        $isWhole = fn (array $h, int $qty) => $qty === $h['qty'] && $h['qty'] === ($h['pallet_total'] ?? $h['qty']);
+        $step = fn (array $h, int $qty, bool $needsOpen) => array_merge($h, ['kind' => 'pallet', 'qty' => $qty, 'needs_open' => $needsOpen, 'whole' => $isWhole($h, $qty)]);
 
         // 2. whole sealed pallets that fit. One oldest-first pass suffices: the remaining need only shrinks, so a pallet
         // too big now never fits later.
         foreach ($sealed as $i => $h) {
-            if ($remaining > 0 && $h['qty'] <= $remaining) {
+            if ($remaining > 0 && $h['qty'] <= $remaining && $isWhole($h, $h['qty'])) {
                 $steps[] = $step($h, $h['qty'], true);
                 $remaining -= $h['qty'];
                 $taken[$i] = true;
@@ -170,8 +175,13 @@ class PickPlanner
                 unset($pool);
             } else {
                 foreach ($holdings['pallets'] as &$held) {
-                    if ($held['pallet_id'] === $step['pallet_id'] && $held['item_id'] === $step['item_id']) {
-                        $held['qty'] -= $step['qty'];
+                    if ($held['pallet_id'] === $step['pallet_id']) {
+                        if ($held['item_id'] === $step['item_id']) {
+                            $held['qty'] -= $step['qty'];
+                        }
+                        if (isset($held['pallet_total'])) {
+                            $held['pallet_total'] -= $step['qty'];
+                        }
                     }
                 }
                 unset($held);
