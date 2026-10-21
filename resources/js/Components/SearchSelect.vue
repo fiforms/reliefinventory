@@ -49,6 +49,18 @@
 	                 to whichever state is entered elsewhere on the record).
 	                 The already-selected option is still resolved/displayed
 	                 even if it wouldn't pass the filter.
+	  smartOpen    - only show the dropdown while the typed text is worth
+	                 searching: 2-7 digits (a long digit string is a barcode,
+	                 which `scan`/exact match handle), or 2+ characters when it
+	                 contains a letter. Otherwise the list stays hidden, and
+	                 Enter never picks a row the user can't see. Pair with
+	                 :openOnFocus="false" so focusing the field shows nothing.
+	  debounce     - milliseconds to wait after the last keystroke before the
+	                 list is filtered/shown (default 0 = immediately). A
+	                 keyboard-wedge scanner types a whole barcode in ~50 ms, so a
+	                 short wait (150) keeps the list from flashing, and the whole
+	                 item list from being re-filtered, once per digit. Enter
+	                 never waits: it flushes the pending text first.
 	  scanDigits   - treat an Enter on text that is all digits at a barcode length
 	                 (8, 12, 13 or 14) as a barcode scan: an exact match on a
 	                 searchable field still wins, otherwise emit `scan` instead
@@ -58,7 +70,7 @@
 	  placeholder, enabled, allowcreate, autofocus
 
 	Events: update:modelValue, selected(object|null), create(searchText),
-	        scan(digits), scanmatch(option) — with scanDigits, a barcode that
+	        scan(digits), scanmatch(option, digits) — with scanDigits, a barcode that
 	        exactly matched an already-loaded option (emitted after `selected`)
 -->
 
@@ -119,6 +131,8 @@ export default {
 		autofocus: { type: Boolean, default: false },
 		openOnFocus: { type: Boolean, default: true },
 		scanDigits: { type: Boolean, default: false },
+		smartOpen: { type: Boolean, default: false },
+		debounce: { type: Number, default: 0 },
 		// Optional (option) => boolean predicate narrowing which options are
 		// browsable/searchable — e.g. counties scoped to whichever state is
 		// currently entered elsewhere on the same record. The already-
@@ -136,11 +150,25 @@ export default {
 			optionlist: [],
 			loadError: false,
 			dropStyle: {},
+			settled: "", // `search`, as of the last typing pause (see debounce)
+			settleTimer: null,
 		};
 	},
 	computed: {
 		fields() {
 			return this.searchfields || [this.display];
+		},
+		// The text the list is built from: `search` itself, or its debounced copy.
+		query() {
+			return this.debounce > 0 ? this.settled : this.search;
+		},
+		// With smartOpen: is the typed text one worth listing matches for?
+		listAllowed() {
+			if (!this.smartOpen) return true;
+			const text = this.query.trim();
+			if (/[a-z]/i.test(text)) return text.length >= 2;
+			const digits = text.replace(/\D/g, "").length;
+			return digits >= 2 && digits <= 7;
 		},
 		baseOptions() {
 			return this.filter ? this.optionlist.filter(this.filter) : this.optionlist;
@@ -149,9 +177,9 @@ export default {
 			return this.optionlist.find((o) => o.id === this.modelValue) || null;
 		},
 		filteredOptions() {
-			const text = this.search.trim().toLowerCase();
+			const text = this.query.trim().toLowerCase();
 			// When the input still shows the current selection, list everything
-			if (!text || (this.selectedOption && this.search === this.selectedOption[this.display])) {
+			if (!text || (this.selectedOption && this.query === this.selectedOption[this.display])) {
 				return this.baseOptions;
 			}
 			return this.baseOptions.filter((option) =>
@@ -183,7 +211,7 @@ export default {
 		// when we're about to offer "+ Add ..." and nothing already matched.
 		closeMatches() {
 			if (!this.allowcreate || this.filteredOptions.length > 0) return [];
-			const text = this.search.trim().toLowerCase();
+			const text = this.query.trim().toLowerCase();
 			if (!text) return [];
 			const maxDistance = text.length <= 4 ? 1 : 2;
 			return this.baseOptions
@@ -198,6 +226,13 @@ export default {
 		},
 	},
 	watch: {
+		search(value) {
+			if (this.debounce <= 0) return;
+			clearTimeout(this.settleTimer);
+			this.settleTimer = setTimeout(() => {
+				this.settled = value;
+			}, this.debounce);
+		},
 		isOpen(open) {
 			if (open) {
 				this.placeDropdown();
@@ -276,8 +311,14 @@ export default {
 			}
 			this.dropStyle = style;
 		},
+		// Apply the typed text to the list now instead of after the debounce pause.
+		flushSearch() {
+			clearTimeout(this.settleTimer);
+			this.settled = this.search;
+		},
 		open() {
 			if (!this.enabled) return;
+			this.flushSearch();
 			this.isOpen = true;
 			this.highlighted = 0;
 			this.$refs.input?.select();
@@ -310,13 +351,14 @@ export default {
 			this.$emit("create", this.search.trim());
 		},
 		onEnter() {
+			this.flushSearch(); // Enter acts on what is typed, not on a list still catching up
 			// A scanned barcode arrives as text + Enter: exact match wins first
 			const typed = this.search.trim();
 			if (this.exactMatch) {
 				const match = this.exactMatch;
 				this.selectOption(match);
 				if (this.scanDigits && /^\d+$/.test(typed) && [8, 12, 13, 14].includes(typed.length)) {
-					this.$emit("scanmatch", match); // a barcode hit a loaded option directly: no lookup needed
+					this.$emit("scanmatch", match, typed); // a barcode hit a loaded option directly: no lookup needed
 				}
 				return;
 			}
@@ -325,6 +367,7 @@ export default {
 				this.$emit("scan", typed);
 				return;
 			}
+			if (!this.listAllowed) return; // the list is hidden: don't act on rows nobody can see
 			const visible = this.filteredOptions;
 			if (this.isOpen && visible.length > 0 && this.highlighted < visible.length) {
 				this.selectOption(visible[this.highlighted]);
@@ -356,6 +399,7 @@ export default {
 		if (this.autofocus) this.focus();
 	},
 	unmounted() {
+		clearTimeout(this.settleTimer);
 		window.removeEventListener("resize", this.placeDropdown);
 		window.removeEventListener("scroll", this.placeDropdown, true);
 	},
@@ -388,7 +432,7 @@ export default {
 				aria-label="Clear selection"
 				@mousedown.prevent="clearSelection"
 			>&times;</button>
-			<ul v-if="isOpen && (filteredOptions.length > 0 || showCreateRow)"
+			<ul v-if="isOpen && listAllowed && (filteredOptions.length > 0 || showCreateRow)"
 				class="ss_dropdown" :class="{ ss_dropdown_wide: secondary }" :style="dropStyle">
 				<li
 					v-for="(option, index) in filteredOptions"
