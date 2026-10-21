@@ -101,9 +101,20 @@ fn parse_jobs(json: &str) -> Result<Vec<PsJob>, BackendError> {
     one_or_many(json)
 }
 
-/// Quote for a single-quoted PowerShell string.
+/// Quote for a single-quoted PowerShell string. PowerShell treats the typographic single quotes
+/// (U+2018 to U+201B) as quote characters too, and inside a string any of them is escaped by doubling,
+/// so all of them are doubled, not just the ASCII `'`.
 fn ps_quote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        out.push(c);
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
 }
 
 async fn powershell(script: &str) -> Result<String, BackendError> {
@@ -231,5 +242,8 @@ mod tests {
     #[test]
     fn quoting() {
         assert_eq!(ps_quote("Bob's Printer"), "'Bob''s Printer'");
+        // Typographic quotes would otherwise end the string early.
+        assert_eq!(ps_quote("x\u{2019}; calc; \u{2018}y"), "'x\u{2019}\u{2019}; calc; \u{2018}\u{2018}y'");
+        assert_eq!(ps_quote("a\u{201A}b\u{201B}c"), "'a\u{201A}\u{201A}b\u{201B}\u{201B}c'");
     }
 }
