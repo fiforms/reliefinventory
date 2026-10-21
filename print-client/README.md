@@ -89,7 +89,7 @@ npm run tauri build     # installers: .deb + AppImage here, .msi/.exe on Windows
 - **Windows:** put `SumatraPDF.exe` and its license in `src-tauri/resources/` first
   (see `src-tauri/resources/README.md`; it is GPLv3 and is not committed). WebView2 ships with current Windows.
 - **macOS / Windows builds must run on that OS.** `.github/workflows/print-client-{linux,macos,windows}.yml` do it in CI;
-  they are manual-only (Actions tab → *Run workflow*), each runs the core tests then builds that OS's unsigned installer
+  they are manual-only (Actions tab → *Run workflow*), each runs the core tests then builds that OS's installer (macOS: ad-hoc signed, see the workflow header; Windows/Linux: unsigned)
   and uploads it as an artifact.
 - Icons come from `src-tauri/icons/source.png` via `npx tauri icon src-tauri/icons/source.png`.
 

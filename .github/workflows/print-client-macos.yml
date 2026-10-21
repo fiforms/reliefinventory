@@ -1,7 +1,10 @@
 name: Print client (macOS)
 
-# Manual only — run from the Actions tab. Tests the core, then builds an UNSIGNED .dmg
-# (Gatekeeper will warn until we have an Apple Developer ID + notarization).
+# Manual only — run from the Actions tab. Tests the core, then builds an AD-HOC signed .dmg
+# (signing identity "-": no Apple account needed). Without any signature, Apple Silicon Macs call a
+# downloaded app "damaged and can't be opened"; ad-hoc signing makes that the ordinary "Apple could not
+# verify…" prompt, which can be allowed in System Settings > Privacy & Security > Open Anyway.
+# Gatekeeper still warns until we have an Apple Developer ID + notarization.
 on:
   workflow_dispatch:
 
@@ -29,6 +32,13 @@ jobs:
       - run: npm ci
       - name: Build installer
         run: npm run tauri build
+        env:
+          APPLE_SIGNING_IDENTITY: "-"
+      - name: Verify signature
+        run: |
+          app=$(ls -d src-tauri/target/release/bundle/macos/*.app | head -1)
+          codesign --verify --deep --strict --verbose=2 "$app"
+          codesign -dv "$app" 2>&1 | grep -i signature
       - uses: actions/upload-artifact@v4
         with:
           name: ri-print-macos
