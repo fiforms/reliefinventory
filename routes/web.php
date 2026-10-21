@@ -49,7 +49,8 @@ Route::prefix('install/restore')->name('setup.restore.')->group(function () {
 Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
-        'canRegister' => Route::has('register'),
+        // Hidden while Turnstile is on but keyless: the page would only show a setup notice.
+        'canRegister' => Route::has('register') && ! app(\App\Services\TurnstileService::class)->misconfigured(),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
         'hostedBy' => config('app.hosted_by'),

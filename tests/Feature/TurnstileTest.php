@@ -69,3 +69,28 @@ test('an unreachable Cloudflare fails verification instead of erroring', functio
     $this->postJson('/forgot-password', ['email' => 'nobody@example.org', 'cf-turnstile-response' => 'tok'])
         ->assertStatus(422)->assertJsonValidationErrors('cf-turnstile-response');
 });
+
+test('registration and password reset explain a Turnstile with no keys instead of a bare 500', function () {
+    config(['services.turnstile.enabled' => true, 'services.turnstile.site_key' => null, 'services.turnstile.secret_key' => null]);
+
+    foreach (['/register', '/forgot-password'] as $url) {
+        $this->get($url)->assertStatus(503)->assertSee('CLOUDFLARE_TURNSTILE_ENABLED', false);
+    }
+    $this->post('/register', [])->assertStatus(503);
+});
+
+test('registration page loads when Turnstile is switched off', function () {
+    config(['services.turnstile.enabled' => false]);
+
+    $this->get('/register')->assertOk();
+});
+
+test('register and forgot-password links are hidden only while Turnstile is enabled without keys', function () {
+    config(['services.turnstile.enabled' => true, 'services.turnstile.site_key' => null, 'services.turnstile.secret_key' => null]);
+    $this->get('/')->assertInertia(fn (AssertableInertia $p) => $p->where('canRegister', false));
+    $this->get('/login')->assertInertia(fn (AssertableInertia $p) => $p->where('canResetPassword', false));
+
+    config(['services.turnstile.enabled' => false]);
+    $this->get('/')->assertInertia(fn (AssertableInertia $p) => $p->where('canRegister', true));
+    $this->get('/login')->assertInertia(fn (AssertableInertia $p) => $p->where('canResetPassword', true));
+});
