@@ -68,6 +68,48 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
     Ok(al.is_enabled().unwrap_or(enabled))
 }
 
+/// The only places the About screen may send the browser to; the window never opens arbitrary URLs.
+const EXTERNAL_LINKS: &[&str] = &[
+    "https://github.com/fiforms/reliefinventory",
+    "https://github.com/fiforms/reliefinventory/releases",
+    "https://www.gnu.org/licenses/gpl-3.0.html",
+    "https://www.sumatrapdfreader.org",
+    "https://github.com/sumatrapdfreader/sumatrapdf",
+];
+
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
+fn open_external(app: AppHandle, url: String) -> Result<(), String> {
+    if !EXTERNAL_LINKS.contains(&url.as_str()) {
+        return Err("That link isn't allowed.".into());
+    }
+    app.opener().open_url(url, None::<&str>).map_err(|e| format!("Couldn't open the link: {e}"))
+}
+
+/// Open this OS's own printer management, which is different on each platform.
+#[tauri::command]
+fn open_printer_settings(app: AppHandle) -> Result<(), String> {
+    use std::process::Command;
+    let spawn = |prog: &str, args: &[&str]| Command::new(prog).args(args).spawn().is_ok();
+    let opened = if cfg!(windows) {
+        spawn("explorer.exe", &["ms-settings:printers"])
+    } else if cfg!(target_os = "macos") {
+        spawn("open", &["x-apple.systempreferences:com.apple.preference.printfax"])
+    } else {
+        // Whichever desktop's printer tool is installed, else CUPS's own web page (always there with CUPS).
+        spawn("system-config-printer", &[])
+            || spawn("gnome-control-center", &["printers"])
+            || spawn("kcmshell6", &["kcm_printer_manager"])
+            || spawn("kcmshell5", &["kcm_printer_manager"])
+            || app.opener().open_url("http://localhost:631/printers/", None::<&str>).is_ok()
+    };
+    if opened { Ok(()) } else { Err("Couldn't open this computer's printer settings.".into()) }
+}
+
 fn show_main(app: &AppHandle) {
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
@@ -83,6 +125,21 @@ fn open_portal(app: &AppHandle) {
     if let Err(e) = app.opener().open_url(format!("{base}/dashboard"), None::<&str>) {
         tracing::warn!("couldn't open the portal in a browser: {e}");
     }
+}
+
+/// Tray icon variants: the app icon plus a status dot. Embedded so nothing extra ships in the installer.
+fn tray_icon(s: &Status) -> tauri::image::Image<'static> {
+    use ri_print_core::types::PrinterState;
+    let bytes: &[u8] = if !s.paired {
+        include_bytes!("../icons/tray/idle.png")
+    } else if s.last_error.is_some() {
+        include_bytes!("../icons/tray/problem.png")
+    } else if s.printers.iter().any(|p| matches!(p.state, PrinterState::Error | PrinterState::Offline)) {
+        include_bytes!("../icons/tray/attention.png")
+    } else {
+        include_bytes!("../icons/tray/ok.png")
+    };
+    tauri::image::Image::from_bytes(bytes).expect("embedded tray icon is a valid PNG")
 }
 
 fn tooltip(s: &Status) -> String {
@@ -123,7 +180,7 @@ fn main() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| show_main(app)))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
-        .invoke_handler(tauri::generate_handler![get_status, pair, unpair, poll_now, open_portal_cmd, get_autostart, set_autostart])
+        .invoke_handler(tauri::generate_handler![get_status, pair, unpair, poll_now, open_portal_cmd, get_autostart, set_autostart, app_version, open_external, open_printer_settings])
         .on_window_event(|window, event| {
             // The window is just a view; closing it leaves the print server running in the tray.
             if let WindowEvent::CloseRequested { api, .. } = event {
@@ -159,9 +216,7 @@ fn main() {
                         show_main(tray.app_handle());
                     }
                 });
-            if let Some(icon) = app.default_window_icon() {
-                tray = tray.icon(icon.clone());
-            }
+            tray = tray.icon(tray_icon(&engine.status()));
             tray.build(app)?;
 
             // Start hidden when launched at login on an already-paired Windows/macOS machine. On
@@ -184,6 +239,7 @@ fn main() {
                     let _ = portal.set_enabled(status.paired);
                     if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                         let _ = tray.set_tooltip(Some(tooltip(&status)));
+                        let _ = tray.set_icon(Some(tray_icon(&status)));
                     }
                     let _ = handle.emit("status", status);
                 }

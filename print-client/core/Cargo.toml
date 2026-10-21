@@ -3,7 +3,7 @@ name = "ri-print-core"
 version = "0.1.0"
 edition = "2021"
 description = "Relief Inventory print server client: pairing, heartbeat, job loop, OS printing"
-license = "UNLICENSED"
+license = "GPL-3.0-or-later"
 
 [lib]
 name = "ri_print_core"

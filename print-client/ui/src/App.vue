@@ -1,11 +1,13 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import * as api from './api'
+import About from './About.vue'
 
 const status = ref(null)
 const now = ref(Date.now())
 const autostart = ref(null)
 const confirmingUnpair = ref(false)
+const showAbout = ref(false)
 let unlisten = () => {}
 let ticker
 
@@ -85,7 +87,10 @@ async function toggleAutostart() {
 </script>
 
 <template>
-    <main v-if="status" class="wrap">
+    <main v-if="status && showAbout" class="wrap">
+        <About :platform="status.platform" @close="showAbout = false" />
+    </main>
+    <main v-else-if="status" class="wrap">
         <header class="top">
             <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M6 9V3h12v6M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v7H6z" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
@@ -94,6 +99,7 @@ async function toggleAutostart() {
             <span v-if="paired" class="pill" :class="status.last_error ? 'warn' : 'ok'">
                 {{ status.last_error ? 'Connection problem' : status.realtime ? 'Connected · instant' : 'Connected' }}
             </span>
+            <button class="quiet" @click="showAbout = true" title="About RI Print: version, license and links">About</button>
         </header>
 
         <!-- Not paired: setup -->
@@ -142,7 +148,10 @@ async function toggleAutostart() {
             </section>
 
             <section class="card">
-                <h2>Printers on this computer</h2>
+                <div class="who">
+                    <h2>Printers on this computer</h2>
+                    <button class="quiet" @click="api.openPrinterSettings().catch((e) => (pairError = String(e)))" title="Open this computer's own printer settings to add or fix printers">Printer settings</button>
+                </div>
                 <p v-if="status.printers_error" class="banner bad" role="alert">{{ status.printers_error }}</p>
                 <ul v-if="status.printers.length" class="rows">
                     <li v-for="p in status.printers" :key="p.queue_name">
