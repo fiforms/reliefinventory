@@ -1,7 +1,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
@@ -68,6 +68,10 @@ const locationSort = computed(() => (a, b) => {
 		newrecordcaption="Add Location"
 		:filter="locationMatchesSearch"
 		:sort="locationSort">
+
+      <template #titleactions>
+        <Link href="/setup/locations/pick-path" class="ri_formbutton">Pick Path</Link>
+      </template>
 
       <template #listactions>
         <input

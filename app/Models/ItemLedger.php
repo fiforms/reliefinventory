@@ -20,6 +20,7 @@ class ItemLedger extends Model
         'orderdonation_id', // Foreign key linking to transactions
         'item_id',          // Foreign key linking to master list of items and descriptions
         'pallet_id',        // Foreign key linking to the source pallet (donation provenance)
+        'stock_pallet_id',  // Warehouse pallet a fill was picked from (or sorted onto) — see PalletStock
         'order_line_id',    // Foreign key linking to the order line this fill record satisfies
         'qty_added',        // Quantity of the items added
         'qty_subtracted',   // Quanitity of items removed

@@ -180,6 +180,25 @@ export default {
 									</tbody>
 								</table>
 								<p v-else class="inv_empty">No items defined under this item type.</p>
+								<table class="inv_subtable inv_locations" v-if="record.locations && (record.locations.length || record.unassigned)">
+									<thead>
+										<tr><th>Location</th><th>Pallets</th><th>Quantity</th></tr>
+									</thead>
+									<tbody>
+										<tr v-for="loc in record.locations" :key="loc.location_id ?? 'none'">
+											<td>{{ loc.code || 'No location recorded' }}</td>
+											<td>
+												<span v-for="(p, i) in loc.pallets" :key="p.id" class="inv_pallet">{{ p.tag }} ({{ p.qty }}, {{ p.status }})<span v-if="i < loc.pallets.length - 1">, </span></span>
+											</td>
+											<td class="inv_num">{{ loc.qty }}</td>
+										</tr>
+										<tr v-if="record.unassigned" class="inv_unassigned" title="On hand but not recorded on a warehouse pallet: still in the sorting area, or stock from before pallet tracking.">
+											<td>Not yet on a pallet</td>
+											<td></td>
+											<td class="inv_num">{{ record.unassigned }}</td>
+										</tr>
+									</tbody>
+								</table>
 							</td>
 						</tr>
 					</template>
@@ -282,6 +301,12 @@ export default {
 .inv_subtable th {
 	color: #666;
 	font-weight: normal;
+}
+.inv_locations {
+	margin-top: 0.75em;
+}
+.inv_unassigned {
+	font-style: italic;
 }
 .inv_empty {
 	text-align: center;

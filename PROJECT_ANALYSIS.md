@@ -73,7 +73,7 @@ Mapping the stated goals to what exists:
 | Goal | Status |
 |------|--------|
 | Add inventory (item catalog, categories, units) | ✅ Working (via Item Types page; family/variant numbering as of Aug 2026) |
-| Track location of inventory | 🟡 Partial — pallets have locations & movement history; no item-level stock-by-location view (Inventory Report is stock-on-hand only, not location-broken-down) |
+| Track location of inventory | 🟡 Partial — pallets have locations & movement history; item stock-by-location added Oct 20, 2026 (W-pallet contents via Fill Pallet; Inventory Report shows quantity by location + an unassigned remainder) — only stock put on a pallet is locatable |
 | **Bulk donations tagged with barcode** | ✅ Working (Aug 2026 update, Part 6) — Receiving creates R pallets per donation, printed/scanned tag per pallet |
 | **Sorting scans the tag so source is trackable** | ✅ Working (Aug 2026 update) — `DonationSorting.vue` scans or types a pallet tag once per session; every line saved afterward carries `pallet_id` automatically |
 | Applications for approved distribution points | ❌ Missing — people/roles exist, but no application form, approval workflow, or distribution-point entity. Part 5 (Facility Network) designs this; not built. |

@@ -28,6 +28,7 @@ import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import PrintMenu from '@/Components/PrintMenu.vue';
+import WebcamCapture from '@/Components/WebcamCapture.vue';
 
 defineProps({
 	breadcrumb: {
@@ -434,6 +435,13 @@ const containerTypeOptions = [
 						</div>
 					</div>
 
+					<template v-if="record.id && record.photo_path">
+						<h3 class="recv_subhead">Photo of the Shipment</h3>
+						<a :href="photoUrl(record)" target="_blank">
+							<img :src="photoUrl(record)" alt="Photo of the shipment" class="recv_photo" />
+						</a>
+					</template>
+
 					<template v-if="record.id && record.is_close_out_candidate">
 						<h3 class="recv_subhead">Daily Close-Out</h3>
 						<button @click="closeOut(record)" class="ri_defaultbutton">Close Out</button>
@@ -459,12 +467,17 @@ const containerTypeOptions = [
 							class="recv_hidden_input"
 							@change="onPhotoSelected($event, record)"
 						/>
-						<button type="button" class="ri_formbutton" @click="$refs.cameraInput.click()">📷 Take Photo</button>
+						<button type="button" class="ri_formbutton" v-if="canTakePhoto" @click="takePhoto">📷 Take Photo</button>
 						<button type="button" class="ri_formbutton" @click="$refs.fileInput.click()">Choose File</button>
 					</div>
-					<p v-if="record.photo_path" class="ri_hint">
-						<a :href="`/json/receiving/${record.id}/photo`" target="_blank">View current photo</a>
-					</p>
+					<WebcamCapture
+						v-if="webcamOpen"
+						@captured="(file) => onPhotoCaptured(file, record)"
+						@close="webcamOpen = false"
+					/>
+					<a v-if="record.photo_path" :href="photoUrl(record)" target="_blank">
+						<img :src="photoUrl(record)" alt="Photo of the shipment" class="recv_photo" />
+					</a>
 					<p v-if="photoError" class="ri_error">{{ photoError }}</p>
 				</template>
 
@@ -546,7 +559,7 @@ const containerTypeOptions = [
 								Keep Editing
 							</button>
 						</div>
-						<button @click="goToPhoto(record, save)" class="ri_defaultbutton">Add Photo</button>
+						<button @click="goToPhoto(record, save)" class="ri_defaultbutton">Continue</button>
 					</div>
 					<div class="ri_formactions recv_dangerrow" v-if="record.id">
 						<a
@@ -592,6 +605,7 @@ const containerTypeOptions = [
 <script>
 import axios from 'axios';
 import { invalidateOptions } from '@/Components/SearchSelect.vue';
+import { webcamSupported } from '@/Components/WebcamCapture.vue';
 
 export default {
 	data() {
@@ -615,6 +629,8 @@ export default {
 			contactError: null,
 
 			photoError: null,
+			photoStamp: 0, // bumped on each upload so a retaken photo isn't served from the browser cache
+			webcamOpen: false,
 
 			confirmingCancel: false,
 			confirmingReprint: false,
@@ -652,6 +668,9 @@ export default {
 		};
 	},
 	computed: {
+		canTakePhoto() {
+			return this.isTouchDevice() || webcamSupported();
+		},
 		receivingFilter() {
 			const query = this.donorSearch.trim().toLowerCase();
 			const flaggedOnly = this.flaggedOnly;
@@ -957,18 +976,39 @@ export default {
 		},
 
 		// ---------- photo of the shipment ----------
+		// Phones/tablets (coarse pointer) get the native camera via <input capture>;
+		// desktops get the in-app webcam preview, or no Take Photo button at all
+		// when there's no camera API (plain HTTP, old browser).
+		isTouchDevice() {
+			return window.matchMedia?.('(pointer: coarse)').matches ?? false;
+		},
+		takePhoto() {
+			if (this.isTouchDevice()) this.$refs.cameraInput.click();
+			else this.webcamOpen = true;
+		},
+		async onPhotoCaptured(file, record) {
+			this.webcamOpen = false;
+			await this.uploadPhoto(file, record);
+		},
 		async onPhotoSelected(event, record) {
 			const file = event.target.files?.[0];
 			// Reset so picking the same file again (or retaking a photo) still
 			// fires 'change' next time.
 			event.target.value = '';
 			if (!file) return;
+			await this.uploadPhoto(file, record);
+		},
+		photoUrl(record) {
+			return `/json/receiving/${record.id}/photo?v=${this.photoStamp}`;
+		},
+		async uploadPhoto(file, record) {
 			this.photoError = null;
 			const formData = new FormData();
 			formData.append('photo', file);
 			try {
 				const response = await axios.post('/json/receiving/' + record.id + '/photo', formData);
 				record.photo_path = response.data.record.photo_path;
+				this.photoStamp++;
 			} catch (error) {
 				this.photoError = error.response?.data?.message || 'Could not upload photo.';
 			}
@@ -1120,6 +1160,14 @@ export default {
 	flex: 1;
 	min-width: 6em;
 }
+.recv_photo {
+	display: block;
+	max-width: 100%;
+	max-height: 24rem;
+	margin-top: 0.75em;
+	border-radius: 4px;
+}
+
 .recv_photobuttons {
 	display: flex;
 	gap: 0.5em;

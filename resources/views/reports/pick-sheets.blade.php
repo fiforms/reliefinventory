@@ -63,6 +63,9 @@
             font-weight: normal;
             border-bottom: 2px solid #ccc;
         }
+        td.where {
+            font-size: 10px;
+        }
         th.qty, td.qty {
             width: 90px;
             text-align: center;
@@ -110,22 +113,42 @@
                     <th>Item #</th>
                     <th>Name</th>
                     <th>Unit</th>
+                    <th>Where</th>
                     <th class="qty">Qty to Pick</th>
                     <th class="picked">Picked</th>
                 </tr>
             </thead>
             <tbody>
                 {{-- Lines approved at 0 have nothing to pick, so they're left off the sheet. --}}
-                @forelse($order->orderLines->where('qty_to_pick', '>', 0) as $line)
+                @php
+                    // Walking order along the pick path: sorting area first, lines with no known location last.
+                    $pickLines = $order->orderLines->where('qty_to_pick', '>', 0)
+                        ->sortBy(fn ($l) => [($plans[$l->id]['first_sequence'] ?? null) === null ? 1 : 0, $plans[$l->id]['first_sequence'] ?? 0, $l->id])->values();
+                @endphp
+                @forelse($pickLines as $line)
                     <tr>
                         <td>{{ $line->itemtype?->display_number ?? '' }}</td>
                         <td>{{ $line->itemtype?->name }}</td>
                         <td>{{ $line->itemtype?->unit?->abbreviation ?? $line->itemtype?->unit?->name }}</td>
+                        <td class="where">
+                            @foreach(($plans[$line->id]['steps'] ?? []) as $step)
+                                <div>
+                                    @if($step['kind'] === 'pool')
+                                        Sorting area &times;{{ $step['qty'] }}
+                                    @else
+                                        <strong>{{ $step['location'] ?? 'no location' }}</strong> {{ $step['tag'] }} &times;{{ $step['qty'] }}@if($step['needs_open']) <em>(open pallet first)</em>@endif
+                                    @endif
+                                </div>
+                            @endforeach
+                            @if(($plans[$line->id]['short'] ?? 0) > 0)
+                                <div><em>{{ $plans[$line->id]['short'] }} not found in stock</em></div>
+                            @endif
+                        </td>
                         <td class="qty">{{ $line->qty_to_pick }}</td>
                         <td class="picked"></td>
                     </tr>
                 @empty
-                    <tr><td colspan="5">Nothing to pick on this order.</td></tr>
+                    <tr><td colspan="6">Nothing to pick on this order.</td></tr>
                 @endforelse
             </tbody>
         </table>

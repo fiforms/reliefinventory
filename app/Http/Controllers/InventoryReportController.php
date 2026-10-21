@@ -6,6 +6,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\ItemType;
+use App\Models\Pallet;
+use App\Services\PalletStock;
 use Illuminate\Support\Facades\DB;
 use League\Csv\Writer;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -116,8 +118,9 @@ class InventoryReportController extends Controller
             ->groupBy('itemtype_id');
 
         $itemTypes = ItemType::with('category', 'unit')->get();
+        $stockByType = $this->palletStockByItemType();
 
-        $records = $itemTypes->map(function (ItemType $itemType) use ($itemRows) {
+        $records = $itemTypes->map(function (ItemType $itemType) use ($itemRows, $stockByType) {
             $items = $itemRows->get($itemType->id, collect())->map(fn ($row) => [
                 'id' => $row->id,
                 'description' => $row->description,
@@ -144,6 +147,9 @@ class InventoryReportController extends Controller
                 'trashed' => (int) $items->sum('trashed'),
                 'diverted' => (int) $items->sum('diverted'),
                 'items' => $items,
+                'locations' => $stockByType->get($itemType->id, collect())->values(),
+                // On hand but not recorded on any pallet (older stock, or not yet palletized).
+                'unassigned' => (int) $items->sum('on_hand') - (int) $stockByType->get($itemType->id, collect())->sum('qty'),
             ];
         })->sortBy([
             ['category', 'asc'],
@@ -151,5 +157,42 @@ class InventoryReportController extends Controller
         ])->values();
 
         return $records;
+    }
+
+    /**
+     * Where each item type's stock sits: warehouse pallets holding it, grouped by the pallet's current location.
+     * Per item type -> list of {location_id, code, qty, pallets:[{id, tag, status, qty}]}.
+     */
+    private function palletStockByItemType()
+    {
+        $rows = PalletStock::quantities()->filter(fn ($r) => $r['qty'] !== 0);
+        if ($rows->isEmpty()) {
+            return collect();
+        }
+
+        $typeOf = DB::table('items')->whereIn('id', $rows->pluck('item_id')->unique())->pluck('itemtype_id', 'id');
+        $pallets = Pallet::with('location:id,code')->whereIn('id', $rows->pluck('pallet_id')->unique())->get()->keyBy('id');
+
+        return $rows->groupBy(fn ($r) => $typeOf[$r['item_id']] ?? 0)->map(function ($typeRows) use ($pallets) {
+            return $typeRows->groupBy('pallet_id')->map(function ($palletRows, $palletId) use ($pallets) {
+                $pallet = $pallets[$palletId];
+
+                return ['pallet' => $pallet, 'qty' => (int) $palletRows->sum('qty')];
+            })->groupBy(fn ($p) => $p['pallet']->location_id ?? 0)->map(function ($group) {
+                $location = $group->first()['pallet']->location;
+
+                return [
+                    'location_id' => $location?->id,
+                    'code' => $location?->code,
+                    'qty' => (int) $group->sum('qty'),
+                    'pallets' => $group->map(fn ($p) => [
+                        'id' => $p['pallet']->id,
+                        'tag' => $p['pallet']->tag,
+                        'status' => $p['pallet']->status,
+                        'qty' => $p['qty'],
+                    ])->sortBy('tag')->values(),
+                ];
+            })->sortBy(fn ($l) => $l['code'] === null ? "\xff" : $l['code'], SORT_NATURAL | SORT_FLAG_CASE)->values();
+        });
     }
 }

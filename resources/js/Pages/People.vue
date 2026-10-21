@@ -39,27 +39,25 @@ defineProps({
       </template>
 
       <template #thead>
-        <th>First Name</th>
-        <th>Last Name</th>
-        <th>Organization</th>
-        <th>Category</th>
-        <th>Parent Org</th>
-        <th>Phone</th>
-        <th>Email</th>
-        <th>Roles</th>
-        <th>Volunteer</th>
+        <th>People</th>
       </template>
 
       <template #tbody="{ record }">
-        <td>{{ record.first_name }}</td>
-        <td>{{ record.last_name }}</td>
-        <td>{{ record.organization || 'N/A' }}<span v-if="record.is_organization" class="people_badge">org</span></td>
-        <td>{{ record.category ? record.category.name : '' }}</td>
-        <td>{{ record.parent ? record.parent.full_name : '' }}</td>
-        <td>{{ record.phone || 'N/A' }}</td>
-        <td>{{ record.email || 'N/A' }}</td>
-        <td class="comma-separated"><span v-for="sub in record.roles" > {{ sub.name }} </span></td>
-        <td>{{ record.is_volunteer ? 'Yes' : '' }}</td>
+        <td class="people_card">
+          <div class="people_line1">
+            <strong>{{ [record.first_name, record.last_name].filter(Boolean).join(' ') || 'N/A' }}</strong>
+            <span v-if="record.organization">{{ record.organization }}</span>
+            <span v-if="record.is_organization" class="people_badge">org</span>
+            <span v-if="record.category" class="people_dim">{{ record.category.name }}</span>
+            <span v-if="record.parent" class="people_dim">Parent: {{ record.parent.full_name }}</span>
+          </div>
+          <div class="people_line2">
+            <span>Phone: {{ record.phone || 'N/A' }}</span>
+            <span :title="record.email || ''">Email: {{ shortenEmail(record.email) }}</span>
+            <span>Roles: {{ (record.roles || []).map((r) => r.name).join(', ') || 'None' }}</span>
+            <span>Volunteer: {{ record.is_volunteer ? 'Yes' : 'No' }}</span>
+          </div>
+        </td>
       </template>
 
       <template #default="{ record, editing, templates }">
@@ -378,6 +376,18 @@ export default {
     },
   },
   methods: {
+    // Long addresses are cut in the middle of the local part so the domain stays readable.
+    shortenEmail(email, max = 28) {
+      if (!email) return 'N/A';
+      if (email.length <= max) return email;
+      const at = email.lastIndexOf('@');
+      const domain = at >= 0 ? email.slice(at) : '';
+      const local = at >= 0 ? email.slice(0, at) : email;
+      const room = Math.max(max - domain.length - 1, 4);
+      const head = Math.ceil(room / 2);
+      const tail = Math.floor(room / 2);
+      return local.slice(0, head) + '…' + local.slice(local.length - tail) + domain;
+    },
     // Server-computed (PeopleController::index) mirror of assertNoEscalation:
     // false only once the record has an id and the acting user lacks a
     // permission this person currently holds. A brand-new record has no
@@ -567,6 +577,11 @@ export default {
 td.comma-separated span:not(:last-child)::after {
   content: ', ';
 }
+
+.people_card { max-width: 0; width: 100%; }
+.people_line1, .people_line2 { display: flex; flex-wrap: wrap; gap: 0.2em 1.2em; }
+.people_line2 { font-size: 0.85em; color: #4b5563; margin-top: 0.15em; }
+.people_dim { color: #6b7280; }
 
 .people_badge {
   margin-left: 0.4em;

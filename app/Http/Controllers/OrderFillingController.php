@@ -7,7 +7,11 @@ namespace App\Http\Controllers;
 
 use App\Models\Item;
 use App\Models\OrderLine;
+use App\Models\Pallet;
 use App\Models\Transaction;
+use App\Services\PalletStock;
+use App\Services\PickPlanner;
+use App\Support\PalletKind;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -44,6 +48,9 @@ class OrderFillingController extends Controller
     private const FILL_VALIDATION = [
         'item_id' => 'required|exists:items,id',
         'qty' => 'required|integer|min:0',
+        // Optional: the warehouse pallet this was picked from (scanned tag or number). Keeps per-pallet
+        // quantities, and so "where is it", current; omitting it just draws down the unassigned pool.
+        'pallet_tag' => 'nullable|string',
     ];
 
     /**
@@ -154,14 +161,17 @@ class OrderFillingController extends Controller
     {
         $orders = Transaction::where('type', 'order')
             ->whereIn('id', $ids)
-            ->with(['person', 'orderLines.itemtype.unit'])
+            ->with(['person', 'orderLines.itemtype.unit', 'orderLines.itemLedgers'])
             ->get()
             ->sortBy(fn ($order) => array_search($order->id, $ids))
             ->values();
 
+        // Planned across the whole batch in print order, so two sheets are never told to take the same cases.
+        $plans = self::planLines($orders->flatMap->orderLines);
+
         $generatedAt = now();
 
-        return Pdf::view('reports.pick-sheets', ['orders' => $orders, 'generatedAt' => $generatedAt])
+        return Pdf::view('reports.pick-sheets', ['orders' => $orders, 'plans' => $plans, 'generatedAt' => $generatedAt])
             ->driver('weasyprint')
             ->format('letter')
             ->name('pick-sheets-'.$generatedAt->format('Y-m-d').'.pdf');
@@ -187,17 +197,149 @@ class OrderFillingController extends Controller
             ], 422);
         }
 
-        $fill = $order->itemLedgers()->create([
-            'item_id' => $data['item_id'],
-            'order_line_id' => $line->id,
-            'qty_subtracted' => $data['qty'],
-            'disposition' => 'usable',
-            'person_id_user' => Auth::id(),
-        ]);
+        $pallet = null;
+        if (! empty($data['pallet_tag'])) {
+            $palletId = SortingSessionController::palletIdFromTag($data['pallet_tag']);
+            $pallet = $palletId ? Pallet::find($palletId) : null;
+            if (! $pallet || $pallet->kind !== PalletKind::WAREHOUSE) {
+                return response()->json(['errors' => ['pallet_tag' => ['Unknown Warehouse pallet tag.']]], 422);
+            }
+            // A sealed pallet can't be picked *from*, but it can leave whole: the pick must take everything on it.
+            $takesWholeSealed = $pallet->status === 'sealed' && PalletStock::palletTotal($pallet->id) === (int) $data['qty'];
+            if ($pallet->status !== 'open' && ! $takesWholeSealed) {
+                return response()->json(['errors' => ['pallet_tag' => [$pallet->status === 'sealed'
+                    ? "{$pallet->tag} is sealed — open it first to pick part of it (or take the whole pallet)."
+                    : "{$pallet->tag} is {$pallet->status} and can't be picked from."]]], 422);
+            }
+        }
+
+        $warning = null;
+        $fills = DB::transaction(function () use ($order, $data, $line, $pallet, &$warning) {
+            $itemId = (int) $data['item_id'];
+            $qty = (int) $data['qty'];
+
+            // [pallet|null, qty] chunks. A named pallet takes the whole pick. Otherwise the unassigned pool (the sorting
+            // area) goes first, and any overflow comes off the oldest pallets holding the item — so unassigned never
+            // goes negative just because a picker didn't scan a pallet. Only a true over-pick leaves a remainder.
+            $chunks = [];
+            if ($pallet) {
+                $chunks[] = [$pallet, $qty];
+            } else {
+                $overflow = $qty - max(0, PalletStock::unassigned($itemId));
+                if ($overflow > 0) {
+                    $holding = PalletStock::quantities(null, [$itemId])->filter(fn ($r) => $r['qty'] > 0)->sortBy('pallet_id');
+                    $pallets = Pallet::with('location:id,code')->whereIn('id', $holding->pluck('pallet_id'))->get()->keyBy('id');
+                    foreach ($holding as $row) {
+                        $candidate = $pallets[$row['pallet_id']] ?? null;
+                        if ($overflow <= 0 || ! $candidate || $candidate->status !== 'open') {
+                            continue; // only open pallets are drawn from, oldest first
+                        }
+                        $take = min($overflow, $row['qty']);
+                        $chunks[] = [$candidate, $take];
+                        $overflow -= $take;
+                    }
+
+                    // Still short, but sealed pallets hold the item: the picker has to open one — never silently.
+                    $sealed = $holding->filter(fn ($r) => ($pallets[$r['pallet_id']] ?? null)?->status === 'sealed');
+                    if ($overflow > 0 && $sealed->isNotEmpty()) {
+                        abort(response()->json([
+                            'message' => "Only ".($qty - $overflow)." of {$qty} can come from the sorting area and open pallets. Open a sealed pallet to pick the other {$overflow}.",
+                            'sealed_pallets' => $sealed->map(fn ($r) => [
+                                'id' => $r['pallet_id'], 'tag' => $pallets[$r['pallet_id']]->tag,
+                                'location' => $pallets[$r['pallet_id']]->location?->code, 'qty' => $r['qty'],
+                            ])->values(),
+                        ], 422));
+                    }
+                }
+                $fromPallets = array_sum(array_column($chunks, 1));
+                if ($qty - $fromPallets > 0 || ! $chunks) {
+                    array_unshift($chunks, [null, $qty - $fromPallets]);
+                }
+                if ($overflow > 0) {
+                    $warning = "That's {$overflow} more than the database says is in stock — check the count.";
+                }
+            }
+
+            $fills = [];
+            foreach ($chunks as [$chunkPallet, $chunkQty]) {
+                $fills[] = $order->itemLedgers()->create([
+                    'item_id' => $itemId,
+                    'order_line_id' => $line->id,
+                    'stock_pallet_id' => $chunkPallet?->id,
+                    'qty_subtracted' => $chunkQty,
+                    'disposition' => 'usable',
+                    'person_id_user' => Auth::id(),
+                ]);
+
+                if ($chunkPallet) {
+                    if ($chunkPallet->status === 'sealed') {
+                        $chunkPallet->transitionTo('open', null, 'Taken whole for an order'); // then emptied just below
+                    }
+                    if ($pallet && PalletStock::quantities([$pallet->id], [$itemId])->sum('qty') < 0) {
+                        $warning = "{$pallet->tag} was only recorded as holding ".(PalletStock::quantities([$pallet->id], [$itemId])->sum('qty') + $chunkQty).' of this item — check the count.';
+                    }
+                    if (PalletStock::palletTotal($chunkPallet->id) <= 0 && $chunkPallet->status !== 'empty') {
+                        $chunkPallet->transitionTo('empty', null, 'Picked clean');
+                    }
+                }
+            }
+
+            return $fills;
+        });
+
+        foreach ($fills as $fill) {
+            $fill->load(['item.itemtype']);
+        }
 
         return response()->json([
-            'record' => $fill->load(['item.itemtype']),
+            'record' => $fills[0],
+            'records' => $fills,
+            'warning' => $warning,
         ], 201);
+    }
+
+    /**
+     * Suggested pick for every line still to pick on an order — see PickPlanner (pool, whole sealed pallets, open pallets,
+     * then the oldest sealed one) — in walking order along the pick path. Recomputed from live stock on every call.
+     */
+    public function plan($id)
+    {
+        $order = Transaction::where('type', 'order')->with(['orderLines.itemLedgers'])->findOrFail($id);
+
+        return response()->json(['lines' => self::planLines($order->orderLines)]);
+    }
+
+    /**
+     * @param  iterable<OrderLine>  $lines  lines across one or more orders, planned in the order given
+     * @return array<int, array> line id => plan (steps, short, first_sequence)
+     */
+    public static function planLines(iterable $lines): array
+    {
+        $wanted = [];
+        foreach ($lines as $line) {
+            $need = $line->qty_to_pick - (int) $line->itemLedgers->sum('qty_subtracted');
+            if ($need > 0) {
+                $wanted[$line->id] = ['itemtype_id' => $line->itemtype_id, 'need' => $need];
+            }
+        }
+
+        return PickPlanner::planMany($wanted);
+    }
+
+    /** Open a sealed warehouse pallet so it can be picked from. */
+    public function openPallet($id)
+    {
+        $pallet = Pallet::findOrFail($id);
+        if ($pallet->kind !== PalletKind::WAREHOUSE) {
+            return response()->json(['message' => 'Only Warehouse pallets are opened for picking.'], 422);
+        }
+        if ($pallet->status === 'sealed') {
+            $pallet->transitionTo('open', null, 'Opened for picking');
+        } elseif ($pallet->status !== 'open') {
+            return response()->json(['message' => "{$pallet->tag} is {$pallet->status} and can't be opened."], 422);
+        }
+
+        return response()->json(['record' => ['id' => $pallet->id, 'tag' => $pallet->tag, 'status' => $pallet->fresh()->status]]);
     }
 
     public function updateFill(Request $request, $id, $lineId, $fillId)

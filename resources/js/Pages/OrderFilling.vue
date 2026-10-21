@@ -76,6 +76,9 @@ export default {
 
 			// add-a-fill-record entry, per line (keyed by line id)
 			entryByLine: {},
+			// where each itemtype's stock is (sorting-area pool + warehouse pallets), keyed by itemtype id
+			plans: {}, // suggested pick per line id (see PickPlanner): { steps, short, first_sequence }
+			openingPalletId: null,
 			showScanner: false,
 			scanningLineId: null,
 
@@ -129,7 +132,16 @@ export default {
 		// nothing to pick, so the line is left off the fill screen (and the
 		// pick sheet) and needs no fill record.
 		pickableLines() {
-			return this.orderLines.filter((line) => Number(line.qty_to_pick) > 0);
+			// Walking order along the admin's pick path (sorting area first; lines with no known location last).
+			const rank = (line) => {
+				const seq = this.plans[line.id]?.first_sequence;
+				return seq === null || seq === undefined ? Number.MAX_SAFE_INTEGER : seq;
+			};
+			return this.orderLines
+				.filter((line) => Number(line.qty_to_pick) > 0)
+				.map((line, index) => ({ line, index }))
+				.sort((a, b) => rank(a.line) - rank(b.line) || a.index - b.index)
+				.map(({ line }) => line);
 		},
 		// Every fill is 0 (or nothing is pickable): completing will close the
 		// order as Closed - Unfulfilled instead of sending it to Shipping.
@@ -178,6 +190,39 @@ export default {
 				this.stockHints = {};
 			}
 			this.seedApprovalDrafts();
+		},
+
+		// ---------- where to pick from ----------
+		async fetchPlan() {
+			if (!this.order) return;
+			try {
+				this.plans = (await axios.get('/json/order-filling/' + this.order.id + '/plan')).data.lines || {};
+			} catch (error) {
+				this.plans = {};
+			}
+		},
+		async openPallet(pallet) {
+			this.openingPalletId = pallet.id;
+			this.fillError = null;
+			try {
+				await axios.post('/json/order-filling/pallets/' + pallet.id + '/open');
+				await this.fetchPlan();
+			} catch (error) {
+				this.fillError = error.response?.data?.message || 'Could not open that pallet.';
+			} finally {
+				this.openingPalletId = null;
+			}
+		},
+		// Fill the entry row from a plan step: its pallet (none for the sorting area), item and quantity.
+		useStep(line, step) {
+			const entry = this.entryByLine[line.id];
+			entry.pallet_tag = step.kind === 'pool' ? '' : step.tag;
+			entry.qty = step.qty;
+			if (this.itemsForItemtype(line.itemtype_id).length > 1) {
+				entry.item_id = step.item_id;
+				entry.item = this.itemsForItemtype(line.itemtype_id).find((i) => i.id === step.item_id) || null;
+			}
+			this.$nextTick(() => this.$refs['qtyInput_' + line.id]?.[0]?.focus());
 		},
 
 		// ---------- allocation approval ----------
@@ -268,10 +313,10 @@ export default {
 					return;
 				}
 				this.orderLines.forEach((line) => {
-					this.entryByLine[line.id] = { item_id: null, item: null, qty: null };
+					this.entryByLine[line.id] = { item_id: null, item: null, qty: null, pallet_tag: '' };
 				});
 				this.view = 'fill';
-				await Promise.all([this.fetchStockHints(), this.fetchItems()]);
+				await Promise.all([this.fetchStockHints(), this.fetchItems(), this.fetchPlan()]);
 			} catch (error) {
 				this.listError = 'Could not open that order.';
 			}
@@ -331,16 +376,20 @@ export default {
 			try {
 				const response = await axios.post(
 					'/json/order-filling/' + this.order.id + '/lines/' + line.id + '/fills',
-					{ item_id: itemId, qty }
+					{ item_id: itemId, qty, pallet_tag: entry.pallet_tag?.trim() || null }
 				);
-				line.item_ledgers = [...(line.item_ledgers || []), response.data.record];
-				this.entryByLine[line.id] = { item_id: null, item: null, qty: null };
+				line.item_ledgers = [...(line.item_ledgers || []), ...(response.data.records || [response.data.record])];
+				// keep the pallet: several picks in a row usually come off the same one
+				this.entryByLine[line.id] = { item_id: null, item: null, qty: null, pallet_tag: entry.pallet_tag };
+				if (response.data.warning) this.fillError = response.data.warning;
 				// on-hand is a ledger sum the fill just changed — refresh it
 				this.fetchStockHints();
+				this.fetchPlan();
 			} catch (error) {
 				this.fillError = error.response?.data?.message
 					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
 					|| 'Could not record that fill.';
+				this.fetchPlan();
 			}
 		},
 		async deleteFill(line, fill) {
@@ -527,7 +576,34 @@ export default {
 									placeholder="Qty"
 									@keydown.enter.prevent="addFill(line)"
 								/>
+								<input
+									type="text"
+									v-model="entryByLine[line.id].pallet_tag"
+									class="ri_forminput of_pallet"
+									placeholder="From open pallet (optional)"
+									title="Leave blank to take from the sorting area, then the oldest open pallets. A sealed pallet must be opened first."
+									@keydown.enter.prevent="addFill(line)"
+								/>
 								<button @click="addFill(line)" class="ri_defaultbutton">Add</button>
+							</div>
+							<div v-if="plans[line.id]" class="of_where">
+								<span class="of_where_title">Pick:</span>
+								<span v-for="(step, i) in plans[line.id].steps" :key="i" class="of_where_chip"
+									:class="{ of_pallet_sealed: step.needs_open }">
+									<template v-if="step.kind === 'pool'">Sorting area &times;{{ step.qty }}</template>
+									<template v-else>
+										<strong>{{ step.location || 'no location' }}</strong> {{ step.tag }} &times;{{ step.qty }}
+										<template v-if="step.status === 'sealed'">
+											<em>{{ step.whole ? 'sealed — take the whole pallet' : 'sealed — open it first' }}</em>
+											<button v-if="!step.whole" type="button" class="ri_formbutton" :disabled="openingPalletId === step.pallet_id"
+												@click="openPallet({ id: step.pallet_id })">Open pallet</button>
+										</template>
+										<em v-else>open</em>
+									</template>
+									<button type="button" class="ri_linkbutton" @click="useStep(line, step)">Use</button>
+								</span>
+								<span v-if="plans[line.id].short > 0" class="of_hint">{{ plans[line.id].short }} not found in stock</span>
+								<span v-if="!plans[line.id].steps.length && !(plans[line.id].short > 0)" class="of_hint">fully picked</span>
 							</div>
 							<ul v-if="(line.item_ledgers || []).length" class="of_filllist">
 								<li v-for="fill in line.item_ledgers" :key="fill.id">
@@ -639,6 +715,26 @@ export default {
 	align-items: center;
 	gap: 6px;
 	flex-wrap: wrap;
+}
+.of_where {
+	margin: 0.4em 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.4em;
+	align-items: center;
+	font-size: 0.9em;
+}
+.of_where_chip {
+	border: 1px solid currentColor;
+	border-radius: 4px;
+	padding: 0.1em 0.5em;
+}
+.of_pallet_sealed {
+	opacity: 0.85;
+	border-style: dashed;
+}
+.of_pallet {
+	width: 11em;
 }
 .of_qty {
 	max-width: 6em;

@@ -13,11 +13,13 @@ use App\Models\ItemType;
 use App\Models\Location;
 use App\Models\OrderLine;
 use App\Models\Pallet;
+use App\Models\PalletStockAssignment;
 use App\Models\PeopleRoles;
 use App\Models\Person;
 use App\Models\Transaction;
 use App\Models\Warehouse;
 use App\Services\FirstRunService;
+use App\Services\PickPlanner;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
@@ -61,9 +63,9 @@ class WarehouseSimulator
     // starting at its own clock hour — so a sort always precedes a fill on the
     // same day (stock exists before it is picked) and one order's same-day
     // steps (fill -> complete -> assign -> ship) are in increasing time.
-    private const PHASES = ['sort', 'fill', 'complete_fill', 'assign', 'ship', 'deliver', 'bol_review', 'bol_reupload', 'move'];
+    private const PHASES = ['sort', 'putaway', 'fill', 'complete_fill', 'assign', 'ship', 'deliver', 'bol_review', 'bol_reupload', 'move'];
 
-    private const PHASE_HOUR = ['sort' => 9, 'fill' => 12, 'complete_fill' => 14, 'assign' => 15, 'ship' => 16, 'deliver' => 10, 'bol_review' => 11, 'bol_reupload' => 10, 'move' => 13];
+    private const PHASE_HOUR = ['sort' => 9, 'putaway' => 11, 'fill' => 12, 'complete_fill' => 14, 'assign' => 15, 'ship' => 16, 'deliver' => 10, 'bol_review' => 11, 'bol_reupload' => 10, 'move' => 13];
 
     // Tuned so a default run fills ~90% of requested units: enough shortages
     // for the unfulfilled report to have something to say, not so many that
@@ -101,8 +103,14 @@ class WarehouseSimulator
     /** @var array<int, int> item_id => usable stock on hand */
     private array $stock = [];
 
-    /** @var array<int, array<int, array{id:int,remaining:int,opened:bool}>> item_id => warehouse pallets, oldest first */
-    private array $warehousePallets = [];
+    /** @var array<int, int> item_id => usable stock still in the sorting area (sorted, not yet on a pallet); may go negative on an injected over-pick */
+    private array $pool = [];
+
+    /** @var array<int, array{tag:string,status:string,location:?string,sequence:?int,items:array<int,int>}> warehouse pallet id => state, mirroring the DB */
+    private array $pallets = [];
+
+    /** @var array<int, array<int, true>> item_id => [pallet id => true] for the warehouse pallets holding it */
+    private array $palletsByItem = [];
 
     /** @var array<int, array<string, mixed>> */
     private array $donors = [];
@@ -284,6 +292,11 @@ class WarehouseSimulator
                 $this->standaloneOffer();
             }
 
+            // The forklift clears the sorting area once a day, Monday to Saturday.
+            if ($day->dayOfWeek !== 0) {
+                $this->queue[$this->today]['putaway'][] = [];
+            }
+
             $this->runPhase('sort');
 
             $this->phaseIndex = 0; // sorting is done for the day; new orders can still be filled today
@@ -402,6 +415,7 @@ class WarehouseSimulator
                 'deliver' => $this->deliver($payload['order']),
                 'bol_review' => $this->reviewBol($payload['order']),
                 'bol_reupload' => $this->reuploadBol($payload['order']),
+                'putaway' => $this->putAwayDay(),
                 'move' => $this->movePallet($payload['pallet']),
             };
             $phase === 'sort' ? $this->tick(5, 30) : $this->tick(30, 240);
@@ -840,9 +854,7 @@ class WarehouseSimulator
         if ($usable > 0) {
             $row($usable, 'usable', $this->rand->chance($e['new_share']) ? 'new' : 'used');
             $this->stock[$itemId] += $usable;
-            if ($usable >= 48 && $this->rand->chance(0.55)) {
-                $this->putAway($itemId, $usable);
-            }
+            $this->pool[$itemId] = ($this->pool[$itemId] ?? 0) + $usable;
         }
         if ($lost > 0) {
             $this->tick(2, 8);
@@ -851,44 +863,104 @@ class WarehouseSimulator
     }
 
     /**
-     * Stock of an item that was big enough to go on a warehouse pallet. Stock
-     * itself stays pooled by item (the ledger is the truth); these pallets
-     * exist so the Pallets/Inventory-Movement screens have a realistic
-     * population that is opened and emptied as fills draw the item down.
+     * The daily forklift run: what sorters have produced goes from the sorting area onto warehouse pallets, filled in
+     * sequence so several items share a pallet (like the real "fill it as it leaves sorting" flow), each sealed at a rack.
+     * Some stock is deliberately left behind — a skipped item now and then, and a remainder on many — so the sorting-area
+     * report and the "unassigned" figures have something real to show.
      */
-    private function putAway(int $itemId, int $qty): void
+    private function putAwayDay(): void
+    {
+        $items = array_keys(array_filter($this->pool, fn ($qty) => $qty > 0));
+        $this->rand->shuffle($items);
+
+        $capacity = 0;
+        $pallet = null;
+        foreach ($items as $itemId) {
+            if ($this->rand->chance(0.06)) {
+                continue; // forgotten in the corner until another day
+            }
+            $qty = $this->pool[$itemId];
+            if ($this->rand->chance(0.25)) {
+                $qty -= (int) floor($qty * (0.05 + $this->rand->float() * 0.25)); // a few cases never leave
+            }
+            while ($qty > 0) {
+                if ($pallet === null || $capacity <= 0) {
+                    $pallet = $this->newWarehousePallet();
+                    $capacity = $this->rand->int(60, 240);
+                }
+                $put = min($qty, $capacity);
+                PalletStockAssignment::create(['pallet_id' => $pallet->id, 'item_id' => $itemId, 'qty' => $put, 'person_id_user' => $this->adminId, 'notes' => 'Filled leaving sorting']);
+                $this->pallets[$pallet->id]['items'][$itemId] = ($this->pallets[$pallet->id]['items'][$itemId] ?? 0) + $put;
+                $this->palletsByItem[$itemId][$pallet->id] = true;
+                $this->pool[$itemId] -= $put;
+                $qty -= $put;
+                $capacity -= $put;
+                $this->tick(5, 40);
+            }
+        }
+    }
+
+    private function newWarehousePallet(): Pallet
     {
         $loc = $this->rand->pick($this->racks);
-        $pallet = Pallet::create(['kind' => 'W', 'status' => 'sealed', 'container_type' => 'pallet', 'location_id' => $loc->id, 'content_item_id' => $itemId, 'datepacked' => $this->today]);
-        $pallet->statuses()->create(['status' => 'sealed', 'location_id' => $loc->id, 'notes' => 'Put away after sorting']);
-        $this->warehousePallets[$itemId][] = ['id' => $pallet->id, 'remaining' => $qty, 'opened' => false];
+        $pallet = Pallet::create(['kind' => 'W', 'status' => 'sealed', 'container_type' => 'pallet', 'location_id' => $loc->id, 'datepacked' => $this->today]);
+        $pallet->statuses()->create(['status' => 'sealed', 'location_id' => $loc->id, 'notes' => 'Filled and sealed']);
+        $this->pallets[$pallet->id] = ['tag' => $pallet->tag, 'status' => 'sealed', 'location' => $loc->code, 'sequence' => $loc->PullSequence, 'items' => []];
 
         if ($this->rand->chance(0.18)) {
             $this->schedule($this->rand->int(7, 90), 'move', ['pallet' => $pallet->id]);
         }
+
+        return $pallet;
     }
 
-    /** Take $qty of an item off its warehouse pallets, oldest first: first draw opens a pallet, the last empties it. */
-    private function drawFromPallets(int $itemId, int $qty): void
+    /**
+     * Take $qty of an item the way the real pick plan does (PickPlanner): sorting-area pool, whole sealed pallets, open
+     * pallets, then the oldest sealed one opened. Status changes happen as a picker would make them.
+     *
+     * @return array<int, array{0: ?int, 1: int}> [pallet id (null = sorting area / over-pick), qty] chunks summing to $qty
+     */
+    private function pickChunks(int $itemId, int $qty): array
     {
-        while ($qty > 0 && ! empty($this->warehousePallets[$itemId])) {
-            $entry = &$this->warehousePallets[$itemId][0];
-            $take = min($qty, $entry['remaining']);
-            $pallet = Pallet::find($entry['id']);
-
-            if (! $entry['opened']) {
-                $pallet->transitionTo('open', null, 'Opened for picking');
-                $entry['opened'] = true;
+        $held = [];
+        foreach (array_keys($this->palletsByItem[$itemId] ?? []) as $palletId) {
+            $p = $this->pallets[$palletId];
+            if (($p['items'][$itemId] ?? 0) > 0 && in_array($p['status'], ['sealed', 'open'], true)) {
+                $held[] = ['pallet_id' => $palletId, 'tag' => $p['tag'], 'status' => $p['status'], 'location' => $p['location'],
+                    'sequence' => $p['sequence'], 'item_id' => $itemId, 'item' => '', 'qty' => $p['items'][$itemId]];
             }
-            $entry['remaining'] -= $take;
-            $qty -= $take;
-
-            if ($entry['remaining'] <= 0) {
-                $pallet->transitionTo('empty', null, 'Picked clean');
-                array_shift($this->warehousePallets[$itemId]);
-            }
-            unset($entry);
         }
+        $pool = ($this->pool[$itemId] ?? 0) > 0 ? [['item_id' => $itemId, 'item' => '', 'qty' => $this->pool[$itemId]]] : [];
+        $plan = PickPlanner::planFor(['pool' => $pool, 'pallets' => $held], $qty);
+
+        $chunks = [];
+        foreach ($plan['steps'] as $step) {
+            if ($step['kind'] === 'pool') {
+                $this->pool[$itemId] -= $step['qty'];
+                $chunks[] = [null, $step['qty']];
+
+                continue;
+            }
+            $palletId = $step['pallet_id'];
+            $record = Pallet::find($palletId);
+            if ($this->pallets[$palletId]['status'] === 'sealed') {
+                $record->transitionTo('open', null, $step['whole'] ? 'Taken whole for an order' : 'Opened for picking');
+                $this->pallets[$palletId]['status'] = 'open';
+            }
+            $this->pallets[$palletId]['items'][$itemId] -= $step['qty'];
+            if (array_sum($this->pallets[$palletId]['items']) <= 0) {
+                $record->transitionTo('empty', null, 'Picked clean');
+                $this->pallets[$palletId]['status'] = 'empty';
+            }
+            $chunks[] = [$palletId, $step['qty']];
+        }
+        if ($plan['short'] > 0) {
+            // An injected over-pick: more keyed than the database says exists.
+            $this->pool[$itemId] = ($this->pool[$itemId] ?? 0) - $plan['short'];
+            $chunks[] = [null, $plan['short']];
+        }
+
+        return $chunks;
     }
 
     private function movePallet(int $palletId): void
@@ -900,6 +972,8 @@ class WarehouseSimulator
         $target = $this->rand->pick($this->racks);
         if ($target->id !== $pallet->location_id) {
             $pallet->transitionTo($pallet->status, $target->id, 'Relocated during re-slotting');
+            $this->pallets[$palletId]['location'] = $target->code;
+            $this->pallets[$palletId]['sequence'] = $target->PullSequence;
         }
     }
 
@@ -997,20 +1071,22 @@ class WarehouseSimulator
                 array_shift($this->errorDays);
             }
 
-            // Occasionally the picker records it in two trips.
-            $parts = ($take >= 4 && $this->rand->chance(0.1)) ? [(int) round($take * 0.6), $take - (int) round($take * 0.6)] : [$take];
-            foreach ($parts as $part) {
-                ItemLedger::create([
-                    'orderdonation_id' => $orderId, 'item_id' => $itemId, 'order_line_id' => $line['id'],
-                    'qty_subtracted' => $part, 'disposition' => 'usable', 'person_id_user' => $this->adminId,
-                ]);
-                $this->tick(5, 40);
+            // Draw from warehouse pallets first (their status changes happen as the picker works), then record
+            // each chunk against the pallet it came from; occasionally a picker records one chunk in two trips.
+            foreach ($this->pickChunks($itemId, $take) as [$palletId, $chunk]) {
+                $parts = ($chunk >= 4 && $this->rand->chance(0.1)) ? [(int) round($chunk * 0.6), $chunk - (int) round($chunk * 0.6)] : [$chunk];
+                foreach ($parts as $part) {
+                    ItemLedger::create([
+                        'orderdonation_id' => $orderId, 'item_id' => $itemId, 'order_line_id' => $line['id'], 'stock_pallet_id' => $palletId,
+                        'qty_subtracted' => $part, 'disposition' => 'usable', 'person_id_user' => $this->adminId,
+                    ]);
+                    $this->tick(5, 40);
+                }
             }
 
             $this->stock[$itemId] -= $take;
             $plan['picked'] += $take;
             $this->filledUnits += min($take, $line['requested']);
-            $this->drawFromPallets($itemId, $take);
         }
 
         $this->schedule($this->lag([0 => 75, 1 => 17, 2 => 8]), 'complete_fill', ['order' => $orderId]);
@@ -1162,6 +1238,9 @@ class WarehouseSimulator
                 'order_lines' => DB::table('orderlines')->count(),
                 'ledger_rows' => DB::table('item_ledgers')->count(),
                 'pallets' => DB::table('pallets')->count(),
+                'warehouse_pallets' => DB::table('pallets')->where('kind', 'W')->count(),
+                'pallet_stock_assignments' => DB::table('pallet_stock_assignments')->count(),
+                'stock_still_in_sorting_area' => (int) array_sum(array_filter($this->pool, fn ($q) => $q > 0)),
                 'pallet_history_rows' => DB::table('palletstatus')->count(),
                 'people' => DB::table('people')->where('source_system', self::SOURCE)->count(),
                 'drivers' => DB::table('drivers')->count(),

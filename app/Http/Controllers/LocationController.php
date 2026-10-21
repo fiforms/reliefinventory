@@ -8,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Models\Location;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LocationController extends Controller
 {
@@ -32,7 +33,7 @@ class LocationController extends Controller
      */
     public function index()
     {
-        $locations = Location::all();
+        $locations = Location::orderByRaw('PullSequence is null')->orderBy('PullSequence')->orderBy('code')->get();
         $templates = [
             '_default' => [
                 'PullSequence' => null,
@@ -97,6 +98,25 @@ class LocationController extends Controller
      * @param  int  $id
      * @return JsonResponse
      */
+    /**
+     * Save the pick path: the given location ids, in walking order, become PullSequence 10, 20, 30… (gaps leave room
+     * for hand-edits). Active locations missing from the list keep their place relative to each other after the listed
+     * ones, so a stale editor can never silently drop a location off the path.
+     */
+    public function reorder(Request $request)
+    {
+        $data = $request->validate(['ids' => 'required|array|min:1', 'ids.*' => 'integer|distinct|exists:locations,id']);
+
+        DB::transaction(function () use ($data) {
+            $rest = Location::whereNotIn('id', $data['ids'])->orderByRaw('PullSequence is null')->orderBy('PullSequence')->orderBy('code')->pluck('id')->all();
+            foreach (array_merge($data['ids'], $rest) as $i => $id) {
+                Location::whereKey($id)->update(['PullSequence' => ($i + 1) * 10]);
+            }
+        });
+
+        return response()->json(['message' => 'Pick path saved.']);
+    }
+
     public function destroy($id)
     {
         try {

@@ -191,6 +191,11 @@ Route::get('/setup/categories', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/categories')]);
 })->middleware(['auth', 'permission:manage-categories']);
 
+Route::get('/setup/locations/pick-path', function () {
+    return Inertia::render('PickPath',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations/pick-path')]);
+})->middleware(['auth', 'permission:manage-locations']);
+
 Route::get('/setup/locations', function () {
     return Inertia::render('LocationEntry',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations')]);
@@ -357,6 +362,11 @@ Route::get('/reports/unfulfilled', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/unfulfilled')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+Route::get('/reports/sorting-area', function () {
+    return Inertia::render('SortingAreaReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/sorting-area')]);
+})->middleware(['auth', 'permission:view-reports']);
+
 // Internal warehouse dashboard: full-detail view for management/admins.
 Route::get('/reports/dashboard', function () {
     return Inertia::render('WarehouseDashboard',
@@ -489,6 +499,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::post('/order-filling/print-pick-sheets', [OrderFillingController::class, 'printPickSheets']);
     Route::put('/order-filling/allocations', [OrderFillingController::class, 'approveAllocation']);
     Route::patch('/order-filling/{id}/complete', [OrderFillingController::class, 'completeFilling']);
+    Route::get('/order-filling/{id}/plan', [OrderFillingController::class, 'plan'])->whereNumber('id');
+    Route::post('/order-filling/pallets/{id}/open', [OrderFillingController::class, 'openPallet'])->whereNumber('id');
     Route::post('/order-filling/{id}/lines/{lineId}/fills', [OrderFillingController::class, 'storeFill']);
     Route::put('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'updateFill']);
     Route::delete('/order-filling/{id}/lines/{lineId}/fills/{fillId}', [OrderFillingController::class, 'destroyFill']);
@@ -540,6 +552,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ca
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-locations']], function () {
     Route::get('/locations', [LocationController::class, 'index']);
+    Route::put('/locations/order', [LocationController::class, 'reorder']);
     Route::post('/locations', [LocationController::class, 'store']);
     Route::put('/locations/{id}', [LocationController::class, 'update']);
     Route::delete('/locations/{id}', [LocationController::class, 'destroy']);
@@ -562,12 +575,19 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pallets']], function () {
     // Pallet Status (history/audit trail for pallets)
     Route::get('/palletstatus', [PalletStatusController::class, 'index']);
+    Route::get('/palletstatus/summary', [PalletStatusController::class, 'summary']);
+    Route::get('/palletstatus/location/{location}', [PalletStatusController::class, 'locationPallets']);
+    Route::get('/palletstatus/lookup', [PalletStatusController::class, 'lookup']);
     Route::get('/palletstatus/statuses', [PalletStatusController::class, 'statuses']);
     Route::post('/palletstatus', [PalletStatusController::class, 'store']);
     Route::put('/palletstatus/{id}', [PalletStatusController::class, 'update']);
     Route::delete('/palletstatus/{id}', [PalletStatusController::class, 'destroy']);
 
     // Pallets (five-kind model: Receiving/Warehouse/Shipping/Hold/Quarantine)
+    Route::get('/pallets/{id}/contents', [PalletStockController::class, 'contents'])->whereNumber('id');
+    Route::post('/pallets/{id}/contents/adjust', [PalletStockController::class, 'adjust'])->whereNumber('id');
+    Route::get('/pallet-stock/staging', [PalletStockController::class, 'staging']);
+    Route::post('/pallet-stock/fill', [PalletStockController::class, 'fill']);
     Route::get('/pallets', [PalletController::class, 'index']);
     Route::get('/pallets/{kind}', [PalletController::class, 'index']);
     Route::get('/pallets/{kind}/{status}', [PalletController::class, 'index']);
@@ -588,6 +608,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-repo
     Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
     Route::get('/reports/orders', [OutstandingOrdersReportController::class, 'index']);
     Route::get('/reports/unfulfilled', [UnfulfilledRequestsReportController::class, 'index']);
+    Route::get('/reports/sorting-area', [SortingAreaReportController::class, 'index']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-dashboard']], function () {
@@ -623,6 +644,10 @@ Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv
 
 Route::get('/report/unfulfilled.pdf', [UnfulfilledRequestsReportController::class, 'pdf'])
     ->name('report.unfulfilled')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/sorting-area.csv', [SortingAreaReportController::class, 'csv'])
+    ->name('report.sorting-area.csv')
     ->middleware(['auth', 'permission:view-reports']);
 
 Route::get('/report/unfulfilled.csv', [UnfulfilledRequestsReportController::class, 'csv'])
