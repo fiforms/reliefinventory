@@ -283,6 +283,11 @@ copy of the Vue page's, so edit both.
 `QrScanner.vue` wraps `html5-qrcode` for camera-based barcode/QR scanning; keyboard-wedge USB/Bluetooth
 scanners work via plain text input + Enter-to-submit and don't need this component.
 
+**Building or changing any scanner-driven screen (sorting, picking, receiving)? Read `SCANNING_INTERFACE_NOTES.md` first** — how
+keyboard-wedge scanners really behave, the audio-feedback vocabulary (`scanSounds.js`), keeping the scan target focused,
+making Qty-style fields safe when a barcode lands in them, `SearchSelect`'s `smartOpen`/`debounce`/`scanDigits`, never losing a
+pending line on exit, and a checklist for a new scan screen. `DonationSorting.vue` is the reference implementation.
+
 ### In-app feedback reporting & the site banner
 
 Any logged-in user can report a bug or feature idea from the profile menu ("Report an Issue" —

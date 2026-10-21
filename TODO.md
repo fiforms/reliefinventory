@@ -236,6 +236,9 @@ Issues identified October 8, 2026
    after a failed forced restore (typed-phrase, terminal-only).
 
 15. Barcode (UPC) lookup — built 2026-10-21 (branch `upc-lookup`), see CLAUDE.md "Barcode scan → item"
+ - **Scanning interface playbook:** `SCANNING_INTERFACE_NOTES.md` (repo root) records what we learned making Donation Sorting
+   scanner-first (audio cues, focus rules, Qty-field hazards, leave-page guards, a checklist). Apply it to Order Filling picking,
+   Receiving and Inventory Movement.
  - **Open:** using the same scan resolver on Order Filling / Order Entry; how a "Case" row's quantity should count in orders and
    the inventory report (sorting records single units: the scan prefills `case_qty × size`); who confirmed/where a UPC came from
    isn't recorded (items has no such columns); a Help guide paragraph.
