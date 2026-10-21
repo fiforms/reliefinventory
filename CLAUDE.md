@@ -129,7 +129,7 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   sources summed by `App\Services\PalletStock`: `pallet_stock_assignments` (signed qty put on a Warehouse `W` pallet) and ledger rows
   carrying `stock_pallet_id` (a fill picked from a pallet; sorting straight onto a pallet is a supported-but-unbuilt add-on). Nothing
   stores a running total, so it can't drift. Core flow: goods are sorted into the sorting area, then a lead/forklift driver builds the W
-  pallet as it leaves (`PalletStockController::fill`, Inventory Movement > Fill Pallet — items come from `/json/pallet-stock/staging`,
+  pallet as it leaves (`PalletStockController::fill`, Inventory Movement > Pallets tab, which is one scan-driven screen: an always-focused scan bar takes a pallet (shows location/status/contents/history, move or change status, add items if it's a W pallet) or, with a pallet showing, a location barcode (records the move at once); with no pallet showing it builds a new W pallet. Locations and Recent Movements are separate tabs with no scan bar — items come from `/json/pallet-stock/staging`,
   the pick-up list), sealing it and setting its location in one step; a pallet can't take more than `PalletStock::unassigned()`
   (on-hand minus everything on pallets). "Unassigned" == what's still in the sorting area (plus pre-feature stock). Picking: a *sealed* pallet can never
   be picked from until someone opens it (`POST /json/order-filling/pallets/{id}/open`); only `open` pallets are picked from. A fill with no
