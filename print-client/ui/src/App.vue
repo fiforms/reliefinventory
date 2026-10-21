@@ -32,6 +32,11 @@ onBeforeUnmount(() => {
 
 const paired = computed(() => status.value?.paired)
 
+// http:// (typed, or the paired server) sends the token and print jobs unencrypted. Allowed, but flagged.
+const isHttp = (u) => /^\s*http:\/\//i.test(u || '')
+const typedInsecure = computed(() => isHttp(serverUrl.value))
+const pairedInsecure = computed(() => paired.value && isHttp(status.value?.server_url))
+
 const STATE = {
     idle: { label: 'Ready', cls: 'ok' },
     printing: { label: 'Printing', cls: 'busy' },
@@ -114,6 +119,10 @@ async function toggleAutostart() {
                 <label>Server address
                     <input v-model="serverUrl" placeholder="ri.example.org" autocomplete="off" spellcheck="false" required />
                 </label>
+                <p v-if="typedInsecure" class="banner bad small" role="status">
+                    This address isn't encrypted. Only use <strong>http://</strong> for a server on your own local
+                    network: anyone on the network path could intercept this computer's access token and the documents it prints.
+                </p>
                 <label>Pairing code
                     <input v-model="code" class="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="123456" autocomplete="off" required />
                 </label>
@@ -139,7 +148,10 @@ async function toggleAutostart() {
             <section class="card">
                 <div class="who">
                     <div>
-                        <div class="name">{{ status.device_name || 'This computer' }}</div>
+                        <div class="name">
+                            {{ status.device_name || 'This computer' }}
+                            <span v-if="pairedInsecure" class="pill bad insecure" title="This connection to the server is not encrypted (http://). Use it only on a trusted local network.">Insecure Connection</span>
+                        </div>
                         <div class="muted">{{ status.entity_name }}<template v-if="status.entity_name"> · </template>{{ host }}</div>
                     </div>
                     <div class="btns">
@@ -228,6 +240,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .rows li:first-child { border-top: 0; padding-top: 0; }
 .foot { margin: 12px 0 0; }
 .err { color: var(--bad-text); margin-top: 2px; }
+.insecure { margin-left: 6px; vertical-align: 1px; }
 
 .pill { font-size: 12px; font-weight: 600; padding: 3px 9px; border-radius: 999px; white-space: nowrap; background: var(--off-bg); color: var(--off-text); }
 .pill.ok { background: var(--ok-bg); color: var(--ok-text); }
