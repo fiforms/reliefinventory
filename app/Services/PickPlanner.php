@@ -13,10 +13,10 @@ use App\Models\Pallet;
  *
  * For a need of N:
  *  1. the sorting-area pool (loose, not yet on a pallet);
- *  2. whole SEALED pallets, oldest first, while the remaining need is at least that pallet's quantity — a full
+ *  2. whole SEALED pallets, expiring ones first (earliest date first), then oldest first, while the remaining need is at least that pallet's quantity — a full
  *     pallet ships intact and needs no opening;
- *  3. the rest from OPEN pallets, oldest first (they're already broken, so finishing one costs nothing);
- *  4. only if that still isn't enough, open the oldest remaining SEALED pallet for the last of it.
+ *  3. the rest from OPEN pallets, expiring first then oldest (they're already broken, so finishing one costs nothing);
+ *  4. only if that still isn't enough, open the next remaining SEALED pallet in the same order for the last of it.
  * E.g. 750 water with ten sealed 100s and one open 75: seven sealed pallets, then 50 off the open one — a single broken
  * pallet, not 75 off the open one plus seven more sealed pallets opened.
  *
@@ -60,6 +60,7 @@ class PickPlanner
             $held[] = [
                 'pallet_id' => $pallet->id, 'tag' => $pallet->tag, 'status' => $pallet->status,
                 'location' => $pallet->location?->code, 'sequence' => $pallet->location?->PullSequence,
+                'expires_on' => $pallet->earliest_expiry,
                 'item_id' => $r['item_id'], 'item' => $items[$r['item_id']]->description, 'qty' => $r['qty'],
             ];
         }
@@ -83,7 +84,9 @@ class PickPlanner
             $remaining -= $take;
         }
 
-        $byAge = fn (string $status) => collect($holdings['pallets'])->where('status', $status)->sortBy('pallet_id')->values()->all();
+        // Pallets with an expiration date go first, earliest date first; undated pallets follow, oldest pallet first.
+        $byAge = fn (string $status) => collect($holdings['pallets'])->where('status', $status)
+            ->sortBy(fn ($h) => [($h['expires_on'] ?? null) === null ? 1 : 0, (string) ($h['expires_on'] ?? ''), $h['pallet_id']])->values()->all();
         $sealed = $byAge('sealed');
         $open = $byAge('open');
         $taken = [];

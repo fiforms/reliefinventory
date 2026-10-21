@@ -144,7 +144,9 @@ async function recordMovement() {
 
 // ---------- fill a warehouse pallet (leaving the sorting area) ----------
 const staging = ref(null); // what's still in the sorting area, i.e. on hand but not on a pallet
-const fill = ref({ tag: '', pallet: null, lines: [], locationCode: '', notes: '' });
+// expires: null = use the suggestion (earliest date among the chosen items and what's already on the pallet);
+// '' = the driver cleared it (no date); a date = the driver's own entry.
+const fill = ref({ tag: '', pallet: null, lines: [], locationCode: '', notes: '', expires: null });
 const fillError = ref(null);
 const fillResult = ref(null);
 const filling = ref(false);
@@ -191,6 +193,9 @@ const stagingGroups = computed(() => {
 		g.rows.push(row);
 		g.left += row.left;
 	}
+	for (const g of groups.values()) {
+		g.expires = g.rows.map((r) => r.expires_on).filter(Boolean).sort()[0] || '';
+	}
 	return [...groups.values()];
 });
 
@@ -209,7 +214,7 @@ function addGroup(group) {
 function addFillLine(row) {
 	const existing = fill.value.lines.find((l) => l.item_id === row.item_id);
 	if (existing) existing.qty = row.qty;
-	else fill.value.lines.push({ item_id: row.item_id, name: row.name, qty: row.left ?? row.qty, max: row.qty });
+	else fill.value.lines.push({ item_id: row.item_id, name: row.name, qty: row.left ?? row.qty, max: row.qty, expires_on: row.expires_on || null });
 }
 
 async function pickFillPallet() {
@@ -230,6 +235,11 @@ async function pickFillPallet() {
 }
 
 const fillLocation = computed(() => locationByCode(fill.value.locationCode));
+const suggestedExpiry = computed(() => {
+	const dates = fill.value.lines.map((l) => l.expires_on).concat(fill.value.pallet?.expires_on || null).filter(Boolean);
+	return dates.length ? dates.reduce((a, b) => (b < a ? b : a)) : '';
+});
+const fillExpiry = computed(() => (fill.value.expires === null ? suggestedExpiry.value : fill.value.expires));
 const fillTotal = computed(() => fill.value.lines.reduce((n, l) => n + (Number(l.qty) || 0), 0));
 
 async function submitFill() {
@@ -249,10 +259,11 @@ async function submitFill() {
 			pallet_id: fill.value.pallet?.id ?? null,
 			location_id: fillLocation.value?.id ?? null,
 			notes: fill.value.notes || null,
+			expires_on: fillExpiry.value || null,
 			lines: fill.value.lines.map((l) => ({ item_id: l.item_id, qty: Number(l.qty) })),
 		});
 		fillResult.value = { ...response.data.record, isNew: !fill.value.pallet };
-		fill.value = { tag: '', pallet: null, lines: [], locationCode: '', notes: '' };
+		fill.value = { tag: '', pallet: null, lines: [], locationCode: '', notes: '', expires: null };
 		loadStaging();
 		loadSummary();
 	} catch (e) {
@@ -459,6 +470,12 @@ onMounted(loadSummary);
 						</datalist>
 					</label>
 					<label class="pm_fillfield">
+						<span class="ri_fieldlabel">Expires:</span>
+						<input type="date" class="ri_forminput" :value="fillExpiry" title="Earliest expiration date of anything on this pallet"
+							@input="fill.expires = $event.target.value" />
+						<button v-if="fill.expires !== null" type="button" class="ri_linkbutton" title="Go back to the earliest date of the items" @click="fill.expires = null">Auto</button>
+					</label>
+					<label class="pm_fillfield">
 						<span class="ri_fieldlabel">Notes:</span>
 						<input v-model="fill.notes" class="ri_forminput" />
 					</label>
@@ -497,23 +514,26 @@ onMounted(loadSummary);
 				<p v-else-if="!stagingLeft.length" class="ri_hint">Nothing waiting — everything sorted is already on a pallet.</p>
 				<div v-else class="pm_tablewrap">
 					<table class="ri_datatable" border="1">
-						<thead><tr><th>Item</th><th>Waiting</th><th></th></tr></thead>
+						<thead><tr><th>Item</th><th>Waiting</th><th>Expires</th><th></th></tr></thead>
 						<tbody>
 							<template v-for="g in stagingGroups" :key="g.key">
 								<tr v-if="g.rows.length === 1">
 									<td>{{ g.type?.number ? 'ACS #' + g.type.number + ' ' : '' }}{{ g.rows[0].name }}</td>
 									<td>{{ g.left }}</td>
+									<td>{{ g.expires }}</td>
 									<td><button type="button" class="ri_formbutton" @click="addFillLine(g.rows[0])">Put all {{ g.left }} on pallet</button></td>
 								</tr>
 								<template v-else>
 									<tr class="pm_group pm_clickable" @click="toggleGroup(g.key)">
 										<td>{{ expandedGroups.has(g.key) ? '▾' : '▸' }} ACS #{{ g.type.number }} ({{ g.type.name }}) — {{ g.rows.length }} items</td>
 										<td>{{ g.left }}</td>
+										<td>{{ g.expires }}</td>
 										<td><button type="button" class="ri_formbutton" @click.stop="addGroup(g)">Put all {{ g.left }} on pallet</button></td>
 									</tr>
 									<tr v-for="row in expandedGroups.has(g.key) ? g.rows : []" :key="row.item_id" class="pm_sku">
 										<td>{{ row.name }}</td>
 										<td>{{ row.left }}</td>
+										<td>{{ row.expires_on || '' }}</td>
 										<td><button type="button" class="ri_formbutton" @click="addFillLine(row)">Put all {{ row.left }} on pallet</button></td>
 									</tr>
 								</template>

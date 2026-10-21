@@ -188,3 +188,20 @@ test('the sorting-area report shows sorted vs. put on pallets and what is still 
 
     $this->get('/report/sorting-area.csv')->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
 });
+
+test('filling a pallet records its expiration date, and the sorting-area list suggests one from dated lines', function () {
+    $item = stockItem(50);
+    ItemLedger::where('item_id', $item->id)->update(['expires_on' => '2027-02-02']);
+
+    $this->getJson('/json/pallet-stock/staging')->assertOk()->assertJsonPath('records.0.expires_on', '2027-02-02');
+
+    $id = $this->postJson('/json/pallet-stock/fill', ['expires_on' => '2027-02-02', 'lines' => [['item_id' => $item->id, 'qty' => 20]]])
+        ->assertCreated()->assertJsonPath('record.expires_on', '2027-02-02')->json('record.id');
+    expect(Pallet::find($id)->earliest_expiry)->toContain('2027-02-02');
+
+    // topping up without the key leaves the date alone; sending an earlier one replaces it
+    $this->postJson('/json/pallet-stock/fill', ['pallet_id' => $id, 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->assertCreated();
+    expect(Pallet::find($id)->earliest_expiry)->toContain('2027-02-02');
+    $this->postJson('/json/pallet-stock/fill', ['pallet_id' => $id, 'expires_on' => '2027-01-01', 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->assertCreated();
+    expect(Pallet::find($id)->earliest_expiry)->toContain('2027-01-01');
+});

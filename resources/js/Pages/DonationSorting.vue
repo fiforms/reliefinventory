@@ -99,6 +99,7 @@ export default {
 
 			// line entry
 			entry: { item_id: null, qty: null, choice: 'usable' },
+			expOpen: false, // the expiration-date popover next to Qty
 			lineError: null,
 			nextTempId: -1,
 			confirmingLineKey: null,
@@ -133,7 +134,7 @@ export default {
 		mergeableCount() {
 			const saved = this.lines.filter((line) => line.id != null && line.status === 'saved' && line.qty_added > 0);
 			const groups = new Set(saved.map((line) =>
-				[line.item_id, line.pallet_id ?? 0, line.disposition, line.item_condition ?? ''].join('|')));
+				[line.item_id, line.pallet_id ?? 0, line.disposition, line.item_condition ?? '', line.expires_on ?? ''].join('|')));
 			return saved.length - groups.size;
 		},
 		// Something would be lost by leaving: an item picked but not added, or lines still saving / failed.
@@ -214,6 +215,7 @@ export default {
 			this.emptyingPallet = false;
 			this.confirmingComplete = false;
 			this.confirmingLineKey = null;
+			this.expOpen = false;
 			this.entry = { item_id: null, qty: null, choice: 'usable' };
 			this.view = 'session';
 			this.$nextTick(() => this.$refs.palletInput?.focus());
@@ -556,6 +558,10 @@ export default {
 		normalize14(code) {
 			return String(code).padStart(14, '0');
 		},
+		toggleExpiry() {
+			this.expOpen = !this.expOpen;
+			if (this.expOpen) this.$nextTick(() => this.$refs.expInput?.focus());
+		},
 		addLine() {
 			this.lineError = null;
 			this.confirmingLineKey = null;
@@ -575,6 +581,7 @@ export default {
 				qty_added: qty,
 				disposition: DISPOSITIONS.find((d) => d.key === this.entry.choice).value,
 				item_condition: DISPOSITIONS.find((d) => d.key === this.entry.choice).condition,
+				expires_on: this.entry.expires_on || null,
 				pallet_id: this.pallet ? this.pallet.id : null,
 				pallet: this.pallet,
 				created_at: new Date().toISOString(),
@@ -585,6 +592,7 @@ export default {
 
 			// reset for the next scan; keep the disposition (runs of similar
 			// goods are common) and, of course, the pallet context
+			this.expOpen = false;
 			this.entry = { item_id: null, item: null, qty: null, choice: this.entry.choice };
 			this.$refs.itemSelect?.focus();
 		},
@@ -601,6 +609,7 @@ export default {
 					qty: line.qty_added,
 					disposition: line.disposition,
 					item_condition: line.item_condition ?? null,
+					expires_on: line.expires_on ?? null,
 					pallet_tag: line.pallet_id ? String(line.pallet_id) : null,
 				});
 				const idx = this.findLineIndex(line);
@@ -1309,6 +1318,32 @@ export default {
 					@keydown="onQtyKeydown"
 					@keydown.enter.prevent="onQtyEnter"
 				/>
+				<span class="sort_exp">
+					<button
+						type="button"
+						class="sort_exp_btn"
+						:class="{ sort_exp_set: entry.expires_on }"
+						:title="entry.expires_on ? 'Expires ' + entry.expires_on + ' - click to change' : 'Add an expiration date (optional)'"
+						@click="toggleExpiry"
+					>&#128197;<span v-if="entry.expires_on" class="sort_exp_date">{{ entry.expires_on }}</span></button>
+					<div v-if="expOpen" class="sort_exp_pop">
+						<label class="sort_exp_label">
+							<span class="sort_exp_sub">Expiration Date</span>
+							<input
+								ref="expInput"
+								type="date"
+								class="ri_forminput"
+								v-model="entry.expires_on"
+								@keydown.enter.prevent="expOpen = false"
+								@keydown.esc.prevent="expOpen = false"
+							/>
+						</label>
+						<div class="sort_exp_actions">
+							<button type="button" class="ri_formbutton" @click="entry.expires_on = null; expOpen = false">Clear</button>
+							<button type="button" class="ri_defaultbutton" @click="expOpen = false">Done</button>
+						</div>
+					</div>
+				</span>
 				<div class="sort_dispositions">
 					<button
 						v-for="d in dispositions"
@@ -1327,7 +1362,7 @@ export default {
 			<div class="sort_tablewrap"><table class="ri_datatable sort_lines" border="1">
 				<thead>
 					<tr>
-						<th>Time</th><th>Item</th><th>Qty</th><th>Disposition</th><th>Pallet</th><th></th>
+						<th>Time</th><th>Item</th><th>Qty</th><th>Expires</th><th>Disposition</th><th>Pallet</th><th></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -1336,6 +1371,7 @@ export default {
 						<td>{{ lineTime(line) }}</td>
 						<td>{{ line.item ? (line.item.name || line.item.description) : '(item #' + line.item_id + ')' }}</td>
 						<td>{{ line.qty_added }}</td>
+						<td>{{ line.expires_on || '' }}</td>
 						<td><span class="sort_badge" :class="'sort_disp_' + dispositionKey(line)">{{ dispositionLabel(line) }}</span></td>
 						<td>{{ line.pallet ? palletTagStr(line.pallet.id) : (line.pallet_id ? palletTagStr(line.pallet_id) : '-') }}</td>
 						<td class="sort_line_actions">
@@ -1352,7 +1388,7 @@ export default {
 						</td>
 					</tr>
 					<tr v-if="!lines.length">
-						<td colspan="6" class="sort_empty">No lines yet - scan a pallet tag, then start entering items.</td>
+						<td colspan="7" class="sort_empty">No lines yet - scan a pallet tag, then start entering items.</td>
 					</tr>
 				</tbody>
 			</table></div>
@@ -1636,6 +1672,54 @@ export default {
 .sort_entry_item {
 	flex: 1;
 	min-width: 240px;
+}
+.sort_exp {
+	position: relative;
+	display: inline-block;
+}
+.sort_exp_btn {
+	background: #1d6fd1;
+	color: #fff;
+	border: 0;
+	border-radius: 4px;
+	padding: 0.35em 0.6em;
+	cursor: pointer;
+	font-size: 1em;
+}
+.sort_exp_btn:hover {
+	background: #1558a8;
+}
+.sort_exp_date {
+	margin-left: 0.4em;
+	font-size: 0.85em;
+}
+.sort_exp_pop {
+	position: absolute;
+	z-index: 20;
+	top: 100%;
+	left: 0;
+	margin-top: 0.25em;
+	padding: 0.6em 0.75em;
+	background: #fff;
+	color: #222;
+	border: 1px solid #999;
+	border-radius: 6px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+	white-space: nowrap;
+}
+.sort_exp_label {
+	display: block;
+}
+.sort_exp_sub {
+	display: block;
+	font-size: 0.85em;
+	margin-bottom: 0.25em;
+}
+.sort_exp_actions {
+	display: flex;
+	gap: 0.5em;
+	justify-content: flex-end;
+	margin-top: 0.5em;
 }
 .sort_qty {
 	width: 6em;

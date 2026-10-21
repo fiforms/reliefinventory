@@ -43,11 +43,49 @@ class PalletStockController extends Controller
         $free = $onHand->map(fn ($qty, $itemId) => (int) $qty - ($onPallets[$itemId] ?? 0))->filter(fn ($qty) => $qty > 0)->sortDesc();
         $items = Item::with('itemtype:id,name')->whereIn('id', $free->keys())->get()->keyBy('id');
 
+        $expiries = $this->stagingExpiries($free);
+
         return response()->json(['records' => $free->map(fn ($qty, $itemId) => [
             'item_id' => $itemId,
             'name' => $items[$itemId]->description ?? $items[$itemId]->itemtype?->name ?? '#'.$itemId,
             'qty' => $qty,
+            'expires_on' => $expiries[$itemId] ?? null,
         ])->values()]);
+    }
+
+    /**
+     * Best guess at the earliest expiration date of what is still in the sorting area, per item. Stock is pooled, so
+     * which sorted lines the remaining units came from is unknowable; assume the oldest leave first (FIFO) and look
+     * only at the newest usable additions that add up to the free quantity. Null when none of those carry a date.
+     * It is only a suggestion for the Fill Pallet date box, which the driver can overwrite.
+     *
+     * @param  \Illuminate\Support\Collection<int, int>  $free  item_id => free quantity
+     * @return array<int, string>
+     */
+    private function stagingExpiries($free): array
+    {
+        if ($free->isEmpty()) {
+            return [];
+        }
+        $rows = DB::table('item_ledgers')->whereIn('item_id', $free->keys())
+            ->whereRaw("COALESCE(disposition, 'usable') = 'usable'")->where('qty_added', '>', 0)
+            ->orderByDesc('id')->get(['item_id', 'qty_added', 'expires_on'])->groupBy('item_id');
+
+        $out = [];
+        foreach ($free as $itemId => $qty) {
+            $covered = 0;
+            foreach ($rows[$itemId] ?? [] as $row) {
+                if ($row->expires_on && (! isset($out[$itemId]) || $row->expires_on < $out[$itemId])) {
+                    $out[$itemId] = $row->expires_on;
+                }
+                $covered += (int) $row->qty_added;
+                if ($covered >= $qty) {
+                    break;
+                }
+            }
+        }
+
+        return $out;
     }
 
     /** Fill a W pallet (new, or an existing sealed/open one) and place it. */
@@ -57,6 +95,8 @@ class PalletStockController extends Controller
             'pallet_id' => 'nullable|exists:pallets,id',
             'location_id' => 'nullable|exists:locations,id',
             'notes' => 'nullable|string|max:500',
+            // Earliest expiration of the contents; present (even null) sets it, absent leaves an existing pallet's alone.
+            'expires_on' => 'nullable|date',
             'lines' => 'required|array|min:1|max:100',
             'lines.*.item_id' => 'required|exists:items,id',
             'lines.*.qty' => 'required|integer|min:1',
@@ -90,8 +130,13 @@ class PalletStockController extends Controller
                     'container_type' => 'pallet',
                     'location_id' => $data['location_id'] ?? null,
                     'datepacked' => now()->toDateString(),
+                    'earliest_expiry' => $data['expires_on'] ?? null,
                 ]);
                 $pallet->statuses()->create(['location_id' => $pallet->location_id, 'status' => 'sealed', 'notes' => 'Filled and sealed']);
+            }
+
+            if (! empty($data['pallet_id']) && array_key_exists('expires_on', $data)) {
+                $pallet->update(['earliest_expiry' => $data['expires_on']]);
             }
 
             foreach ($data['lines'] as $line) {
@@ -164,6 +209,7 @@ class PalletStockController extends Controller
             'status' => $pallet->status,
             'location_id' => $pallet->location_id,
             'location' => $pallet->location,
+            'expires_on' => $pallet->earliest_expiry,
             'contents' => $rows->map(fn ($r) => [
                 'item_id' => $r['item_id'],
                 'name' => $items[$r['item_id']]->description ?? $items[$r['item_id']]->itemtype?->name ?? '#'.$r['item_id'],

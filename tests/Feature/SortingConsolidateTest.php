@@ -95,3 +95,22 @@ test('a completed session cannot be consolidated, and sorting permission is requ
     $this->actingAs($sorter)->postJson('/json/sorting-sessions/'.$sessionId.'/consolidate')->assertStatus(409);
     expect(ItemLedger::where('orderdonation_id', $sessionId)->count())->toBe(2);
 });
+
+test('consolidate keeps different expiration dates apart, merging only no-date with no-date and equal dates', function () {
+    $sorter = userWithPermissions('manage-sorting');
+    $soup = consolidateItem('Soup');
+    $sessionId = $this->actingAs($sorter)->postJson('/json/sorting-sessions')->json('record.id');
+
+    foreach ([[1, null], [2, null], [3, '2027-01-01'], [4, '2027-01-01'], [5, '2027-06-01']] as [$qty, $date]) {
+        $this->actingAs($sorter)->postJson('/json/sorting-sessions/'.$sessionId.'/lines', [
+            'item_id' => $soup->id, 'qty' => $qty, 'disposition' => 'usable', 'item_condition' => 'new', 'expires_on' => $date,
+        ])->assertCreated();
+    }
+
+    $this->actingAs($sorter)->postJson('/json/sorting-sessions/'.$sessionId.'/consolidate')
+        ->assertOk()->assertJsonPath('merged', 2)->assertJsonCount(3, 'record.item_ledgers');
+
+    $rows = ItemLedger::where('orderdonation_id', $sessionId)->orderBy('qty_added')->get();
+    expect($rows->pluck('qty_added')->all())->toBe([3, 5, 7])
+        ->and($rows->pluck('expires_on')->map(fn ($d) => $d ? substr((string) $d, 0, 10) : null)->all())->toBe([null, '2027-06-01', '2027-01-01']);
+});

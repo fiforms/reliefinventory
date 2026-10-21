@@ -592,7 +592,7 @@ export default {
 									:class="{ of_pallet_sealed: step.needs_open }">
 									<template v-if="step.kind === 'pool'">Sorting area &times;{{ step.qty }}</template>
 									<template v-else>
-										<strong>{{ step.location || 'no location' }}</strong> {{ step.tag }} &times;{{ step.qty }}
+										<strong>{{ step.location || 'no location' }}</strong> {{ step.tag }} &times;{{ step.qty }}<span v-if="step.expires_on"> (exp {{ step.expires_on }})</span>
 										<template v-if="step.status === 'sealed'">
 											<em>{{ step.whole ? 'sealed — take the whole pallet' : 'sealed — open it first' }}</em>
 											<button v-if="!step.whole" type="button" class="ri_formbutton" :disabled="openingPalletId === step.pallet_id"
