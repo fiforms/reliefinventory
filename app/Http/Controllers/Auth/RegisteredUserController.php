@@ -9,6 +9,7 @@ use App\Services\PinLoginService;
 use App\Services\TurnstileService;
 use App\Support\EmailFailureMessage;
 use Illuminate\Auth\Events\Registered;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -30,7 +31,7 @@ class RegisteredUserController extends Controller
         $turnstileSiteKey = $turnstile->siteKey();
 
         if ($turnstile->misconfigured()) {
-            abort(500, 'Cloudflare Turnstile is not properly configured.');
+            throw new HttpResponseException($turnstile->misconfiguredResponse());
         }
 
         return Inertia::render('Auth/Register', [
@@ -48,7 +49,7 @@ class RegisteredUserController extends Controller
     {
         $turnstileEnabled = $turnstile->enabled();
         if ($turnstile->misconfigured()) {
-            abort(500, 'Cloudflare Turnstile is not properly configured.');
+            throw new HttpResponseException($turnstile->misconfiguredResponse());
         }
 
         $request->validate([

@@ -39,7 +39,7 @@ class AuthenticatedSessionController extends Controller
         }
 
         return Inertia::render('Auth/Login', [
-            'canResetPassword' => Route::has('password.request'),
+            'canResetPassword' => Route::has('password.request') && ! app(\App\Services\TurnstileService::class)->misconfigured(),
             'status' => session('status'),
         ]);
     }
