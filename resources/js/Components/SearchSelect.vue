@@ -134,6 +134,7 @@ export default {
 			highlighted: 0,
 			optionlist: [],
 			loadError: false,
+			dropStyle: {},
 		};
 	},
 	computed: {
@@ -196,6 +197,16 @@ export default {
 		},
 	},
 	watch: {
+		isOpen(open) {
+			if (open) {
+				this.placeDropdown();
+				window.addEventListener("resize", this.placeDropdown);
+				window.addEventListener("scroll", this.placeDropdown, true);
+			} else {
+				window.removeEventListener("resize", this.placeDropdown);
+				window.removeEventListener("scroll", this.placeDropdown, true);
+			}
+		},
 		modelValue: {
 			immediate: true,
 			handler() {
@@ -242,6 +253,27 @@ export default {
 		syncDisplay() {
 			if (this.isOpen) return; // don't clobber active typing
 			this.search = this.selectedOption ? String(this.selectedOption[this.display] ?? "") : "";
+		},
+		// The list is position: fixed so it is never clipped by a scrolling
+		// ancestor (a modal, a table wrapper); it opens upward instead when
+		// there is more room above the input than below it.
+		placeDropdown() {
+			const input = this.$refs.input;
+			if (!input) return;
+			const rect = input.getBoundingClientRect();
+			const wanted = 256; // matches max-height: 16rem
+			const below = window.innerHeight - rect.bottom - 8;
+			const above = rect.top - 8;
+			const style = { left: rect.left + "px", [this.secondary ? "minWidth" : "width"]: rect.width + "px" };
+			if (below < Math.min(wanted, 180) && above > below) {
+				style.bottom = window.innerHeight - rect.top + "px";
+				style.maxHeight = Math.min(wanted, above) + "px";
+				style.borderRadius = "6px 6px 0 0";
+			} else {
+				style.top = rect.bottom + "px";
+				style.maxHeight = Math.min(wanted, Math.max(below, 80)) + "px";
+			}
+			this.dropStyle = style;
 		},
 		open() {
 			if (!this.enabled) return;
@@ -318,6 +350,10 @@ export default {
 	mounted() {
 		if (this.autofocus) this.focus();
 	},
+	unmounted() {
+		window.removeEventListener("resize", this.placeDropdown);
+		window.removeEventListener("scroll", this.placeDropdown, true);
+	},
 };
 </script>
 
@@ -348,7 +384,7 @@ export default {
 				@mousedown.prevent="clearSelection"
 			>&times;</button>
 			<ul v-if="isOpen && (filteredOptions.length > 0 || showCreateRow)"
-				class="ss_dropdown" :class="{ ss_dropdown_wide: secondary }">
+				class="ss_dropdown" :class="{ ss_dropdown_wide: secondary }" :style="dropStyle">
 				<li
 					v-for="(option, index) in filteredOptions"
 					:key="option.id"
@@ -414,10 +450,8 @@ export default {
 	color: #333;
 }
 .ss_dropdown {
-	position: absolute;
-	z-index: 30;
-	left: 0;
-	right: 0;
+	position: fixed; /* placed by placeDropdown() so scrolling ancestors can't clip it */
+	z-index: 60; /* above the sorting modals (50) */
 	max-height: 16rem;
 	overflow-y: auto;
 	margin: 0;
@@ -430,7 +464,6 @@ export default {
 }
 .ss_dropdown_wide {
 	width: max-content;
-	min-width: 100%;
 	max-width: 26rem;
 }
 .ss_option {
