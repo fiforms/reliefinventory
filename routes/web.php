@@ -173,6 +173,11 @@ Route::get('/setup/items', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/items')]);
 })->middleware(['auth', 'permission:manage-items']);
 
+Route::get('/setup/carton-codes', function () {
+    return Inertia::render('CartonCodes',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/carton-codes')]);
+})->middleware(['auth', 'permission:manage-items']);
+
 Route::get('/setup/people', function () {
     return Inertia::render('People',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/people')]);
@@ -534,6 +539,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-it
     Route::post('/items', [ItemController::class, 'store']);
     Route::put('/items/{id}', [ItemController::class, 'update']);
     Route::delete('/items/{id}', [ItemController::class, 'destroy']);
+    Route::get('/carton-codes', [UpcController::class, 'indexCartons']);
+    Route::delete('/carton-codes/{id}', [UpcController::class, 'destroyCarton'])->whereNumber('id');
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-units']], function () {
@@ -685,6 +692,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-so
     Route::post('/sorting-sessions', [SortingSessionController::class, 'store']);
     // Barcode scan -> item (our own items.upc first; an online suggestion only on a miss)
     Route::get('/upc/resolve', [UpcController::class, 'resolve']);
+    Route::get('/upc/suggest', [UpcController::class, 'suggest']);
+    Route::post('/upc/cartons', [UpcController::class, 'storeCarton']);
     Route::get('/sorting-sessions/pallet/{tag}', [SortingSessionController::class, 'pallet']);
     Route::post('/sorting-sessions/pallet/{tag}/empty', [SortingSessionController::class, 'palletEmpty']);
     Route::get('/sorting-sessions/{id}', [SortingSessionController::class, 'show']);
