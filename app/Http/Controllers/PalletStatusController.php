@@ -5,6 +5,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Item;
+use App\Models\ItemLedger;
 use App\Models\Location;
 use App\Models\Pallet;
 use App\Models\PalletStatus;
@@ -82,7 +84,8 @@ class PalletStatusController extends Controller
      */
     public function summary()
     {
-        $gone = [PalletKind::MISSING, 'shipped', 'collected', 'released', 'condemned'];
+        // Emptied pallets aren't listed or counted (a separate empty-pallet report is a TODO idea).
+        $gone = [PalletKind::MISSING, 'shipped', 'collected', 'released', 'condemned', 'empty'];
         $counts = Pallet::query()
             ->whereNotIn('status', $gone)
             ->selectRaw('location_id, status, count(*) as total')
@@ -120,7 +123,7 @@ class PalletStatusController extends Controller
      */
     public function locationPallets(string $location)
     {
-        $gone = [PalletKind::MISSING, 'shipped', 'collected', 'released', 'condemned'];
+        $gone = [PalletKind::MISSING, 'shipped', 'collected', 'released', 'condemned', 'empty'];
         $query = Pallet::query()->whereNotIn('status', $gone)->with('location:id,code');
 
         if ($location === 'none') {
@@ -173,8 +176,25 @@ class PalletStatusController extends Controller
             'last_moved_at' => $last?->created_at,
             'expires_on' => $pallet->earliest_expiry,
             'contents' => $pallet->kind === PalletKind::WAREHOUSE ? PalletStockController::payload($pallet)['contents'] : null,
+            'sorted_from' => $pallet->kind === PalletKind::RECEIVING ? $this->sortedFrom($pallet) : null,
             'statuses' => $this->statusOptions($pallet->kind),
         ]]);
+    }
+
+    /** What sorting has recorded coming off a Receiving pallet: quantity per item and disposition. */
+    private function sortedFrom(Pallet $pallet): array
+    {
+        $rows = ItemLedger::where('pallet_id', $pallet->id)->where('qty_added', '>', 0)
+            ->selectRaw("item_id, COALESCE(disposition, 'usable') as disposition, SUM(qty_added) as qty")
+            ->groupBy('item_id', 'disposition')->get();
+        $items = Item::with('itemtype:id,name')->whereIn('id', $rows->pluck('item_id'))->get()->keyBy('id');
+
+        return $rows->map(fn ($r) => [
+            'item_id' => $r->item_id,
+            'name' => $items[$r->item_id]->description ?? $items[$r->item_id]->itemtype?->name ?? '#'.$r->item_id,
+            'disposition' => $r->disposition,
+            'qty' => (int) $r->qty,
+        ])->sortBy('name')->values()->all();
     }
 
     private function statusOptions(?string $kind): array

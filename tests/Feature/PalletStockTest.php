@@ -205,3 +205,16 @@ test('filling a pallet records its expiration date, and the sorting-area list su
     $this->postJson('/json/pallet-stock/fill', ['pallet_id' => $id, 'expires_on' => '2027-01-01', 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->assertCreated();
     expect(Pallet::find($id)->earliest_expiry)->toContain('2027-01-01');
 });
+
+test('empty pallets are left out of the location list and counts, and pallet lookup carries contents', function () {
+    $item = stockItem(40);
+    $loc = rack('A1');
+    $id = $this->postJson('/json/pallet-stock/fill', ['location_id' => $loc->id, 'lines' => [['item_id' => $item->id, 'qty' => 10]]])->assertCreated()->json('record.id');
+    $emptyId = $this->postJson('/json/pallet-stock/fill', ['location_id' => $loc->id, 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->json('record.id');
+    Pallet::whereKey($emptyId)->update(['status' => 'empty']);
+
+    $this->getJson("/json/palletstatus/location/{$loc->id}")->assertOk()->assertJsonCount(1, 'records')->assertJsonPath('records.0.id', $id);
+    expect(collect($this->getJson('/json/palletstatus/summary')->json('locations'))->firstWhere('id', $loc->id)['total'])->toBe(1);
+
+    $this->getJson('/json/palletstatus/lookup?tag='.$id)->assertOk()->assertJsonPath('record.contents.0.qty', 10)->assertJsonPath('record.sorted_from', null);
+});

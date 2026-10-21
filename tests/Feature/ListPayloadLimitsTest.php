@@ -124,12 +124,12 @@ test('movement summary counts live pallets per location and lookup resolves a sc
     $a = Location::forceCreate(['warehouse_id' => $wh->id, 'code' => 'A-1', 'use_id' => $use->id, 'status' => 'active', 'PullSequence' => 1]);
     makePallet('W', 'sealed')->update(['location_id' => $a->id]);
     makePallet('W', 'open')->update(['location_id' => $a->id]);
-    makePallet('W', 'empty')->update(['location_id' => $a->id]);
+    makePallet('W', 'empty')->update(['location_id' => $a->id]); // emptied: not counted or listed
     makePallet('S', 'shipped')->update(['location_id' => $a->id]); // closed out: not counted
     $loose = makePallet('R', 'received');
 
     $res = $this->getJson('/json/palletstatus/summary')->assertOk();
-    $res->assertJsonPath('locations.0.code', 'A-1')->assertJsonPath('locations.0.total', 3)
+    $res->assertJsonPath('locations.0.code', 'A-1')->assertJsonPath('locations.0.total', 2)
         ->assertJsonPath('locations.0.by_status.sealed', 1)->assertJsonPath('locations.1.code', 'B-1')
         ->assertJsonPath('locations.1.total', 0)->assertJsonPath('no_location.total', 1);
 
@@ -138,7 +138,7 @@ test('movement summary counts live pallets per location and lookup resolves a sc
     $this->getJson('/json/palletstatus/lookup?tag=99999')->assertNotFound();
 
     $this->getJson("/json/palletstatus/location/{$a->id}")->assertOk()
-        ->assertJsonCount(3, 'records')->assertJsonPath('records.0.location', 'A-1');
+        ->assertJsonCount(2, 'records')->assertJsonPath('records.0.location', 'A-1');
     $this->getJson('/json/palletstatus/location/none')->assertOk()->assertJsonCount(1, 'records');
     $this->getJson("/json/palletstatus/location/{$b->id}")->assertOk()->assertJsonCount(0, 'records');
 });

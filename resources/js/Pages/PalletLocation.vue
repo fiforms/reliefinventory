@@ -291,6 +291,12 @@ async function runSearch() {
 	}
 }
 
+function openSearchFor(tag) {
+	search.value.tag = tag;
+	tab.value = 'search';
+	runSearch();
+}
+
 function openRecordFor(pallet) {
 	form.value.tag = pallet.tag;
 	tab.value = 'record';
@@ -365,7 +371,7 @@ onMounted(loadSummary);
 											</thead>
 											<tbody>
 												<tr v-for="p in openLocation.pallets" :key="p.id">
-													<td class="pm_mono">{{ p.tag }}</td>
+													<td class="pm_mono"><a href="#" @click.prevent="openSearchFor(p.tag)">{{ p.tag }}</a></td>
 													<td>{{ p.kind_label }}</td>
 													<td>{{ p.status }}</td>
 													<td>{{ formatDate(p.last_moved_at) }}</td>
@@ -382,7 +388,7 @@ onMounted(loadSummary);
 						</tbody>
 					</table>
 				</div>
-				<p class="ri_hint">Click a location to list its pallets. Counts are live pallets only — shipped, collected, released, condemned and missing pallets aren't included.</p>
+				<p class="ri_hint">Click a location to list its pallets. Click a pallet number to see its history and contents. Counts are live pallets only — emptied, shipped, collected, released, condemned and missing pallets aren't included.</p>
 			</div>
 
 			<!-- Record movement -->
@@ -557,10 +563,7 @@ onMounted(loadSummary);
 						<strong>{{ search.result.location ? 'at ' + search.result.location.code : 'not at any recorded location' }}</strong>,
 						status <strong>{{ search.result.status }}</strong><span v-if="search.result.last_moved_at">, last updated {{ formatDate(search.result.last_moved_at) }}</span>.
 					</p>
-					<p v-if="search.result.contents && search.result.contents.length" class="pm_current">
-						On this pallet:
-						<span v-for="(c, i) in search.result.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < search.result.contents.length - 1">, </span></span>.
-					</p>
+					<p v-if="search.result.expires_on" class="pm_current">Earliest expiration: <strong>{{ search.result.expires_on }}</strong></p>
 					<button type="button" class="ri_formbutton" @click="openRecordFor(search.result)">Record Movement / Status</button>
 					<div class="pm_tablewrap">
 						<table class="ri_datatable" border="1">
@@ -575,6 +578,32 @@ onMounted(loadSummary);
 							</tbody>
 						</table>
 					</div>
+
+					<h3 class="pm_sub">Pallet Contents</h3>
+					<template v-if="search.result.contents">
+						<p v-if="!search.result.contents.length" class="ri_hint">Nothing is recorded as being on this pallet.</p>
+						<div v-else class="pm_tablewrap">
+							<table class="ri_datatable" border="1">
+								<thead><tr><th>Item</th><th>Quantity</th></tr></thead>
+								<tbody>
+									<tr v-for="c in search.result.contents" :key="c.item_id"><td>{{ c.name }}</td><td>{{ c.qty }}</td></tr>
+								</tbody>
+							</table>
+						</div>
+					</template>
+					<template v-else-if="search.result.sorted_from">
+						<p class="ri_hint">Receiving pallets aren't tracked item by item; this is what sorting recorded coming off it.</p>
+						<p v-if="!search.result.sorted_from.length" class="ri_hint">Nothing sorted from this pallet yet.</p>
+						<div v-else class="pm_tablewrap">
+							<table class="ri_datatable" border="1">
+								<thead><tr><th>Item</th><th>Disposition</th><th>Quantity</th></tr></thead>
+								<tbody>
+									<tr v-for="(c, i) in search.result.sorted_from" :key="i"><td>{{ c.name }}</td><td>{{ c.disposition }}</td><td>{{ c.qty }}</td></tr>
+								</tbody>
+							</table>
+						</div>
+					</template>
+					<p v-else class="ri_hint">Contents aren't tracked for this kind of pallet.</p>
 				</template>
 			</div>
 
