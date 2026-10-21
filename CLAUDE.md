@@ -150,6 +150,21 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   sorted along the path, a "Pick:" row per line with Use / Open pallet), and `pickSheetsBuilder` plans the whole print batch together
   (`planMany`, reserving as it goes) and prints Where per line. A named sealed pallet may be picked only if the pick takes the whole
   pallet (recorded sealed→open→empty); partial picks need it opened first. Plans are advisory — nothing is reserved between calls.
+- **Barcode scan → item** (2026-10-21, `UpcController` + `App\Services\Upc\{UpcResolver,UpcLookupService}` + `App\Helpers\Gtin`,
+  UI in `DonationSorting.vue` via `SearchSelect`'s `scanDigits`/`scan`) — Enter on an all-digit 8/12/13/14-character entry calls
+  `GET /json/upc/resolve`. There is **no separate mapping table**: a manufacturer UPC lives on a SKU row of the master item list
+  (`items.upc`, Setup > Edit Master Item List — many SKU rows, each with its own UPC, under one ACS item type), matched in any spelling
+  (every code is normalized to 14 digits by `Gtin::normalize`, so UPC-A/EAN-13/GTIN-14 are one key). A carton/case is just another SKU
+  row with its own UPC (package "Case", `case_qty` N); a matched row with `case_qty` > 1 returns `qty` = `case_qty × size` and the sorting
+  line's qty is prefilled with it (ledger quantities are single units; editable). A miss runs the check digit (bad = misscan, 422),
+  classifies the code (14 digits with indicator 1–8 = carton; else single unit — a retail multipack with an ordinary UPC is told apart
+  only by the person), guesses a carton's single-unit code (`Gtin::guessEachCode`, GS1's one-item-case convention — a guess only) and its
+  existing row, and, unless that row exists, asks Open Food Facts then Open Products Facts for a *suggestion* (`config/upc.php`; sends only
+  the barcode; ~10 requests/min install-wide under their 15/min/IP ban line; found cached 30 days, "none" 3 days, outages/throttling never
+  cached; off in Offline Mode or `RI_UPC_LOOKUP=false`; never throws). The sorting page then opens its normal **Add New Item** modal
+  prefilled (UPC, suggested description, the guessed type for a carton, a One item / Case radio + items per case); **nothing is stored until
+  the sorter saves**, via the existing `POST /json/items`. Lookups are `manage-sorting`. Items hold one UPC each, so two barcodes for the
+  same product are two rows.
 - `pallets` / `PalletStatus` — pallets get a printed barcode label and a status history; they are the
   unit that donation sorting scans to establish provenance. `container_type` widened over time to
   `pallet|gaylord|box|bag|tote` — a non-palletized arrival still gets a printable, trackable label.

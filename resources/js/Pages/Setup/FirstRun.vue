@@ -20,7 +20,7 @@ import SecondaryButton from '@/Components/SecondaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
 import RestoreBackup from './RestoreBackup.vue';
 import { Head, useForm } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
+import { computed, onBeforeUnmount, ref } from 'vue';
 
 const props = defineProps({
 	codeRequired: { type: Boolean, default: false },
@@ -57,14 +57,29 @@ function validateAccount() {
 	return Object.keys(e).length === 0;
 }
 
+// "Next" and "Finish setup" sit in the same spot, so a double-click on Next would
+// land on Finish and provision the instance before a starting-data choice is made.
+// Finish stays locked briefly after arriving on step 2.
+const finishLocked = ref(false);
+let finishTimer = null;
+
 function next() {
 	form.clearErrors();
-	if (validateAccount()) step.value = 2;
+	if (!validateAccount()) return;
+	step.value = 2;
+	finishLocked.value = true;
+	clearTimeout(finishTimer);
+	finishTimer = setTimeout(() => (finishLocked.value = false), 2000);
 }
+
+onBeforeUnmount(() => clearTimeout(finishTimer));
 
 const err = (field) => localErrors.value[field] || form.errors[field];
 
 const submit = () => {
+	// Enter in a step 1 field must advance, not submit the whole wizard.
+	if (step.value === 1) return next();
+	if (finishLocked.value) return;
 	form.post(route('setup.store'), {
 		onError: (errors) => {
 			// Server-side complaints about step 1 fields send you back to fix them.
@@ -196,7 +211,7 @@ const stepTitle = computed(() => (step.value === 1 ? 'Create the administrator a
 
 				<div class="mt-6 flex items-center justify-between">
 					<SecondaryButton type="button" @click="step = 1" :disabled="form.processing">Back</SecondaryButton>
-					<PrimaryButton :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
+					<PrimaryButton :class="{ 'opacity-25': form.processing || finishLocked }" :disabled="form.processing || finishLocked">
 						{{ form.processing ? (form.starting_data === 'example' ? 'Setting up (loading examples…)' : 'Setting up…') : 'Finish setup' }}
 					</PrimaryButton>
 				</div>

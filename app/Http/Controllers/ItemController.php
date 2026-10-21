@@ -15,7 +15,7 @@ class ItemController extends Controller
      * Compose the display name used by search/combo controls:
      * item type number + item description.
      */
-    private static function displayName(Item $item): string
+    public static function displayName(Item $item): string
     {
         $number = $item->itemtype->display_number ?? '';
         return trim($number . ' ' . ($item->description ?? ''));
