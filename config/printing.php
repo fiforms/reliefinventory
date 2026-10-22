@@ -12,8 +12,13 @@ return [
     'media' => [
         'report' => ['label' => 'Report (Letter)', 'width' => 8.5, 'height' => 11.0],
         'label_large' => ['label' => 'Large label (4 x 6.5 in)', 'width' => 4.0, 'height' => 6.5],
+        'label_small' => ['label' => 'Small label (2.312 x 4 in)', 'width' => 2.312, 'height' => 4.0],
         'label_address' => ['label' => 'Address label (1.125 x 3.5 in)', 'width' => 3.5, 'height' => 1.125],
     ],
+
+    // Media pallet labels can be laid out for and printed on (first = default); which one is in
+    // use is a setting (LabelSetting, /setup/printers). Each must be a key of 'media' above.
+    'pallet_label_media' => ['label_large', 'label_small'],
 
     // Largest PDF (KB) an administrator can upload to print (POST /json/print-upload).
     'upload_max_kb' => 10240,

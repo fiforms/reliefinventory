@@ -1,0 +1,92 @@
+*PPD-Adobe: "4.3"
+*FormatVersion: "4.3"
+*FileVersion: "1.0"
+*LanguageVersion: English
+*LanguageEncoding: ISOLatin1
+*PCFileName: "SATOSBPL.PPD"
+*Manufacturer: "SATO"
+*Product: "(SATO label printer)"
+*ModelName: "SATO label printer - SBPL"
+*ShortNickName: "SATO SBPL labels"
+*NickName: "SATO label printer (SBPL) - Relief Inventory driver"
+*PSVersion: "(3010.000) 0"
+*LanguageLevel: "3"
+*ColorDevice: False
+*DefaultColorSpace: Gray
+*FileSystem: False
+*Throughput: "4"
+*LandscapeOrientation: Plus90
+*TTRasterizer: Type42
+*cupsVersion: 2.4
+*cupsModelNumber: 1
+*cupsManualCopies: False
+*cupsFilter: "application/pdf 0 pdftosbpl"
+
+*OpenUI *PageSize/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageSize
+*DefaultPageSize: w288h468
+*PageSize w288h468/4.00 x 6.50 in (large label): "<</PageSize[288 468]/ImagingBBox null>>setpagedevice"
+*PageSize w288h432/4.00 x 6.00 in: "<</PageSize[288 432]/ImagingBBox null>>setpagedevice"
+*PageSize w288h288/4.00 x 4.00 in: "<</PageSize[288 288]/ImagingBBox null>>setpagedevice"
+*PageSize w166h288/2.312 x 4.00 in: "<</PageSize[166 288]/ImagingBBox null>>setpagedevice"
+*PageSize w252h81/3.50 x 1.125 in (address label): "<</PageSize[252 81]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageSize
+
+*OpenUI *PageRegion/Media Size: PickOne
+*OrderDependency: 10 AnySetup *PageRegion
+*DefaultPageRegion: w288h468
+*PageRegion w288h468/4.00 x 6.50 in (large label): "<</PageSize[288 468]/ImagingBBox null>>setpagedevice"
+*PageRegion w288h432/4.00 x 6.00 in: "<</PageSize[288 432]/ImagingBBox null>>setpagedevice"
+*PageRegion w288h288/4.00 x 4.00 in: "<</PageSize[288 288]/ImagingBBox null>>setpagedevice"
+*PageRegion w166h288/2.312 x 4.00 in: "<</PageSize[166 288]/ImagingBBox null>>setpagedevice"
+*PageRegion w252h81/3.50 x 1.125 in (address label): "<</PageSize[252 81]/ImagingBBox null>>setpagedevice"
+*CloseUI: *PageRegion
+
+*DefaultImageableArea: w288h468
+*ImageableArea w288h468/4.00 x 6.50 in (large label): "0 0 288 468"
+*ImageableArea w288h432/4.00 x 6.00 in: "0 0 288 432"
+*ImageableArea w288h288/4.00 x 4.00 in: "0 0 288 288"
+*ImageableArea w166h288/2.312 x 4.00 in: "0 0 166 288"
+*ImageableArea w252h81/3.50 x 1.125 in (address label): "0 0 252 81"
+*DefaultPaperDimension: w288h468
+*PaperDimension w288h468/4.00 x 6.50 in (large label): "288 468"
+*PaperDimension w288h432/4.00 x 6.00 in: "288 432"
+*PaperDimension w288h288/4.00 x 4.00 in: "288 288"
+*PaperDimension w166h288/2.312 x 4.00 in: "166 288"
+*PaperDimension w252h81/3.50 x 1.125 in (address label): "252 81"
+*MaxMediaWidth: "288"
+*MaxMediaHeight: "720"
+*HWMargins: 0 0 0 0
+*CustomPageSize True: "pop pop pop <</PageSize[5 -2 roll]/ImagingBBox null>>setpagedevice"
+*ParamCustomPageSize Width: 1 points 36 288
+*ParamCustomPageSize Height: 2 points 36 720
+*ParamCustomPageSize WidthOffset: 3 points 0 0
+*ParamCustomPageSize HeightOffset: 4 points 0 0
+*ParamCustomPageSize Orientation: 5 int 0 0
+
+*OpenUI *Resolution/Printer resolution: PickOne
+*OrderDependency: 20 AnySetup *Resolution
+*DefaultResolution: 203dpi
+*Resolution 203dpi/203 dpi: "<</HWResolution[203 203]>>setpagedevice"
+*Resolution 305dpi/305 dpi: "<</HWResolution[305 305]>>setpagedevice"
+*Resolution 609dpi/609 dpi: "<</HWResolution[609 609]>>setpagedevice"
+*CloseUI: *Resolution
+
+*OpenUI *RIHShift/Horizontal position: PickOne
+*OrderDependency: 30 AnySetup *RIHShift
+*DefaultRIHShift: Left5
+*RIHShift Left20/20 dots left: ""
+*RIHShift Left15/15 dots left: ""
+*RIHShift Left10/10 dots left: ""
+*RIHShift Left5/5 dots left: ""
+*RIHShift Zero/Centered on the print origin (0): ""
+*RIHShift Right5/5 dots right: ""
+*RIHShift Right10/10 dots right: ""
+*RIHShift Right20/20 dots right: ""
+*RIHShift Right40/40 dots right: ""
+*RIHShift Right80/80 dots right: ""
+*CloseUI: *RIHShift
+
+*% Left/Right moves the whole image sideways on the head, in printer dots. The right value depends on the label stock;
+*% Left 5 was measured for 2.312 x 4 in labels on a WS408 (see pdftosbpl).
+*% End

@@ -7,8 +7,9 @@
 	status (idle / printing / error / offline / unavailable) and how many jobs are waiting,
 	with a Clear Queue action for people who also hold manage-print-queue, and the order
 	printers appear in Print menus — set by dragging a printer within its site (or with the
-	up/down buttons, for keyboards and touch), saved as sort_order. A "Print a PDF" card (manage-print-queue)
-	uploads any PDF to a chosen printer (PrintController::storeUpload). Printers are set up
+	up/down buttons, for keyboards and touch), saved as sort_order. Also holds the pallet label
+	size setting (LabelSetting; PrinterAdminController::saveLabelSettings). A "Print a PDF" card
+	(manage-print-queue) uploads any PDF to a chosen printer (PrintController::storeUpload). Printers are set up
 	(name, site, paper, on/off) on the R Station Devices page. Server half:
 	PrinterAdminController::overview/reorder.
 -->
@@ -41,6 +42,8 @@ const notice = ref('');
 const dragging = ref(null); // printer id being dragged
 const dragOver = ref(null); // printer id it is hovering over
 const confirmingClear = ref(null);
+const labelSettings = ref(null); // { pallet_label_media, options: [{ key, label }] }, loaded once so the 5 s refresh can't undo a pick
+const savingLabelSize = ref(false);
 
 // "Print a PDF": upload any PDF to one of the printers. It prints at its own page size, so the paper has to match.
 const pdfFile = ref(null);
@@ -66,6 +69,7 @@ async function load() {
 	try {
 		const { data } = await axios.get('/json/printer-overview');
 		printers.value = data.printers;
+		if (!labelSettings.value) labelSettings.value = data.label_settings;
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not load the printers.';
 	}
@@ -161,6 +165,24 @@ async function sendPdf() {
 	}
 }
 
+// ---- Pallet label size ----
+async function saveLabelSize() {
+	savingLabelSize.value = true;
+	error.value = '';
+	notice.value = '';
+	try {
+		const { data } = await axios.put('/json/printers/label-settings', {
+			pallet_label_media: labelSettings.value.pallet_label_media,
+		});
+		labelSettings.value = data;
+		notice.value = 'Saved the pallet label size. New labels use it right away.';
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not save the pallet label size.';
+	} finally {
+		savingLabelSize.value = false;
+	}
+}
+
 // ---- Clearing a queue (manage-print-queue) ----
 async function clearQueue(printer) {
 	if (confirmingClear.value !== printer.id) {
@@ -194,6 +216,21 @@ onUnmounted(() => clearInterval(timer));
 
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>
 			<div v-if="notice" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3">{{ notice }}</div>
+
+			<section v-if="labelSettings" class="bg-white shadow rounded-lg p-6 space-y-2">
+				<h2 class="text-lg font-semibold">Pallet label size</h2>
+				<p class="text-sm text-gray-600">
+					Pallet labels are laid out for this size, and the Print menu offers only printers set to the
+					same paper (set on the
+					<a href="/setup/devices" class="underline">R Station Devices</a> page).
+				</p>
+				<div class="flex flex-wrap items-center gap-3">
+					<select v-model="labelSettings.pallet_label_media" class="border rounded px-2 py-1" :disabled="savingLabelSize" @change="saveLabelSize">
+						<option v-for="option in labelSettings.options" :key="option.key" :value="option.key">{{ option.label }}</option>
+					</select>
+					<span v-if="savingLabelSize" class="text-sm text-gray-500">Saving…</span>
+				</div>
+			</section>
 
 			<section v-if="canUploadPdf" class="bg-white shadow rounded-lg p-6 space-y-3">
 				<h2 class="text-lg font-semibold">Print a PDF</h2>

@@ -39,7 +39,8 @@ Building an image **without** the .deb is fine: the page says the feature isn't 
 
 ```bash
 rstation/build-offline-bundle.sh          # pulls the arm64 images, `docker save`s them (arm64 only), builds the .deb
-rstation/fetch-cups-debs.sh               # (leaves the offline .deb alone)
+rstation/fetch-cups-debs.sh               # (leaves the offline and SATO .debs alone)
+rstation/build-sato-driver-deb.sh         # the SATO label printer driver (sato-driver/README.md); build it every image, like the CUPS debs
 PRODUCT_ROOT=…/rstation/product image-builder/build.sh
 ```
 

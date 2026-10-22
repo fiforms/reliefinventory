@@ -430,6 +430,14 @@ was chosen over Chrome for real CSS Paged Media support — `@page`, `@page :fir
 for a running header/page-number that's absent on page 1 — which headless Chrome's print engine can't do
 reliably.
 
+**Pallet label size** (2026-10-22, `LabelSetting` singleton, picked on `/setup/printers`, `manage-devices`): pallet labels are laid out for
+`label_large` (4 x 6.5 in, the default) or `label_small` (2.312 x 4 in — a WS408 on narrow stock). `LabelSetting::palletMedia()` drives the paper size
+and a compact layout in `reports/partials/pallet_label*.blade.php` (smaller number, 1.8923 px barcode module = exactly 4 dots at 203 dpi), the media of
+the three label documents in `DocumentRegistry` (so only printers loaded with that media are offered and accepted), and the shared Inertia prop
+`printing.palletLabelMedia` that every pallet-label `PrintMenu` passes as its `media` — don't hard-code `label_large` there. Changing it affects new
+labels only; a printer's own media is still set on R Station Devices. The compact layout was checked on paper; scanning it from a real small label is
+the thing to confirm. Not built: other label kinds (there are no inventory/item labels — only the generated UPC exists), or a per-printer size.
+
 **One-time server provisioning:** the `weasyprint` binary (Python, with native Pango/Cairo deps —
 `apt install weasyprint` or `pip install weasyprint` depending on distro) must be on `PATH`, or set
 `LARAVEL_PDF_WEASYPRINT_BINARY` in `.env` to its path. Not part of the deploy script; a fresh box needs it done
@@ -450,9 +458,12 @@ ported from Chrome):
 
 ### Print queue — per-site printers, print servers, optional realtime
 
-Everywhere something is printed there is one shared `PrintMenu.vue` ("Print ▾": **Download PDF** plus
-each active printer at a site that matches the document's paper size) instead of a bare PDF link.
-Choosing a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
+Everywhere something is printed there is one shared `PrintMenu.vue`: a single **Print** button (2026-10-22) that opens a lightbox
+(`Modal.vue`) of selectable options — **Download PDF** plus each active printer at a site that matches the document's paper size —
+with a **Number of copies** box (1–99) whenever a printer is chosen, instead of a bare PDF link. The last-used printer per media is
+preselected; users without `print-documents` get the download straight away with no dialog; arrows/Enter/Escape work (Escape is caught
+in the capture phase so it closes only the print dialog when the button sits inside another modal); the old `placement` prop is ignored.
+Confirming a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
 and reports back. Built 2026-10-18 on branch `print-queue`; see `rstation/PRINT_SERVER.md` (wire protocol —
 what a print-server client implements), `rstation/PRINT_CLIENT_SPEC.md` (client behaviour rules + the list
 of documents a client implementer needs), `rstation/print-extension.openapi.yaml` (machine-readable wire format; a
@@ -465,7 +476,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
   A printer's status (`idle|printing|error|offline|unavailable`) is **derived on read** from its device's
   heartbeat — the app has no scheduler to flip a stored column. `media` is a plain string key into
-  `config/printing.php` (`report`, `label_large`, `label_address`), deliberately not a DB enum, so
+  `config/printing.php` (`report`, `label_large`, `label_small`, `label_address`), deliberately not a DB enum, so
   user-defined sizes later means moving that config into a table without touching printers/jobs/the API.
 - **`print_jobs` + `print_job_status_log`**: `queued → claimed → printed | failed`, plus `cancelled`;
   every status write goes through `PrintJob::transitionTo()` (legal-move check + audit row, same pattern
@@ -517,6 +528,12 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   [--realtime]` (real Laravel app on the disposable test DB; its PHP helpers refuse any other database).
   Verified on Linux only; the Tauri shell has not yet been compiled on a machine with the webview libraries,
   and Windows/macOS are untested on hardware.
+- **SATO label printers (SBPL)** (2026-10-22, `rstation/sato-driver/` — read its README): SATO's own Linux driver is x86-only, so
+  `pdftosbpl` (a Python + Ghostscript CUPS filter, PDF in, one SBPL bitmap job per page) and `sato-sbpl.ppd` replace it, packaged by
+  `rstation/build-sato-driver-deb.sh` into `product/image/debs/` (the image `packages` file adds Ghostscript; Settings > Printers >
+  "Find a specific driver" > "sato"). Verified on a WS408 over USB at 203 dpi on 2.312 x 4 in stock, both with `lp -o raw` and
+  through a laptop CUPS queue using this PPD (frame, multi-page, copies, a WeasyPrint label with a Code 128 barcode); **not** yet
+  run on a Pi or from an image build. The horizontal shift is empirical per stock width (default `Left5`).
 - **Print a PDF** (2026-10-22): the Printers page (`/setup/printers`) has a card to upload any PDF to a chosen printer — `POST /json/print-upload`
   (`PrintController::storeUpload`, `manage-print-queue`, the same people who can clear/divert the queue). The file is user data and is never rendered
   or interpreted server-side: it must be `application/pdf` by content *and* carry a `%PDF-` signature in its first KB, is capped by

@@ -5,10 +5,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\LabelSetting;
 use App\Models\Printer;
 use App\Models\PrintJob;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -48,7 +51,36 @@ class PrinterAdminController extends Controller
                 'failed_jobs' => $p->failed_jobs,
             ]);
 
-        return response()->json(['printers' => $printers]);
+        return response()->json(['printers' => $printers, 'label_settings' => $this->labelSettings()]);
+    }
+
+    /** The pallet label media in use and the choices (media keys from config/printing.php). */
+    private function labelSettings(): array
+    {
+        return [
+            'pallet_label_media' => LabelSetting::palletMedia(),
+            'options' => collect(config('printing.pallet_label_media'))->map(fn (string $key) => [
+                'key' => $key,
+                'label' => config("printing.media.{$key}.label"),
+            ])->values(),
+        ];
+    }
+
+    /**
+     * Which label size pallet labels are laid out for and printed on. Only changes the layout and which
+     * printers the Print menus offer (those loaded with that media); labels already queued keep the size
+     * they were rendered at.
+     */
+    public function saveLabelSettings(Request $request)
+    {
+        $data = $request->validate([
+            'pallet_label_media' => ['required', 'string', Rule::in(config('printing.pallet_label_media'))],
+        ]);
+
+        LabelSetting::current()->update($data);
+        Log::info('Pallet label size changed', ['person_id_user' => Auth::id()] + $data);
+
+        return response()->json($this->labelSettings());
     }
 
     /** Saves a drag-and-drop order: `ids` in their new order become sort_order 10, 20, 30… */

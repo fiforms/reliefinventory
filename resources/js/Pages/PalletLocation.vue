@@ -598,7 +598,7 @@ onMounted(() => {
 				<div v-if="fillResult" class="pm_current">
 					<strong>{{ fillResult.tag }}</strong> sealed<span v-if="fillResult.location"> at <strong>{{ fillResult.location.code }}</strong></span>:
 					<span v-for="(c, i) in fillResult.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < fillResult.contents.length - 1">, </span></span>.
-					<PrintMenu v-if="fillResult.isNew" document-key="pallet-label" media="label_large" variant="form" label="Print Label"
+					<PrintMenu v-if="fillResult.isNew" document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" variant="form" label="Print Label"
 						:params="{ id: fillResult.id }" :download-href="'/report/pallet/' + fillResult.id" />
 				</div>
 
