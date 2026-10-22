@@ -11,9 +11,10 @@ use App\Http\Middleware\RedirectToSetup;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\KioskLocation;
-use App\Models\ManagedDevice;
 use App\Models\KioskSetting;
+use App\Models\ManagedDevice;
 use App\Models\MenuItem;
+use App\Services\GitVersionService;
 use App\Services\PinLoginService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -45,6 +46,30 @@ Route::prefix('install/restore')->name('setup.restore.')->group(function () {
     Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
     Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
 });
+
+// Web app manifest, for "Add to Home Screen" / install on phones and tablets. A route rather than a static
+// file so the installed name follows this instance's APP_NAME. Fetched by the browser without cookies, so
+// no session, and it must answer before first-run setup too.
+Route::get('/manifest.webmanifest', function () {
+    return response()->json([
+        'name' => config('app.name'),
+        'short_name' => config('app.name'),
+        'start_url' => '/',
+        'scope' => '/',
+        'display' => 'standalone',
+        'background_color' => '#202934',
+        'theme_color' => '#ffffff',
+        'icons' => [
+            ['src' => '/icons/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => '/icons/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any'],
+            ['src' => '/icons/icon-maskable-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'maskable'],
+            ['src' => '/icons/icon-maskable-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable'],
+        ],
+    ], 200, ['Content-Type' => 'application/manifest+json'], JSON_UNESCAPED_SLASHES);
+})->name('manifest')->withoutMiddleware([
+    StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
+    RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
+]);
 
 Route::get('/', function () {
     return Inertia::render('Welcome', [
@@ -151,7 +176,7 @@ Route::get('/volunteers/kiosk', function () {
 // This installation's About screen (version, Docker, license): reached from the profile menu only (no MenuItem),
 // open to any logged-in user. Distinct from the public /about project story above.
 Route::get('/about-this-install', function () {
-    $git = app(\App\Services\GitVersionService::class);
+    $git = app(GitVersionService::class);
 
     return Inertia::render('AppAbout', [
         'version' => $git->release(),
