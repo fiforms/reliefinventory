@@ -6,10 +6,13 @@
 namespace App\Services\Printing;
 
 use App\Http\Controllers\HelpReportController;
+use App\Http\Controllers\DonorReportController;
+use App\Http\Controllers\FlowReportController;
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderFillingController;
 use App\Http\Controllers\OutstandingOrdersReportController;
+use App\Http\Controllers\PartnerReportController;
 use App\Http\Controllers\PalletReportController;
 use App\Http\Controllers\SitrepController;
 use App\Http\Controllers\UnfulfilledRequestsReportController;
@@ -53,6 +56,24 @@ class DocumentRegistry
                 'rules' => UnfulfilledRequestsReportController::FILTER_RULES,
                 'title' => fn () => 'Unfulfilled Requests Report',
                 'build' => fn (array $p) => app(UnfulfilledRequestsReportController::class)->pdfBuilder(array_filter($p)),
+            ],
+            'inventory-flow' => [
+                'media' => 'report', 'permission' => 'view-reports',
+                'rules' => FlowReportController::FILTER_RULES,
+                'title' => fn () => 'Inventory Flow Report',
+                'build' => fn (array $p) => app(FlowReportController::class)->pdfBuilder(array_filter($p)),
+            ],
+            'partner-report' => [
+                'media' => 'report', 'permission' => 'view-reports',
+                'rules' => PartnerReportController::FILTER_RULES,
+                'title' => fn () => 'Partner Report',
+                'build' => fn (array $p) => app(PartnerReportController::class)->pdfBuilder(array_filter($p)),
+            ],
+            'donor-report' => [
+                'media' => 'report', 'permission' => 'view-reports',
+                'rules' => DonorReportController::FILTER_RULES,
+                'title' => fn () => 'Donor Report',
+                'build' => fn (array $p) => app(DonorReportController::class)->pdfBuilder(array_filter($p)),
             ],
             'sitrep' => [
                 'media' => 'report', 'permission' => 'view-sitrep', 'rules' => [],
