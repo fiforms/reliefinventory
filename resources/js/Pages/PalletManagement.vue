@@ -20,6 +20,25 @@ const kindOptions = [
 	{ id: 'H', name: 'Hold' },
 	{ id: 'Q', name: 'Quarantine' },
 ];
+
+// Mirrors App\Support\PalletKind::LIFECYCLES (+ 'missing'); the server still validates.
+const statusesByKind = {
+	R: ['received', 'sorting', 'empty'],
+	W: ['sealed', 'open', 'empty'],
+	S: ['building', 'ready', 'shipped'],
+	H: ['filling', 'ready', 'collected'],
+	Q: ['held', 'released', 'condemned'],
+};
+const statusOptions = (kind) =>
+	[...(statusesByKind[kind] || []), 'missing'].map((s) => ({ id: s, name: s.charAt(0).toUpperCase() + s.slice(1) }));
+
+const containerTypeOptions = [
+	{ id: 'pallet', name: 'Pallet' },
+	{ id: 'gaylord', name: 'Gaylord' },
+	{ id: 'box', name: 'Box' },
+	{ id: 'bag', name: 'Bag' },
+	{ id: 'tote', name: 'Tote' },
+];
 </script>
 
 <template>
@@ -99,18 +118,18 @@ const kindOptions = [
 
           <div class="ri_fieldset">
             <div class="ri_fieldlabel">Status:</div>
-            <TextInput
-              v-model="record.status"
-              placeholder="e.g. received, sorting, empty, missing..."
+            <ComboBox
+              v-model:keyValue="record.status"
+              :options="statusOptions(record.kind)"
               :enabled="editing"
-           />
+            />
           </div>
 
 		  <div class="ri_fieldset">
 			<div class="ri_fieldlabel">Container Type:</div>
 			<ComboBox
 			  v-model:keyValue="record.container_type"
-			  :options="[{ id: 'pallet', name: 'Pallet' }, { id: 'gaylord', name: 'Gaylord' }]"
+			  :options="containerTypeOptions"
 			  :enabled="editing"
 			/>
 		  </div>

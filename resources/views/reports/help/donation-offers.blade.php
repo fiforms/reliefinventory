@@ -46,8 +46,7 @@
         </ul>
         <p>
             Only Offered and Pending Arrival offers can be edited. Once an offer is Refused, Diverted,
-            Cancelled or Received it is kept as history and locked. A pending offer whose ETA window has
-            passed shows an <strong>overdue</strong> tag in the list.
+            Cancelled or Received it is kept as history and locked. A pending offer whose ETA window (or single ETA day) has fully passed shows an <strong>overdue</strong> tag in the list.
         </p>
     </div>
 
@@ -65,7 +64,7 @@
             </li>
             <li>
                 Describe <strong>What's being offered</strong>, and, if the donor knows it, fill in the
-                <strong>Rough ETA Window (if known)</strong> dates.
+                <strong>Rough ETA Window (if known)</strong> dates. You can also record <strong>How did the offer come in?</strong> and any <strong>Notes from the conversation</strong>; they go in the offer's first history entry.
             </li>
             <li>
                 Save. The offer starts as <strong>Offered</strong> and its history shows <strong>Logged

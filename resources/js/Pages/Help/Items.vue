@@ -37,10 +37,9 @@ defineProps({
 				who sorts a SKU row ends up adding to the same item type's total.
 			</p>
 			<p class="text-sm text-gray-700">
-				You need the Manage Items permission to open
+				You need both the Manage Items and Manage Item Types permissions to open
 				<Link href="/setup/items" class="text-blue-600 underline">Setup &rarr; Master Item List</Link>.
-				The page's data also depends on the Manage Item Types permission, so if the list
-				won't load, ask an administrator.
+				Without both, the page won't open &mdash; ask an administrator.
 			</p>
 		</section>
 

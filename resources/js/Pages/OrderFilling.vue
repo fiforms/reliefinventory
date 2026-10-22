@@ -40,7 +40,6 @@ import QrScanner from '@/Components/QrScanner.vue';
 import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
-const LOW_STOCK_THRESHOLD_DEFAULT = 10; // mirrors config('inventory.low_stock_threshold')
 const NEED_LEVEL_LABELS = { critical: 'Critical', moderate: 'Moderate', low: 'Low' };
 
 export default {
@@ -90,9 +89,6 @@ export default {
 		};
 	},
 	computed: {
-		lowStockThreshold() {
-			return LOW_STOCK_THRESHOLD_DEFAULT;
-		},
 		// Itemtypes where total requested across Ready-to-Fill orders
 		// exceeds on-hand — the Allocation Review panel's contents.
 		allocationRows() {

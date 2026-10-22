@@ -124,8 +124,7 @@
         <h2>Deleting a record</h2>
         <p>
             Click <strong>Delete</strong>, then <strong>Confirm Delete &mdash; cannot be undone</strong>
-            (or <strong>Keep Record</strong> to back out). Deleting needs the separate Delete
-            People permission, which most roles don't have &mdash; without it the delete is refused.
+            (or <strong>Keep Record</strong> to back out). The Delete button only appears for people with the separate Delete People permission, which most roles don't have.
             The built-in <strong>Unknown Donor</strong> record can never be deleted.
         </p>
     </div>

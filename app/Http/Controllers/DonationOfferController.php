@@ -73,9 +73,11 @@ class DonationOfferController extends Controller
         }
 
         $records->each(function (DonationOffer $offer) {
+            // Overdue once the last expected day (eta_end, or the single eta_start day) has fully passed.
+            $lastDay = $offer->eta_end ?? $offer->eta_start;
             $offer->is_overdue = $offer->status === DonationOffer::STATUS_PENDING
-                && $offer->eta_end !== null
-                && Carbon::parse($offer->eta_end)->isPast();
+                && $lastDay !== null
+                && Carbon::parse($lastDay)->endOfDay()->isPast();
             // Flat display field for SearchSelect (Receiving.vue's picker),
             // which can't traverse into nested person.full_name.
             $offer->label = ($offer->person->full_name ?? 'Unknown donor')
@@ -91,6 +93,9 @@ class DonationOfferController extends Controller
                     'description' => null,
                     'eta_start' => null,
                     'eta_end' => null,
+                    // Only used by store(), for the offer's first history entry.
+                    'contact_method' => null,
+                    'notes' => null,
                     // isEditableStatus() in DonationOffers.vue keys off this
                     // to enable the donor/contact pickers — without it a new
                     // record's status is undefined and every field renders

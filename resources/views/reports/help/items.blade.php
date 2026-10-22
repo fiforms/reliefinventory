@@ -18,10 +18,9 @@
             who sorts a SKU row ends up adding to the same item type's total.
         </p>
         <p>
-            You need the Manage Items permission to open
+            You need both the Manage Items and Manage Item Types permissions to open
             Setup &rarr; Master Item List.
-            The page's data also depends on the Manage Item Types permission, so if the list
-            won't load, ask an administrator.
+            Without both, the page won't open &mdash; ask an administrator.
         </p>
     </div>
 

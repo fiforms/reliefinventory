@@ -236,13 +236,13 @@
         <strong>reprint a pallet label</strong> (Print Pallet Label) or to correct a
         pallet's record by hand. It lists pallets that are still in use; open one to
         see its Pallet Tag, Kind, Date Packed, Location, Status, Container Type
-        (Pallet or Gaylord) and its Pallet Status History. The kind can't be changed once
+        (Pallet, Gaylord, Box, Bag or Tote) and its Pallet Status History. The kind can't be changed once
         a pallet is labeled.
     </p>
     <p>
         For everyday work &mdash; moving pallets, building them, adjusting them &mdash; use
         Inventory Movement instead: it records each change in the history and checks the
-        rules for you, while Pallet Management lets you edit the status as free text.
+        rules for you, while Pallet Management lets you set the status directly (from a list of the statuses valid for that kind of pallet).
     </p>
 </div>
 
