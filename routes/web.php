@@ -389,6 +389,13 @@ Route::get('/report/pallets/donation/{id}',
     ->name('report.pallets.donation')
     ->middleware(['auth', 'permission:manage-receiving']);
 
+// Inventory labels (one per item set put on a pallet), by pallet_stock_assignments id — the Inventory Movement screen's
+// Fill Pallet, same gate as its endpoints.
+Route::get('/report/inventory-labels',
+    [InventoryLabelController::class, 'download'])
+    ->name('report.inventory-labels')
+    ->middleware(['auth', 'permission:manage-pallets']);
+
 // Pre-print Labels batch (PROJECT_ANALYSIS.md Part 12) — an arbitrary set
 // of just-created, not-yet-assigned pallet ids, same gate as the rest of
 // Receiving's label printing.

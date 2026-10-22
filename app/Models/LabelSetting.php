@@ -8,15 +8,15 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Singleton (always id=1) — which label media pallet labels use. See the 2026_10_22 migration.
- * The media key is one of config('printing.pallet_label_media'); the label views lay themselves out
- * from that media's width/height, and the Print menus only offer printers loaded with it.
+ * Singleton (always id=1) — which label media pallet labels and inventory labels use. See the 2026_10_22 migrations.
+ * Each media key is one of config('printing.pallet_label_media') / ('printing.inventory_label_media'); the label views lay
+ * themselves out from that media's width/height, and the Print menus only offer printers loaded with it.
  */
 class LabelSetting extends Model
 {
     protected $table = 'label_settings';
 
-    protected $fillable = ['pallet_label_media'];
+    protected $fillable = ['pallet_label_media', 'inventory_label_media'];
 
     public static function current(): self
     {
@@ -32,9 +32,23 @@ class LabelSetting extends Model
         return in_array($saved, $options, true) ? $saved : $options[0];
     }
 
+    /** The media key inventory labels use now (default: the small label). */
+    public static function inventoryMedia(): string
+    {
+        $options = config('printing.inventory_label_media');
+        $saved = optional(self::query()->find(1))->inventory_label_media;
+
+        return in_array($saved, $options, true) ? $saved : $options[0];
+    }
+
     /** True for a label too narrow for the full-size layout (the compact view is used). */
+    public static function isCompact(string $media): bool
+    {
+        return config("printing.media.{$media}.width") < 3;
+    }
+
     public static function palletLabelIsCompact(): bool
     {
-        return config('printing.media.'.self::palletMedia().'.width') < 3;
+        return self::isCompact(self::palletMedia());
     }
 }

@@ -441,11 +441,11 @@ async function submitFill() {
 			location_id: fillLocation.value?.id ?? null,
 			notes: fill.value.notes || null,
 			expires_on: fillExpiry.value || null,
-			lines: fill.value.lines.map((l) => ({ item_id: l.item_id, qty: Number(l.qty) })),
+			lines: fill.value.lines.map((l) => ({ item_id: l.item_id, qty: Number(l.qty), expires_on: l.expires_on || null })),
 		});
 		const wasNew = !fillTarget.value;
 		const existingTag = current.value?.tag;
-		fillResult.value = { ...response.data.record, isNew: wasNew };
+		fillResult.value = { ...response.data.record, isNew: wasNew, assignmentIds: response.data.assignment_ids || [] };
 		fill.value = { lines: [], locationCode: '', notes: '', expires: null };
 		if (wasNew) clearPallet();
 		else await applyPallet(await lookupPallet(existingTag));
@@ -598,8 +598,11 @@ onMounted(() => {
 				<div v-if="fillResult" class="pm_current">
 					<strong>{{ fillResult.tag }}</strong> sealed<span v-if="fillResult.location"> at <strong>{{ fillResult.location.code }}</strong></span>:
 					<span v-for="(c, i) in fillResult.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < fillResult.contents.length - 1">, </span></span>.
-					<PrintMenu v-if="fillResult.isNew" document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" variant="form" label="Print Label"
+					<PrintMenu v-if="fillResult.isNew" document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" variant="form" label="Print Pallet Label"
 						:params="{ id: fillResult.id }" :download-href="'/report/pallet/' + fillResult.id" />
+					<PrintMenu v-if="fillResult.assignmentIds?.length" document-key="inventory-labels" :media="$page.props.printing.inventoryLabelMedia" variant="form"
+						:label="'Print Item Labels (' + fillResult.assignmentIds.length + ')'"
+						:params="{ ids: fillResult.assignmentIds }" :download-href="'/report/inventory-labels?ids=' + fillResult.assignmentIds.join(',')" />
 				</div>
 
 				<!-- the pallet on screen -->
@@ -643,6 +646,24 @@ onMounted(() => {
 								</tbody>
 							</table>
 						</div>
+						<template v-if="current.labels?.length">
+							<h3 class="pm_sub">Inventory Labels</h3>
+							<p class="ri_hint">One label for each set of items put on this pallet, as it was added (picks and corrections since aren't reflected). Reprint any of them here.</p>
+							<div class="pm_tablewrap">
+								<table class="ri_datatable" border="1">
+									<thead><tr><th>Item</th><th>Added</th><th>Expires</th><th></th></tr></thead>
+									<tbody>
+										<tr v-for="l in current.labels" :key="l.id">
+											<td>{{ l.name }}</td><td>{{ l.qty }}</td><td>{{ l.expires_on || '' }}</td>
+											<td><PrintMenu document-key="inventory-labels" :media="$page.props.printing.inventoryLabelMedia" variant="link" label="Print"
+												:params="{ ids: [l.id] }" :download-href="'/report/inventory-labels?ids=' + l.id" /></td>
+										</tr>
+									</tbody>
+								</table>
+							</div>
+							<PrintMenu document-key="inventory-labels" :media="$page.props.printing.inventoryLabelMedia" variant="form" label="Print All Item Labels"
+								:params="{ ids: current.labels.map((l) => l.id) }" :download-href="'/report/inventory-labels?ids=' + current.labels.map((l) => l.id).join(',')" />
+						</template>
 					</template>
 					<template v-else-if="current.sorted_from">
 						<p class="ri_hint">Receiving pallets aren't tracked item by item; this is what sorting recorded coming off it.</p>
@@ -715,11 +736,12 @@ onMounted(() => {
 
 					<div class="pm_tablewrap" v-if="fill.lines.length">
 						<table class="ri_datatable" border="1">
-							<thead><tr><th>Item</th><th>Quantity</th><th></th></tr></thead>
+							<thead><tr><th>Item</th><th>Quantity</th><th>Expires</th><th></th></tr></thead>
 							<tbody>
 								<tr v-for="(l, i) in fill.lines" :key="l.item_id">
 									<td>{{ l.name }}</td>
 									<td><input type="text" inputmode="numeric" autocomplete="off" :value="l.qty" class="ri_forminput pm_qty" @focus="$event.target.select()" @change="setLineQty(l, $event)" /></td>
+									<td><input type="date" class="ri_forminput" v-model="l.expires_on" title="Earliest expiration of this quantity — printed on its inventory label" /></td>
 									<td><button type="button" class="ri_linkbutton" @click="fill.lines.splice(i, 1)">Remove</button></td>
 								</tr>
 							</tbody>

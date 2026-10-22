@@ -61,6 +61,8 @@ class HandleInertiaRequests extends Middleware
                 'canPrint' => (bool) $request->user()?->hasPermission('print-documents'),
                 // The media pallet labels are printed on (LabelSetting): Print menus for pallet labels filter printers by it.
                 'palletLabelMedia' => LabelSetting::palletMedia(),
+                // Likewise for inventory labels (one per item set put on a pallet).
+                'inventoryLabelMedia' => LabelSetting::inventoryMedia(),
             ],
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,

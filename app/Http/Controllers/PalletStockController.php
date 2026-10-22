@@ -13,6 +13,7 @@ use App\Models\Transaction;
 use App\Services\PalletStock;
 use App\Support\PalletKind;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 
@@ -70,7 +71,7 @@ class PalletStockController extends Controller
      * only at the newest usable additions that add up to the free quantity. Null when none of those carry a date.
      * It is only a suggestion for the Fill Pallet date box, which the driver can overwrite.
      *
-     * @param  \Illuminate\Support\Collection<int, int>  $free  item_id => free quantity
+     * @param  Collection<int, int>  $free  item_id => free quantity
      * @return array<int, string>
      */
     private function stagingExpiries($free): array
@@ -111,6 +112,8 @@ class PalletStockController extends Controller
             'lines' => 'required|array|min:1|max:100',
             'lines.*.item_id' => 'required|exists:items,id',
             'lines.*.qty' => 'required|integer|min:1',
+            // This line's own earliest expiration, for its inventory label (null = none known).
+            'lines.*.expires_on' => 'nullable|date',
         ]);
 
         // Several lines for the same item are one demand on the pool.
@@ -150,21 +153,29 @@ class PalletStockController extends Controller
                 $pallet->update(['earliest_expiry' => $data['expires_on']]);
             }
 
+            // One assignment row per line is one inventory label (see InventoryLabelCode); the ids go back so the
+            // screen can offer to print them.
+            $assignmentIds = [];
             foreach ($data['lines'] as $line) {
-                PalletStockAssignment::create([
+                $assignmentIds[] = PalletStockAssignment::create([
                     'pallet_id' => $pallet->id,
                     'item_id' => $line['item_id'],
                     'qty' => $line['qty'],
+                    'expires_on' => $line['expires_on'] ?? null,
                     'person_id_user' => Auth::id(),
                     'notes' => $data['notes'] ?? null,
-                ]);
+                ])->id;
             }
 
             if (! empty($data['location_id']) && (int) $data['location_id'] !== (int) $pallet->location_id) {
                 $pallet->transitionTo($pallet->status, (int) $data['location_id'], $data['notes'] ?? 'Placed after filling');
             }
 
-            return response()->json(['message' => "Pallet {$pallet->tag} filled.", 'record' => $this->payload($pallet->fresh('location:id,code'))], 201);
+            return response()->json([
+                'message' => "Pallet {$pallet->tag} filled.",
+                'record' => $this->payload($pallet->fresh('location:id,code')),
+                'assignment_ids' => $assignmentIds,
+            ], 201);
         });
     }
 
@@ -339,6 +350,16 @@ class PalletStockController extends Controller
                 'name' => $items[$r['item_id']]->description ?? $items[$r['item_id']]->itemtype?->name ?? '#'.$r['item_id'],
                 'qty' => $r['qty'],
             ])->values(),
+            // What was put on this pallet, one row per inventory label (newest first), so a label can be reprinted.
+            // Quantities are as added; later picks and corrections aren't reflected (see InventoryLabelController).
+            'labels' => PalletStockAssignment::with('item.itemtype')->where('pallet_id', $pallet->id)->where('qty', '>', 0)
+                ->orderByDesc('id')->limit(50)->get()->map(fn (PalletStockAssignment $a) => [
+                    'id' => $a->id,
+                    'item_id' => $a->item_id,
+                    'name' => $a->item?->description ?? $a->item?->itemtype?->name ?? '#'.$a->item_id,
+                    'qty' => $a->qty,
+                    'expires_on' => $a->expires_on?->toDateString(),
+                ])->values(),
         ];
     }
 }
