@@ -544,6 +544,12 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   "Find a specific driver" > "sato"). Verified on a WS408 over USB at 203 dpi on 2.312 x 4 in stock, both with `lp -o raw` and
   through a laptop CUPS queue using this PPD (frame, multi-page, copies, a WeasyPrint label with a Code 128 barcode); **not** yet
   run on a Pi or from an image build. The horizontal shift is empirical per stock width (default `Left5`).
+- **Print a PDF** (2026-10-22): the Printers page (`/setup/printers`) has a card to upload any PDF to a chosen printer — `POST /json/print-upload`
+  (`PrintController::storeUpload`, `manage-print-queue`, the same people who can clear/divert the queue). The file is user data and is never rendered
+  or interpreted server-side: it must be `application/pdf` by content *and* carry a `%PDF-` signature in its first KB, is capped by
+  `config('printing.upload_max_kb')` (10 MB), and is queued as is through `PrintQueueService::enqueue` with `document = 'uploaded-pdf'` and the file
+  name (path and control characters stripped, 120 chars) as its title. Any active, typed, sited printer is accepted whatever its media; the PDF prints at
+  its own page size (print-scaling none), so it has to be made for that paper — the page size isn't checked.
 - **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
   on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.

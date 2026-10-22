@@ -511,6 +511,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:print-doc
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-print-queue']], function () {
     Route::post('/print-jobs/clear', [PrintJobController::class, 'clear']);
+    // Print any PDF an administrator uploads (the Printers page's "Print a PDF").
+    Route::post('/print-upload', [PrintController::class, 'storeUpload']);
     Route::post('/print-jobs/{id}/cancel', [PrintJobController::class, 'cancel'])->whereNumber('id');
     Route::post('/print-jobs/{id}/retry', [PrintJobController::class, 'retry'])->whereNumber('id');
     Route::post('/print-jobs/{id}/divert', [PrintJobController::class, 'divert'])->whereNumber('id');
@@ -1157,6 +1159,8 @@ Route::get('/setup/printers', function () {
     return Inertia::render('PrinterManagement', [
         'breadcrumb' => MenuItem::getBreadcrumb('/setup/printers'),
         'canClearQueue' => (bool) Auth::user()->hasPermission('manage-print-queue'),
+        // Uploading a PDF to print is the same permission as clearing/diverting the queue.
+        'canUploadPdf' => (bool) Auth::user()->hasPermission('manage-print-queue'),
     ]);
 })->middleware(['auth', 'permission:manage-devices']);
 

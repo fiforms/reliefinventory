@@ -8,7 +8,8 @@
 	with a Clear Queue action for people who also hold manage-print-queue, and the order
 	printers appear in Print menus — set by dragging a printer within its site (or with the
 	up/down buttons, for keyboards and touch), saved as sort_order. Also holds the label size
-	settings (pallet and inventory labels) (LabelSetting; PrinterAdminController::saveLabelSettings). Printers are set up
+	settings (pallet and inventory labels) (LabelSetting; PrinterAdminController::saveLabelSettings). A "Print a PDF"
+	card (manage-print-queue) uploads any PDF to a chosen printer (PrintController::storeUpload). Printers are set up
 	(name, site, paper, on/off) on the R Station Devices page. Server half:
 	PrinterAdminController::overview/reorder.
 -->
@@ -27,6 +28,10 @@ defineProps({
 		type: Boolean,
 		default: false,
 	},
+	canUploadPdf: {
+		type: Boolean,
+		default: false,
+	},
 });
 
 const REFRESH_MS = 5000;
@@ -39,6 +44,13 @@ const dragOver = ref(null); // printer id it is hovering over
 const confirmingClear = ref(null);
 const labelSettings = ref(null); // { pallet_label_media, options: [{ key, label }] }, loaded once so the 5 s refresh can't undo a pick
 const savingLabelSize = ref(false);
+
+// "Print a PDF": upload any PDF to one of the printers. It prints at its own page size, so the paper has to match.
+const pdfFile = ref(null);
+const pdfPrinterId = ref('');
+const pdfCopies = ref(1);
+const pdfInput = ref(null);
+const sendingPdf = ref(false);
 let timer = null;
 
 // Printers grouped by site, in the order the server sent them (site, then sort_order).
@@ -121,6 +133,38 @@ function onDragEnd() {
 	dragOver.value = null;
 }
 
+// ---- Print a PDF (manage-print-queue) ----
+// Printers that can take a job: switched on, with paper and a site (the same rule as the Print menus).
+const usablePrinters = computed(() => printers.value.filter((p) => p.active && p.media_label && p.site_id));
+const pdfPrinter = computed(() => usablePrinters.value.find((p) => p.id === Number(pdfPrinterId.value)) || null);
+
+function onPdfPicked(event) {
+	pdfFile.value = event.target.files?.[0] || null;
+}
+
+async function sendPdf() {
+	error.value = '';
+	notice.value = '';
+	if (!pdfFile.value || !pdfPrinter.value) return;
+	sendingPdf.value = true;
+	try {
+		const form = new FormData();
+		form.append('file', pdfFile.value);
+		form.append('printer_id', pdfPrinter.value.id);
+		form.append('copies', Math.max(1, Math.min(99, Number(pdfCopies.value) || 1)));
+		const { data } = await axios.post('/json/print-upload', form);
+		notice.value = data.message;
+		pdfFile.value = null;
+		if (pdfInput.value) pdfInput.value.value = '';
+		await load();
+	} catch (e) {
+		const errors = e.response?.data?.errors;
+		error.value = (errors && Object.values(errors).flat()[0]) || e.response?.data?.message || 'Could not send the PDF.';
+	} finally {
+		sendingPdf.value = false;
+	}
+}
+
 // ---- Pallet label size ----
 async function saveLabelSize() {
 	savingLabelSize.value = true;
@@ -196,6 +240,40 @@ onUnmounted(() => clearInterval(timer));
 					</label>
 					<span v-if="savingLabelSize" class="text-sm text-gray-500">Saving…</span>
 				</div>
+			</section>
+
+			<section v-if="canUploadPdf" class="bg-white shadow rounded-lg p-6 space-y-3">
+				<h2 class="text-lg font-semibold">Print a PDF</h2>
+				<p class="text-sm text-gray-600">
+					Upload any PDF and send it to a printer. It prints at its own page size, so use a PDF made for the paper
+					that printer is loaded with.
+				</p>
+				<p v-if="!usablePrinters.length" class="text-sm text-gray-500">
+					No printer is ready to use yet — set one up (name, site, paper, on) on the
+					<a href="/setup/devices" class="underline">R Station Devices</a> page.
+				</p>
+				<form v-else class="flex flex-wrap items-end gap-x-4 gap-y-3" @submit.prevent="sendPdf">
+					<label class="text-sm">
+						<span class="block text-gray-600">PDF file</span>
+						<input ref="pdfInput" type="file" accept="application/pdf,.pdf" class="block text-sm" :disabled="sendingPdf" @change="onPdfPicked" />
+					</label>
+					<label class="text-sm">
+						<span class="block text-gray-600">Printer</span>
+						<select v-model="pdfPrinterId" class="border rounded px-2 py-1" :disabled="sendingPdf">
+							<option value="" disabled>Choose a printer…</option>
+							<option v-for="printer in usablePrinters" :key="printer.id" :value="printer.id">
+								{{ printer.name || printer.queue_name }} — {{ printer.media_label }}<template v-if="printer.site"> · {{ printer.site }}</template>
+							</option>
+						</select>
+					</label>
+					<label class="text-sm">
+						<span class="block text-gray-600">Copies</span>
+						<input v-model="pdfCopies" type="number" min="1" max="99" class="border rounded px-2 py-1 w-20" :disabled="sendingPdf" />
+					</label>
+					<button type="submit" class="ri_defaultbutton" :disabled="sendingPdf || !pdfFile || !pdfPrinter">
+						{{ sendingPdf ? 'Sending…' : 'Print' }}
+					</button>
+				</form>
 			</section>
 
 			<p v-if="!printers.length" class="text-sm text-gray-500">
