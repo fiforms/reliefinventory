@@ -5,10 +5,11 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Controllers\HelpReportController;
+use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
 use App\Services\PinLoginService;
-use App\Http\Controllers\HelpReportController;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -58,6 +59,8 @@ class HandleInertiaRequests extends Middleware
             // all (without print-documents it falls back to download only).
             'printing' => [
                 'canPrint' => (bool) $request->user()?->hasPermission('print-documents'),
+                // The media pallet labels are printed on (LabelSetting): Print menus for pallet labels filter printers by it.
+                'palletLabelMedia' => LabelSetting::palletMedia(),
             ],
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,

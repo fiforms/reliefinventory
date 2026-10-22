@@ -78,7 +78,7 @@ const containerTypeOptions = [
 		  <div class="ri_fieldset" v-if="record.id">
 			<div class="ri_fieldlabel">  </div>
 			<p>
-			<PrintMenu document-key="pallet-label" media="label_large" label="Print Pallet Label"
+			<PrintMenu document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" label="Print Pallet Label"
 				:params="{ id: record.id }" :download-href="'/report/pallet/' + record.id" />
 			</p>
 		  </div>
