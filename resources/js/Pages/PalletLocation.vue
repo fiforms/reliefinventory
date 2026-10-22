@@ -16,6 +16,7 @@ import { computed, nextTick, onMounted, ref } from 'vue';
 import axios from 'axios';
 import PrintMenu from '@/Components/PrintMenu.vue';
 import SearchSelect from '@/Components/SearchSelect.vue';
+import ScanButton from '@/Components/ScanButton.vue';
 import { playScanError, playScanMatched, scanSoundsEnabled, setScanSoundsEnabled } from '@/scanSounds';
 
 const props = defineProps({
@@ -588,6 +589,7 @@ onMounted(() => {
 						@keydown.enter.prevent="submitScan"
 					/>
 					<button type="button" class="ri_defaultbutton" @click="submitScan">Find</button>
+					<ScanButton :target="() => scanInput" />
 					<button type="button" class="pm_sound" @click="toggleSounds"
 						:title="sounds ? 'Scan sounds on. Click to mute.' : 'Scan sounds off. Click to turn on.'">{{ sounds ? '🔊' : '🔇' }}</button>
 				</div>

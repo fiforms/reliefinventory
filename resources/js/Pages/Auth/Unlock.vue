@@ -21,7 +21,7 @@
 import { ref, computed, nextTick } from 'vue';
 import GuestLayout from '@/Layouts/GuestLayout.vue';
 import { Head, Link } from '@inertiajs/vue3';
-import QrScanner from '@/Components/QrScanner.vue';
+import ScanButton from '@/Components/ScanButton.vue';
 import axios from 'axios';
 
 const props = defineProps({
@@ -40,7 +40,7 @@ const pinInputs = ref([]);
 const badgeInput = ref('');
 const badgeError = ref(null);
 const badgeScanning = ref(false);
-const showCameraScan = ref(false);
+const badgeEl = ref(null);
 
 const pinValue = computed(() => pinDigits.value.join(''));
 
@@ -109,11 +109,6 @@ async function submitBadge() {
 	}
 }
 
-function onCameraScanned(text) {
-	showCameraScan.value = false;
-	badgeInput.value = text;
-	submitBadge();
-}
 </script>
 
 <template>
@@ -154,6 +149,7 @@ function onCameraScanned(text) {
 				<p v-if="badgeError" class="text-sm text-red-600 text-center">{{ badgeError }}</p>
 				<div class="flex gap-2">
 					<input
+						ref="badgeEl"
 						type="text"
 						v-model="badgeInput"
 						:disabled="badgeScanning"
@@ -161,10 +157,7 @@ function onCameraScanned(text) {
 						class="flex-1 border-gray-300 rounded-md shadow-sm"
 						@keydown.enter.prevent="submitBadge"
 					/>
-					<button @click="showCameraScan = true"
-						class="px-3 py-2 border rounded-md text-sm text-gray-600 hover:bg-gray-50">
-						Camera
-					</button>
+					<ScanButton :target="() => badgeEl" />
 				</div>
 			</div>
 
@@ -199,15 +192,6 @@ function onCameraScanned(text) {
 
 			<p v-if="pinError" class="text-sm text-red-600">{{ pinError }}</p>
 			<p v-if="pinSubmitting" class="text-sm text-gray-500">Checking…</p>
-		</div>
-
-		<!-- ======================= CAMERA SCAN MODAL ======================= -->
-		<div v-if="showCameraScan" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50" @click.self="showCameraScan = false">
-			<div class="bg-white rounded-lg p-4">
-				<h3 class="font-semibold mb-2">Scan Badge</h3>
-				<QrScanner @scanned="onCameraScanned" />
-				<button @click="showCameraScan = false" class="mt-2 text-sm text-gray-500 underline">Cancel</button>
-			</div>
 		</div>
 	</GuestLayout>
 </template>

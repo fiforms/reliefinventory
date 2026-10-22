@@ -283,8 +283,9 @@ serves every guide. Adding a guide: add its slug to
 the `help-<slug>` print-queue entry and the button all follow from `GUIDES`. The PDF content is a hand-kept
 copy of the Vue page's, so edit both.
 
-`QrScanner.vue` wraps `html5-qrcode` for camera-based barcode/QR scanning; keyboard-wedge USB/Bluetooth
-scanners work via plain text input + Enter-to-submit and don't need this component.
+Camera scanning (phones/webcams) is one `ScanButton.vue` per scan screen: it shows a `QrScanner.vue` (`html5-qrcode`) overlay that
+closes on the first read, then types the code into the page's scan field as a wedge scanner would (`scanInject.js`) — no per-page camera
+handlers; needs HTTPS. Keyboard-wedge USB/Bluetooth scanners work via plain text input + Enter-to-submit. Details: `SCANNING_INTERFACE_NOTES.md`.
 
 **Building or changing any scanner-driven screen (sorting, picking, receiving)? Read `SCANNING_INTERFACE_NOTES.md` first** — how
 keyboard-wedge scanners really behave, the audio-feedback vocabulary (`scanSounds.js`), keeping the scan target focused,

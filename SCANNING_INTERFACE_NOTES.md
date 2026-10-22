@@ -104,6 +104,24 @@ works offline, can't 404):
   Inertia's own popstate handler can't be vetoed). An in-page view switch ("All Sessions") bypasses all of these — handle it yourself.
 - Destructive/irreversible batch actions (Combine duplicate lines) take a two-step inline confirm, not `window.confirm`.
 
+## Camera scanning (phones, tablets, webcams)
+
+One `<ScanButton :target="() => theScanField" />` (`Components/ScanButton.vue`) per scan screen. It opens a full-screen camera
+view (`QrScanner.vue`, `html5-qrcode`'s low-level `Html5Qrcode`, rear camera, retail/carton/QR formats only, torch where
+supported) that closes on the first good read, then **types the code into the scan field like a wedge scanner**
+(`scanInject.js`: select the field, one keydown/insert/input/keyup per character back to back, then Enter). The page needs no
+camera-specific handler — Qty burst detection, `SearchSelect` `scanDigits`, modal stray-scan parking, sounds and focus rules all
+apply unchanged. Don't call a page's scan handler directly from the camera; that bypasses the field-specific logic.
+
+- `target` returns the field (an element or a component with an `<input>`); with none usable, the last text field that had focus is used.
+  Sorting has two buttons: one in the pallet row (pallet box) and one in the entry row (`itemScanTarget()`: carton dialog's box, else
+  Qty when an item is pending, else the item box — the same choice as `refocusScanTarget`).
+- Never target a `type="number"` field (see Qty above); a text field is required.
+- Browsers only allow the camera on **HTTPS** (or localhost). Over plain HTTP — e.g. an R Station local server on port 8080 — the button
+  shows a message instead of opening. Real fix is serving the site over HTTPS.
+- The overlay only vibrates on a read; the page's own scan sound plays when the typed code resolves.
+- Order Filling's per-line item box now takes barcodes too (`scanDigits` → `/json/upc/resolve`, accepted only if it is a variant of that line).
+
 ## Debugging scan problems
 
 Don't guess — log every keystroke and focus change with timestamps (temporary, then remove):
