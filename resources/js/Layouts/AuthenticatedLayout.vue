@@ -186,6 +186,9 @@ async function markAllNotificationsRead() {
                                         >
                                             Switch User
                                         </DropdownLink>
+                                        <DropdownLink href="/about-this-install">
+                                            About
+                                        </DropdownLink>
                                         <DropdownLink
                                             :href="route('logout')"
                                             method="post"
@@ -297,6 +300,9 @@ async function markAllNotificationsRead() {
                                 as="button"
                             >
                                 Switch User
+                            </ResponsiveNavLink>
+                            <ResponsiveNavLink href="/about-this-install">
+                                About
                             </ResponsiveNavLink>
                             <ResponsiveNavLink
                                 :href="route('logout')"

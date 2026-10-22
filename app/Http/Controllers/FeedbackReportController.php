@@ -71,6 +71,7 @@ class FeedbackReportController extends Controller
             'user_agent' => Str::limit($request->userAgent() ?? '', 255, ''),
             'screenshot_path' => $screenshotPath,
             'commit_hash' => $this->gitVersion->currentCommit(),
+            'app_version' => $this->gitVersion->release(),
             'flagged_for_review' => $flaggedReason !== null,
             'flagged_reason' => $flaggedReason,
         ]);

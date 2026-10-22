@@ -155,6 +155,10 @@ return [
 
     'git_commit' => env('RI_GIT_COMMIT'),
 
+    // The release tag the image was built for (RI_VERSION build arg); null on a source install,
+    // where GitVersionService::release() asks `git describe --tags` instead.
+    'version' => env('RI_VERSION'),
+
     'trusted_proxies' => env('TRUSTED_PROXIES'),
 
     /*

@@ -148,6 +148,18 @@ Route::get('/volunteers/kiosk', function () {
     ]);
 })->middleware(['kiosk-access']);
 
+// This installation's About screen (version, Docker, license): reached from the profile menu only (no MenuItem),
+// open to any logged-in user. Distinct from the public /about project story above.
+Route::get('/about-this-install', function () {
+    $git = app(\App\Services\GitVersionService::class);
+
+    return Inertia::render('AppAbout', [
+        'version' => $git->release(),
+        'commit' => $git->currentCommit(),
+        'docker' => config('system.runtime') === 'docker',
+    ]);
+})->middleware(['auth']);
+
 // No MenuItem/breadcrumb — reached only via the profile-menu quick-access
 // link (see AuthenticatedLayout.vue), not the main nav, since it needs to
 // be reachable from wherever someone happens to be in the app.

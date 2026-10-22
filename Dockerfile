@@ -90,18 +90,21 @@ RUN mkdir -p storage/app/public storage/app/private storage/framework/cache stor
     && chown -R www-data:www-data storage bootstrap/cache
 
 ARG RI_GIT_COMMIT=
+ARG RI_VERSION=
 ARG RI_BUILD_DATE=
 LABEL org.opencontainers.image.title="Relief Inventory" \
       org.opencontainers.image.description="Warehouse management for disaster-relief donated goods" \
       org.opencontainers.image.source="https://github.com/fiforms/reliefinventory" \
       org.opencontainers.image.licenses="GPL-3.0-or-later" \
       org.opencontainers.image.revision=$RI_GIT_COMMIT \
+      org.opencontainers.image.version=$RI_VERSION \
       org.opencontainers.image.created=$RI_BUILD_DATE
 
 ENV APP_ENV=production \
     APP_DEBUG=false \
     LOG_CHANNEL=stderr \
     RI_GIT_COMMIT=$RI_GIT_COMMIT \
+    RI_VERSION=$RI_VERSION \
     # fontconfig (used by weasyprint) wants a writable HOME for its cache; www-data's real one is read-only
     HOME=/tmp/home \
     XDG_CONFIG_HOME=/tmp/home/.config \

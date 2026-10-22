@@ -356,7 +356,9 @@ onUnmounted(() => {
 				<div class="text-sm text-gray-700">
 					<p>
 						Current version:
-						<span class="font-mono">{{ status.version.current || 'unknown' }}</span>
+						<span v-if="status.version.release" class="font-semibold">{{ status.version.release }}</span>
+						<span v-else class="text-gray-500">unversioned</span>
+						(commit <span class="font-mono">{{ status.version.current || 'unknown' }}</span>)
 						<span v-if="status.version.current_date"> — {{ new Date(status.version.current_date).toLocaleString() }}</span>
 					</p>
 					<p v-if="status.version.current_subject" class="text-gray-500">“{{ status.version.current_subject }}”</p>

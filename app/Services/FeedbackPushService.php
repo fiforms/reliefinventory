@@ -139,6 +139,7 @@ class FeedbackPushService
             'page_title' => $report->page_title,
             'user_agent' => $report->user_agent,
             'commit_hash' => $report->commit_hash,
+            'app_version' => $report->app_version,
             'flagged_for_review' => $report->flagged_for_review,
             'flagged_reason' => $report->flagged_reason,
             'created_at' => $report->created_at?->toIso8601String(),

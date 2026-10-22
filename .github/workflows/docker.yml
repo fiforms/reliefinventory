@@ -62,6 +62,7 @@ jobs:
           outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ github.event_name == 'release' || inputs.push }}
           build-args: |
             RI_GIT_COMMIT=${{ github.sha }}
+            RI_VERSION=${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           cache-from: type=gha,scope=${{ matrix.arch }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}
       - name: Export digest

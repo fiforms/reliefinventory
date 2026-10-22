@@ -126,6 +126,7 @@ function historyEntries(report) {
 				<p class="text-sm text-gray-700 mt-1">{{ report.message }}</p>
 				<div class="text-xs text-gray-400 font-mono mt-1">
 					{{ report.page_url }}
+					<span v-if="report.app_version"> — v{{ report.app_version }}</span>
 					<span v-if="report.commit_hash"> — commit {{ report.commit_hash }}</span>
 					<span v-if="report.user_agent" :title="report.user_agent"> — {{ uaSummary(report.user_agent) }}</span>
 				</div>
