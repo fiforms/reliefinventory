@@ -22,15 +22,16 @@ packages, setting up a systemd timer, the weasyprint dependency in `CLAUDE.md`),
 debugging that requires broad read access — and only when the user is actively directing the session,
 not from an unattended/scheduled run.
 
-## `demolinode-agent` — routine deploys only, both instances
+## `demolinode-agent` — routine deploys and feedback triage
 
-Demo and wa26 are the same physical box, so one account services both. A dedicated, unprivileged
-system account (`claude-agent`) with its own SSH keypair, no `sudo` group membership, no `www-data`
-group membership, and exactly two narrowly-scoped sudo grants (`/etc/sudoers.d/claude-agent`):
+A dedicated, unprivileged system account (`claude-agent`) with its own SSH keypair, no `sudo` group
+membership, no `www-data` group membership, and only narrowly-scoped sudo grants
+(`/etc/sudoers.d/claude-agent`) — the demo deploy below plus the feedback-triage list/act wrappers.
+(The wa26 instance and its `reliefinventory-agent-deploy-wa26.sh` grant were removed 2026-10-22;
+a new instance on this box needs its own wrapper and rule.)
 
 ```
 claude-agent ALL=(root) NOPASSWD: /usr/local/sbin/reliefinventory-agent-deploy.sh ""
-claude-agent ALL=(root) NOPASSWD: /usr/local/sbin/reliefinventory-agent-deploy-wa26.sh ""
 ```
 
 **The trailing `""` matters** — an unqualified command path in a sudoers rule permits *any*
@@ -39,21 +40,24 @@ live: the first version of this rule (no trailing `""`) let an arbitrary extra a
 which was harmless in itself but meant the "no parameters, ever" guarantee didn't actually hold.
 Always include the `""` when adding a rule like this.
 
-Both wrapper scripts live **outside this git repo**, owned `root:root`, mode `0700` — deliberately
+The deploy wrapper lives **outside this git repo**, owned `root:root`, mode `0700` — deliberately
 not editable by anything this account (or a session using it) can reach, including by pushing a
-commit. Each runs a trimmed version of `scripts/update.sh`'s core sequence, hardcoded per instance
+commit. It runs a trimmed version of `scripts/update.sh`'s core sequence, hardcoded per instance
 (no shared parameterized script, so there's nothing to pass an instance name into): `git fetch` +
 `reset --hard` to `origin/master` (fixed branch), conditional `composer install`/`npm ci`,
 `npm run build`, `artisan migrate --force`, cache rebuild, restart that instance's queue worker +
-reload php-fpm, health check against that instance's own URL. Neither dumps the database, touches
+reload php-fpm, health check against that instance's own URL. It never dumps the database, touches
 `.env`, writes under `/var/backups/`, or runs seeders — those stay deliberate, root-account actions
 (`PermissionsSeeder` in particular: safe to repeat, per `update.sh`'s own comment, but still run
 manually as root when needed, not wired into the agent path). Backup coverage between deploys is
-unaffected: the existing `reliefinventory-backup.timer` / `reliefinventory-wa26-backup.timer` (see
-`BACKUPS.md`) run independently of any deploy and aren't touched by this account.
+unaffected: the existing `reliefinventory-backup.timer` (see
+`BACKUPS.md`) runs independently of any deploy and isn't touched by this account.
 
 File permissions on the server independently deny this account read access to `.env` (mode `640`,
-owned `www-data:www-data`) and to backup contents (each backup zip is `640 root:www-data`, so the web app can offer it to admins for download; other accounts, including this one, cannot read it)
+owned `www-data:www-data`), to its cached copy `bootstrap/cache/config.php` (Laravel writes it
+`644`, so `update.sh` — and the deploy wrapper, which rebuilds caches itself — must `chmod 640`
+it after every `config:cache`; until 2026-10-22 neither did, so this account could read every
+secret through it) and to backup contents (each backup zip is `640 root:www-data`, so the web app can offer it to admins for download; other accounts, including this one, cannot read it)
 even without the sudo restriction — the sudo scope and the file permissions are two separate layers,
 neither depends on the other holding.
 

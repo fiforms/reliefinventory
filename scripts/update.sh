@@ -350,6 +350,10 @@ fi
 
 # ------------------------------------------------------- 6. caches and services
 as_app "$PHP" artisan config:cache
+# The cached config holds every secret from .env (APP_KEY, DB password, mail
+# key) but is written world-readable under the default umask; lock it down to
+# match .env so other local accounts (e.g. claude-agent) can't read it.
+chmod 640 "$APP_DIR/bootstrap/cache/config.php"
 as_app "$PHP" artisan route:cache
 as_app "$PHP" artisan view:cache
 systemctl restart "$QUEUE_SERVICE"
