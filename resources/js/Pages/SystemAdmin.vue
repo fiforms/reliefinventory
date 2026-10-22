@@ -133,6 +133,7 @@ function startPolling() {
 			if (state === 'success' || state === 'failed' || state === 'stalled') {
 				stopPolling();
 				updating.value = false;
+				if (props.canManageBackups) loadBackups({ quiet: true });
 				if (state === 'success') {
 					notice.value = 'Update finished successfully.';
 				} else if (state === 'stalled') {
@@ -238,13 +239,15 @@ let backupTimer = null;
 const active = computed(() => (records.value || []).find((r) => r.status === 'queued' || r.status === 'running'));
 const scopeNames = { database: 'database only', full: 'database + files', storage: 'files only' };
 
-async function loadBackups() {
+// quiet: the background poll. It keeps running during an update, when every request gets the
+// maintenance-mode 503 (or a 502 while PHP restarts) — that's expected, not something to show.
+async function loadBackups({ quiet = false } = {}) {
 	try {
 		const { data } = await axios.get('/json/backups');
 		records.value = data.records;
 		keepDays.value = data.keep_days;
 	} catch (e) {
-		fail(e, 'Could not load the backup list.');
+		if (!quiet) fail(e, 'Could not load the backup list.');
 	}
 }
 
@@ -329,7 +332,11 @@ onMounted(async () => {
 	if (props.canManageBackups) {
 		await loadBackups();
 		// Poll while a backup runs (and keep polling so a second admin's backup shows up).
-		backupTimer = setInterval(loadBackups, 4000);
+		// Paused while this page's update runs (the site is in maintenance mode); quiet covers an
+		// update this page doesn't know about — started elsewhere, or viewed without admin-system.
+		backupTimer = setInterval(() => {
+			if (!updating.value) loadBackups({ quiet: true });
+		}, 4000);
 	}
 });
 onUnmounted(() => {
