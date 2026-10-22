@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\KioskLocation;
-use App\Models\ManagedDevice;
 use App\Models\Pallet;
 use App\Models\Person;
 use App\Models\Printer;
@@ -14,20 +12,7 @@ use Spatie\LaravelPdf\Facades\Pdf;
 // A typed, active, sited printer on a print server whose last heartbeat is fresh.
 function docPrinter(string $media = 'report', array $overrides = [], bool $online = true): Printer
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $device = (new ManagedDevice(['name' => 'Server', 'kiosk_function' => 'print_station']))->forceFill([
-        'device_uuid' => 'doc-'.uniqid(),
-        'last_seen_at' => $online ? now() : now()->subHour(),
-        'reported_printers' => [['queue_name' => 'Q', 'state' => 'idle']],
-    ]);
-    $device->save();
-
-    $printer = (new Printer(array_merge([
-        'name' => 'Office', 'kiosk_location_id' => $location->id, 'media' => $media, 'active' => true,
-    ], $overrides)))->forceFill(['managed_device_id' => $device->id, 'queue_name' => 'Q']);
-    $printer->save();
-
-    return $printer;
+    return makePrinter(printServer([['queue_name' => 'Q', 'state' => 'idle']], $online), 'Q', $media, array_merge(['name' => 'Office'], $overrides));
 }
 
 function printAs($user, string $document, Printer $printer, array $params = [], array $extra = [])

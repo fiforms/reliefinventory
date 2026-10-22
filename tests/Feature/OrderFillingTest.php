@@ -294,22 +294,6 @@ test('need_level is accepted as optional on order lines and round-trips', functi
     ])->assertCreated();
 });
 
-test('sorting session lines now stamp the acting person on the ledger row', function () {
-    $user = userWithPermissions('manage-sorting');
-    $itemtype = fillingItemtype();
-    $item = fillableItem($itemtype);
-
-    $session = $this->actingAs($user)->postJson('/json/sorting-sessions', [])->assertCreated()->json('record');
-
-    $lineId = $this->actingAs($user)->postJson('/json/sorting-sessions/'.$session['id'].'/lines', [
-        'item_id' => $item->id,
-        'qty' => 5,
-        'disposition' => 'usable',
-    ])->assertCreated()->json('record.id');
-
-    expect(ItemLedger::find($lineId)->person_id_user)->toBe($user->id);
-});
-
 test('an order filled entirely with zeros closes as Unfulfilled and never reaches Shipping', function () {
     $user = userWithPermissions('manage-orders');
     $itemtype = fillingItemtype();

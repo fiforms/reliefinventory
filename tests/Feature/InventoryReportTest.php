@@ -84,3 +84,30 @@ test('ledger rows that omit disposition fall back to the column default of usabl
 
     expect($record['on_hand'])->toBe(20);
 });
+
+// ---- CSV export ---------------------------------------------------------------------------------
+
+test('the inventory report CSV requires the view-reports permission', function () {
+    $user = userWithPermissions('general-access');
+
+    $this->actingAs($user)->get('/report/inventory.csv')->assertForbidden();
+});
+
+test('the inventory report CSV downloads for a permitted user', function () {
+    $user = userWithPermissions('view-reports');
+
+    $response = $this->actingAs($user)->get('/report/inventory.csv');
+
+    $response->assertOk();
+    $response->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+    expect($response->getContent())
+        ->toContain('"Item #",Name,Status,Category,Unit,"On Hand","Received New",Outdated,Trashed,Diverted');
+});
+
+// ---- PDF export ---------------------------------------------------------------------------------
+
+test('the inventory report PDF requires the view-reports permission', function () {
+    $user = userWithPermissions('general-access');
+
+    $this->actingAs($user)->get('/report/inventory.pdf')->assertForbidden();
+});

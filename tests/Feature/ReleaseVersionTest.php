@@ -1,5 +1,6 @@
 <?php
 
+use App\Models\User;
 use App\Services\GitVersionService;
 
 it('reports the baked-in release version without a leading v', function () {
@@ -17,10 +18,16 @@ it('falls back to git describe when no version is baked in', function () {
     expect($release === null || preg_match('/^\d+\.\d+/', $release) === 1)->toBeTrue();
 });
 
+it('prefers the git commit baked into a docker image', function () {
+    config(['app.git_commit' => 'abcdef1234567890']);
+
+    expect(app(GitVersionService::class)->currentCommit())->toBe('abcdef123');
+});
+
 it('shows the About page to any logged-in user', function () {
     config(['app.version' => 'v1.4.0']);
 
-    $this->actingAs(\App\Models\User::factory()->create())
+    $this->actingAs(User::factory()->create())
         ->get('/about-this-install')
         ->assertOk()
         ->assertInertia(fn ($page) => $page->component('AppAbout')->where('version', '1.4.0'));

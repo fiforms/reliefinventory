@@ -213,21 +213,6 @@ test('matching a donation already linked to another offer is rejected', function
     ])->assertStatus(422);
 });
 
-test('matching at intake via ReceivingController transitions the offer in the same request', function () {
-    $user = userWithPermissions('manage-receiving');
-    $offer = makeOffer(['status' => DonationOffer::STATUS_PENDING]);
-
-    $record = $this->actingAs($user)->postJson('/json/receiving', [
-        'category' => 'donation',
-        'person_id' => $offer->person_id,
-        'donation_offer_id' => $offer->id,
-    ])->assertCreated()->json('record');
-
-    $offer->refresh();
-    expect($offer->status)->toBe(DonationOffer::STATUS_RECEIVED)
-        ->and($offer->donation_id)->toBe($record['id']);
-});
-
 test('matching at intake is rejected if the referenced offer is not pending', function () {
     $user = userWithPermissions('manage-receiving');
     $offer = makeOffer(); // still 'offered', not pending

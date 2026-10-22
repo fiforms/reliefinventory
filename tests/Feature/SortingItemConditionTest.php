@@ -62,3 +62,18 @@ test('changing a line away from usable clears its condition', function () {
 
     expect(ItemLedger::find($lineId)->item_condition)->toBeNull();
 });
+
+test('sorting lines stamp the acting person on the ledger row', function () {
+    $user = userWithPermissions('manage-sorting');
+    $item = conditionItem();
+
+    $session = $this->actingAs($user)->postJson('/json/sorting-sessions', [])->assertCreated()->json('record');
+
+    $lineId = $this->actingAs($user)->postJson('/json/sorting-sessions/'.$session['id'].'/lines', [
+        'item_id' => $item->id,
+        'qty' => 5,
+        'disposition' => 'usable',
+    ])->assertCreated()->json('record.id');
+
+    expect(ItemLedger::find($lineId)->person_id_user)->toBe($user->id);
+});

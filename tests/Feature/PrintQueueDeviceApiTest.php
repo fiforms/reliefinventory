@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\DevicePairingCode;
-use App\Models\KioskLocation;
 use App\Models\ManagedDevice;
 use App\Models\Printer;
 use App\Models\PrintJob;
@@ -9,18 +7,6 @@ use Illuminate\Support\Facades\Storage;
 
 // Pairs a fresh device through the real pairing endpoint (own helper so this
 // file runs standalone). Returns [device, token].
-function pairPrintServer(string $uuid = 'ps-1'): array
-{
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::create([
-        'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
-    ]);
-    $response = test()->postJson('/api/devices/pair', [
-        'code' => $code->code, 'device_name' => "Server {$uuid}", 'device_uuid' => $uuid,
-    ])->assertCreated();
-
-    return [ManagedDevice::where('device_uuid', $uuid)->first(), $response->json('token')];
-}
 
 function beat(string $token, array $printers, array $extra = [])
 {

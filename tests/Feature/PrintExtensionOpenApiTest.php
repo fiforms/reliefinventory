@@ -1,7 +1,5 @@
 <?php
 
-use App\Models\DevicePairingCode;
-use App\Models\KioskLocation;
 use App\Models\ManagedDevice;
 use App\Models\PrintJob;
 use Illuminate\Support\Facades\Route;
@@ -89,18 +87,6 @@ function oaAssertShape(mixed $data, array $schema, string $where = 'body'): void
     }
 }
 
-function oaPair(string $uuid = 'oa-1'): array
-{
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::create([
-        'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
-    ]);
-    $token = test()->postJson('/api/devices/pair', ['code' => $code->code, 'device_name' => 'OA', 'device_uuid' => $uuid])
-        ->assertCreated()->json('token');
-
-    return [ManagedDevice::where('device_uuid', $uuid)->first(), $token];
-}
-
 function oaBeat(string $token, array $body)
 {
     return test()->withToken($token)->postJson('/api/devices/heartbeat', $body);
@@ -152,7 +138,7 @@ test('real responses conform to the documented schemas', function () {
         'broadcasting.connections.reverb.options.host' => 'ri.example.org', 'broadcasting.connections.reverb.options.port' => 443,
         'broadcasting.connections.reverb.options.scheme' => 'https', 'printing.realtime' => ['host' => null, 'port' => null, 'scheme' => null],
     ]);
-    [$device, $token] = oaPair();
+    [$device, $token] = pairPrintServer('oa-1');
 
     $heartbeat = oaBeat($token, ['print_platform' => 'linux', 'print_printers' => [['queue_name' => 'Zebra', 'state' => 'idle']]])->assertOk()->json();
     oaAssertShape($heartbeat, oaSpec()['components']['schemas']['PrintHeartbeatResponse'], 'heartbeat');
@@ -173,7 +159,7 @@ test('real responses conform to the documented schemas', function () {
 });
 
 test('the realtime object is null when realtime is off, as documented', function () {
-    [, $token] = oaPair();
+    [, $token] = pairPrintServer('oa-1');
 
     $heartbeat = oaBeat($token, ['print_printers' => [['queue_name' => 'Zebra']]])->assertOk()->json();
 
@@ -182,7 +168,7 @@ test('the realtime object is null when realtime is off, as documented', function
 });
 
 test('the documented enums and limits are the ones the server enforces', function () {
-    [, $token] = oaPair();
+    [, $token] = pairPrintServer('oa-1');
     $schemas = oaSpec()['components']['schemas'];
 
     // print_platform enum
@@ -210,7 +196,7 @@ test('the documented enums and limits are the ones the server enforces', functio
 });
 
 test('the documented result limits and statuses are enforced, and media keys match the config', function () {
-    [$device, $token] = oaPair();
+    [$device, $token] = pairPrintServer('oa-1');
     oaBeat($token, ['print_printers' => [['queue_name' => 'Zebra']]])->assertOk();
     $schemas = oaSpec()['components']['schemas'];
     $job = oaQueuedJob($device);

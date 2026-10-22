@@ -34,10 +34,11 @@ function makeDonationAt(string $status, Carbon $statusChangedAt): Transaction
     return $donation;
 }
 
-test('orders fulfilled counts bucket by status_changed_at and only count Filled/Shipped', function () {
+test('orders fulfilled counts bucket by status_changed_at', function () {
     makeOrderAt(Transaction::STATUS_FILLED, now()->subHours(2));
     makeOrderAt(Transaction::STATUS_SHIPPED, now()->subDays(5));
-    makeOrderAt(Transaction::STATUS_SHIPPED, now()->subDays(20));
+    makeOrderAt(Transaction::STATUS_COMPLETED, now()->subDays(20));
+    makeOrderAt(Transaction::STATUS_DELIVERED, now()->subDays(60));
     makeOrderAt(Transaction::STATUS_NEW_ORDER, now()->subHours(1)); // not fulfilled - excluded regardless of recency
 
     $counts = (new WarehouseMetrics)->ordersFulfilledCounts();
@@ -45,8 +46,25 @@ test('orders fulfilled counts bucket by status_changed_at and only count Filled/
     expect($counts['today'])->toBe(1)
         ->and($counts['last_7_days'])->toBe(2)
         ->and($counts['last_30_days'])->toBe(3)
-        ->and($counts['all_time'])->toBe(3);
+        ->and($counts['all_time'])->toBe(4);
 });
+
+test('an order counts as fulfilled from Filled onward, never before or when closed unfulfilled', function (string $status, bool $fulfilled) {
+    makeOrderAt($status, now()->subHours(1));
+
+    expect((new WarehouseMetrics)->ordersFulfilledCounts()['all_time'])->toBe($fulfilled ? 1 : 0);
+})->with([
+    [Transaction::STATUS_NEW_ORDER, false],
+    [Transaction::STATUS_READY_TO_FILL, false],
+    [Transaction::STATUS_FILLING, false],
+    [Transaction::STATUS_CLOSED_UNFULFILLED, false],
+    [Transaction::STATUS_FILLED, true],
+    [Transaction::STATUS_READY_TO_SHIP, true],
+    [Transaction::STATUS_SHIPPED, true],
+    [Transaction::STATUS_DELIVERED, true],
+    [Transaction::STATUS_DELIVERED_AWAITING_BOL, true],
+    [Transaction::STATUS_COMPLETED, true],
+]);
 
 test('donations completed counts only include Complete status', function () {
     makeDonationAt(Transaction::STATUS_COMPLETE, now()->subHours(3));
