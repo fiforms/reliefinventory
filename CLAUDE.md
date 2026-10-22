@@ -430,6 +430,14 @@ was chosen over Chrome for real CSS Paged Media support — `@page`, `@page :fir
 for a running header/page-number that's absent on page 1 — which headless Chrome's print engine can't do
 reliably.
 
+**Pallet label size** (2026-10-22, `LabelSetting` singleton, picked on `/setup/printers`, `manage-devices`): pallet labels are laid out for
+`label_large` (4 x 6.5 in, the default) or `label_small` (2.312 x 4 in — a WS408 on narrow stock). `LabelSetting::palletMedia()` drives the paper size
+and a compact layout in `reports/partials/pallet_label*.blade.php` (smaller number, 1.8923 px barcode module = exactly 4 dots at 203 dpi), the media of
+the three label documents in `DocumentRegistry` (so only printers loaded with that media are offered and accepted), and the shared Inertia prop
+`printing.palletLabelMedia` that every pallet-label `PrintMenu` passes as its `media` — don't hard-code `label_large` there. Changing it affects new
+labels only; a printer's own media is still set on R Station Devices. The compact layout was checked on paper; scanning it from a real small label is
+the thing to confirm. Not built: other label kinds (there are no inventory/item labels — only the generated UPC exists), or a per-printer size.
+
 **One-time server provisioning:** the `weasyprint` binary (Python, with native Pango/Cairo deps —
 `apt install weasyprint` or `pip install weasyprint` depending on distro) must be on `PATH`, or set
 `LARAVEL_PDF_WEASYPRINT_BINARY` in `.env` to its path. Not part of the deploy script; a fresh box needs it done
@@ -465,7 +473,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
   A printer's status (`idle|printing|error|offline|unavailable`) is **derived on read** from its device's
   heartbeat — the app has no scheduler to flip a stored column. `media` is a plain string key into
-  `config/printing.php` (`report`, `label_large`, `label_address`), deliberately not a DB enum, so
+  `config/printing.php` (`report`, `label_large`, `label_small`, `label_address`), deliberately not a DB enum, so
   user-defined sizes later means moving that config into a table without touching printers/jobs/the API.
 - **`print_jobs` + `print_job_status_log`**: `queued → claimed → printed | failed`, plus `cancelled`;
   every status write goes through `PrintJob::transitionTo()` (legal-move check + audit row, same pattern

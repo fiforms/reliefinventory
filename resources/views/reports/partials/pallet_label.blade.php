@@ -1,11 +1,12 @@
-{{-- One pallet label (4x6.5in page). Shared by the single-pallet and
-     whole-donation batch reports. --}}
+{{-- One pallet label (4 x 6.5 in, or the $compact 2.312 x 4 in layout). Shared by the single-pallet and
+     whole-donation batch reports. The compact barcode's module is 1.8923 CSS px = exactly 4 printer dots
+     at 203 dpi (so every bar is a whole number of dots on a SATO WS408), 101 modules ≈ 2 in. --}}
 <div class="pallet-number">
   {{ $label['pallet_shortnum'] }}
 </div>
 <div class="barcode">
 @php
-    echo DNS1D::getBarcodeHTML($label['pallet_id_str'], 'C128', 3, 200);
+    echo DNS1D::getBarcodeHTML($label['pallet_id_str'], 'C128', $compact ? 1.8923 : 3, $compact ? 110 : 200);
 @endphp
 </div>
 <p class="pallet-info">{{ $label['pallet_id_str'] }}</p>

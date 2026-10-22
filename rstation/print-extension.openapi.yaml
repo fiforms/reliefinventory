@@ -297,7 +297,8 @@ components:
           type: string
           description: |
             Paper-type key (server configuration, so the set can grow). Currently `report`
-            (letter), `label_large` (4 x 6.5 in) and `label_address` (3.5 x 1.125 in).
+            (letter), `label_large` (4 x 6.5 in), `label_small` (2.312 x 4 in) and `label_address`
+            (3.5 x 1.125 in).
           example: label_large
         width_in: { type: number, description: Page width in inches. }
         height_in: { type: number, description: Page height in inches. }

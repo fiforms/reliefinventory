@@ -132,7 +132,7 @@ const containerTypeOptions = [
 						<div class="flex justify-end gap-3">
 							<SecondaryButton :disabled="preprintSaving" @click="preprintOpen = false">Cancel</SecondaryButton>
 							<PrintMenu
-								document-key="preprint-pallet-labels" media="label_large" label="Print Labels" placement="up"
+								document-key="preprint-pallet-labels" :media="$page.props.printing.palletLabelMedia" label="Print Labels" placement="up"
 								:prepare="preparePreprint" :disabled="preprintSaving"
 								@sent="onPreprintDone" @downloaded="onPreprintDone"
 							/>
@@ -532,13 +532,13 @@ const containerTypeOptions = [
 										<td class="recv_mono">{{ pallet.tag }}</td>
 										<td>{{ pallet.container_type }}</td>
 										<td>{{ pallet.status }}</td>
-										<td><PrintMenu document-key="pallet-label" media="label_large" variant="link" label="Label"
+										<td><PrintMenu document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" variant="link" label="Label"
 											:params="{ id: pallet.id }" :download-href="'/report/pallet/' + pallet.id" /></td>
 									</tr>
 								</tbody>
 							</table>
 						</div>
-						<PrintMenu document-key="donation-pallet-labels" media="label_large" variant="form"
+						<PrintMenu document-key="donation-pallet-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
 							:label="'Print All Labels (' + (record.pallets || []).length + ')'"
 							:params="{ id: record.id }" :download-href="'/report/pallets/donation/' + record.id" />
 					</template>
@@ -583,7 +583,7 @@ const containerTypeOptions = [
 						</button>
 						<PrintMenu
 							v-else
-							document-key="donation-pallet-labels" media="label_large" variant="form"
+							document-key="donation-pallet-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
 							extra-class="recv_cancel_confirming"
 							label="Confirm — this reprints all labels, don't duplicate a batch already printed"
 							:params="{ id: record.id }" :download-href="'/report/pallets/donation/' + record.id"

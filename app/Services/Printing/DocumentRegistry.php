@@ -5,17 +5,18 @@
 
 namespace App\Services\Printing;
 
-use App\Http\Controllers\HelpReportController;
 use App\Http\Controllers\DonorReportController;
 use App\Http\Controllers\FlowReportController;
+use App\Http\Controllers\HelpReportController;
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderFillingController;
 use App\Http\Controllers\OutstandingOrdersReportController;
-use App\Http\Controllers\PartnerReportController;
 use App\Http\Controllers\PalletReportController;
+use App\Http\Controllers\PartnerReportController;
 use App\Http\Controllers\SitrepController;
 use App\Http\Controllers\UnfulfilledRequestsReportController;
+use App\Models\LabelSetting;
 use App\Services\WarehouseMetrics;
 use Closure;
 use Spatie\LaravelPdf\PdfBuilder;
@@ -27,6 +28,7 @@ use Spatie\LaravelPdf\PdfBuilder;
  *
  *  - media:      key into config('printing.media'); only printers loaded
  *                with that media are offered/accepted for this document.
+ *                (Pallet labels use the media chosen in LabelSetting.)
  *  - permission: the permission the document's own download route requires
  *                (null = any signed-in user, matching routes that are
  *                `auth` only). Sending to a printer never grants more
@@ -98,19 +100,19 @@ class DocumentRegistry
                 'build' => fn (array $p) => app(OrderController::class)->bolBuilder((int) $p['id']),
             ],
             'pallet-label' => [
-                'media' => 'label_large', 'permission' => 'manage-pallets',
+                'media' => LabelSetting::palletMedia(), 'permission' => 'manage-pallets',
                 'rules' => ['id' => 'required|integer'],
                 'title' => fn (array $p) => 'Pallet label #'.$p['id'],
                 'build' => fn (array $p) => app(PalletReportController::class)->singleLabelBuilder((int) $p['id']),
             ],
             'donation-pallet-labels' => [
-                'media' => 'label_large', 'permission' => 'manage-receiving',
+                'media' => LabelSetting::palletMedia(), 'permission' => 'manage-receiving',
                 'rules' => ['id' => 'required|integer'],
                 'title' => fn (array $p) => 'Pallet labels for donation #'.$p['id'],
                 'build' => fn (array $p) => app(PalletReportController::class)->donationLabelsBuilder((int) $p['id']),
             ],
             'preprint-pallet-labels' => [
-                'media' => 'label_large', 'permission' => 'manage-receiving',
+                'media' => LabelSetting::palletMedia(), 'permission' => 'manage-receiving',
                 'rules' => ['ids' => 'required|array|min:1|max:200', 'ids.*' => 'integer'],
                 'title' => fn (array $p) => 'Pre-printed pallet labels ('.count($p['ids']).')',
                 'build' => fn (array $p) => app(PalletReportController::class)->preprintLabelsBuilder(array_map('intval', $p['ids'])),

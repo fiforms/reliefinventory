@@ -1139,6 +1139,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-de
     // Typing the print queues a print server reports (see PrinterAdminController).
     Route::get('/printer-overview', [PrinterAdminController::class, 'overview']);
     Route::post('/printers/reorder', [PrinterAdminController::class, 'reorder']);
+    Route::put('/printers/label-settings', [PrinterAdminController::class, 'saveLabelSettings']);
     Route::put('/printers/{printer}', [PrinterAdminController::class, 'update']);
     Route::delete('/printers/{printer}', [PrinterAdminController::class, 'destroy']);
 });
