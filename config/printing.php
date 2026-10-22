@@ -20,6 +20,9 @@ return [
     // use is a setting (LabelSetting, /setup/printers). Each must be a key of 'media' above.
     'pallet_label_media' => ['label_large', 'label_small'],
 
+    // Same for inventory labels (one per item set put on a pallet); small first, since that is the default.
+    'inventory_label_media' => ['label_small', 'label_large'],
+
     // Largest PDF (KB) an administrator can upload to print (POST /json/print-upload).
     'upload_max_kb' => 10240,
 

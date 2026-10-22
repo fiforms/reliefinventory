@@ -147,15 +147,22 @@ defineProps({
 					click <strong>Remove</strong>.
 				</li>
 				<li>
-					Type or scan the <strong>Location</strong> the pallet is going to. Check the
-					<strong>Expires</strong> date — it's filled with the earliest date among the
-					items; change it or click <strong>Auto</strong> to go back. Add
+					Check each item's <strong>Expires</strong> date in the list — it's the
+					earliest date known for that item, and goes on its item label; change or clear it
+					if it's wrong. Type or scan the <strong>Location</strong> the pallet is going to.
+					The pallet's own <strong>Expires</strong> date is filled with the earliest date among
+					the items; change it or click <strong>Auto</strong> to go back. Add
 					<strong>Notes</strong> if needed.
 				</li>
 				<li>
 					Click <strong>Seal &amp; Place</strong>. A new Warehouse pallet is created,
 					sealed, and set at that location. A green line shows its tag and contents, with
-					a <strong>Print Label</strong> button — print it and put it on the pallet.
+					a <strong>Print Pallet Label</strong> button — print it and put it on the pallet —
+					and a <strong>Print Item Labels</strong> button: one small label for each item you
+					put on, showing the ACS item number and description, quantity, earliest expiration
+					and pallet, with a barcode. Stick each on its cases. Item labels print on the small
+					label size (set on the Printers page). To print them again later, scan the pallet:
+					its <strong>Inventory Labels</strong> list has a Print button for each.
 				</li>
 			</ol>
 			<p class="text-sm text-gray-700">

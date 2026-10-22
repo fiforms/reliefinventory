@@ -142,6 +142,16 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   put on a pallet (or picked without naming one) still can't be located. Not built yet: an end-of-day "sorted but never moved" report
   sorter→pallet tracking at sort time. The end-of-day check exists: `/reports/sorting-area` (`SortingAreaReportController`, on-screen + CSV,
   no PDF/print yet) — per item sorted vs. put-on-pallets in a date range, plus what is *still* in the sorting area now and since when.
+  **Inventory labels** (2026-10-22, `InventoryLabelController`, document `inventory-labels`): one label per `pallet_stock_assignments` row with qty > 0
+  (what one Fill Pallet line put on a pallet), numbered `ACS:<family>-<variant>:<row id>` (`App\Support\InventoryLabelCode` — full 4-digit family and 2-digit variant,
+  `parse()` returns the row id for a future scan), showing the ACS item number, item type name, qty, earliest expiration and pallet. The assignment now
+  carries its own `expires_on` (Fill Pallet sends one per line; the pallet's `earliest_expiry` is still its overall minimum; rows from before are null).
+  Prints on `LabelSetting::inventoryMedia()` (default `label_small`, set next to the pallet label size on `/setup/printers`; shared prop
+  `printing.inventoryLabelMedia`). The ~230-module Code 128 won't fit 2.312 in across, so on the compact layout it is rotated to run down the 4 in length;
+  `App\Support\LabelBarcode` draws every bar in whole 203-dpi dots with a quarter-dot inset (Ghostscript without anti-aliasing otherwise grows each bar
+  by a dot) — `InventoryLabelTest` rasterizes a label and fails if any bar or gap isn't a whole number of modules. A label shows quantities as added; later
+  picks/corrections aren't reflected. The scan-an-inventory-label-to-find-the-stock screen isn't built. After Fill Pallet the result line offers Print Item
+  Labels; a scanned W pallet lists its labels (`labels` on the pallet lookup/payload) for reprinting.
   **Pick path & pick plan:** the admin orders all locations once at `/setup/locations/pick-path` (`PickPath.vue`, drag-and-drop +
   "auto-order by aisle, snaking"; saves `locations.PullSequence` as 10,20,30… via `PUT /json/locations/order`). `App\Services\PickPlanner`
   turns a line's need into steps — sorting-area pool, then WHOLE sealed pallets (oldest first, while the need ≥ the pallet's qty, so
@@ -432,7 +442,7 @@ reliably.
 
 **Pallet label size** (2026-10-22, `LabelSetting` singleton, picked on `/setup/printers`, `manage-devices`): pallet labels are laid out for
 `label_large` (4 x 6.5 in, the default) or `label_small` (2.312 x 4 in — a WS408 on narrow stock). `LabelSetting::palletMedia()` drives the paper size
-and a compact layout in `reports/partials/pallet_label*.blade.php` (smaller number, 1.8923 px barcode module = exactly 4 dots at 203 dpi), the media of
+and a compact layout in `reports/partials/pallet_label*.blade.php` (smaller number; the compact barcode comes from `App\Support\LabelBarcode`, a 4-dot module with bars inset so each is exactly a whole number of dots after Ghostscript's no-anti-alias rasterizing), the media of
 the three label documents in `DocumentRegistry` (so only printers loaded with that media are offered and accepted), and the shared Inertia prop
 `printing.palletLabelMedia` that every pallet-label `PrintMenu` passes as its `media` — don't hard-code `label_large` there. Changing it affects new
 labels only; a printer's own media is still set on R Station Devices. The compact layout was checked on paper; scanning it from a real small label is

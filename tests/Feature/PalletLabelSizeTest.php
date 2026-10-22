@@ -10,6 +10,28 @@ use App\Services\Printing\DocumentRegistry;
 use Illuminate\Support\Facades\Storage;
 use Spatie\LaravelPdf\Facades\Pdf;
 
+/** PDF text via poppler's pdftotext, or Ghostscript's txtwrite where poppler-utils has only pdfinfo (so these tests still run). */
+function sizePdfText(string $pdf): string
+{
+    if (sizeHasBinary('pdftotext')) {
+        return pdfText($pdf);
+    }
+
+    return (string) shell_exec('gs -q -dNOPAUSE -dBATCH -sDEVICE=txtwrite -sOutputFile=- '.escapeshellarg($pdf).' 2>/dev/null');
+}
+
+/** One binary at a time: under dash, `command -v a b` only checks `a`, which would misreport the other. */
+function sizeHasBinary(string $binary): bool
+{
+    return trim((string) shell_exec('command -v '.escapeshellarg($binary))) !== '';
+}
+
+/** These tests need a PDF size reader and some way to extract text. */
+function sizePdfToolsMissing(): bool
+{
+    return ! sizeHasBinary('pdfinfo') || ! (sizeHasBinary('pdftotext') || sizeHasBinary('gs'));
+}
+
 function labelSizePrinter(string $media)
 {
     return makePrinter(printServer([['queue_name' => 'Q', 'state' => 'idle']]), 'Q', $media, ['name' => 'Office']);
@@ -79,8 +101,8 @@ test('an administrator picks the size on the printers page, with no change for a
 
     $this->actingAs($admin)->getJson('/json/printer-overview')->assertOk()
         ->assertJsonPath('label_settings.pallet_label_media', 'label_large')
-        ->assertJsonPath('label_settings.options.0.key', 'label_large')
-        ->assertJsonPath('label_settings.options.1.key', 'label_small');
+        ->assertJsonPath('label_settings.pallet_options.0.key', 'label_large')
+        ->assertJsonPath('label_settings.pallet_options.1.key', 'label_small');
 
     $this->actingAs($admin)->putJson('/json/printers/label-settings', ['pallet_label_media' => 'label_small'])
         ->assertOk()->assertJsonPath('pallet_label_media', 'label_small');
@@ -106,10 +128,10 @@ test('labels render at 2.312 x 4 in when the small size is chosen', function () 
     expect($info)->toMatch('/Pages:\s+2\b/')
         ->and($info)->toMatch('/Page size:\s+166(\.\d+)? x 288(\.\d+)? pts/');
     foreach ($pallets as $pallet) {
-        expect(pdfText($path))->toContain($pallet->tag);
+        expect(sizePdfText($path))->toContain($pallet->tag);
     }
 
     $single = tempnam(sys_get_temp_dir(), 'lbl').'.pdf';
     app(PalletReportController::class)->singleLabelBuilder($pallets[0]->id)->save($single);
     expect(pdfInfo($single))->toMatch('/Pages:\s+1\b/')->toMatch('/Page size:\s+166(\.\d+)? x 288(\.\d+)? pts/');
-})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+})->skip(fn () => sizePdfToolsMissing(), 'pdfinfo and a text extractor (pdftotext or Ghostscript) are needed');

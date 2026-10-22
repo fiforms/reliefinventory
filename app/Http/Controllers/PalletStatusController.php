@@ -164,6 +164,7 @@ class PalletStatusController extends Controller
         }
 
         $last = $pallet->statuses()->with('location:id,code')->latest('id')->first();
+        $stock = $pallet->kind === PalletKind::WAREHOUSE ? PalletStockController::payload($pallet) : null;
 
         return response()->json(['record' => [
             'id' => $pallet->id,
@@ -175,7 +176,9 @@ class PalletStatusController extends Controller
             'location' => $pallet->location,
             'last_moved_at' => $last?->created_at,
             'expires_on' => $pallet->earliest_expiry,
-            'contents' => $pallet->kind === PalletKind::WAREHOUSE ? PalletStockController::payload($pallet)['contents'] : null,
+            'contents' => $stock['contents'] ?? null,
+            // What was put on it, one row per inventory label, for reprinting (see InventoryLabelController).
+            'labels' => $stock['labels'] ?? null,
             'sorted_from' => $pallet->kind === PalletKind::RECEIVING ? $this->sortedFrom($pallet) : null,
             'statuses' => $this->statusOptions($pallet->kind),
         ]]);
