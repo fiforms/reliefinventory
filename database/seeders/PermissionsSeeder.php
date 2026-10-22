@@ -149,6 +149,8 @@ class PermissionsSeeder extends Seeder
         // Changing what is recorded on a warehouse pallet by hand (shrinkage, recounts) alters stock itself, so it is
         // separate from ordinary pallet movement (manage-pallets). Office/Administrator by default.
         'adjust-inventory' => 'Manually adjust the quantities recorded on a warehouse pallet, with a reason',
+        // The Donor Report only suggests a standing; setting one is a deliberate staff decision. Office/Administrator by default.
+        'manage-donor-standing' => "Set a donor's standing (preferred / normal / watch / decline) from the Donor Report",
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -184,6 +186,7 @@ class PermissionsSeeder extends Seeder
         'review-form-submissions',
         'manage-print-queue',
         'adjust-inventory',
+        'manage-donor-standing',
     ];
 
     /**

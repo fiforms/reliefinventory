@@ -322,6 +322,13 @@ const containerTypeOptions = [
 								@selected="(p) => { creatingDonor = false; record.person = p; record.contact_person_id = null; }"
 								@create="startNewDonor"
 							/>
+							<!-- A warning only: standing never blocks receiving (set from the Donor Report). -->
+							<p v-if="['watch', 'decline'].includes(record.person?.donor_standing)"
+								:class="['recv_standing', 'recv_standing_' + record.person.donor_standing]">
+								<strong>{{ record.person.donor_standing === 'decline' ? 'Decline list' : 'On watch' }}:</strong>
+								this donor's past donations have had a high share of unusable goods.
+								<span v-if="record.person.donor_standing_note">{{ record.person.donor_standing_note }}</span>
+							</p>
 						</div>
 						<Modal :show="creatingDonor" @close="creatingDonor = false" max-width="sm">
 							<div class="p-6 space-y-4">
@@ -1192,6 +1199,20 @@ export default {
 	border-radius: 3px;
 }
 .recv_badge_id {
+	background: #fee2e2;
+	color: #991b1b;
+}
+.recv_standing {
+	margin: 6px 0 0 0;
+	padding: 6px 10px;
+	border-radius: 4px;
+	font-size: 0.9rem;
+}
+.recv_standing_watch {
+	background: #fef3c7;
+	color: #92400e;
+}
+.recv_standing_decline {
 	background: #fee2e2;
 	color: #991b1b;
 }

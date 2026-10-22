@@ -1,12 +1,20 @@
 <?php
 
+use App\Models\Category;
+use App\Models\County;
 use App\Models\DevicePairingCode;
+use App\Models\Item;
+use App\Models\ItemType;
 use App\Models\KioskLocation;
 use App\Models\ManagedDevice;
+use App\Models\OrderLine;
 use App\Models\Permission;
+use App\Models\Person;
 use App\Models\Printer;
 use App\Models\SetupState;
+use App\Models\Transaction;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
 use Tests\RefreshDatabaseFromSnapshot;
 use Tests\TestCase;
 
@@ -136,4 +144,56 @@ function pdfInfo(string $pdf): string
 function pdfText(string $pdf): string
 {
     return (string) shell_exec('pdftotext -layout '.escapeshellarg($pdf).' -');
+}
+
+// Shared by UnfulfilledRequestsReportTest and PartnerReportTest.
+function urrItemtype(string $name): ItemType
+{
+    $unitId = DB::table('units')->where('name', 'Case')->value('id')
+        ?? DB::table('units')->insertGetId(['name' => 'Case', 'abbreviation' => 'cs']);
+
+    return ItemType::create([
+        'name' => $name, 'unit_id' => $unitId,
+        'category_id' => Category::firstOrCreate(['name' => 'Beverages'])->id,
+    ]);
+}
+
+function urrPartner(?string $county, ?string $zip): Person
+{
+    $person = Person::create(['organization' => 'Partner '.($zip ?? 'none')]);
+    $person->zip = $zip;
+    $person->county_id = $county ? County::firstOrCreate(['county' => $county, 'state' => 'WA'])->id : null;
+    $person->save();
+
+    return $person;
+}
+
+/**
+ * An order in $status with one line per [itemtype, requested, filled, approved?].
+ */
+function urrOrder(Person $partner, string $status, array $lines, string $date = '2026-10-01'): Transaction
+{
+    $order = Transaction::create([
+        'type' => 'order', 'person_id' => $partner->id,
+        'status_id' => Transaction::statusId($status), 'order_date' => $date,
+    ]);
+    $packagetypeId = DB::table('packagetypes')->where('singular', 'Box')->value('id')
+        ?? DB::table('packagetypes')->insertGetId(['singular' => 'Box', 'plural' => 'Boxes']);
+
+    foreach ($lines as [$itemtype, $requested, $filled, $approved]) {
+        $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $itemtype->id, 'qty_requested' => $requested]);
+        if ($approved !== null) {
+            $line->qty_approved = $approved;
+            $line->save();
+        }
+        if ($filled !== null) {
+            $item = Item::firstOrCreate(['itemtype_id' => $itemtype->id], ['packagetypes_id' => $packagetypeId, 'description' => $itemtype->name]);
+            $order->itemLedgers()->create([
+                'item_id' => $item->id, 'order_line_id' => $line->id,
+                'qty_subtracted' => $filled, 'disposition' => 'usable',
+            ]);
+        }
+    }
+
+    return $order;
 }
