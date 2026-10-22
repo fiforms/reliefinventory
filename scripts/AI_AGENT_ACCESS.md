@@ -53,7 +53,10 @@ unaffected: the existing `reliefinventory-backup.timer` / `reliefinventory-wa26-
 `BACKUPS.md`) run independently of any deploy and aren't touched by this account.
 
 File permissions on the server independently deny this account read access to `.env` (mode `640`,
-owned `www-data:www-data`) and to backup contents (each backup zip is `640 root:www-data`, so the web app can offer it to admins for download; other accounts, including this one, cannot read it)
+owned `www-data:www-data`), to its cached copy `bootstrap/cache/config.php` (Laravel writes it
+`644`, so `update.sh` — and both wrapper scripts, which rebuild caches themselves — must `chmod 640`
+it after every `config:cache`; until 2026-10-22 neither did, so this account could read every
+secret through it) and to backup contents (each backup zip is `640 root:www-data`, so the web app can offer it to admins for download; other accounts, including this one, cannot read it)
 even without the sudo restriction — the sudo scope and the file permissions are two separate layers,
 neither depends on the other holding.
 
