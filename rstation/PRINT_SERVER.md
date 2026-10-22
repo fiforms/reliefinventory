@@ -4,7 +4,8 @@ See also [IMPLEMENTATION.md](IMPLEMENTATION.md) for the wider kiosk product note
 
 Status (2026-10-18, branch `print-queue`):
 
-- **Web app — built:** printers/jobs, the queue and `/print-queue` screen, the "Print ▾" menu on
+- **Web app — built:** printers/jobs, the queue and `/print-queue` screen, the "Print" button (a lightbox with
+  Download PDF, each printer, and a copies box) on
   every print point, the device API, and optional realtime (Reverb). "Wire protocol (as built)"
   below is what a print-server client implements.
 - **Pi daemon — built** (`rstation/product/backend/`, see "Pi image / product" below), tested
