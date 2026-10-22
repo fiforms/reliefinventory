@@ -12,6 +12,7 @@ use App\Models\FeedbackReportStatusLog;
 use App\Services\FeedbackContentScanner;
 use App\Services\FeedbackPushService;
 use App\Services\GitVersionService;
+use App\Services\MailSettings;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -157,7 +158,7 @@ class FeedbackReportController extends Controller
 
     private function notifyDevelopers(FeedbackReport $report): void
     {
-        $recipients = config('feedback.notify_emails');
+        $recipients = app(MailSettings::class)->feedbackRecipients();
         if (empty($recipients)) {
             return;
         }

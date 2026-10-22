@@ -258,6 +258,12 @@ Route::get('/setup/system', function () {
 // Testing Tools: the warehouse simulator and the slow-query log (JSON half is in the admin-system group below).
 Route::get('/setup/testing', [TestingToolsController::class, 'page'])->middleware(['auth', 'permission:admin-system']);
 
+// Email Settings: outgoing mail + feedback recipients (JSON half is in the admin-system group below).
+Route::get('/setup/email', function () {
+    return Inertia::render('EmailSettings',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/email')]);
+})->middleware(['auth', 'permission:admin-system']);
+
 Route::get('/setup/active-sessions', function () {
     return Inertia::render('ActiveSessions',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/active-sessions')]);
@@ -1029,6 +1035,13 @@ Route::post('/json/backups/app-key', [BackupController::class, 'appKey'])
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
     Route::get('/pin-login-settings', [PinLoginSettingsController::class, 'show']);
     Route::put('/pin-login-settings', [PinLoginSettingsController::class, 'update']);
+});
+
+// Email Settings (/setup/email) — system-wide config, same gate as the page.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
+    Route::get('/mail-settings', [MailSettingsController::class, 'show']);
+    Route::put('/mail-settings', [MailSettingsController::class, 'update']);
+    Route::post('/mail-settings/test', [MailSettingsController::class, 'test'])->middleware('throttle:6,1');
 });
 
 // Kiosk Settings page (2026-08-26): behavior settings, locations, guest

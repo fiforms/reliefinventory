@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-Relief Inventory: a Laravel 11 + Inertia.js + Vue 3 warehouse management system for tracking donated
+Relief Inventory: a Laravel 13 + Inertia.js + Vue 3 warehouse management system for tracking donated
 goods in disaster relief (originally built with Adventist Community Services). Core workflow: donations
 come in tagged to pallets, get sorted into a ledger of items, and are later picked against orders from
 distribution points. Source (donor/pallet) is recorded at sort time — what each donation/pallet contained and
@@ -288,6 +288,18 @@ keyboard-wedge scanners really behave, the audio-feedback vocabulary (`scanSound
 making Qty-style fields safe when a barcode lands in them, `SearchSelect`'s `smartOpen`/`debounce`/`scanDigits`, never losing a
 pending line on exit, and a checklist for a new scan screen. `DonationSorting.vue` is the reference implementation.
 
+### Email Settings (`/setup/email`, `admin-system`) — 2026-10-22
+
+Outgoing mail is configured in the app, not only in `.env`: `MailSetting` (singleton row, every column nullable, null =
+use the `.env` value) holds the mailer (`resend`/`smtp`/`log`), From address/name, Resend key and SMTP host/port/user/
+password (both secrets `encrypted`, registered in `backup.encrypted_columns`, never sent to the browser — a blank secret
+on save keeps the saved one, `clear_*` removes it) plus the feedback-report recipient list. `App\Services\MailSettings`
+merges them over config and calls `forgetMailers()`; `AppServiceProvider` runs it when `mail.manager` is first resolved and
+on every `JobProcessing`, so the queue worker picks up changes without a restart. It snapshots the `.env` config the first
+time it overrides it (the page shows that as each blank field's fallback) and never throws — no table yet, or a secret
+from another APP_KEY, just leaves `.env` in charge. The page's Send Test button returns the mail service's own error.
+Don't read `config('feedback.notify_emails')` directly any more; use `MailSettings::feedbackRecipients()`.
+
 ### In-app feedback reporting & the site banner
 
 Any logged-in user can report a bug or feature idea from the profile menu ("Report an Issue" —
@@ -296,8 +308,8 @@ a report shows which instance it came from; page title; browser info; server-ver
 via `GitVersionService`, never trusted from the client) and, opt-in via a checkbox, a client-side
 DOM screenshot (`html2canvas`, captured *before* the modal opens — capturing after would just
 photograph the modal's own backdrop). `FeedbackReportController@store` (permission: `general-access`)
-saves it and emails a developer address list (`config('feedback.notify_emails')`, sourced from
-`FEEDBACK_NOTIFY_EMAIL` — deliberately not tied to any permission, since recipients are developers,
+saves it and emails a developer address list (`MailSettings::feedbackRecipients()` — set on Email Settings,
+falling back to `FEEDBACK_NOTIFY_EMAIL` — deliberately not tied to any permission, since recipients are developers,
 not necessarily `admin-system` holders). Triage lives at `/setup/feedback` (permission:
 `manage-feedback`, Administrator-only by default): status lifecycle is
 `new → seen → in_development → review → resolved` (no "won't fix" — a decision not to act is still

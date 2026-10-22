@@ -5,9 +5,11 @@
 
 namespace App\Providers;
 
+use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Vite;
@@ -22,6 +24,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // One instance per process: it counts queries across a whole request.
         $this->app->singleton(SlowQueryLog::class);
+        // Keeps the .env mail config it snapshots before the settings below override it.
+        $this->app->singleton(MailSettings::class);
     }
 
     /**
@@ -30,6 +34,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Email Settings (/setup/email) override .env mail config: applied when mail is first used in a request,
+        // and before every queued job so a long-running worker sees a change without a restart.
+        $this->app->afterResolving('mail.manager', fn ($manager) => app(MailSettings::class)->apply($manager));
+        Event::listen(JobProcessing::class, fn () => app(MailSettings::class)->apply());
 
         // Slow-query log (config/slowlog.php). Off unless RI_SLOW_QUERY_MS is set, so a normal install pays nothing.
         if (config('slowlog.threshold_ms') > 0) {
