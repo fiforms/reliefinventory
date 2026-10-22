@@ -8,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Models\ItemType;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Spatie\LaravelPdf\Facades\Pdf;
@@ -370,17 +371,7 @@ class OrderController extends Controller
             ->with(['person', 'driver', 'orderLines.itemtype.unit', 'orderLines.itemLedgers'])
             ->findOrFail($id);
 
-        $bolEligibleStatuses = [
-            Transaction::STATUS_FILLED,
-            Transaction::STATUS_READY_TO_SHIP,
-            Transaction::STATUS_SHIPPED,
-            Transaction::STATUS_DELIVERED,
-            Transaction::STATUS_DELIVERED_AWAITING_BOL,
-            Transaction::STATUS_COMPLETED,
-        ];
-        if (! in_array($order->status?->name, $bolEligibleStatuses, true)) {
-            abort(409, 'A BOL can only be generated once an order has been filled.');
-        }
+        $this->abortUnlessFilled($order, 'A BOL can only be generated once an order has been filled.');
 
         if (! $order->bol_number) {
             $order->bol_number = 'BOL-'.str_pad($order->id, 6, '0', STR_PAD_LEFT);
@@ -393,5 +384,49 @@ class OrderController extends Controller
             ->driver('weasyprint')
             ->format('letter')
             ->name($order->bol_number.'.pdf');
+    }
+
+    private function abortUnlessFilled(Transaction $order, string $message): void
+    {
+        $eligible = [
+            Transaction::STATUS_FILLED,
+            Transaction::STATUS_READY_TO_SHIP,
+            Transaction::STATUS_SHIPPED,
+            Transaction::STATUS_DELIVERED,
+            Transaction::STATUS_DELIVERED_AWAITING_BOL,
+            Transaction::STATUS_COMPLETED,
+        ];
+        if (! in_array($order->status?->name, $eligible, true)) {
+            abort(409, $message);
+        }
+    }
+
+    /**
+     * Shipping label (4 x 6.5 in) — the same shipment facts as the BOL, sized for the pallet. Always the
+     * large label (not a LabelSetting choice: it has to hold an address and instructions). The barcode
+     * is the order number, "ORD-" + the id zero-padded like bol_number. Date Packed is when the last
+     * fill record was written (there is no packed-at column; the status timestamp moves on at shipping).
+     */
+    public function shippingLabelPdf($id)
+    {
+        return $this->shippingLabelBuilder($id);
+    }
+
+    public function shippingLabelBuilder($id): PdfBuilder
+    {
+        $order = Transaction::where('type', 'order')->with('person')->findOrFail($id);
+
+        $this->abortUnlessFilled($order, 'A shipping label can only be generated once an order has been filled.');
+
+        $media = config('printing.media.label_large');
+        $packed = $order->itemLedgers()->whereNotNull('order_line_id')->max('created_at');
+
+        return Pdf::view('reports.shipping-label', [
+            'order' => $order,
+            'orderNumber' => 'ORD-'.str_pad((string) $order->id, 6, '0', STR_PAD_LEFT),
+            'datePacked' => $packed ? Carbon::parse($packed) : $order->status_changed_at,
+            'paper' => ['width' => $media['width'], 'height' => $media['height']],
+        ])->driver('weasyprint')->paperSize($media['width'], $media['height'], 'in')
+            ->name('shipping-label-'.$order->id.'.pdf');
     }
 }

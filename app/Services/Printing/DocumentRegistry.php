@@ -100,6 +100,12 @@ class DocumentRegistry
                 'title' => fn (array $p) => 'BOL for order #'.$p['id'],
                 'build' => fn (array $p) => app(OrderController::class)->bolBuilder((int) $p['id']),
             ],
+            'shipping-label' => [
+                'media' => 'label_large', 'permission' => 'manage-orders',
+                'rules' => ['id' => 'required|integer'],
+                'title' => fn (array $p) => 'Shipping label for order #'.$p['id'],
+                'build' => fn (array $p) => app(OrderController::class)->shippingLabelBuilder((int) $p['id']),
+            ],
             'pallet-label' => [
                 'media' => LabelSetting::palletMedia(), 'permission' => 'manage-pallets',
                 'rules' => ['id' => 'required|integer'],

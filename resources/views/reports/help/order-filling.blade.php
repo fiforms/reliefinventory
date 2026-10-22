@@ -221,7 +221,7 @@
             </li>
             <li>
                 Optionally enter <strong>Pallets packed</strong> (how many pallets the order ended
-                up on) &mdash; it is recorded on the order.
+                up on) &mdash; it is recorded on the order and printed on the shipping label.
             </li>
             <li>
                 Click <strong>Complete Filling</strong>. The order becomes <strong>Filled</strong>

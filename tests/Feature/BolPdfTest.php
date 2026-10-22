@@ -3,6 +3,7 @@
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
+use App\Http\Controllers\OrderController;
 use App\Models\Category;
 use App\Models\Item;
 use App\Models\ItemType;
@@ -97,4 +98,25 @@ test('generating a BOL assigns a bol_number once and reuses it on reprint', func
     $this->actingAs($user)->get('/report/bol/'.$order->id.'.pdf')->assertOk();
     $order->refresh();
     expect($order->bol_number)->toBe($assignedNumber);
+});
+
+test('a shipping label is a single 4 x 6.5 in page with the order number', function () {
+    $order = filledOrder();
+    $order->update(['pallet_count' => 3, 'special_instructions' => str_repeat('Back dock only. ', 40)]);
+
+    $path = tempnam(sys_get_temp_dir(), 'lbl').'.pdf';
+    app(OrderController::class)->shippingLabelBuilder($order->id)->save($path);
+
+    expect(pdfInfo($path))->toMatch('/Pages:\s+1\b/')->toMatch('/Page size:\s+288(\.\d+)? x 468(\.\d+)? pts/');
+    expect(pdfText($path))->toContain('ORD-'.str_pad((string) $order->id, 6, '0', STR_PAD_LEFT))
+        ->toContain('Rivera')->toContain('123 Main St')->toContain('...');
+    unlink($path);
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
+test('a shipping label needs manage-orders and a filled order', function () {
+    $order = filledOrder();
+    $this->actingAs(userWithPermissions('general-access'))->get('/report/shipping-label/'.$order->id.'.pdf')->assertForbidden();
+
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLING)]);
+    $this->actingAs(userWithPermissions('manage-orders'))->get('/report/shipping-label/'.$order->id.'.pdf')->assertStatus(409);
 });
