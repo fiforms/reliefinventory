@@ -85,6 +85,7 @@ async function toggleLocation(key, label) {
 const scanInput = ref(null);
 const scanText = ref('');
 const scanMessage = ref(null); // { text, ok }
+const scannedLabelId = ref(null); // the inventory label row to highlight, when the last scan was one
 const sounds = ref(scanSoundsEnabled());
 const current = ref(null); // the looked-up pallet being shown
 const history = ref([]);
@@ -137,6 +138,10 @@ async function showPallet(tag) {
 	try {
 		const pallet = await lookupPallet(tag);
 		await applyPallet(pallet);
+		scannedLabelId.value = pallet.scanned_label?.id ?? null;
+		if (pallet.scanned_label) {
+			scanMessage.value = { ok: true, text: `Inventory label: ${pallet.scanned_label.name} (${pallet.scanned_label.qty} added) is on ${pallet.tag}.` };
+		}
 		playScanMatched();
 	} catch (e) {
 		scanMessage.value = { ok: false, text: e.response?.data?.message || 'Could not look up that pallet.' };
@@ -167,6 +172,7 @@ async function applyPallet(pallet) {
 
 function clearPallet() {
 	current.value = null;
+	scannedLabelId.value = null;
 	lastShownTag = null;
 	mode.value = 'add';
 	history.value = [];
@@ -653,7 +659,7 @@ onMounted(() => {
 								<table class="ri_datatable" border="1">
 									<thead><tr><th>Item</th><th>Added</th><th>Expires</th><th></th></tr></thead>
 									<tbody>
-										<tr v-for="l in current.labels" :key="l.id">
+										<tr v-for="l in current.labels" :key="l.id" :style="l.id === scannedLabelId ? 'background: #fff3b0' : null">
 											<td>{{ l.name }}</td><td>{{ l.qty }}</td><td>{{ l.expires_on || '' }}</td>
 											<td><PrintMenu document-key="inventory-labels" :media="$page.props.printing.inventoryLabelMedia" variant="link" label="Print"
 												:params="{ ids: [l.id] }" :download-href="'/report/inventory-labels?ids=' + l.id" /></td>

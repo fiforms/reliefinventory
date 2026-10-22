@@ -106,6 +106,12 @@ test('filling records each line\'s own expiration and returns the assignment ids
     $this->getJson('/json/palletstatus/lookup?tag='.$tag)->assertOk()
         ->assertJsonPath('record.labels.0.id', $ids[1])->assertJsonCount(2, 'record.labels');
 
+    // scanning an inventory label finds its pallet and says which label it was
+    $code = \App\Support\InventoryLabelCode::make(\App\Models\PalletStockAssignment::with('item.itemtype')->find($ids[0]));
+    $this->getJson('/json/palletstatus/lookup?tag='.urlencode($code))->assertOk()
+        ->assertJsonPath('record.tag', $tag)->assertJsonPath('record.scanned_label.id', $ids[0]);
+    $this->getJson('/json/palletstatus/lookup?tag=ACS:0510-01:99999999')->assertNotFound();
+
     $this->postJson('/json/pallet-stock/fill', ['lines' => [['item_id' => $water->id, 'qty' => 1, 'expires_on' => 'not a date']]])->assertUnprocessable();
 });
 
