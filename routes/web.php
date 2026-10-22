@@ -21,6 +21,7 @@ use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Str;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
 use Inertia\Inertia;
 
@@ -332,18 +333,12 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
-// Help pages: static how-to guides, one per warehouse stage. Visible to
-// anyone authenticated (no permission gate) — the menu item that links here
-// has no permission_key either, see 2026_08_18_170000_add_help_menu.php.
-Route::get('/help/receiving', function () {
-    return Inertia::render('Help/Receiving',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/help/receiving')]);
-})->middleware(['auth']);
-
-Route::get('/help/sorting', function () {
-    return Inertia::render('Help/Sorting',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/help/sorting')]);
-})->middleware(['auth']);
+// Help pages: static how-to guides, one per data-entry page, reached from that page's (?) button
+// (HelpReportController::PAGE_GUIDES). Visible to anyone authenticated (no permission gate).
+Route::get('/help/{guide}', function (string $guide) {
+    return Inertia::render('Help/'.Str::studly($guide),
+        ['breadcrumb' => MenuItem::getBreadcrumb('/help/'.$guide)]);
+})->whereIn('guide', array_keys(HelpReportController::GUIDES))->middleware(['auth']);
 
 // Printable PDF version of a help guide — same no-permission-gate rule as
 // the guide pages themselves. One route for every guide listed in
