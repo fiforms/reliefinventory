@@ -12,6 +12,7 @@ use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\RegistrationTrackController;
 use App\Http\Controllers\Auth\UnlockController;
 use App\Http\Controllers\Auth\VerifyEmailController;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -51,13 +52,15 @@ Route::middleware('guest')->group(function () {
         ->name('password.store');
 });
 
+// Outside both groups: the emailed link must work whether or not the
+// person is logged in in the browser that opens it (see the controller).
+Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
+    ->middleware('throttle:6,1')
+    ->name('verification.verify');
+
 Route::middleware('auth')->group(function () {
     Route::get('verify-email', EmailVerificationPromptController::class)
         ->name('verification.notice');
-
-    Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
-        ->middleware(['signed', 'throttle:6,1'])
-        ->name('verification.verify');
 
     Route::post('email/verification-notification', [EmailVerificationNotificationController::class, 'store'])
         ->middleware('throttle:6,1')
@@ -71,7 +74,7 @@ Route::middleware('auth')->group(function () {
     Route::post('registration-track', [RegistrationTrackController::class, 'store'])
         ->name('registration.track.store');
 
-    Route::get('registration-pending', function (\Illuminate\Http\Request $request) {
+    Route::get('registration-pending', function (Request $request) {
         if (! $request->user()->requested_track) {
             return redirect()->route('registration.track');
         }
