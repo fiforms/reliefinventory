@@ -7,8 +7,8 @@
 	status (idle / printing / error / offline / unavailable) and how many jobs are waiting,
 	with a Clear Queue action for people who also hold manage-print-queue, and the order
 	printers appear in Print menus — set by dragging a printer within its site (or with the
-	up/down buttons, for keyboards and touch), saved as sort_order. Also holds the pallet label
-	size setting (LabelSetting; PrinterAdminController::saveLabelSettings). Printers are set up
+	up/down buttons, for keyboards and touch), saved as sort_order. Also holds the label size
+	settings (pallet and inventory labels) (LabelSetting; PrinterAdminController::saveLabelSettings). Printers are set up
 	(name, site, paper, on/off) on the R Station Devices page. Server half:
 	PrinterAdminController::overview/reorder.
 -->
@@ -129,11 +129,12 @@ async function saveLabelSize() {
 	try {
 		const { data } = await axios.put('/json/printers/label-settings', {
 			pallet_label_media: labelSettings.value.pallet_label_media,
+			inventory_label_media: labelSettings.value.inventory_label_media,
 		});
 		labelSettings.value = data;
-		notice.value = 'Saved the pallet label size. New labels use it right away.';
+		notice.value = 'Saved the label sizes. New labels use them right away.';
 	} catch (e) {
-		error.value = e.response?.data?.message || 'Could not save the pallet label size.';
+		error.value = e.response?.data?.message || 'Could not save the label sizes.';
 	} finally {
 		savingLabelSize.value = false;
 	}
@@ -173,17 +174,26 @@ onUnmounted(() => clearInterval(timer));
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>
 			<div v-if="notice" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3">{{ notice }}</div>
 
-			<section v-if="labelSettings" class="bg-white shadow rounded-lg p-6 space-y-2">
-				<h2 class="text-lg font-semibold">Pallet label size</h2>
+			<section v-if="labelSettings" class="bg-white shadow rounded-lg p-6 space-y-3">
+				<h2 class="text-lg font-semibold">Label sizes</h2>
 				<p class="text-sm text-gray-600">
-					Pallet labels are laid out for this size, and the Print menu offers only printers set to the
+					Labels are laid out for these sizes, and the Print menu offers only printers set to the
 					same paper (set on the
 					<a href="/setup/devices" class="underline">R Station Devices</a> page).
 				</p>
-				<div class="flex flex-wrap items-center gap-3">
-					<select v-model="labelSettings.pallet_label_media" class="border rounded px-2 py-1" :disabled="savingLabelSize" @change="saveLabelSize">
-						<option v-for="option in labelSettings.options" :key="option.key" :value="option.key">{{ option.label }}</option>
-					</select>
+				<div class="flex flex-wrap items-center gap-x-6 gap-y-3">
+					<label class="flex items-center gap-2 text-sm">
+						Pallet labels
+						<select v-model="labelSettings.pallet_label_media" class="border rounded px-2 py-1" :disabled="savingLabelSize" @change="saveLabelSize">
+							<option v-for="option in labelSettings.pallet_options" :key="option.key" :value="option.key">{{ option.label }}</option>
+						</select>
+					</label>
+					<label class="flex items-center gap-2 text-sm">
+						Inventory labels
+						<select v-model="labelSettings.inventory_label_media" class="border rounded px-2 py-1" :disabled="savingLabelSize" @change="saveLabelSize">
+							<option v-for="option in labelSettings.inventory_options" :key="option.key" :value="option.key">{{ option.label }}</option>
+						</select>
+					</label>
 					<span v-if="savingLabelSize" class="text-sm text-gray-500">Saving…</span>
 				</div>
 			</section>

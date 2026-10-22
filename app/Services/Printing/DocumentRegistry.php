@@ -8,6 +8,7 @@ namespace App\Services\Printing;
 use App\Http\Controllers\DonorReportController;
 use App\Http\Controllers\FlowReportController;
 use App\Http\Controllers\HelpReportController;
+use App\Http\Controllers\InventoryLabelController;
 use App\Http\Controllers\InventoryReportController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderFillingController;
@@ -28,7 +29,7 @@ use Spatie\LaravelPdf\PdfBuilder;
  *
  *  - media:      key into config('printing.media'); only printers loaded
  *                with that media are offered/accepted for this document.
- *                (Pallet labels use the media chosen in LabelSetting.)
+ *                (Pallet labels and inventory labels use the media chosen in LabelSetting.)
  *  - permission: the permission the document's own download route requires
  *                (null = any signed-in user, matching routes that are
  *                `auth` only). Sending to a printer never grants more
@@ -110,6 +111,12 @@ class DocumentRegistry
                 'rules' => ['id' => 'required|integer'],
                 'title' => fn (array $p) => 'Pallet labels for donation #'.$p['id'],
                 'build' => fn (array $p) => app(PalletReportController::class)->donationLabelsBuilder((int) $p['id']),
+            ],
+            'inventory-labels' => [
+                'media' => LabelSetting::inventoryMedia(), 'permission' => 'manage-pallets',
+                'rules' => ['ids' => 'required|array|min:1|max:100', 'ids.*' => 'integer'],
+                'title' => fn (array $p) => 'Inventory labels ('.count($p['ids']).')',
+                'build' => fn (array $p) => app(InventoryLabelController::class)->builder(array_map('intval', $p['ids'])),
             ],
             'preprint-pallet-labels' => [
                 'media' => LabelSetting::palletMedia(), 'permission' => 'manage-receiving',
