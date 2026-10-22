@@ -517,6 +517,12 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   [--realtime]` (real Laravel app on the disposable test DB; its PHP helpers refuse any other database).
   Verified on Linux only; the Tauri shell has not yet been compiled on a machine with the webview libraries,
   and Windows/macOS are untested on hardware.
+- **SATO label printers (SBPL)** (2026-10-22, `rstation/sato-driver/` — read its README): SATO's own Linux driver is x86-only, so
+  `pdftosbpl` (a Python + Ghostscript CUPS filter, PDF in, one SBPL bitmap job per page) and `sato-sbpl.ppd` replace it, packaged by
+  `rstation/build-sato-driver-deb.sh` into `product/image/debs/` (the image `packages` file adds Ghostscript; Settings > Printers >
+  "Find a specific driver" > "sato"). Verified on a WS408 over USB at 203 dpi on 2.312 x 4 in stock, both with `lp -o raw` and
+  through a laptop CUPS queue using this PPD (frame, multi-page, copies, a WeasyPrint label with a Code 128 barcode); **not** yet
+  run on a Pi or from an image build. The horizontal shift is empirical per stock width (default `Left5`).
 - **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
   on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.

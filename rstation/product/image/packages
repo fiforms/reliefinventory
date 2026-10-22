@@ -29,6 +29,10 @@ printer-driver-hpcups
 printer-driver-dymo
 printer-driver-ptouch
 
+# Ghostscript renders PDFs for the SATO label filter (rstation-sato-driver, a .deb built by ../../build-sato-driver-deb.sh
+# into debs/ — SATO's own driver is x86-only). cups-filters pulls it in too; named here because that package needs it.
+ghostscript
+
 # Colour emoji. The website uses emoji as icons; without a font, Chromium draws blank boxes.
 fonts-noto-color-emoji
 
