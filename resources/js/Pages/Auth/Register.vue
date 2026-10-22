@@ -68,12 +68,26 @@ const submit = () => {
 // disabled, e.g. a closed-network deployment with no internet access)
 onMounted(() => {
     if (!props.turnstile_enabled) return;
-    const script = document.createElement("script");
-    script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
-    script.async = true;
-    script.defer = true;
-    document.head.appendChild(script);
-	window.setTimeout(renderTurnstile,500);
+
+    // Already loaded (e.g. arrived here from another Inertia page)
+    if (window.turnstile) {
+        renderTurnstile();
+        return;
+    }
+
+    // Render when the script actually finishes loading, not after a fixed
+    // delay -- on a slow connection a timer fires before window.turnstile
+    // exists and the widget silently never appears.
+    let script = document.getElementById('cf-turnstile-script');
+    if (!script) {
+        script = document.createElement("script");
+        script.id = 'cf-turnstile-script';
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.defer = true;
+        document.head.appendChild(script);
+    }
+    script.addEventListener('load', renderTurnstile, { once: true });
 });
 </script>
 
