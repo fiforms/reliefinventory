@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Services\TurnstileService;
+use Illuminate\Http\Exceptions\HttpResponseException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Password;
@@ -22,7 +23,7 @@ class PasswordResetLinkController extends Controller
         $turnstileSiteKey = $turnstile->siteKey();
 
         if ($turnstile->misconfigured()) {
-            abort(500, 'Cloudflare Turnstile is not properly configured.');
+            throw new HttpResponseException($turnstile->misconfiguredResponse());
         }
 
         return Inertia::render('Auth/ForgotPassword', [
@@ -41,7 +42,7 @@ class PasswordResetLinkController extends Controller
     {
         $turnstileEnabled = $turnstile->enabled();
         if ($turnstile->misconfigured()) {
-            abort(500, 'Cloudflare Turnstile is not properly configured.');
+            throw new HttpResponseException($turnstile->misconfiguredResponse());
         }
 
         $request->validate([

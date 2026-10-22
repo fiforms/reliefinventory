@@ -47,6 +47,15 @@ class TurnstileService
         return false;
     }
 
+    /**
+     * What a page shows when misconfigured() is true: a plain 503 that tells
+     * the administrator which settings to change, instead of a bare 500.
+     */
+    public function misconfiguredResponse(): \Illuminate\Http\Response
+    {
+        return response()->view('errors.turnstile-misconfigured', [], 503);
+    }
+
     public function siteKey(): ?string
     {
         return config('services.turnstile.site_key');

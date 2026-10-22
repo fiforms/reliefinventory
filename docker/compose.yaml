@@ -59,6 +59,15 @@ x-settings: &settings
   # MAIL_FROM_ADDRESS: relief-inventory@example.com
   # FEEDBACK_NOTIFY_EMAIL: developer@example.com
 
+  # Cloudflare Turnstile (bot check on /register and password reset). The app
+  # turns it on unless told otherwise, and an enabled Turnstile with no keys
+  # makes those pages answer 500 — so it is off here until you have keys
+  # (free at dash.cloudflare.com > Turnstile; needs Internet access).
+  CLOUDFLARE_TURNSTILE_ENABLED: "false"
+  # CLOUDFLARE_TURNSTILE_ENABLED: "true"
+  # CLOUDFLARE_TURNSTILE_SITE_KEY: your-site-key
+  # CLOUDFLARE_TURNSTILE_SECRET_KEY: your-secret-key
+
   # Slow-query log: the app records every database query slower than this many
   # milliseconds (with the page that ran it) and MariaDB keeps its own slow log
   # (see the `db` service). View both at Setup > Testing Tools, or:

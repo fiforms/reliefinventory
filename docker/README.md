@@ -29,6 +29,13 @@ printed once in the log: `docker compose logs app | grep -A1 -i "generated passw
 Want to choose the database passwords yourself? Uncomment `DB_PASSWORD` / `DB_ROOT_PASSWORD` in the settings block
 **before the first start only**.
 
+**Bot check on sign-up (Cloudflare Turnstile).** The app protects `/register` and password reset with Cloudflare Turnstile,
+which needs Internet access and free keys from Cloudflare. The settings block ships with `CLOUDFLARE_TURNSTILE_ENABLED:
+"false"` so those pages work out of the box. To turn it on, set it to `"true"` and fill in `CLOUDFLARE_TURNSTILE_SITE_KEY`
+and `CLOUDFLARE_TURNSTILE_SECRET_KEY`, then `docker compose up -d`. Enabled without both keys, those pages show a "this page
+isn't set up yet" notice (HTTP 503) naming the settings to change, and the log records
+`Cloudflare Turnstile is enabled but ... not both set`. Keep the values quoted. Turn it on before exposing `/register` to the internet.
+
 To create more administrators or reset a password later, use the app's user administration, or:
 
 ```bash
