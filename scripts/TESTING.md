@@ -7,6 +7,16 @@ this at a disposable database, never the app's real one** — see the incident/f
 suite fall through to `.env`'s real database, wiping real dev data twice in one session before it
 was caught.
 
+**Schema snapshot (2026-10-22).** Running every migration from scratch takes ~50s on MariaDB, and the
+suite used to pay that once per parallel worker plus ~10 times in `RestoreTest` (~25 min total). The
+first from-scratch migrate now dumps the finished test database — schema *and* data, since many
+migrations insert lookup rows — to `storage/framework/testing/schema-snapshot-<hash>.sql`, and every
+later `migrate:fresh` loads it instead (`tests/SchemaSnapshot.php`, `tests/RefreshDatabaseFromSnapshot.php`).
+The hash covers every migration file's name and contents, so adding or editing a migration rebuilds it
+on the next run; deleting the file is always safe. A full `pest --parallel` run is now ~3 min. In a test
+that needs a clean schema mid-test, call `Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions())`,
+not a bare `migrate:fresh`.
+
 ## Why a real MariaDB test database, not SQLite
 
 `phpunit.xml` points tests at a **real MariaDB database**, not SQLite in-memory. This app has

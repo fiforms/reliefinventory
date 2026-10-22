@@ -3,7 +3,7 @@
 use App\Models\Permission;
 use App\Models\SetupState;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabaseFromSnapshot;
 use Tests\TestCase;
 
 /*
@@ -18,7 +18,7 @@ use Tests\TestCase;
 */
 
 pest()->extend(TestCase::class)
-    ->use(RefreshDatabase::class)
+    ->use(RefreshDatabaseFromSnapshot::class)
     // A fresh test database has no administrator, which would send every request
     // to the first-run wizard (RedirectToSetup). Treat setup as done unless a test
     // is specifically about the wizard (tests/Feature/SetupWizardTest.php).

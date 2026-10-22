@@ -1,16 +1,20 @@
 <?php
 
+use App\Console\Commands\SetupReset;
 use App\Models\Backup;
 use App\Models\SetupState;
 use App\Models\User;
 use App\Services\BackupCompatibility;
 use App\Services\BackupService;
+use App\Services\FirstRunService;
 use App\Services\RestoreService;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Symfony\Component\Console\Exception\InvalidOptionException;
+use Tests\SchemaSnapshot;
 
 beforeEach(function () {
     $this->tmp = sys_get_temp_dir().'/ri-restore-test-'.bin2hex(random_bytes(4));
@@ -28,7 +32,7 @@ beforeEach(function () {
 afterEach(function () {
     @unlink(storage_path('framework/down')); // a failed --force test must not leave the dev site in maintenance mode
     if (! empty($GLOBALS['restore_test_dirtied_db'])) {
-        Artisan::call('migrate:fresh', ['--force' => true]);
+        Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
         $GLOBALS['restore_test_dirtied_db'] = false;
     }
     exec('rm -rf '.escapeshellarg($this->tmp));
@@ -297,7 +301,7 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     // Restoring wipes and reloads the whole database (the disposable test one), which also commits the
     // RefreshDatabase transaction, so rebuild a clean schema when done — see afterEach.
     $GLOBALS['restore_test_dirtied_db'] = true;
-    Artisan::call('migrate:fresh', ['--force' => true]);
+    Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
 
     // The "old instance": an administrator, a photo, a secret encrypted under some other key.
     $admin = User::factory()->create(['email' => 'old-admin@example.com']);
@@ -316,7 +320,7 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     expect($backup->status)->toBe('complete')->and($backup->error)->toBeNull();
 
     // The "new instance": empty schema, never set up, no photo.
-    Artisan::call('migrate:fresh', ['--force' => true]);
+    Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
     unlink($this->tmp.'/private/receiving-photos/p.jpg');
     SetupState::current()->update(['completed_at' => null]);
     expect(User::where('email', 'old-admin@example.com')->exists())->toBeFalse();
@@ -342,7 +346,6 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertForbidden();
     expect($this->getJson('/install/restore/status')->json('state'))->toBe('complete');
 });
-
 
 // ---- restoring from zips on disk (backup:restore) -----------------------------------------------------
 
@@ -394,7 +397,7 @@ test('a files-only restore lays the files down and leaves the database alone', f
 test('a damaged database is repaired from a database zip plus the best copy of the files', function () {
     // Restoring wipes and reloads the whole (disposable) test database; rebuild a clean schema afterwards.
     $GLOBALS['restore_test_dirtied_db'] = true;
-    Artisan::call('migrate:fresh', ['--force' => true]);
+    Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
     $service = app(BackupService::class);
 
     // Monday: the database backup. The photo is still the first version.
@@ -445,7 +448,6 @@ test('a truncated database dump is refused before anything is wiped', function (
     expect(DB::table('people')->count())->toBe($people)->and(app()->isDownForMaintenance())->toBeFalse();
 });
 
-
 // ---- setup:reset ----------------------------------------------------------------------------------------
 
 test('setup:reset cannot be scripted: without a real terminal it refuses, even with every flag', function () {
@@ -455,7 +457,7 @@ test('setup:reset cannot be scripted: without a real terminal it refuses, even w
     $this->artisan('setup:reset')->assertFailed();                                 // no TTY under test
     $this->artisan('setup:reset', ['--no-interaction' => true])->assertFailed();
     expect(fn () => Artisan::call('setup:reset', ['--force' => true]))                // there is no such option to skip anything
-        ->toThrow(Symfony\Component\Console\Exception\InvalidOptionException::class);
+        ->toThrow(InvalidOptionException::class);
 
     expect(DB::table('people')->count())->toBe($people + 1);
 });
@@ -463,7 +465,7 @@ test('setup:reset cannot be scripted: without a real terminal it refuses, even w
 /** The same command, standing in for a person at a keyboard (production decides this from the real STDIN). */
 function resetWithTerminal(): void
 {
-    Artisan::registerCommand(new class extends App\Console\Commands\SetupReset
+    Artisan::registerCommand(new class extends SetupReset
     {
         protected function hasTerminal(): bool
         {
@@ -501,5 +503,5 @@ test('setup:reset with the phrase typed returns the instance to brand new', func
         ->and(Schema::hasTable('migrations'))->toBeTrue()
         ->and(DB::table('statuses')->count())->toBeGreaterThan(0)          // essential lookup data is back
         ->and(file_get_contents($this->tmp.'/private/keep.txt'))->toBe('files are not touched')
-        ->and(app(App\Services\FirstRunService::class)->needsSetup())->toBeTrue();
+        ->and(app(FirstRunService::class)->needsSetup())->toBeTrue();
 });
