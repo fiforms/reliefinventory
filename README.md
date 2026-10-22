@@ -63,6 +63,9 @@ docker compose pull
 docker compose up -d
 ```
 
+New to Docker? [docker/INSTALL.md](docker/INSTALL.md) is a step-by-step guide for Windows, Mac and Linux using
+Docker Desktop.
+
 Putting it on the internet? Read [docker/README.md](docker/README.md) first. It covers HTTPS behind a reverse
 proxy, email, backups and restore, the optional realtime service, and the setup code that stops a stranger from
 claiming the administrator account before you do.
