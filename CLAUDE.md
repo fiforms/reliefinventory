@@ -450,9 +450,12 @@ ported from Chrome):
 
 ### Print queue — per-site printers, print servers, optional realtime
 
-Everywhere something is printed there is one shared `PrintMenu.vue` ("Print ▾": **Download PDF** plus
-each active printer at a site that matches the document's paper size) instead of a bare PDF link.
-Choosing a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
+Everywhere something is printed there is one shared `PrintMenu.vue`: a single **Print** button (2026-10-22) that opens a lightbox
+(`Modal.vue`) of selectable options — **Download PDF** plus each active printer at a site that matches the document's paper size —
+with a **Number of copies** box (1–99) whenever a printer is chosen, instead of a bare PDF link. The last-used printer per media is
+preselected; users without `print-documents` get the download straight away with no dialog; arrows/Enter/Escape work (Escape is caught
+in the capture phase so it closes only the print dialog when the button sits inside another modal); the old `placement` prop is ignored.
+Confirming a printer renders the PDF server-side and queues it; a **print server** polls, claims, downloads
 and reports back. Built 2026-10-18 on branch `print-queue`; see `rstation/PRINT_SERVER.md` (wire protocol —
 what a print-server client implements), `rstation/PRINT_CLIENT_SPEC.md` (client behaviour rules + the list
 of documents a client implementer needs), `rstation/print-extension.openapi.yaml` (machine-readable wire format; a
