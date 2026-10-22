@@ -11,6 +11,7 @@ use App\Services\PrintQueueService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -69,6 +70,48 @@ class PrintController extends Controller
             'message' => $printer->isReady()
                 ? "Sent to {$printer->name}."
                 : "Queued for {$printer->name}, which is {$printer->status}; it will print when the print server is back.",
+        ], 201);
+    }
+
+    /**
+     * Print a PDF someone uploaded (manage-print-queue — it prints arbitrary content, so it is not a base-tier action). The
+     * file is user data and is never rendered or interpreted here: it is checked to be a PDF, size-capped, and queued as
+     * is for a print server to claim. It prints at its own page size (print servers use print-scaling=none), so it should
+     * match what the printer is loaded with; any printer that is active, typed and sited is accepted whatever its media.
+     */
+    public function storeUpload(Request $request, PrintQueueService $queue)
+    {
+        $data = $request->validate([
+            'file' => ['required', 'file', 'mimetypes:application/pdf', 'max:'.config('printing.upload_max_kb')],
+            'printer_id' => 'required|integer|exists:printers,id',
+            'copies' => 'nullable|integer|min:1|max:99',
+        ]);
+
+        $printer = Printer::usable()->find($data['printer_id']);
+        if (! $printer) {
+            throw ValidationException::withMessages(['printer_id' => 'That printer is not available for printing.']);
+        }
+
+        $bytes = $request->file('file')->get();
+        // The mime type comes from the content, but check the signature too: a PDF starts with %PDF- (within the first KB).
+        if (! str_contains(substr($bytes, 0, 1024), '%PDF-')) {
+            throw ValidationException::withMessages(['file' => 'That file is not a PDF.']);
+        }
+
+        // The filename is untrusted text, shown as the job's title: drop any path, control characters and excess length.
+        $name = preg_replace('/[\x00-\x1F\x7F]/u', '', basename(str_replace('\\', '/', (string) $request->file('file')->getClientOriginalName()))) ?? '';
+        $title = Str::limit(trim($name) !== '' ? trim($name) : 'Uploaded PDF', 120, '');
+
+        $job = $queue->enqueue($printer, 'uploaded-pdf', $title, $bytes, $data['copies'] ?? 1, Auth::id());
+
+        return response()->json([
+            'id' => $job->id,
+            'status' => $job->status,
+            'title' => $job->title,
+            'printer' => ['id' => $printer->id, 'name' => $printer->name, 'status' => $printer->status, 'ready' => $printer->isReady()],
+            'message' => $printer->isReady()
+                ? "Sent {$job->title} to {$printer->name}."
+                : "Queued {$job->title} for {$printer->name}, which is {$printer->status}; it will print when the print server is back.",
         ], 201);
     }
 }

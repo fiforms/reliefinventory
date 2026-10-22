@@ -15,6 +15,9 @@ return [
         'label_address' => ['label' => 'Address label (1.125 x 3.5 in)', 'width' => 3.5, 'height' => 1.125],
     ],
 
+    // Largest PDF (KB) an administrator can upload to print (POST /json/print-upload).
+    'upload_max_kb' => 10240,
+
     // A job claimed by a print server that never reports back (crash, power
     // loss) returns to the queue after this many minutes.
     'claim_expires_minutes' => 5,
