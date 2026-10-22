@@ -407,6 +407,21 @@ Route::get('/reports/orders', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/orders')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+Route::get('/reports/flow', function () {
+    return Inertia::render('FlowReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/flow')]);
+})->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/reports/partners', function () {
+    return Inertia::render('PartnerReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/partners')]);
+})->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/reports/donors', function () {
+    return Inertia::render('DonorReport',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/donors')]);
+})->middleware(['auth', 'permission:view-reports']);
+
 Route::get('/reports/unfulfilled', function () {
     return Inertia::render('UnfulfilledRequestsReport',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/unfulfilled')]);
@@ -447,21 +462,6 @@ Route::get('/reports/sitrep', function () {
     return Inertia::render('SituationReport',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/sitrep')]);
 })->middleware(['auth', 'permission:view-sitrep']);
-
-// Roadmap pages linked from the main menu but not yet built.
-// Renders a "coming soon" placeholder instead of 404ing.
-foreach ([
-    '/reports/flow' => 'Inventory Flow Report',
-    '/reports/donors' => 'Donor Report',
-    '/reports/partners' => 'Partner Report',
-] as $path => $feature) {
-    Route::get($path, function () use ($path, $feature) {
-        return Inertia::render('ComingSoon', [
-            'breadcrumb' => MenuItem::getBreadcrumb($path),
-            'feature' => $feature,
-        ]);
-    })->middleware(['auth', 'permission:general-access']);
-}
 
 Route::middleware('auth')->group(function () {
     Route::get('/profile', [ProfileController::class, 'edit'])->name('profile.edit');
@@ -683,8 +683,14 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-repo
     Route::get('/reports/inventory', [InventoryReportController::class, 'index']);
     Route::get('/reports/orders', [OutstandingOrdersReportController::class, 'index']);
     Route::get('/reports/unfulfilled', [UnfulfilledRequestsReportController::class, 'index']);
+    Route::get('/reports/flow', [FlowReportController::class, 'index']);
+    Route::get('/reports/partners', [PartnerReportController::class, 'index']);
+    Route::get('/reports/donors', [DonorReportController::class, 'index']);
     Route::get('/reports/sorting-area', [SortingAreaReportController::class, 'index']);
 });
+
+Route::put('/json/people/{id}/donor-standing', [DonorReportController::class, 'setStanding'])
+    ->middleware(['auth', 'permission:manage-donor-standing']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:view-dashboard']], function () {
     Route::get('/dashboard', [DashboardController::class, 'index']);
@@ -715,6 +721,30 @@ Route::get('/report/orders.pdf', [OutstandingOrdersReportController::class, 'pdf
 
 Route::get('/report/orders.csv', [OutstandingOrdersReportController::class, 'csv'])
     ->name('report.orders.csv')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/flow.pdf', [FlowReportController::class, 'pdf'])
+    ->name('report.flow')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/flow.csv', [FlowReportController::class, 'csv'])
+    ->name('report.flow.csv')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/partners.pdf', [PartnerReportController::class, 'pdf'])
+    ->name('report.partners')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/partners.csv', [PartnerReportController::class, 'csv'])
+    ->name('report.partners.csv')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/donors.pdf', [DonorReportController::class, 'pdf'])
+    ->name('report.donors')
+    ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/donors.csv', [DonorReportController::class, 'csv'])
+    ->name('report.donors.csv')
     ->middleware(['auth', 'permission:view-reports']);
 
 Route::get('/report/unfulfilled.pdf', [UnfulfilledRequestsReportController::class, 'pdf'])

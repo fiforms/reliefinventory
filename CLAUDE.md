@@ -16,8 +16,8 @@ be traced back to a specific donor or pallet (no recall-style item tracing; don'
 (source traceability, stock-on-hand, the permission model, DB transactions, RIForm error/delete UX, a real
 test suite, order filling/picking as of 2026-08-27); what's still genuinely open is BOL upload, the
 order fulfillment lifecycle past Filled (Ready to Ship/Shipped), the facility-network expansion
-(Part 5), and several report pages (`/reports/flow`, `/reports/donors`, `/reports/customers` are
-still "Coming Soon" placeholders — `/reports/orders`, the Outstanding Orders Report, is built as of
+(Part 5), and several report pages (`/reports/flow`, `/reports/donors` and `/reports/partners` were built 2026-10-22 — see "Flow, Donor and Partner reports" below —
+so no report is a placeholder any more; `/reports/orders`, the Outstanding Orders Report, is built as of
 2026-08-22, and `/reports/unfulfilled`, the Unfulfilled Requests Report — requested vs. filled per item, by the
 partner's county and zip, finished requests only — as of 2026-10-20) — check the doc's own inline "Update" notes for the current state of any given item before
 assuming it's still broken.
@@ -291,6 +291,30 @@ handlers; needs HTTPS. Keyboard-wedge USB/Bluetooth scanners work via plain text
 keyboard-wedge scanners really behave, the audio-feedback vocabulary (`scanSounds.js`), keeping the scan target focused,
 making Qty-style fields safe when a barcode lands in them, `SearchSelect`'s `smartOpen`/`debounce`/`scanDigits`, never losing a
 pending line on exit, and a checklist for a new scan screen. `DonationSorting.vue` is the reference implementation.
+
+### Flow, Donor and Partner reports (2026-10-22)
+
+Three reports, each built like the Unfulfilled Requests Report: a controller with `index` / `pdf` / `pdfBuilder` / `csv`, a public
+`FILTER_RULES`, a `buildReport()`, a Blade PDF view, a `DocumentRegistry` entry and a Vue page with `PrintMenu`; all gated on
+`view-reports`. Charts use Chart.js via `Components/ChartCanvas.vue` (only bar/line registered; every chart has its numbers in a
+table beside it, and no dual-axis charts); the PDFs are tables only.
+- **Flow** (`FlowReportController`, `/reports/flow`): everything from `item_ledgers` joined to the transaction `type` —
+  donation → received (usable) and lost (outdated/trashed/diverted, not stock); order → picked; anything else (adjustments) →
+  adjustments, split by `adjustment_reason`. A row's stock effect is (usable ? added : 0) − subtracted, so opening + received −
+  picked + adjustments equals stock-on-hand (tested against the Inventory Report). Buckets are day/week (Monday)/month, default last
+  90 days by week, refused above `MAX_BUCKETS`. Pallet moves aren't stock changes, so they're absent.
+- **Partner** (`PartnerReportController`, `/reports/partners`): per partner (names shown, unlike the Unfulfilled report) requests,
+  units requested/filled, shipped/delivered counts, last request, plus a county roll-up and per-request drill-down. Fill rate counts only
+  finished requests (`UnfulfilledRequestsReportController::FILLED_STATUSES`); shortfall detail stays in `/reports/unfulfilled`.
+- **Donor** (`DonorReportController`, `/reports/donors`): per donor, sorted units by disposition, loss % ((outdated + trashed) ÷
+  everything sorted; diverted not counted against a donor), loss % of the last three donations, per-donation loss. A donor's
+  **standing** (`people.donor_standing` preferred/normal/watch/decline + note/set_by/set_at, history in `donor_standing_log`) is a human
+  decision set with `PUT /json/people/{id}/donor-standing` (`manage-donor-standing`, Office/Administrator by default; decline needs a
+  note; the Unknown Donor can't have one; not mass-assignable). `App\Services\DonorStanding::suggest()` only *suggests* one from
+  `config('inventory.donor_standing')` (starting values: needs 2+ sorted donations and 50+ units; watch ≥30% loss; decline ≥50% over 3+
+  donations; preferred ≤5% over 5+ donations and 500+ units — meant to be tested and refined). Receiving shows a warning under the donor
+  for watch/decline; it never blocks anything (like `donor_identification_pending`). Not built: the donor notification letter, and the
+  badge on Donation Offers / People.
 
 ### Email Settings (`/setup/email`, `admin-system`) — 2026-10-22
 
