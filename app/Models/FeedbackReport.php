@@ -21,6 +21,7 @@ class FeedbackReport extends Model
         'user_agent',
         'screenshot_path',
         'commit_hash',
+        'app_version',
         'flagged_for_review',
         'flagged_reason',
         'uuid',

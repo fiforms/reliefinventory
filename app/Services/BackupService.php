@@ -222,7 +222,7 @@ class BackupService
         return [
             'format' => self::FORMAT,
             'created_at' => now()->toIso8601String(),
-            'app' => ['name' => config('app.name'), 'commit' => app(GitVersionService::class)->currentCommit()],
+            'app' => ['name' => config('app.name'), 'commit' => app(GitVersionService::class)->currentCommit(), 'version' => app(GitVersionService::class)->release()],
             'scope' => $scope,
             'database' => [
                 'driver' => config('database.default'),

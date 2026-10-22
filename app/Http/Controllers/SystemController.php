@@ -227,6 +227,7 @@ class SystemController extends Controller
         if ($this->isDocker()) {
             return [
                 'current' => app(\App\Services\GitVersionService::class)->currentCommit(),
+                'release' => app(\App\Services\GitVersionService::class)->release(),
                 'current_subject' => null, 'current_date' => null, 'behind' => null, 'pending_commits' => [],
             ];
         }
@@ -236,6 +237,7 @@ class SystemController extends Controller
 
         return [
             'current' => $this->git('rev-parse', '--short=9', 'HEAD'),
+            'release' => app(\App\Services\GitVersionService::class)->release(),
             'current_subject' => $this->git('log', '-1', '--format=%s', 'HEAD'),
             'current_date' => $this->git('log', '-1', '--format=%cI', 'HEAD'),
             // Relative to the last fetch — "Check for updates" refreshes this.
