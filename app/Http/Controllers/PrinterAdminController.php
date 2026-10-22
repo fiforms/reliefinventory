@@ -54,31 +54,39 @@ class PrinterAdminController extends Controller
         return response()->json(['printers' => $printers, 'label_settings' => $this->labelSettings()]);
     }
 
-    /** The pallet label media in use and the choices (media keys from config/printing.php). */
+    /** The label media in use for pallet labels and inventory labels, and the choices (media keys from config/printing.php). */
     private function labelSettings(): array
     {
+        $options = fn (string $configKey) => collect(config($configKey))->map(fn (string $key) => [
+            'key' => $key,
+            'label' => config("printing.media.{$key}.label"),
+        ])->values();
+
         return [
             'pallet_label_media' => LabelSetting::palletMedia(),
-            'options' => collect(config('printing.pallet_label_media'))->map(fn (string $key) => [
-                'key' => $key,
-                'label' => config("printing.media.{$key}.label"),
-            ])->values(),
+            'pallet_options' => $options('printing.pallet_label_media'),
+            'inventory_label_media' => LabelSetting::inventoryMedia(),
+            'inventory_options' => $options('printing.inventory_label_media'),
         ];
     }
 
     /**
-     * Which label size pallet labels are laid out for and printed on. Only changes the layout and which
-     * printers the Print menus offer (those loaded with that media); labels already queued keep the size
-     * they were rendered at.
+     * Which label size pallet labels and inventory labels are laid out for and printed on. Only changes the layout and which
+     * printers the Print menus offer (those loaded with that media); labels already queued keep the size they were rendered at.
+     * Either field may be sent alone.
      */
     public function saveLabelSettings(Request $request)
     {
         $data = $request->validate([
-            'pallet_label_media' => ['required', 'string', Rule::in(config('printing.pallet_label_media'))],
+            'pallet_label_media' => ['sometimes', 'required', 'string', Rule::in(config('printing.pallet_label_media'))],
+            'inventory_label_media' => ['sometimes', 'required', 'string', Rule::in(config('printing.inventory_label_media'))],
         ]);
+        if (! $data) {
+            throw ValidationException::withMessages(['pallet_label_media' => 'Choose a label size.']);
+        }
 
         LabelSetting::current()->update($data);
-        Log::info('Pallet label size changed', ['person_id_user' => Auth::id()] + $data);
+        Log::info('Label size changed', ['person_id_user' => Auth::id()] + $data);
 
         return response()->json($this->labelSettings());
     }

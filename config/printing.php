@@ -20,6 +20,9 @@ return [
     // use is a setting (LabelSetting, /setup/printers). Each must be a key of 'media' above.
     'pallet_label_media' => ['label_large', 'label_small'],
 
+    // Same for inventory labels (one per item set put on a pallet); small first, since that is the default.
+    'inventory_label_media' => ['label_small', 'label_large'],
+
     // A job claimed by a print server that never reports back (crash, power
     // loss) returns to the queue after this many minutes.
     'claim_expires_minutes' => 5,
