@@ -344,3 +344,17 @@ test('a full offered to pending to received lifecycle produces one ordered log r
         ->and($logs[2]->to_status)->toBe(DonationOffer::STATUS_RECEIVED)
         ->and($logs->pluck('changed_by_person_id')->unique()->all())->toBe([$user->id]);
 });
+
+test('a pending offer is overdue only once its last expected day has fully passed', function () {
+    $user = userWithPermissions('manage-receiving');
+    $today = now()->toDateString();
+    $single = makeOffer(['status' => DonationOffer::STATUS_PENDING, 'eta_start' => now()->subDay()->toDateString()]);
+    $endsToday = makeOffer(['status' => DonationOffer::STATUS_PENDING, 'eta_start' => now()->subDays(2)->toDateString(), 'eta_end' => $today]);
+    $future = makeOffer(['status' => DonationOffer::STATUS_PENDING, 'eta_start' => now()->addDay()->toDateString()]);
+
+    $records = collect($this->actingAs($user)->getJson('/json/donation-offers')->assertOk()->json('records'))->keyBy('id');
+
+    expect($records[$single->id]['is_overdue'])->toBeTrue()
+        ->and($records[$endsToday->id]['is_overdue'])->toBeFalse()
+        ->and($records[$future->id]['is_overdue'])->toBeFalse();
+});

@@ -188,7 +188,7 @@ Route::get('/pallet-management', function () {
 Route::get('/setup/items', function () {
     return Inertia::render('ItemEntry',
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/items')]);
-})->middleware(['auth', 'permission:manage-items']);
+})->middleware(['auth', 'permission:manage-items,manage-itemtypes']);
 
 Route::get('/setup/carton-codes', function () {
     return Inertia::render('CartonCodes',
@@ -196,8 +196,11 @@ Route::get('/setup/carton-codes', function () {
 })->middleware(['auth', 'permission:manage-items']);
 
 Route::get('/setup/people', function () {
-    return Inertia::render('People',
-        ['breadcrumb' => MenuItem::getBreadcrumb('/setup/people')]);
+    return Inertia::render('People', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/people'),
+        // DELETE /json/people/{id} is admin-people; only offer the button to someone it would work for.
+        'canDelete' => (bool) auth()->user()?->hasPermission('admin-people'),
+    ]);
 })->middleware(['auth', 'permission:manage-people']);
 
 // User Administration (TODO.md item 1) — create/promote/deactivate

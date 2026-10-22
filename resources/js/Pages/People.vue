@@ -14,6 +14,10 @@ defineProps({
     breadcrumb: {
         type: Array,
     },
+    canDelete: {
+        type: Boolean,
+        default: false,
+    },
 });
 </script>
 
@@ -330,10 +334,10 @@ defineProps({
         <div class="ri_formactions" v-else>
           <button @click="save()" class="ri_defaultbutton">Save</button>
           <button @click="cancel()" class="ri_formbutton">Cancel Changes</button>
-          <button @click="doDelete()" class="ri_deletebutton" :class="{ ri_confirming: confirmingDelete }">
+          <button v-if="canDelete" @click="doDelete()" class="ri_deletebutton" :class="{ ri_confirming: confirmingDelete }">
             {{ confirmingDelete ? 'Confirm Delete — cannot be undone' : 'Delete' }}
           </button>
-          <button v-if="confirmingDelete" @click="keepRecord()" class="ri_linkbutton">Keep Record</button>
+          <button v-if="canDelete && confirmingDelete" @click="keepRecord()" class="ri_linkbutton">Keep Record</button>
         </div>
       </template>
     </RIForm>

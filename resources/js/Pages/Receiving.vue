@@ -152,7 +152,6 @@ const containerTypeOptions = [
 					<input type="checkbox" v-model="flaggedOnly" />
 					Flagged for donor ID only
 				</label>
-				<a href="/help/receiving" target="_blank" class="recv_helplink">Help: Receiving Guide</a>
 			</template>
 
 			<template #thead>
@@ -179,7 +178,6 @@ const containerTypeOptions = [
 
 			<template #default="{ record, editing, templates }">
 				<template v-if="wizardStep === 'details'">
-					<a href="/help/receiving" target="_blank" class="recv_helplink recv_helplink_form">Help: Receiving Guide</a>
 					<div class="ri_formtable">
 						<div class="ri_fieldset" v-if="!record.id">
 							<div class="ri_fieldlabel">Does this match a phoned-in offer?</div>
@@ -763,7 +761,7 @@ export default {
 			record.container_types = mode === 'pallet' ? ['pallet'] : (record.container_types || []).filter((t) => t !== 'pallet');
 		},
 		// container_count is the derived total the rest of the page reads
-		// (list column, Describe Pallets progress) — computed from whichever
+		// (list column, label progress) — computed from whichever
 		// per-type counts are currently relevant, not entered directly.
 		computeContainerCount(record) {
 			const counts = record.container_type_counts || {};
@@ -1236,17 +1234,6 @@ export default {
 }
 .recv_search {
 	min-width: 220px;
-}
-.recv_helplink {
-	color: #007bff;
-	text-decoration: underline;
-	font-size: 0.9em;
-	align-self: center;
-}
-.recv_helplink_form {
-	display: block;
-	text-align: right;
-	margin-bottom: 0.75rem;
 }
 
 /* Cancel (left) and Next (right), pushed to opposite ends and given real

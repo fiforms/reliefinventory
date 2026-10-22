@@ -71,3 +71,14 @@ test('marking a pallet missing then restoring round-trips through the controller
     $this->actingAs($user)->putJson('/json/pallets/'.$pallet->id, ['status' => 'open'])->assertOk();
     expect($pallet->fresh()->status)->toBe('open');
 });
+
+test('a tote pallet (created by Receiving) can be saved from Pallet Management', function () {
+    $user = userWithPermissions('manage-pallets');
+
+    $pallet = Pallet::create(['kind' => 'R', 'status' => 'received', 'container_type' => 'tote', 'datepacked' => now()->toDateString()]);
+    $pallet->statuses()->create(['status' => 'received']);
+
+    $this->actingAs($user)->putJson('/json/pallets/'.$pallet->id, ['container_type' => 'tote'])->assertOk();
+
+    expect($pallet->fresh()->container_type)->toBe('tote');
+});

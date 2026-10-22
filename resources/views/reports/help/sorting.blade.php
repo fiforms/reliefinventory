@@ -60,7 +60,7 @@
                 Type or scan the pallet's tag (e.g. R00000042) into <strong>Pallet Tag</strong>, or tap
                 <strong>Camera Scan</strong> to use the device camera, then <strong>Set Pallet</strong>.
                 Only Receiving pallets (tags starting with R) work here &mdash; a warehouse or other
-                pallet's tag is refused. Everything you enter next is attributed to this pallet: the bar
+                pallet's tag is refused, and so is a Receiving pallet that belongs to a different donation (open that donation from Ready to Sort instead). Everything you enter next is attributed to this pallet: the bar
                 shows <em>Sorting from pallet &hellip;</em>. Lines entered with no pallet set still
                 save, but won't be recorded against a source. Setting a pallet for the first time also
                 marks it as being sorted.

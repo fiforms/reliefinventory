@@ -146,8 +146,7 @@ defineProps({
 			<h2 class="text-lg font-semibold">Deleting a record</h2>
 			<p class="text-sm text-gray-700">
 				Click <strong>Delete</strong>, then <strong>Confirm Delete — cannot be undone</strong>
-				(or <strong>Keep Record</strong> to back out). Deleting needs the separate Delete
-				People permission, which most roles don't have &mdash; without it the delete is refused.
+				(or <strong>Keep Record</strong> to back out). The Delete button only appears for people with the separate Delete People permission, which most roles don't have.
 				The built-in <strong>Unknown Donor</strong> record can never be deleted.
 			</p>
 		</section>

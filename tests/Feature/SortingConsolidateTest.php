@@ -114,3 +114,30 @@ test('consolidate keeps different expiration dates apart, merging only no-date w
     expect($rows->pluck('qty_added')->all())->toBe([3, 5, 7])
         ->and($rows->pluck('expires_on')->map(fn ($d) => $d ? substr((string) $d, 0, 10) : null)->all())->toBe([null, '2027-06-01', '2027-01-01']);
 });
+
+test('a pallet linked to another donation cannot be sorted into this session', function () {
+    $sorter = userWithPermissions('manage-sorting');
+    $item = consolidateItem('Rice');
+    $mine = $this->actingAs($sorter)->postJson('/json/sorting-sessions')->json('record.id');
+    $other = $this->actingAs($sorter)->postJson('/json/sorting-sessions')->json('record.id');
+
+    $pallet = Pallet::create(['kind' => 'R', 'status' => 'sorting', 'datepacked' => now()->toDateString(), 'orderdonation_id' => $other]);
+    $tag = 'R'.str_pad((string) $pallet->id, 8, '0', STR_PAD_LEFT);
+    $line = ['item_id' => $item->id, 'qty' => 1, 'disposition' => 'usable', 'pallet_tag' => $tag];
+
+    $this->actingAs($sorter)->postJson('/json/sorting-sessions/'.$mine.'/lines', $line)
+        ->assertStatus(422)->assertJsonPath('errors.pallet_tag.0', fn ($m) => str_contains($m, 'different donation'));
+    expect(ItemLedger::where('pallet_id', $pallet->id)->count())->toBe(0);
+
+    $this->actingAs($sorter)->postJson('/json/sorting-sessions/'.$other.'/lines', $line)->assertCreated();
+});
+
+test('an unlinked pre-printed pallet label can be sorted into any session', function () {
+    $sorter = userWithPermissions('manage-sorting');
+    $item = consolidateItem('Pasta');
+    $session = $this->actingAs($sorter)->postJson('/json/sorting-sessions')->json('record.id');
+
+    $this->actingAs($sorter)->postJson('/json/sorting-sessions/'.$session.'/lines', [
+        'item_id' => $item->id, 'qty' => 1, 'disposition' => 'usable', 'pallet_tag' => consolidatePallet(),
+    ])->assertCreated();
+});

@@ -283,6 +283,14 @@ class SortingSessionController extends Controller
                     'errors' => ['pallet_tag' => ['Unknown receiving pallet tag.']],
                 ], 422);
             }
+            // A pallet already linked to a donation can only be sorted into that donation's session —
+            // otherwise its contents would be recorded against the wrong donor. (An unlinked pre-printed
+            // label has no donation yet and is accepted anywhere.)
+            if ($pallet->orderdonation_id && (int) $pallet->orderdonation_id !== (int) $session->id) {
+                return response()->json([
+                    'errors' => ['pallet_tag' => ['That pallet belongs to a different donation. Open that donation from Ready to Sort instead.']],
+                ], 422);
+            }
         }
 
         $line = $session->itemLedgers()->create([

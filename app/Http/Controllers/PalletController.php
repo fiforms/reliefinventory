@@ -19,6 +19,9 @@ class PalletController extends Controller
 
     private const MAX_LIMIT = 5000;
 
+    /** Matches the pallets.container_type enum (tote was added 2026-08-21). */
+    private const CONTAINER_TYPES = ['pallet', 'gaylord', 'box', 'bag', 'tote'];
+
     /**
      * Display a listing of the pallets, optionally filtered by kind and/or
      * status (e.g. GET /json/pallets/R/sorting).
@@ -73,7 +76,7 @@ class PalletController extends Controller
     {
         $data = $request->validate([
             'kind' => ['required', Rule::in(array_keys(PalletKind::LIFECYCLES))],
-            'container_type' => ['nullable', Rule::in(['pallet', 'gaylord', 'box', 'bag'])],
+            'container_type' => ['nullable', Rule::in(self::CONTAINER_TYPES)],
             'location_id' => 'nullable|exists:locations,id',
             'donor_person_id' => 'nullable|exists:people,id',
             'destination_person_id' => 'nullable|exists:people,id',
@@ -111,7 +114,7 @@ class PalletController extends Controller
         $data = $request->validate([
             'status' => 'nullable|string',
             'location_id' => 'nullable|exists:locations,id',
-            'container_type' => ['nullable', Rule::in(['pallet', 'gaylord', 'box', 'bag'])],
+            'container_type' => ['nullable', Rule::in(self::CONTAINER_TYPES)],
             'donor_person_id' => 'nullable|exists:people,id',
             'destination_person_id' => 'nullable|exists:people,id',
             'truck_id' => 'nullable|exists:trucks,id',

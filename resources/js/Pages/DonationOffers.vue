@@ -195,6 +195,25 @@ const statusClasses = {
 						<TextArea v-model="record.description" :enabled="editing && isEditableStatus(record)" />
 					</div>
 
+					<!-- Only when logging a new offer: recorded on the offer's first history entry
+					     (DonationOfferController::store). Later calls go through Log a Call. -->
+					<template v-if="!record.id">
+						<div class="ri_fieldset">
+							<div class="ri_fieldlabel">How did the offer come in?</div>
+							<select v-model="record.contact_method" class="ri_forminput" :disabled="!editing">
+								<option :value="null">Not recorded</option>
+								<option value="phone">Phone</option>
+								<option value="email">Email</option>
+								<option value="in_person">In person</option>
+								<option value="other">Other</option>
+							</select>
+						</div>
+						<div class="ri_fieldset">
+							<div class="ri_fieldlabel">Notes from the conversation:</div>
+							<TextArea v-model="record.notes" :enabled="editing" />
+						</div>
+					</template>
+
 					<div class="ri_fieldset" v-if="record.status === 'offered'">
 						<div class="ri_fieldlabel">Rough ETA Window (if known):</div>
 						<div class="ri_formcontrol don_etarange">
