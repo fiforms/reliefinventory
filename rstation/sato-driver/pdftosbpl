@@ -1,0 +1,159 @@
+#!/usr/bin/python3 -I
+"""CUPS filter: PDF -> SATO SBPL, one label per PDF page.
+
+Installed as /usr/lib/cups/filter/pdftosbpl by the rstation-sato-driver package (README.md here) and
+named by sato-sbpl.ppd. SATO's own driver ships its filter for x86 only; this replaces it for the
+R Station's ARM Pi (and works anywhere CUPS and Ghostscript do).
+
+CUPS calls:  pdftosbpl job user title copies options [file]   (PDF on stdin when no file)
+Each page is rendered by Ghostscript at the queue's resolution as a 1-bit image and sent as an SBPL
+bitmap job (ESC A ... ESC Q<copies> ESC Z). The page is printed at its own size: the website makes its PDFs
+the label's size, so there is no scaling here. All-white 8-row strips are skipped.
+
+The wire format below is what SATO's own rastertosbpl emits for these printers (captured, not from the
+SBPL manual, which SATO only gives out on request): label length and width in dots, a base position,
+then per 8-dot-row strip `ESC H<x> ESC V<y> ESC GB<bytes per row, 3 digits>001 <8 rows of bytes>`.
+
+Options (from the PPD): Resolution (203dpi, 305dpi, 609dpi) and RIHShift. SBPL's H position can't be
+negative, so a "Left N" shift crops N dots off the image's left edge instead; "Right N" starts the image
+N dots in. The shift depends on how the stock sits on the head — 'Left 5' was measured for 2.312 x 4 in
+labels on a WS408; other stock may need another value.
+"""
+import re
+import subprocess
+import sys
+import tempfile
+
+DEFAULT_DPI = 203
+DEFAULT_SHIFT = -5  # dots; negative = crop from the left. Keep in step with *DefaultRIHShift in the PPD.
+MAX_FIELD = 9999  # SBPL carries label length/width as 4 digits
+MAX_BYTES_PER_ROW = 999  # and bytes per row as 3
+MAX_COPIES = 999999
+
+
+def log(level, message):
+    sys.stderr.write(f"{level}: {message}\n")
+    sys.stderr.flush()
+
+
+def parse_options(text):
+    """CUPS passes options as 'key=value key2 nokey3'; only the ones we use matter."""
+    options = {}
+    for token in re.findall(r"""[^\s'"=]+(?:=(?:'[^']*'|"[^"]*"|\S*))?""", text or ""):
+        key, _, value = token.partition("=")
+        options[key] = value.strip("'\"")
+    return options
+
+
+def dpi_from(options):
+    match = re.match(r"(\d+)", options.get("Resolution", ""))
+    return int(match.group(1)) if match else DEFAULT_DPI
+
+
+def shift_from(options):
+    """'Left5' -> -5, 'Right10' -> 10, 'Zero' -> 0; anything else -> the default."""
+    value = options.get("RIHShift", "")
+    if value == "Zero":
+        return 0
+    match = re.fullmatch(r"(Left|Right)(\d{1,3})", value)
+    if not match:
+        return DEFAULT_SHIFT
+    return -int(match.group(2)) if match.group(1) == "Left" else int(match.group(2))
+
+
+def read_pbm_pages(data):
+    """Yields (width, height, packed rows) for each image in a stream of binary PBM (P4) pages; 1 = black."""
+    pos = 0
+    while pos < len(data):
+        fields = []
+        while len(fields) < 3:  # magic, width, height; '#' comments are skipped
+            while pos < len(data) and data[pos:pos + 1].isspace():
+                pos += 1
+            if pos >= len(data):
+                raise ValueError("truncated image header")
+            if data[pos:pos + 1] == b"#":
+                pos = data.index(b"\n", pos) + 1
+                continue
+            end = pos
+            while end < len(data) and not data[end:end + 1].isspace():
+                end += 1
+            fields.append(data[pos:end])
+            pos = end
+        pos += 1  # exactly one whitespace byte separates the header from the bits
+        if fields[0] != b"P4":
+            raise ValueError("unexpected image format from Ghostscript")
+        width, height = int(fields[1]), int(fields[2])
+        size = ((width + 7) // 8) * height
+        if pos + size > len(data):
+            raise ValueError("truncated image data")
+        yield width, height, data[pos:pos + size]
+        pos += size
+
+
+def render(pdf_path, dpi):
+    result = subprocess.run(
+        ["gs", "-q", "-dNOPAUSE", "-dBATCH", "-dSAFER", "-sDEVICE=pbmraw", f"-r{dpi}",
+         "-dTextAlphaBits=1", "-dGraphicsAlphaBits=1", "-sOutputFile=-", pdf_path],
+        capture_output=True)
+    if result.returncode != 0:
+        raise RuntimeError("Ghostscript could not render the PDF: " + result.stderr.decode(errors="replace").strip()[:200])
+    return result.stdout
+
+
+def label_job(width, height, rows, shift, copies):
+    """One SBPL job (one label, `copies` times) for a width x height 1-bit image."""
+    row_bytes = (width + 7) // 8
+    if shift < 0:  # crop |shift| dots off the left edge (H cannot go negative)
+        mask = (1 << (row_bytes * 8)) - 1
+        rows = b"".join(
+            ((int.from_bytes(rows[r * row_bytes:(r + 1) * row_bytes], "big") << -shift) & mask).to_bytes(row_bytes, "big")
+            for r in range(height))
+        shift = 0
+    padded = (height + 7) // 8 * 8  # strips are 8 rows; pad the bottom with white
+    rows += b"\x00" * (row_bytes * (padded - height))
+    if padded > MAX_FIELD or width > MAX_FIELD or row_bytes > MAX_BYTES_PER_ROW:
+        raise ValueError(f"label of {width} x {height} dots is too large for SBPL")
+    out = bytearray(b"\x1bA")
+    out += b"\x1bA1%04d%04d" % (padded, width)
+    out += b"\x1bA3V0000H0000"
+    for y in range(0, padded, 8):
+        strip = rows[y * row_bytes:(y + 8) * row_bytes]
+        if any(strip):
+            out += b"\x1bH%d\x1bV%04d\x1bGB%03d001" % (shift, y, row_bytes) + strip
+    out += b"\x1bQ%d\x1bZ" % copies
+    return bytes(out)
+
+
+def main(argv):
+    if len(argv) not in (6, 7):
+        sys.stderr.write("Usage: pdftosbpl job-id user title copies options [file]\n")
+        return 1
+    try:
+        copies = min(max(int(argv[4]), 1), MAX_COPIES)
+    except ValueError:
+        copies = 1
+    options = parse_options(argv[5])
+    dpi, shift = dpi_from(options), shift_from(options)
+
+    with tempfile.NamedTemporaryFile(suffix=".pdf") as spool:  # Ghostscript wants a seekable file
+        source = open(argv[6], "rb") if len(argv) == 7 else sys.stdin.buffer
+        with source:
+            spool.write(source.read())
+        spool.flush()
+        try:
+            pages = list(read_pbm_pages(render(spool.name, dpi)))
+            if not pages:
+                raise ValueError("the PDF has no pages")
+            out = sys.stdout.buffer
+            for number, (width, height, rows) in enumerate(pages, 1):
+                out.write(label_job(width, height, rows, shift, copies))
+                out.flush()
+                log("PAGE", f"{number} {copies}")
+        except (RuntimeError, ValueError) as error:
+            log("ERROR", str(error))
+            return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
