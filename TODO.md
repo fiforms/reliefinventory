@@ -109,7 +109,7 @@ Issues identified August 17, 2026
    (`QUEUE_SERVICE`, `BACKUP_DIR`) to resolve correctly without explicit overrides.
 
 8. ~~Set FEEDBACK_NOTIFY_EMAIL in .env on demo and wa26~~ — done 2026-08-17
-   (daniel@pastordaniel.net, hellopastormark@gmail.com on both instances).
+   (both developer addresses, on both instances).
 
 9. Deploy step: install the `weasyprint` binary on any server this app runs on
  - Every PDF in the app (see item 2 above) renders via a `weasyprint` driver; headless Chrome is
