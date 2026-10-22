@@ -327,7 +327,9 @@ export default {
 						<td>{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</td>
 						<td>{{ order.driver?.name }}<span v-if="order.driver?.phone"> — {{ order.driver.phone }}</span></td>
 						<td><PrintMenu document-key="bol" media="report" variant="link" label="View BOL" :params="{ id: order.id }"
-							:download-href="'/report/bol/' + order.id + '.pdf'" /></td>
+							:download-href="'/report/bol/' + order.id + '.pdf'" />
+							&nbsp;<PrintMenu document-key="shipping-label" media="label_large" variant="link" label="Shipping Label" :params="{ id: order.id }"
+							:download-href="'/report/shipping-label/' + order.id + '.pdf'" /></td>
 						<td>
 							<button
 								class="ri_defaultbutton"
@@ -352,7 +354,9 @@ export default {
 						<td>{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</td>
 						<td>{{ order.driver?.name }}<span v-if="order.driver?.phone"> — {{ order.driver.phone }}</span></td>
 						<td><PrintMenu document-key="bol" media="report" variant="link" label="View BOL" :params="{ id: order.id }"
-							:download-href="'/report/bol/' + order.id + '.pdf'" /></td>
+							:download-href="'/report/bol/' + order.id + '.pdf'" />
+							&nbsp;<PrintMenu document-key="shipping-label" media="label_large" variant="link" label="Shipping Label" :params="{ id: order.id }"
+							:download-href="'/report/shipping-label/' + order.id + '.pdf'" /></td>
 					</tr>
 					<tr v-if="!shipped.length && !loading"><td colspan="4" class="ship_empty">Nothing currently Shipped.</td></tr>
 				</tbody>

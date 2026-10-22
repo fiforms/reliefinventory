@@ -140,6 +140,8 @@ export default {
 								<p v-if="record.status === 'Filled'" class="oor_bollink">
 									<PrintMenu document-key="bol" media="report" label="Generate BOL" :params="{ id: record.id }"
 										:download-href="'/report/bol/' + record.id + '.pdf'" />
+									<PrintMenu document-key="shipping-label" media="label_large" label="Shipping Label" :params="{ id: record.id }"
+										:download-href="'/report/shipping-label/' + record.id + '.pdf'" />
 								</p>
 								<table class="oor_subtable" v-if="record.lines.length">
 									<thead>

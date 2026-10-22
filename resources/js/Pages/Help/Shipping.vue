@@ -76,6 +76,15 @@ defineProps({
 				to sign. The BOL number is assigned the first time it's generated and stays the same if
 				you print it again.
 			</p>
+			<p class="text-sm text-gray-700">
+				Next to it is a <strong>Shipping Label</strong> menu. It makes a 4 x 6.5 in label to stick
+				on the shipment, showing the order number (with a barcode), who and where it is going,
+				the contact, fulfillment method, number of pallets, date packed, requested date and the
+				special instructions (cut short if they are long). Only printers loaded with large
+				labels are offered; the PDF download is always available. The pallet count comes from
+				<strong>Pallets packed</strong> in Order Filling, and the label is blank there if it
+				wasn't entered. The date packed is when the last item was picked.
+			</p>
 		</section>
 
 		<section class="bg-white shadow rounded-lg p-6 space-y-4">

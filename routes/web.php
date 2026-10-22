@@ -786,6 +786,11 @@ Route::get('/report/bol/{id}.pdf', [OrderController::class, 'bolPdf'])
     ->name('report.bol')
     ->middleware(['auth', 'permission:manage-orders']);
 
+// 4 x 6.5 in shipping label for a Filled order (pure render, no mutation).
+Route::get('/report/shipping-label/{id}.pdf', [OrderController::class, 'shippingLabelPdf'])
+    ->name('report.shipping-label')
+    ->middleware(['auth', 'permission:manage-orders']);
+
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-packagetypes']], function () {
     Route::get('/packagetypes', [PackageTypeController::class, 'index']);
     Route::post('/packagetypes', [PackageTypeController::class, 'store']);
