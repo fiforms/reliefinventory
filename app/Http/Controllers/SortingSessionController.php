@@ -47,6 +47,7 @@ class SortingSessionController extends Controller
         'disposition' => 'required|in:usable,outdated,trashed,diverted',
         // new vs. used is only recorded for usable goods (see conditionFor)
         'item_condition' => 'nullable|in:new,used',
+        'expires_on' => 'nullable|date',
         'pallet_tag' => 'nullable|string',
     ];
 
@@ -290,6 +291,7 @@ class SortingSessionController extends Controller
             'qty_added' => $data['qty'],
             'disposition' => $data['disposition'],
             'item_condition' => self::conditionFor($data['disposition'], $data['item_condition'] ?? null),
+            'expires_on' => $data['expires_on'] ?? null,
             'person_id_user' => Auth::id(),
         ]);
 
@@ -312,8 +314,12 @@ class SortingSessionController extends Controller
             'qty' => 'nullable|integer|min:1',
             'disposition' => 'nullable|in:usable,outdated,trashed,diverted',
             'item_condition' => 'nullable|in:new,used',
+            'expires_on' => 'nullable|date',
         ]);
 
+        if (array_key_exists('expires_on', $data)) {
+            $line->expires_on = $data['expires_on'];
+        }
         if (isset($data['qty'])) {
             $line->qty_added = $data['qty'];
         }
@@ -349,7 +355,8 @@ class SortingSessionController extends Controller
      * Combine duplicate lines in this session: scanning every item one at a
      * time is quicker for sorters, but a pallet of 40 identical cans shouldn't
      * stay 40 rows. Lines merge only when everything that matters downstream is
-     * identical — item, source pallet, disposition, new/used condition, who
+     * identical — item, source pallet, disposition, new/used condition, expiration date (no date merges only with
+     * no date, a date only with the same date), who
      * entered it, and the calendar day (the Sorting Area report counts by day)
      * — so totals, provenance and the audit trail are unchanged; the earliest
      * row of each group keeps the summed quantity and the rest are removed.
@@ -371,6 +378,7 @@ class SortingSessionController extends Controller
                 $line->pallet_id ?? 0,
                 $line->disposition,
                 $line->item_condition ?? '',
+                $line->expires_on ?? '',
                 $line->person_id_user ?? 0,
                 $line->created_at?->toDateString(),
             ]))->each(function ($group) use (&$removed) {

@@ -26,6 +26,7 @@ class ItemLedger extends Model
         'qty_subtracted',   // Quanitity of items removed
         'disposition',      // usable | outdated | trashed | diverted
         'item_condition',   // new | used — usable sorting rows only, see add_condition migration
+        'expires_on',       // optional best-by date a sorter recorded on this line (null = unknown)
         'transaction_type', // Type of transaction (e.g., 'addition', 'removal')
         'reference_id',     // Reference ID for the related entity (e.g., order, donation)
         'description',      // Description of the transaction

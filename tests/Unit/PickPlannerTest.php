@@ -60,3 +60,36 @@ test('steps come back in pick-path order and a shortfall is reported', function 
 
     expect(summarize($plan))->toBe(['2:10o', '1:10o', '3:10o'])->and($plan['short'])->toBe(10)->and($plan['first_sequence'])->toBe(100);
 });
+
+test('expiring pallets are picked before undated ones, earliest date first', function () {
+    $plan = PickPlanner::planFor(planHoldings([], [
+        ['pallet_id' => 1, 'status' => 'sealed', 'qty' => 100],
+        ['pallet_id' => 2, 'status' => 'sealed', 'qty' => 100, 'expires_on' => '2027-06-01'],
+        ['pallet_id' => 3, 'status' => 'sealed', 'qty' => 100, 'expires_on' => '2027-01-01'],
+        ['pallet_id' => 4, 'status' => 'open', 'qty' => 50],
+        ['pallet_id' => 5, 'status' => 'open', 'qty' => 50, 'expires_on' => '2027-03-01'],
+    ]), 280);
+
+    // the two dated sealed pallets ship whole (the undated 100 no longer fits), then the dated open pallet is emptied
+    // before the undated one; steps are listed in pick-path (pallet id) order
+    expect(summarize($plan))->toBe(['2:100s', '3:100s', '4:30o', '5:50o']);
+
+    $open = PickPlanner::planFor(planHoldings([], [
+        ['pallet_id' => 4, 'status' => 'open', 'qty' => 50],
+        ['pallet_id' => 5, 'status' => 'open', 'qty' => 50, 'expires_on' => '2027-03-01'],
+    ]), 60);
+    expect(summarize($open))->toBe(['4:10o', '5:50o'])->and($open['steps'][1]['expires_on'])->toBe('2027-03-01');
+});
+
+test('a sealed pallet that also holds other items is never "whole" for one item — it has to be opened', function () {
+    $plan = PickPlanner::planFor(planHoldings([], [
+        ['pallet_id' => 1, 'status' => 'sealed', 'qty' => 27, 'pallet_total' => 37], // 27 of ours + 10 of something else
+        ['pallet_id' => 2, 'status' => 'open', 'qty' => 9],
+    ]), 36);
+
+    expect(summarize($plan))->toBe(['1:27s', '2:9o'])
+        ->and($plan['steps'][0]['whole'])->toBeFalse()->and($plan['steps'][0]['needs_open'])->toBeTrue();
+
+    $solo = PickPlanner::planFor(planHoldings([], [['pallet_id' => 1, 'status' => 'sealed', 'qty' => 27, 'pallet_total' => 27]]), 27);
+    expect($solo['steps'][0]['whole'])->toBeTrue();
+});

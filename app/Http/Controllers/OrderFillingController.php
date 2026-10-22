@@ -205,7 +205,9 @@ class OrderFillingController extends Controller
                 return response()->json(['errors' => ['pallet_tag' => ['Unknown Warehouse pallet tag.']]], 422);
             }
             // A sealed pallet can't be picked *from*, but it can leave whole: the pick must take everything on it.
-            $takesWholeSealed = $pallet->status === 'sealed' && PalletStock::palletTotal($pallet->id) === (int) $data['qty'];
+            $onPallet = PalletStock::palletTotal($pallet->id);
+            $takesWholeSealed = $pallet->status === 'sealed' && $onPallet === (int) $data['qty']
+                && (int) PalletStock::quantities([$pallet->id], [(int) $item->id])->sum('qty') === $onPallet; // all of it is this item
             if ($pallet->status !== 'open' && ! $takesWholeSealed) {
                 return response()->json(['errors' => ['pallet_tag' => [$pallet->status === 'sealed'
                     ? "{$pallet->tag} is sealed — open it first to pick part of it (or take the whole pallet)."
@@ -366,9 +368,41 @@ class OrderFillingController extends Controller
         if (isset($data['qty'])) {
             $fill->qty_subtracted = $data['qty'];
         }
-        $fill->save();
 
-        return response()->json(['record' => $fill->load(['item.itemtype'])]);
+        return DB::transaction(function () use ($fill) {
+            $fill->save();
+
+            // A fill picked from a pallet must not leave that pallet holding less than nothing of the item.
+            if ($fill->stock_pallet_id) {
+                $left = (int) PalletStock::quantities([$fill->stock_pallet_id], [(int) $fill->item_id])->sum('qty');
+                if ($left < 0) {
+                    DB::rollBack();
+
+                    return response()->json(['errors' => ['qty' => ['That pallet does not hold that much of this item.']]], 422);
+                }
+                $this->syncPalletEmptiness($fill->stock_pallet_id);
+            }
+
+            return response()->json(['record' => $fill->load(['item.itemtype'])]);
+        });
+    }
+
+    /**
+     * A pallet is "empty" exactly when nothing is recorded on it. Picking clears it; undoing or shrinking a pick can put
+     * stock back, so it must come back as an open pallet rather than stay empty with goods on it.
+     */
+    private function syncPalletEmptiness(int $palletId): void
+    {
+        $pallet = Pallet::find($palletId);
+        if (! $pallet || $pallet->kind !== PalletKind::WAREHOUSE) {
+            return;
+        }
+        $total = PalletStock::palletTotal($palletId);
+        if ($total <= 0 && $pallet->status !== 'empty') {
+            $pallet->transitionTo('empty', null, 'Picked clean');
+        } elseif ($total > 0 && $pallet->status === 'empty') {
+            $pallet->transitionTo('open', null, 'Pick changed — stock is back on the pallet');
+        }
     }
 
     public function destroyFill($id, $lineId, $fillId)
@@ -376,7 +410,15 @@ class OrderFillingController extends Controller
         $order = Transaction::where('type', 'order')->findOrFail($id);
         $this->rejectUnlessFilling($order);
         $line = $order->orderLines()->findOrFail($lineId);
-        $line->itemLedgers()->findOrFail($fillId)->delete();
+        $fill = $line->itemLedgers()->findOrFail($fillId);
+        $palletId = $fill->stock_pallet_id;
+
+        DB::transaction(function () use ($fill, $palletId) {
+            $fill->delete();
+            if ($palletId) {
+                $this->syncPalletEmptiness($palletId);
+            }
+        });
 
         return response()->json(['success' => true]);
     }

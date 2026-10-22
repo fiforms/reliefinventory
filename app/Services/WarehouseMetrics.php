@@ -250,6 +250,7 @@ class WarehouseMetrics
     {
         $totals = DB::table('item_ledgers')
             ->where('created_at', '>=', Carbon::now()->subDays($days))
+            ->whereNull('stock_pallet_id') // adjustments aren't donations
             ->whereNotNull('qty_added')
             ->selectRaw("
                 SUM(CASE WHEN disposition = 'usable' THEN qty_added ELSE 0 END) as usable,

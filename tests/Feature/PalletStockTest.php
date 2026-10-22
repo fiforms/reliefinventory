@@ -34,7 +34,7 @@ function rack(string $code): Location
     return Location::forceCreate(['warehouse_id' => $wh->id, 'use_id' => $use->id, 'code' => $code, 'status' => 'active']);
 }
 
-beforeEach(fn () => $this->actingAs(userWithPermissions('manage-pallets', 'manage-orders', 'view-reports', 'general-access')));
+beforeEach(fn () => $this->actingAs(userWithPermissions('manage-pallets', 'manage-orders', 'view-reports', 'general-access', 'adjust-inventory')));
 
 test('filling a new pallet records it sealed at the location and drains the sorting-area pool', function () {
     $item = stockItem(200);
@@ -187,4 +187,113 @@ test('the sorting-area report shows sorted vs. put on pallets and what is still 
         ->assertJsonPath('items.0.sorted', 0)->assertJsonPath('items.0.in_area', 40);
 
     $this->get('/report/sorting-area.csv')->assertOk()->assertHeader('Content-Type', 'text/csv; charset=UTF-8');
+});
+
+test('filling a pallet records its expiration date, and the sorting-area list suggests one from dated lines', function () {
+    $item = stockItem(50);
+    ItemLedger::where('item_id', $item->id)->update(['expires_on' => '2027-02-02']);
+
+    $this->getJson('/json/pallet-stock/staging')->assertOk()->assertJsonPath('records.0.expires_on', '2027-02-02');
+
+    $id = $this->postJson('/json/pallet-stock/fill', ['expires_on' => '2027-02-02', 'lines' => [['item_id' => $item->id, 'qty' => 20]]])
+        ->assertCreated()->assertJsonPath('record.expires_on', '2027-02-02')->json('record.id');
+    expect(Pallet::find($id)->earliest_expiry)->toContain('2027-02-02');
+
+    $this->postJson("/json/pallet-stock/{$id}/open")->assertOk(); // a sealed pallet takes no additions
+
+    // topping up without the key leaves the date alone; sending an earlier one replaces it
+    $this->postJson('/json/pallet-stock/fill', ['pallet_id' => $id, 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->assertCreated();
+    expect(Pallet::find($id)->earliest_expiry)->toContain('2027-02-02');
+    $this->postJson('/json/pallet-stock/fill', ['pallet_id' => $id, 'expires_on' => '2027-01-01', 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->assertCreated();
+    expect(Pallet::find($id)->earliest_expiry)->toContain('2027-01-01');
+});
+
+test('empty pallets are left out of the location list and counts, and pallet lookup carries contents', function () {
+    $item = stockItem(40);
+    $loc = rack('A1');
+    $id = $this->postJson('/json/pallet-stock/fill', ['location_id' => $loc->id, 'lines' => [['item_id' => $item->id, 'qty' => 10]]])->assertCreated()->json('record.id');
+    $emptyId = $this->postJson('/json/pallet-stock/fill', ['location_id' => $loc->id, 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->json('record.id');
+    Pallet::whereKey($emptyId)->update(['status' => 'empty']);
+
+    $this->getJson("/json/palletstatus/location/{$loc->id}")->assertOk()->assertJsonCount(1, 'records')->assertJsonPath('records.0.id', $id);
+    expect(collect($this->getJson('/json/palletstatus/summary')->json('locations'))->firstWhere('id', $loc->id)['total'])->toBe(1);
+
+    $this->getJson('/json/palletstatus/lookup?tag='.$id)->assertOk()->assertJsonPath('record.contents.0.qty', 10)->assertJsonPath('record.sorted_from', null);
+});
+
+test('a sealed pallet takes no additions; unseal, adjust with a reason, and re-seal', function () {
+    $item = stockItem(50);
+    $other = stockItem(0);
+    $loc = rack('B2');
+    $id = $this->postJson('/json/pallet-stock/fill', ['location_id' => $loc->id, 'lines' => [['item_id' => $item->id, 'qty' => 20]]])->assertCreated()->json('record.id');
+
+    // sealed: no additions, no adjustment
+    $this->postJson('/json/pallet-stock/fill', ['pallet_id' => $id, 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->assertStatus(422);
+    $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", ['reason' => 'shrinkage', 'lines' => [['item_id' => $item->id, 'qty' => -1]]])->assertStatus(422);
+    $this->postJson("/json/pallet-stock/{$id}/seal")->assertStatus(422);
+
+    $this->postJson("/json/pallet-stock/{$id}/open")->assertOk()->assertJsonPath('record.status', 'open');
+
+    // reason required; "other" needs notes; can't remove more than is there
+    $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", ['lines' => [['item_id' => $item->id, 'qty' => -1]]])->assertStatus(422);
+    $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", ['reason' => 'other', 'lines' => [['item_id' => $item->id, 'qty' => -1]]])->assertStatus(422);
+    $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", ['reason' => 'damaged', 'lines' => [['item_id' => $item->id, 'qty' => -21]]])->assertStatus(422);
+
+    $onHandBefore = PalletStock_onHand($item->id);
+    $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", [
+        'reason' => 'correcting_item_type',
+        'lines' => [['item_id' => $item->id, 'qty' => -4], ['item_id' => $other->id, 'qty' => 4]],
+    ])->assertCreated();
+
+    $contents = collect($this->getJson("/json/pallets/{$id}/contents")->json('record.contents'))->pluck('qty', 'item_id');
+    expect($contents[$item->id])->toBe(16)->and($contents[$other->id])->toBe(4);
+    // it changes how much exists (4 fewer of one, 4 more of the other) without touching the sorting-area pool
+    expect(PalletStock_onHand($item->id))->toBe($onHandBefore - 4)->and(PalletStock_onHand($other->id))->toBe(4);
+    $tx = \App\Models\Transaction::where('type', 'adjustment')->first();
+    expect($tx->adjustment_reason)->toBe('correcting_item_type')->and(ItemLedger::where('orderdonation_id', $tx->id)->count())->toBe(2);
+
+    $this->postJson("/json/pallet-stock/{$id}/seal")->assertOk()->assertJsonPath('record.status', 'sealed');
+});
+
+function PalletStock_onHand(int $itemId): int
+{
+    return \App\Services\PalletStock::onHand($itemId);
+}
+
+test('adjusting a pallet needs its own permission beyond moving stock', function () {
+    $item = stockItem(10);
+    $id = $this->postJson('/json/pallet-stock/fill', ['location_id' => rack('C3')->id, 'lines' => [['item_id' => $item->id, 'qty' => 5]]])->json('record.id');
+    $this->postJson("/json/pallet-stock/{$id}/open")->assertOk();
+
+    $this->actingAs(userWithPermissions('manage-pallets', 'general-access'));
+    $this->postJson("/json/pallet-stock/{$id}/adjust-inventory", ['reason' => 'shrinkage', 'lines' => [['item_id' => $item->id, 'qty' => -1]]])->assertForbidden();
+    $this->postJson("/json/pallet-stock/{$id}/seal")->assertOk(); // ordinary movement permission still seals/unseals
+});
+
+test('a sealed pallet with other items on it is not taken whole, and undoing a pick that emptied a pallet reopens it', function () {
+    $this->actingAs(userWithPermissions('manage-pallets', 'manage-orders', 'view-reports', 'general-access', 'adjust-inventory'));
+    $a = stockItem(30);
+    $b = Item::create(['itemtype_id' => ItemType::create(['name' => 'Tarps', 'unit_id' => $a->itemtype->unit_id, 'category_id' => $a->itemtype->category_id])->id, 'packagetypes_id' => $a->packagetypes_id, 'description' => 'Tarp']);
+    $donation = Transaction::first();
+    ItemLedger::create(['orderdonation_id' => $donation->id, 'item_id' => $b->id, 'qty_added' => 10, 'disposition' => 'usable']);
+
+    $pallet = $this->postJson('/json/pallet-stock/fill', ['location_id' => rack('D4')->id, 'lines' => [['item_id' => $a->id, 'qty' => 27], ['item_id' => $b->id, 'qty' => 10]]])->assertCreated()->json('record');
+
+    $order = Transaction::create(['type' => 'order', 'person_id' => Person::first()->id, 'person_id_user' => User::factory()->create()->id, 'status_id' => Transaction::statusId(Transaction::STATUS_FILLING), 'order_date' => now()->toDateString()]);
+    $line = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $a->itemtype_id, 'qty_requested' => 27]);
+
+    // 27 of item A is everything of A but not everything on the pallet: opening is required
+    $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $a->id, 'qty' => 27, 'pallet_tag' => $pallet['tag']])->assertStatus(422);
+    $plan = $this->getJson("/json/order-filling/{$order->id}/plan")->json('lines.'.$line->id);
+    expect(collect($plan['steps'])->firstWhere('kind', 'pallet')['whole'])->toBeFalse();
+
+    // open it, pick all of A (pallet still holds B), then undo: nothing weird. Pick B too to empty it, then undo that.
+    $this->postJson("/json/order-filling/pallets/{$pallet['id']}/open")->assertOk();
+    $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $a->id, 'qty' => 27, 'pallet_tag' => $pallet['tag']])->assertCreated();
+    $lineB = OrderLine::create(['orderdonation_id' => $order->id, 'itemtype_id' => $b->itemtype_id, 'qty_requested' => 10]);
+    $fillB = $this->postJson("/json/order-filling/{$order->id}/lines/{$lineB->id}/fills", ['item_id' => $b->id, 'qty' => 10, 'pallet_tag' => $pallet['tag']])->assertCreated()->json('record.id');
+    expect(Pallet::find($pallet['id'])->status)->toBe('empty');
+
+    $this->deleteJson("/json/order-filling/{$order->id}/lines/{$lineB->id}/fills/{$fillB}")->assertOk();
+    expect(Pallet::find($pallet['id'])->status)->toBe('open');
 });

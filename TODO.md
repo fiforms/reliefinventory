@@ -250,3 +250,7 @@ Issues identified October 8, 2026
    full exports (JSONL, CSV, Parquet, Mongo dump; ODbL — attribution required). Import a filtered copy into a local table and query
    it ahead of the online chain; the food dataset is large, so filter by country/category. Not built.
 
+
+16. "Empty pallets" report (idea, 2026-10-21) — Inventory Movement > Locations no longer lists or counts pallets whose status is `empty`
+   (they are finished, not stock). A separate report of empty pallets (which, where last seen, when emptied) would let staff find and
+   reuse/recycle them.

@@ -54,7 +54,8 @@ class SortingAreaReportController extends Controller
         $from = Carbon::parse($filters['from'] ?? now()->toDateString())->startOfDay();
         $to = Carbon::parse($filters['to'] ?? $from->toDateString())->endOfDay();
 
-        $sorted = ItemLedger::query()->whereBetween('created_at', [$from, $to])
+        // Sorting additions never name a warehouse pallet; an inventory adjustment's additions do, so they aren't "sorted".
+        $sorted = ItemLedger::query()->whereBetween('created_at', [$from, $to])->whereNull('stock_pallet_id')
             ->whereRaw("COALESCE(disposition, 'usable') = 'usable'")->where('qty_added', '>', 0)
             ->groupBy('item_id')->selectRaw('item_id, SUM(qty_added) as qty')->toBase()->pluck('qty', 'item_id');
 
@@ -96,7 +97,7 @@ class SortingAreaReportController extends Controller
     {
         $remaining = $qty;
         $date = null;
-        $rows = ItemLedger::where('item_id', $itemId)->where('qty_added', '>', 0)->whereRaw("COALESCE(disposition, 'usable') = 'usable'")
+        $rows = ItemLedger::where('item_id', $itemId)->whereNull('stock_pallet_id')->where('qty_added', '>', 0)->whereRaw("COALESCE(disposition, 'usable') = 'usable'")
             ->orderByDesc('created_at')->orderByDesc('id')->get(['qty_added', 'created_at']);
         foreach ($rows as $row) {
             $date = $row->created_at;
