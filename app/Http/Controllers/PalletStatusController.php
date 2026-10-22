@@ -10,6 +10,8 @@ use App\Models\ItemLedger;
 use App\Models\Location;
 use App\Models\Pallet;
 use App\Models\PalletStatus;
+use App\Models\PalletStockAssignment;
+use App\Support\InventoryLabelCode;
 use App\Support\PalletKind;
 use Illuminate\Http\Request;
 
@@ -156,11 +158,23 @@ class PalletStatusController extends Controller
      */
     public function lookup(Request $request)
     {
-        $id = SortingSessionController::palletIdFromTag((string) $request->query('tag', ''));
+        $tag = (string) $request->query('tag', '');
+
+        // An inventory label (ACS:1234-01:5678) finds the pallet its stock was put on.
+        $assignment = null;
+        if ($assignmentId = InventoryLabelCode::parse($tag)) {
+            $assignment = PalletStockAssignment::with('item.itemtype')->find($assignmentId);
+            if (! $assignment) {
+                return response()->json(['message' => 'Unknown inventory label: '.$tag], 404);
+            }
+            $id = $assignment->pallet_id;
+        } else {
+            $id = SortingSessionController::palletIdFromTag($tag);
+        }
         $pallet = $id ? Pallet::with('location:id,code')->find($id) : null;
 
         if (! $pallet) {
-            return response()->json(['message' => 'Unknown pallet: '.$request->query('tag')], 404);
+            return response()->json(['message' => 'Unknown pallet: '.$tag], 404);
         }
 
         $last = $pallet->statuses()->with('location:id,code')->latest('id')->first();
@@ -181,6 +195,12 @@ class PalletStatusController extends Controller
             'labels' => $stock['labels'] ?? null,
             'sorted_from' => $pallet->kind === PalletKind::RECEIVING ? $this->sortedFrom($pallet) : null,
             'statuses' => $this->statusOptions($pallet->kind),
+            // Set only when the scan was an inventory label: which label, so the screen can point at it.
+            'scanned_label' => $assignment ? [
+                'id' => $assignment->id,
+                'name' => $assignment->item?->description ?? $assignment->item?->itemtype?->name ?? '#'.$assignment->item_id,
+                'qty' => $assignment->qty,
+            ] : null,
         ]]);
     }
 
