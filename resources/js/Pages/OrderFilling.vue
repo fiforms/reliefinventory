@@ -36,14 +36,15 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import SearchSelect from '@/Components/SearchSelect.vue';
-import QrScanner from '@/Components/QrScanner.vue';
+import ScanButton from '@/Components/ScanButton.vue';
+import { playScanError, playScanMatched } from '@/scanSounds';
 import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
 const NEED_LEVEL_LABELS = { critical: 'Critical', moderate: 'Moderate', low: 'Low' };
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner, PrintMenu },
+	components: { AuthenticatedLayout, Head, SearchSelect, ScanButton, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -78,8 +79,6 @@ export default {
 			// where each itemtype's stock is (sorting-area pool + warehouse pallets), keyed by itemtype id
 			plans: {}, // suggested pick per line id (see PickPlanner): { steps, short, first_sequence }
 			openingPalletId: null,
-			showScanner: false,
-			scanningLineId: null,
 
 			// item catalog, fetched once and filtered client-side per line's
 			// itemtype — same pattern DonationSorting.vue uses for /json/items
@@ -335,24 +334,32 @@ export default {
 			this.entryByLine[line.id].item = item;
 			this.$nextTick(() => this.$refs['qtyInput_' + line.id]?.[0]?.focus());
 		},
-		openScannerForLine(lineId) {
-			this.scanningLineId = lineId;
-			this.showScanner = true;
+		scanMatchedLocally() {
+			playScanMatched();
 		},
-		onScanned(text) {
-			this.showScanner = false;
-			if (!this.scanningLineId) return;
-			const line = this.orderLines.find((l) => l.id === this.scanningLineId);
-			if (!line) return;
-			const match = this.itemsForItemtype(line.itemtype_id)
-				.find((item) => item.upc === text || item.name === text);
-			if (match) {
+		// A barcode in a line's item box (typed by a wedge scanner or by the camera button) that didn't exactly match a
+		// variant's stored text: ask the server, which normalises UPC-A / EAN-13 / GTIN-14 spellings and maps cartons,
+		// and accept it only if it is one of the variants offered for this line.
+		async onItemScan(line, code) {
+			this.fillError = null;
+			try {
+				const response = await axios.get('/json/upc/resolve', { params: { code, online: 0 } });
+				const item = response.data.status === 'matched' ? response.data.item : null;
+				const match = item && this.itemsForItemtype(line.itemtype_id).find((i) => i.id === item.id);
+				if (!match) {
+					playScanError();
+					this.fillError = 'Scanned code did not match an item for this line.';
+					this.$refs['itemSelect_' + line.id]?.[0]?.clearSelection();
+					return;
+				}
 				this.entryByLine[line.id].item_id = match.id;
 				this.itemChosenForLine(line, match);
-			} else {
-				this.fillError = 'Scanned code did not match an item for this line.';
+				if (response.data.kind === 'carton' && response.data.qty) this.entryByLine[line.id].qty = response.data.qty;
+				playScanMatched();
+			} catch (error) {
+				playScanError();
+				this.fillError = error.response?.data?.message || 'Could not look up that barcode. Search for the item instead.';
 			}
-			this.scanningLineId = null;
 		},
 		async addFill(line) {
 			this.fillError = null;
@@ -555,6 +562,10 @@ export default {
 							<div class="of_fillentry">
 								<SearchSelect
 									v-if="itemsForItemtype(line.itemtype_id).length > 1"
+									:ref="'itemSelect_' + line.id"
+									:scanDigits="true"
+									@scan="(code) => onItemScan(line, code)"
+									@scanmatch="scanMatchedLocally"
 									v-model="entryByLine[line.id].item_id"
 									:options="itemsForItemtype(line.itemtype_id)"
 									display="name"
@@ -562,8 +573,8 @@ export default {
 									placeholder="Scan or search item..."
 									@selected="(item) => itemChosenForLine(line, item)"
 								/>
-								<button v-if="itemsForItemtype(line.itemtype_id).length > 1"
-									@click="openScannerForLine(line.id)" class="ri_linkbutton">Scan</button>
+								<ScanButton v-if="itemsForItemtype(line.itemtype_id).length > 1"
+									:target="() => $refs['itemSelect_' + line.id]?.[0]" />
 								<input
 									:ref="'qtyInput_' + line.id"
 									type="number" min="0"
@@ -636,15 +647,6 @@ export default {
 					Nothing has been picked — completing will close this request as Unfulfilled instead of
 					sending it to Shipping.
 				</span>
-			</div>
-		</div>
-
-		<!-- ======================= CAMERA SCAN MODAL ======================= -->
-		<div v-if="showScanner" class="of_modal_overlay" @click.self="showScanner = false">
-			<div class="of_modal">
-				<h3>Scan Item</h3>
-				<QrScanner @scanned="onScanned" />
-				<button @click="showScanner = false" class="ri_formbutton">Cancel</button>
 			</div>
 		</div>
 	</AuthenticatedLayout>

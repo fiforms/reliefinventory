@@ -3,7 +3,7 @@
 	
 <script setup>
 import { onMounted, ref, computed } from 'vue';
-import QrScanner from '@/Components/QrScanner.vue';
+import ScanButton from '@/Components/ScanButton.vue';
 
 const model = defineModel({
     type: [String, Number, null],
@@ -38,18 +38,6 @@ const props = defineProps({
 });
 
 const input = ref(null);
-const showScanner = ref(false);
-
-const onScan = () => {
-  showScanner.value = true;
-};
-
-const handleScanned = (code) => {
-	console.log(code);
-  model.value = code; // Set the scanned code to the input
-  showScanner.value = false; // Hide the scanner
-};
-
 onMounted(() => {
     if (props.autofocus && input.value) {
         input.value.focus();
@@ -70,20 +58,9 @@ defineExpose({ focus: () => input.value.focus() });
         :placeholder="placeholder"
         :autocomplete="autocomplete"
       />
-      <button 
-        v-if="allowscan" 
-        class="scan-button" 
-        @click="onScan">
-        📷
-      </button>
+      <ScanButton v-if="allowscan" :target="() => input" />
     </div>
     <span v-else class="ir_disabled_input">{{ model }}</span>
-	
-	<!-- QR Scanner Full-Screen Overlay -->
-	<div v-if="showScanner" class="qr-overlay">
-	  <QrScanner @scanned="handleScanned" />
-	  <button class="close-scanner" @click="showScanner = false">✖</button>
-	</div>
   </div>
 </template>
 
@@ -104,40 +81,4 @@ defineExpose({ focus: () => input.value.focus() });
   width: calc(100% - 40px); /* Adjusts width when the button is present */
 }
 
-.scan-button {
-  width: 35px;
-  height: 35px;
-  border: none;
-  background-color: #ddd;
-  cursor: pointer;
-  border-radius: 5px;
-  margin-left: 5px;
-}
-
-/* Full-Screen Scanner Overlay */
-.qr-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: rgba(0, 0, 0, 0.8);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  z-index: 9999;
-}
-
-.close-scanner {
-  position: absolute;
-  top: 20px;
-  right: 20px;
-  background: red;
-  color: white;
-  border: none;
-  padding: 10px;
-  font-size: 16px;
-  cursor: pointer;
-  border-radius: 5px;
-}
 </style>

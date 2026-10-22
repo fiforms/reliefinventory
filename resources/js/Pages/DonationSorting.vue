@@ -30,7 +30,7 @@
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, router } from '@inertiajs/vue3';
 import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
-import QrScanner from '@/Components/QrScanner.vue';
+import ScanButton from '@/Components/ScanButton.vue';
 import TextArea from '@/Components/TextArea.vue';
 import TextInput from '@/Components/TextInput.vue';
 import Modal from '@/Components/Modal.vue';
@@ -59,7 +59,7 @@ function dispositionFor(disposition, condition) {
 }
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, QrScanner, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
+	components: { AuthenticatedLayout, Head, SearchSelect, ScanButton, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -94,7 +94,6 @@ export default {
 			palletTagInput: '',
 			pallet: null,
 			palletError: null,
-			showScanner: false,
 			emptyingPallet: false,
 
 			// line entry
@@ -382,7 +381,7 @@ export default {
 		// sorter is typing in (Qty, comments, pallet tag, donor search...), nor
 		// while a modal is open.
 		refocusScanTarget() {
-			if (this.view !== 'session' || this.readonly || this.showItemModal || this.showScanner || this.cartonDialog) return;
+			if (this.view !== 'session' || this.readonly || this.showItemModal || this.cartonDialog) return;
 			setTimeout(() => {
 				const el = document.activeElement;
 				if (el && el !== document.body && (el.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(el.tagName))) return;
@@ -465,10 +464,12 @@ export default {
 				this.palletError = error.response?.data?.message || 'Could not mark the pallet empty.';
 			}
 		},
-		onScanned(text) {
-			this.showScanner = false;
-			this.palletTagInput = text;
-			this.resolvePallet();
+		// Where the entry-row camera scan goes: the carton dialog's box if it is open, else Qty when an item is waiting
+		// on a quantity (a scan there saves it and moves on), else the item box - same choice as refocusScanTarget.
+		itemScanTarget() {
+			if (this.cartonDialog) return this.$refs.cartonItemSelect;
+			if (this.entry.item_id && this.$refs.qtyInput) return this.$refs.qtyInput;
+			return this.$refs.itemSelect;
 		},
 		palletTagStr(id) {
 			// Sorting only ever scans Receiving pallets (enforced
@@ -1257,7 +1258,7 @@ export default {
 						@keydown.enter.prevent="resolvePallet"
 					/>
 					<button @click="resolvePallet" class="ri_formbutton">Set Pallet</button>
-					<button @click="showScanner = true" class="ri_formbutton">Camera Scan</button>
+					<ScanButton :target="() => $refs.palletInput" />
 					<span class="sort_pallet_hint">Lines entered without a pallet won't be source-traceable.</span>
 				</template>
 				<template v-else-if="!emptyingPallet">
@@ -1302,6 +1303,7 @@ export default {
 						@scanmatch="onScanMatchedLocally"
 					/>
 					<span v-if="upcResolving" class="sort_notice">Looking up barcode...</span>
+					<ScanButton :target="itemScanTarget" />
 				</div>
 				<!-- type=text on purpose: a number input's v-model rewrites "012..." to 12...,
 				     which drops a scanned UPC's leading zero when a scan lands here -->
@@ -1400,15 +1402,6 @@ export default {
 				<span>Trash: <strong>{{ totals.trashed }}</strong></span>
 				<span>Diverted: <strong>{{ totals.diverted }}</strong></span>
 				<span>Discard rate: <strong>{{ totals.trashPct }}%</strong></span>
-			</div>
-		</div>
-
-		<!-- ======================= CAMERA SCAN MODAL ======================= -->
-		<div v-if="showScanner" class="sort_modal_overlay" @click.self="showScanner = false">
-			<div class="sort_modal">
-				<h3>Scan Pallet Tag</h3>
-				<QrScanner @scanned="onScanned" />
-				<button @click="showScanner = false" class="ri_formbutton">Cancel</button>
 			</div>
 		</div>
 
