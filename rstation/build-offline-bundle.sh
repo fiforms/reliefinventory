@@ -6,7 +6,9 @@
 # that can put arbitrary files into the root filesystem without changing the platform.
 #
 #   rstation/build-offline-bundle.sh                       # ghcr.io/fiforms/reliefinventory:latest
+#   rstation/build-offline-bundle.sh 0.1.0                 # ghcr.io/fiforms/reliefinventory:0.1.0 (a leading v is dropped)
 #   APP_IMAGE=ghcr.io/fiforms/reliefinventory:1.2.3 rstation/build-offline-bundle.sh
+#   npm run build:offline-bundle -- 0.1.0                  # the same, from the repo root
 #
 # Needs docker (pulling another architecture's image works without emulation) and dpkg-deb, and
 # about 2 GB of scratch space. The result is ~460 MB and is NOT committed (debs/ is gitignored).
@@ -14,7 +16,10 @@
 # in this image; nothing else changes.
 set -euo pipefail
 
-APP_IMAGE="${APP_IMAGE:-ghcr.io/fiforms/reliefinventory:latest}"
+# An optional first argument is the release version; an explicit APP_IMAGE still wins.
+VERSION_ARG="${1:-}"
+DEFAULT_TAG="${VERSION_ARG#v}"
+APP_IMAGE="${APP_IMAGE:-ghcr.io/fiforms/reliefinventory:${DEFAULT_TAG:-latest}}"
 DB_IMAGE="${DB_IMAGE:-mariadb:11}"        # keep in step with docker/compose.yaml
 PLATFORM=linux/arm64
 HERE="$(cd "$(dirname "$0")" && pwd)"
