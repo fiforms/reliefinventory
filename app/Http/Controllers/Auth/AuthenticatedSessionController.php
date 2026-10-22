@@ -6,10 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginHistory;
 use App\Services\PinLoginService;
+use App\Services\TurnstileService;
+use App\Support\EmailFailureMessage;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -39,7 +43,7 @@ class AuthenticatedSessionController extends Controller
         }
 
         return Inertia::render('Auth/Login', [
-            'canResetPassword' => Route::has('password.request') && ! app(\App\Services\TurnstileService::class)->misconfigured(),
+            'canResetPassword' => Route::has('password.request') && ! app(TurnstileService::class)->misconfigured(),
             'status' => session('status'),
         ]);
     }
@@ -55,13 +59,36 @@ class AuthenticatedSessionController extends Controller
         $user = $request->user();
         // print_r($user); die();
 
-        // If the user implements MustVerifyEmail and has not verified their email,
-        // log them out and redirect to a verification notice page with an error.
+        // Unverified: log them out and send a fresh verification link — a
+        // correct password proves it's them, and without this an expired
+        // or lost link leaves no way back in (the resend button sits behind
+        // login). The message has to land on the login page itself: the
+        // verification notice is behind `auth`, so redirecting there just
+        // bounced back to login and lost the error.
         if ($user instanceof MustVerifyEmail && ! $user->hasVerifiedEmail()) {
             Auth::logout();
 
-            return redirect()->route('verification.notice')
-                ->withErrors(['email' => 'You need to verify your email address before logging in.']);
+            $message = 'You need to verify your email address before logging in.';
+            $throttleKey = 'verification-resend:'.$user->getKey();
+
+            if (! RateLimiter::tooManyAttempts($throttleKey, 1)) {
+                RateLimiter::hit($throttleKey, 60);
+
+                try {
+                    $user->sendEmailVerificationNotification();
+                    $message .= ' We just emailed you a new link — check your spam folder if it isn\'t in your inbox.';
+                } catch (\Throwable $e) {
+                    Log::error('Failed to resend verification email at login', [
+                        'user_id' => $user->getKey(),
+                        'exception' => $e,
+                    ]);
+                    $message .= ' We could not send a new link: '.EmailFailureMessage::describe($e);
+                }
+            } else {
+                $message .= ' A new link was sent less than a minute ago — check your inbox and spam folder.';
+            }
+
+            return redirect()->route('login')->withErrors(['email' => $message]);
         }
 
         // Admin-deactivated account (User Administration page) — blocked
