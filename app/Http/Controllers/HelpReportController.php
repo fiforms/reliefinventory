@@ -15,7 +15,7 @@ use Spatie\LaravelPdf\PdfBuilder;
  * between an Inertia page and a Blade/PDF view, so this follows the same
  * duplication already accepted elsewhere (e.g. pallet labels).
  *
- * Adding a guide: add it to GUIDES, write resources/views/reports/help/<slug>.blade.php
+ * Adding a guide: add it to GUIDES (and PAGE_GUIDES, for its page's (?) button), write resources/views/reports/help/<slug>.blade.php
  * (extending reports.help.layout), and build its page on Components/HelpPage.vue —
  * the route, print-queue registry entry and Print button all follow from GUIDES.
  */
@@ -24,8 +24,39 @@ class HelpReportController extends Controller
     /** slug => PDF title. The slug is also the view name and the URL segment. */
     public const GUIDES = [
         'receiving' => 'Receiving Guide',
+        'donation-offers' => 'Donation Offers Guide',
         'sorting' => 'Donation Sorting Guide',
+        'inventory-movement' => 'Inventory Movement Guide',
+        'order-entry' => 'Order Entry Guide',
+        'order-filling' => 'Order Filling Guide',
+        'shipping' => 'Shipping Guide',
+        'items' => 'Master Item List Guide',
+        'people' => 'Partner & Donor Info Guide',
     ];
+
+    /**
+     * Page path (no leading slash) => guide slug. The layout shows a (?) button on exactly these
+     * pages (shared Inertia prop `helpGuide`), linking to /help/<slug>. The Help menu tile was
+     * removed — guides are reached from the page they describe.
+     */
+    public const PAGE_GUIDES = [
+        'receiving' => 'receiving',
+        'receiving/offers' => 'donation-offers',
+        'donation-sorting' => 'sorting',
+        'inventory-movement' => 'inventory-movement',
+        'pallet-management' => 'inventory-movement',
+        'order-entry' => 'order-entry',
+        'order-filling' => 'order-filling',
+        'shipping' => 'shipping',
+        'setup/items' => 'items',
+        'setup/people' => 'people',
+    ];
+
+    /** The guide for a request path, or null when the page has none. */
+    public static function guideForPath(string $path): ?string
+    {
+        return self::PAGE_GUIDES[trim($path, '/')] ?? null;
+    }
 
     public function show(string $guide)
     {

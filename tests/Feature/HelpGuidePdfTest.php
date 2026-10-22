@@ -4,6 +4,7 @@
 // with its margins on @page so they hold past the first page.
 
 use App\Http\Controllers\HelpReportController;
+use Illuminate\Support\Str;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 test('a help guide renders as weasyprint letter pages with its content', function (string $guide, array $expected) {
@@ -23,6 +24,26 @@ test('a help guide renders as weasyprint letter pages with its content', functio
     'receiving' => ['receiving', ['Receiving Guide', 'Welcoming the driver', 'Step by step', 'ready to go to the staging area']],
     'sorting' => ['sorting', ['Donation Sorting Guide', 'Working a pallet', 'Pallet Empty', 'Complete Session']],
 ])->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
+test('every registered guide has a printable view and a Vue page', function (string $guide) {
+    expect(view()->exists('reports.help.'.$guide))->toBeTrue()
+        ->and(file_exists(resource_path('js/Pages/Help/'.Str::studly($guide).'.vue')))->toBeTrue();
+})->with(array_keys(HelpReportController::GUIDES));
+
+test('every page guide mapping points at a registered guide', function () {
+    foreach (HelpReportController::PAGE_GUIDES as $path => $slug) {
+        expect(HelpReportController::GUIDES)->toHaveKey($slug);
+        expect(HelpReportController::guideForPath('/'.$path.'/'))->toBe($slug);
+    }
+    expect(HelpReportController::guideForPath('dashboard'))->toBeNull();
+});
+
+test('a guide page renders for a signed-in user and the page shares its guide slug', function () {
+    $user = userWithPermissions('general-access', 'manage-receiving');
+    $this->actingAs($user)->get('/help/order-entry')->assertOk();
+    $this->actingAs($user)->get('/help/nonexistent')->assertNotFound();
+    $this->actingAs($user)->get('/receiving')->assertInertia(fn ($page) => $page->where('helpGuide', 'receiving'));
+});
 
 test('an unknown help guide is a 404', function () {
     app(HelpReportController::class)->builder('nonexistent');

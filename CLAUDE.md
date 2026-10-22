@@ -274,8 +274,11 @@ re-enter those numbers as manual batches — it's idempotent, topping up only wh
 re-entered, and a manual "Add Label(s)" line stays available underneath for one-off corrections.
 
 In-app Help guides (`resources/js/Pages/Help/*.vue`) are built on `Components/HelpPage.vue`, which always
-renders the "Print these instructions" `PrintMenu`. Adding a guide: add its slug to
-`HelpReportController::GUIDES`, write `resources/views/reports/help/<slug>.blade.php` extending
+renders the "Print these instructions" `PrintMenu`. They are reached from a ❓ button in the nav bar of the page they
+describe (no Help menu tile — removed 2026-10-22): `HelpReportController::PAGE_GUIDES` maps page path → guide slug and
+`HandleInertiaRequests` shares it as the `helpGuide` prop that `AuthenticatedLayout` renders; one `/help/{guide}` route
+serves every guide. Adding a guide: add its slug to
+`HelpReportController::GUIDES` (and its page to `PAGE_GUIDES`), write `resources/views/reports/help/<slug>.blade.php` extending
 `reports.help.layout`, and wrap the page in `<HelpPage guide="<slug>">` — the `/report/help/{guide}` route,
 the `help-<slug>` print-queue entry and the button all follow from `GUIDES`. The PDF content is a hand-kept
 copy of the Vue page's, so edit both.
