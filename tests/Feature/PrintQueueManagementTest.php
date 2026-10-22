@@ -10,19 +10,7 @@ use Illuminate\Support\Facades\Storage;
 
 function mgmtPrinter(string $name = 'Office', string $media = 'report', array $overrides = [], ?ManagedDevice $device = null): Printer
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $device ??= (new ManagedDevice(['name' => 'Server', 'kiosk_function' => 'print_station']))->forceFill([
-        'device_uuid' => 'mgmt-'.uniqid(), 'last_seen_at' => now(),
-        'reported_printers' => [['queue_name' => $name, 'state' => 'idle']],
-    ]);
-    $device->save();
-
-    $printer = (new Printer(array_merge([
-        'name' => $name, 'kiosk_location_id' => $location->id, 'media' => $media, 'active' => true,
-    ], $overrides)))->forceFill(['managed_device_id' => $device->id, 'queue_name' => $name]);
-    $printer->save();
-
-    return $printer;
+    return makePrinter($device ?? printServer([['queue_name' => $name, 'state' => 'idle']]), $name, $media, $overrides);
 }
 
 function mgmtJob(Printer $printer, array $overrides = [], ?int $requestedBy = null): PrintJob

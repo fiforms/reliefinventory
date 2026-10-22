@@ -1,35 +1,7 @@
 <?php
 
-use App\Models\KioskLocation;
-use App\Models\ManagedDevice;
 use App\Models\Printer;
 use App\Models\PrintJob;
-
-function printServer(array $queues = [], bool $online = true): ManagedDevice
-{
-    $device = (new ManagedDevice(['name' => 'Print PC', 'kiosk_function' => 'print_station']))->forceFill([
-        'device_uuid' => 'print-'.uniqid(),
-        'last_seen_at' => $online ? now() : now()->subHour(),
-        'reported_printers' => $queues,
-    ]);
-    $device->save();
-
-    return $device;
-}
-
-function makePrinter(ManagedDevice $device, string $queue, string $media = 'label_large', array $extra = []): Printer
-{
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-
-    $printer = (new Printer(array_merge([
-        'name' => $queue, 'kiosk_location_id' => $location->id, 'media' => $media, 'active' => true,
-    ], $extra)))->forceFill([
-        'managed_device_id' => $device->id, 'queue_name' => $queue,
-    ]);
-    $printer->save();
-
-    return $printer;
-}
 
 function makeJob(?Printer $printer, string $media = 'label_large'): PrintJob
 {

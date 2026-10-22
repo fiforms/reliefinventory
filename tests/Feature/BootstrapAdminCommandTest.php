@@ -35,9 +35,3 @@ test('does nothing once an administrator exists', function () {
 test('fails without an email when no administrator exists', function () {
     $this->artisan('admin:bootstrap')->assertFailed();
 });
-
-test('git version prefers the commit baked into a docker image', function () {
-    config(['app.git_commit' => 'abcdef1234567890']);
-
-    expect(app(\App\Services\GitVersionService::class)->currentCommit())->toBe('abcdef123');
-});

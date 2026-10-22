@@ -3,8 +3,6 @@
 use App\Events\PrintersChanged;
 use App\Events\PrintJobAvailable;
 use App\Events\PrintJobChanged;
-use App\Models\DevicePairingCode;
-use App\Models\KioskLocation;
 use App\Models\ManagedDevice;
 use App\Models\Printer;
 use App\Models\PrintJob;
@@ -31,15 +29,7 @@ function realtimeOn(): void
 // Pairs through the real endpoint; returns [device, token].
 function rtPair(string $uuid = 'rt-1', ?string $function = 'print_station'): array
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::create([
-        'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
-    ]);
-    $response = test()->postJson('/api/devices/pair', ['code' => $code->code, 'device_name' => "Server {$uuid}", 'device_uuid' => $uuid])->assertCreated();
-    $device = ManagedDevice::where('device_uuid', $uuid)->first();
-    $device->forceFill(['kiosk_function' => $function])->save();
-
-    return [$device, $response->json('token')];
+    return pairPrintServer($uuid, $function);
 }
 
 function rtBeat(string $token, array $printers = [['queue_name' => 'Q', 'state' => 'idle']])

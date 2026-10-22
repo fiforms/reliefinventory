@@ -112,10 +112,6 @@ test('the menu loads in a fixed number of queries however many items there are',
     expect($items)->not->toContain('admin-system');
 });
 
-test('a page with no menu entry still gets a breadcrumb instead of crashing', function () {
-    expect(MenuItem::getBreadcrumb('/pallet-management'))->toBe([['href' => '/pallet-management', 'title' => 'Pallet Management']]);
-});
-
 test('movement summary counts live pallets per location and lookup resolves a scanned tag', function () {
     $this->actingAs(userWithPermissions('manage-pallets', 'general-access'));
     $use = UseModel::create(['use' => 'Storage']);

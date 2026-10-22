@@ -1,9 +1,13 @@
 <?php
 
+use App\Models\DevicePairingCode;
+use App\Models\KioskLocation;
+use App\Models\ManagedDevice;
 use App\Models\Permission;
+use App\Models\Printer;
 use App\Models\SetupState;
 use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\RefreshDatabaseFromSnapshot;
 use Tests\TestCase;
 
 /*
@@ -18,7 +22,7 @@ use Tests\TestCase;
 */
 
 pest()->extend(TestCase::class)
-    ->use(RefreshDatabase::class)
+    ->use(RefreshDatabaseFromSnapshot::class)
     // A fresh test database has no administrator, which would send every request
     // to the first-run wizard (RedirectToSetup). Treat setup as done unless a test
     // is specifically about the wizard (tests/Feature/SetupWizardTest.php).
@@ -68,6 +72,54 @@ function userWithPermissions(string ...$keys): User
     }
 
     return $user;
+}
+
+// ---- print queue: shared by the Print*Test files ------------------------------------------------
+
+/** A print server written straight to the database, already a print station (no pairing). */
+function printServer(array $queues = [], bool $online = true): ManagedDevice
+{
+    $device = (new ManagedDevice(['name' => 'Print PC', 'kiosk_function' => 'print_station']))->forceFill([
+        'device_uuid' => 'print-'.uniqid(),
+        'last_seen_at' => $online ? now() : now()->subHour(),
+        'reported_printers' => $queues,
+    ]);
+    $device->save();
+
+    return $device;
+}
+
+/** An active, sited printer on $device for the OS queue $queue. */
+function makePrinter(ManagedDevice $device, string $queue, string $media = 'label_large', array $extra = []): Printer
+{
+    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
+
+    $printer = (new Printer(array_merge([
+        'name' => $queue, 'kiosk_location_id' => $location->id, 'media' => $media, 'active' => true,
+    ], $extra)))->forceFill([
+        'managed_device_id' => $device->id, 'queue_name' => $queue,
+    ]);
+    $printer->save();
+
+    return $printer;
+}
+
+/** A device paired through the real API; returns [device, bearer token]. Its Function is left unset unless given. */
+function pairPrintServer(string $uuid = 'ps-1', ?string $function = null): array
+{
+    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
+    $code = DevicePairingCode::create([
+        'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
+    ]);
+    $response = test()->postJson('/api/devices/pair', [
+        'code' => $code->code, 'device_name' => "Server {$uuid}", 'device_uuid' => $uuid,
+    ])->assertCreated();
+    $device = ManagedDevice::where('device_uuid', $uuid)->first();
+    if ($function) {
+        $device->forceFill(['kiosk_function' => $function])->save();
+    }
+
+    return [$device, $response->json('token')];
 }
 
 // PDF inspection needs poppler-utils (pdfinfo/pdftotext); skip rather than fail where it's absent.
