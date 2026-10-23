@@ -1249,16 +1249,18 @@ export default {
 			<div v-if="!readonly" class="sort_pallet" :class="pallet ? 'sort_pallet_active' : ''">
 				<template v-if="!pallet">
 					<label>Pallet Tag:</label>
-					<input
-						ref="palletInput"
-						type="text"
-						v-model="palletTagInput"
-						class="ri_forminput"
-						placeholder="Scan or type pallet tag (e.g. R00000042)"
-						@keydown.enter.prevent="resolvePallet"
-					/>
+					<span class="sort_scangroup">
+						<input
+							ref="palletInput"
+							type="text"
+							v-model="palletTagInput"
+							class="ri_forminput"
+							placeholder="Scan or type pallet tag (e.g. R00000042)"
+							@keydown.enter.prevent="resolvePallet"
+						/>
+						<ScanButton :target="() => $refs.palletInput" compact />
+					</span>
 					<button @click="resolvePallet" class="ri_formbutton">Set Pallet</button>
-					<ScanButton :target="() => $refs.palletInput" />
 					<span class="sort_pallet_hint">Lines entered without a pallet won't be source-traceable.</span>
 				</template>
 				<template v-else-if="!emptyingPallet">
@@ -1285,6 +1287,7 @@ export default {
 			<!-- line entry -->
 			<div v-if="!readonly" class="sort_entry">
 				<div class="sort_entry_item">
+					<div class="sort_scangroup">
 					<SearchSelect
 						ref="itemSelect"
 						v-model="entry.item_id"
@@ -1302,8 +1305,9 @@ export default {
 						@scan="onBarcodeScan"
 						@scanmatch="onScanMatchedLocally"
 					/>
+					<ScanButton :target="itemScanTarget" compact />
+					</div>
 					<span v-if="upcResolving" class="sort_notice">Looking up barcode...</span>
-					<ScanButton :target="itemScanTarget" />
 				</div>
 				<!-- type=text on purpose: a number input's v-model rewrites "012..." to 12...,
 				     which drops a scanned UPC's leading zero when a scan lands here -->
@@ -1346,16 +1350,15 @@ export default {
 						</div>
 					</div>
 				</span>
-				<div class="sort_dispositions">
-					<button
-						v-for="d in dispositions"
-						:key="d.key"
-						:title="d.hint"
-						class="sort_disp"
-						:class="['sort_disp_' + d.key, entry.choice === d.key ? 'sort_disp_on' : '']"
-						@click="setDisposition(d.key)"
-					>{{ d.label }}</button>
-				</div>
+				<select
+					v-model="entry.choice"
+					class="ri_forminput sort_disp_select"
+					:class="'sort_disp_' + entry.choice"
+					:title="dispositions.find((d) => d.key === entry.choice)?.hint"
+					aria-label="Condition / disposition"
+				>
+					<option v-for="d in dispositions" :key="d.key" :value="d.key" :title="d.hint">{{ d.label }}</option>
+				</select>
 				<button @click="addLine" class="ri_defaultbutton">Add</button>
 			</div>
 			<p v-if="lineError" class="sort_error">{{ lineError }}</p>
@@ -1364,14 +1367,14 @@ export default {
 			<div class="sort_tablewrap"><table class="ri_datatable sort_lines" border="1">
 				<thead>
 					<tr>
-						<th>Time</th><th>Item</th><th>Qty</th><th>Expires</th><th>Disposition</th><th>Pallet</th><th></th>
+						<th>ACS #</th><th>Item</th><th>Qty</th><th>Expires</th><th>Disposition</th><th>Pallet</th><th></th>
 					</tr>
 				</thead>
 				<tbody>
 					<tr v-for="line in sortedLines" :key="line.id ?? line.tempId"
 						:class="{ sort_line_failed: line.status === 'failed' }">
-						<td>{{ lineTime(line) }}</td>
-						<td>{{ line.item ? (line.item.name || line.item.description) : '(item #' + line.item_id + ')' }}</td>
+						<td :title="lineTime(line)">{{ line.item?.itemtype?.display_number || '' }}</td>
+						<td>{{ line.item ? (line.item.itemtype ? (line.item.description || line.item.name) : (line.item.name || line.item.description)) : '(item #' + line.item_id + ')' }}</td>
 						<td>{{ line.qty_added }}</td>
 						<td>{{ line.expires_on || '' }}</td>
 						<td><span class="sort_badge" :class="'sort_disp_' + dispositionKey(line)">{{ dispositionLabel(line) }}</span></td>
@@ -1717,6 +1720,29 @@ export default {
 .sort_qty {
 	width: 6em;
 }
+.sort_scangroup {
+	display: flex;
+	align-items: stretch;
+	flex-wrap: nowrap;
+}
+.sort_scangroup > :first-child {
+	flex: 1;
+	min-width: 0;
+}
+.sort_scangroup :deep(input) {
+	border-top-right-radius: 0;
+	border-bottom-right-radius: 0;
+}
+.sort_disp_select {
+	width: auto;
+	font-weight: bold;
+	border-width: 2px;
+}
+.sort_disp_select.sort_disp_new { background: #ccfbf1; border-color: #0d9488; color: #134e4a; }
+.sort_disp_select.sort_disp_usable { background: #dcfce7; border-color: #16a34a; color: #14532d; }
+.sort_disp_select.sort_disp_outdated { background: #ffedd5; border-color: #ea580c; color: #7c2d12; }
+.sort_disp_select.sort_disp_trashed { background: #fee2e2; border-color: #dc2626; color: #7f1d1d; }
+.sort_disp_select.sort_disp_diverted { background: #e0e7ff; border-color: #4f46e5; color: #312e81; }
 .sort_dispositions {
 	display: flex;
 	gap: 4px;

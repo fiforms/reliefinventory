@@ -64,6 +64,10 @@ class HandleInertiaRequests extends Middleware
                 // Likewise for inventory labels (one per item set put on a pallet).
                 'inventoryLabelMedia' => LabelSetting::inventoryMedia(),
             ],
+            // Moving an item to another ACS # (Master Item List) is Administrator-only.
+            'catalog' => [
+                'canMoveItems' => (bool) $request->user()?->hasPermission('admin-system'),
+            ],
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,
             ],

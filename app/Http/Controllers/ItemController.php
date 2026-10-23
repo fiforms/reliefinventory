@@ -6,7 +6,10 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Item;
+use App\Models\ItemLedger;
+use App\Models\ItemType;
 use App\Models\PackageType;
+use Illuminate\Support\Facades\DB;
 
 class ItemController extends Controller
 {
@@ -101,5 +104,56 @@ class ItemController extends Controller
         $item->delete();
 
         return response()->json(['message' => 'Item deleted successfully.'], 200);
+    }
+
+    /**
+     * What moving an item to another ACS # would touch. Everything links to the
+     * item row (item_ledgers, pallet stock, carton codes), not to a type, so
+     * moving the item re-homes all of its history with it — this is the count
+     * shown to the admin before they confirm.
+     */
+    public function moveImpact($id)
+    {
+        $item = Item::with('itemtype')->findOrFail($id);
+
+        return response()->json([
+            'item' => ['id' => $item->id, 'description' => $item->description, 'acs' => $item->itemtype?->display_number, 'itemtype' => $item->itemtype?->name],
+            'ledger_rows' => ItemLedger::where('item_id', $item->id)->count(),
+            // Fills tied to an order line whose requested type is the item's current type; after the move
+            // they would sit under a different type than the line asked for.
+            'order_fills' => ItemLedger::where('item_id', $item->id)->whereNotNull('order_line_id')->count(),
+            'pallet_assignments' => DB::table('pallet_stock_assignments')->where('item_id', $item->id)->count(),
+        ]);
+    }
+
+    /**
+     * Move an item to a different ACS # (item type). Administrator-only (admin-system).
+     * Retroactive by design: stock on hand, history and reports follow the item.
+     */
+    public function move(Request $request, $id)
+    {
+        $data = $request->validate(['itemtype_id' => 'required|exists:itemtypes,id']);
+
+        $item = Item::findOrFail($id);
+        $from = ItemType::find($item->itemtype_id);
+        $to = ItemType::findOrFail($data['itemtype_id']);
+
+        if ((int) $item->itemtype_id === (int) $to->id) {
+            return response()->json(['message' => 'That item is already under ' . $to->display_number . '.'], 422);
+        }
+
+        DB::transaction(fn () => $item->update(['itemtype_id' => $to->id]));
+
+        logger()->info('Item moved to a new ACS #', [
+            'item_id' => $item->id,
+            'from' => $from?->display_number,
+            'to' => $to->display_number,
+            'by' => $request->user()->id,
+        ]);
+
+        $item->load('itemtype');
+        $item->name = self::displayName($item);
+
+        return response()->json(['record' => $item]);
     }
 }
