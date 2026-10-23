@@ -95,7 +95,9 @@ function openServer() {
 const phase = computed(() => info.value?.phase ?? 'stopped')
 const canStart = computed(() => ['stopped', 'error'].includes(phase.value))
 const canStop = computed(() => ['starting', 'loading-images', 'running', 'degraded'].includes(phase.value))
-const working = computed(() => !!busyAction.value || ['stopping', 'resetting'].includes(phase.value))
+const working = computed(() => !!busyAction.value || !!info.value?.update_busy || ['stopping', 'resetting'].includes(phase.value))
+const update = computed(() => info.value?.update ?? null)
+const updatePill = computed(() => ({ updated: 'ok', current: 'ok', failed: 'warn' })[update.value?.phase] ?? '')
 const pillClass = computed(() => ({ running: 'ok', error: 'warn', degraded: 'warn' })[phase.value] ?? '')
 const mb = (bytes) => Math.round(bytes / 1e6).toLocaleString()
 const gb = (bytes) => (bytes / 1e9).toFixed(1)
@@ -122,7 +124,8 @@ onUnmounted(() => clearInterval(timer))
         <div class="head">
           <span class="pill" :class="pillClass">{{ t(`settings.localServer.phase.${phase}`) }}</span>
           <span v-if="info.message && phase !== 'running'" class="hint">{{ info.message }}</span>
-          <span v-if="info.app?.app_commit" class="hint">{{ t('settings.localServer.version', { commit: info.app.app_commit.slice(0, 7) }) }}</span>
+          <span v-if="info.app_version" class="hint">{{ t('settings.localServer.releaseVersion', { version: info.app_version }) }}</span>
+          <span v-else-if="info.app?.app_commit" class="hint">{{ t('settings.localServer.version', { commit: info.app.app_commit.slice(0, 7) }) }}</span>
         </div>
 
         <p v-if="info.low_space && canStart" class="pill warn note">
@@ -148,6 +151,23 @@ onUnmounted(() => clearInterval(timer))
         <p v-if="canStop" class="hint note">{{ t('settings.localServer.stopHint') }}</p>
         <p v-if="actionError" class="pill warn note">{{ actionError }}</p>
       </template>
+    </section>
+
+    <section v-if="info?.available" class="tile panel">
+      <div class="panel-title"><h2>{{ t('settings.localServer.updateTitle') }}</h2></div>
+      <p class="hint">{{ t('settings.localServer.updateHint') }}</p>
+      <p v-if="update" class="update-state">
+        <span class="pill" :class="updatePill">{{ t(`settings.localServer.updatePhase.${update.phase}`) }}</span>
+        <span class="hint">{{ update.message }}</span>
+        <span v-if="update.updated && !info.update_busy" class="hint">{{ when(update.updated) }}</span>
+      </p>
+      <div class="actions">
+        <button class="tile action" :disabled="working || !info.can_update" @click="act('update')">
+          {{ info.update_busy ? t('settings.localServer.updating') : t('settings.localServer.updateNow') }}
+        </button>
+      </div>
+      <p v-if="!info.can_update && !info.update_busy" class="hint note">{{ t('settings.localServer.updateNeedsRunning') }}</p>
+      <p v-if="info.update_busy" class="hint note">{{ t('settings.localServer.updateKeepPowered') }}</p>
     </section>
 
     <section v-if="info?.running && info.setup_pending" class="tile panel setup">
@@ -269,6 +289,16 @@ onUnmounted(() => clearInterval(timer))
   flex-wrap: wrap;
 }
 .confirm {
+  margin: 0;
+}
+.update-state {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.2rem 0.8rem;
+  margin: 0 0 0.9rem;
+}
+.update-state .hint {
   margin: 0;
 }
 .urls,

@@ -10,6 +10,7 @@
 #   enable   start-at-boot flag on, start the supervisor        (…-local-server-enable.service)
 #   disable  flag off, stop the supervisor and so Docker        (…-local-server-disable.service)
 #   reset    erase all server data, keeping the images           (…-local-server-reset.service)
+#   update   pull the newest :latest image and restart onto it  (…-local-server-update.service)
 #   status   print the status file
 #
 # The Settings > Local server page (backend/local_server.py) only ever starts those units, so the
@@ -19,6 +20,13 @@
 # our own copies of the Debian units with ConditionPathExists on it, so a station that never
 # uses this feature never runs a container engine. Exit status 3 means "don't retry" (no space,
 # nothing to load); the unit does not restart on it.
+#
+# Which image runs: always the newest *version*. The image on the device is the baked-in one (loaded from
+# the .deb) until an update pulls :latest from the registry over it; both use the same local tag
+# (images.env's RI_APP_IMAGE, always ...:latest), and every image carries its release number as
+# RI_VERSION. A newer baked build (an OS update) replaces what is in /data/docker only if its version is
+# higher than what is installed there, and an update only installs a pulled image whose version is higher
+# than what is running — so neither path can ever step backwards.
 #
 # RI_LOCAL_* and the binary variables exist for tests only.
 set -uo pipefail
@@ -34,6 +42,10 @@ UNIT=slide-announcer-local-server.service
 PORT="${RI_LOCAL_PORT:-8080}"
 FLAG="$DATA/enabled"
 STATUS="$RUN/status.json"
+UPDATE_STATUS="$DATA/state/update.json"   # last/current update: phase, message, from, to (read by the Settings page)
+UPDATE_LOCK="$RUN/update.lock"
+MIN_UPDATE_FREE_BYTES="${RI_LOCAL_MIN_UPDATE_FREE_BYTES:-1000000000}"
+UPDATE_WAIT_SECONDS="${RI_LOCAL_UPDATE_WAIT_SECONDS:-900}"   # migrations on an SD card can take minutes
 # The uncompressed images (~1.6 GB) plus room for the database to grow; refusing early beats a
 # half-loaded image and a full SD card.
 MIN_FREE_BYTES="${RI_LOCAL_MIN_FREE_BYTES:-3000000000}"
@@ -87,16 +99,53 @@ docker_up() {
 
 docker_down() { "$SYSTEMCTL" stop docker.service docker.socket >/dev/null 2>&1; }
 
-# Loads the images the first time, and again whenever an OS update shipped a different build under
-# the same tag (compared by the id recorded in manifest.json, so a reboot doesn't reload them).
+# The release number an image carries (RI_VERSION in its environment, set by the Docker build from the GitHub
+# release tag), without a leading "v". Empty if the image isn't there or predates version stamping.
+image_version() {
+    local v
+    v="$("$DOCKER" image inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$1" 2>/dev/null \
+        | sed -n 's/^RI_VERSION=//p' | head -n1)"
+    printf '%s' "${v#v}"
+}
+
+baked_version() { sed -n 's/.*"app_version": *"v\{0,1\}\([^"]*\)".*/\1/p' "$ROOT/manifest.json"; }
+
+# version_gt A B — A is a strictly newer release than B. Unknown (empty) is older than anything.
+version_gt() {
+    [ -n "$1" ] || return 1
+    [ -n "$2" ] || return 0
+    [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
+}
+
+# What is installed, for the Settings page (which has no Docker access). Cleared if it can't be read.
+record_version() {
+    local v; v="$(image_version "$RI_APP_IMAGE")"
+    if [ -n "$v" ]; then printf '%s' "$v" > "$DATA/state/app-version"; else rm -f "$DATA/state/app-version"; fi
+}
+
+# Loads the baked-in images the first time, and again after an OS update shipped a different build — but only
+# when that build is a newer release than what is already installed (an update pulled from the registry may be
+# ahead of it). The baked build's id is remembered either way, so a reboot doesn't re-decide.
 load_images() {
     . "$ROOT/images.env"
-    local want have=""
+    local want have="" present=0 installed baked
     want="$(sed -n 's/.*"app_image_id": *"\([^"]*\)".*/\1/p' "$ROOT/manifest.json")"
     [ -r "$DATA/state/loaded-image-id" ] && have="$(cat "$DATA/state/loaded-image-id")"
-    if [ -n "$want" ] && [ "$want" = "$have" ] \
-        && "$DOCKER" image inspect "$RI_APP_IMAGE" "$RI_DB_IMAGE" >/dev/null 2>&1; then
+    "$DOCKER" image inspect "$RI_APP_IMAGE" "$RI_DB_IMAGE" >/dev/null 2>&1 && present=1
+    if [ "$present" = 1 ] && [ -n "$want" ] && [ "$want" = "$have" ]; then
+        record_version
         return 0
+    fi
+    if [ "$present" = 1 ]; then
+        installed="$(image_version "$RI_APP_IMAGE")"
+        baked="$(baked_version)"
+        # Both unknown (a bundle from before versions were stamped): fall through and reload, as before.
+        if { [ -n "$installed" ] || [ -n "$baked" ]; } && ! version_gt "$baked" "$installed"; then
+            log "keeping the installed server software (${installed:-unknown}); the bundled one (${baked:-unknown}) is not newer"
+            [ -n "$want" ] && printf '%s' "$want" > "$DATA/state/loaded-image-id"
+            record_version
+            return 0
+        fi
     fi
     local free; free="$(free_bytes "$DOCKER_ROOT")"
     if [ -n "$free" ] && [ "$free" -lt "$MIN_FREE_BYTES" ]; then
@@ -109,6 +158,7 @@ load_images() {
     # wait only reports the pipeline's last command; the load itself failing shows up as a missing image.
     "$DOCKER" image inspect "$RI_APP_IMAGE" "$RI_DB_IMAGE" >/dev/null 2>&1 || return 1
     printf '%s' "$want" > "$DATA/state/loaded-image-id"
+    record_version
     "$DOCKER" image prune -f >/dev/null 2>&1   # an older build's layers
     return 0
 }
@@ -173,6 +223,96 @@ run() {
     done
 }
 
+# update_status PHASE "message" — phases: checking, downloading, installing, restarting (in progress);
+# current, updated, failed (finished). The Settings page treats an in-progress phase with no running unit as interrupted.
+UP_FROM="" UP_TO=""
+update_status() {
+    mkdir -p "$DATA/state"
+    printf '{"phase":"%s","message":"%s","from":"%s","to":"%s","updated":%s}\n' \
+        "$1" "$(json_escape "${2:-}")" "$(json_escape "$UP_FROM")" "$(json_escape "$UP_TO")" "$(date +%s)" \
+        > "$UPDATE_STATUS.tmp" && mv -f "$UPDATE_STATUS.tmp" "$UPDATE_STATUS"
+}
+update_fail() { log "update: $1"; update_status failed "$1"; exit 1; }
+
+wait_for_app() { # wait_for_app SECONDS
+    local deadline=$((SECONDS + $1))
+    while [ "$SECONDS" -lt "$deadline" ]; do
+        app_is_up && return 0
+        sleep 3
+    done
+    return 1
+}
+
+# Pulls the newest image under the stack's own tag (:latest) and restarts onto it, if — and only if — it is a newer
+# release than the one running. Needs the server started (Docker only runs then). The app container takes its own
+# database backup before applying migrations and refuses to start if the database is ahead of it (docker/entrypoint.sh).
+update() {
+    mkdir -p "$RUN" "$DATA/state"
+    exec 9>"$UPDATE_LOCK"
+    flock -n 9 || { log "an update is already running"; exit 0; }
+    [ -r "$ROOT/images.env" ] || update_fail "This image does not include the local server."
+    . "$ROOT/images.env"
+    UP_FROM="$(image_version "$RI_APP_IMAGE")"
+    update_status checking "Checking for a newer version…"
+
+    "$SYSTEMCTL" is-active --quiet "$UNIT" && "$DOCKER" info >/dev/null 2>&1 \
+        || update_fail "Start the local server first; updates are installed while it is running."
+    local host="${RI_APP_IMAGE%%/*}" free
+    "$CURL" -sS -o /dev/null --max-time 10 "https://$host/v2/" 2>/dev/null \
+        || update_fail "Couldn't reach $host. Connect this device to the Internet and try again."
+    free="$(free_bytes "$DOCKER_ROOT")"
+    if [ -n "$free" ] && [ "$free" -lt "$MIN_UPDATE_FREE_BYTES" ]; then
+        update_fail "Not enough free space to download an update ($((free / 1000000)) MB free, $((MIN_UPDATE_FREE_BYTES / 1000000)) MB needed)."
+    fi
+
+    local old_id; old_id="$("$DOCKER" image inspect --format '{{.Id}}' "$RI_APP_IMAGE" 2>/dev/null)"
+    # Put the running image back under the tag: an image that is not newer must never stay on it.
+    restore_tag() { [ -n "$old_id" ] && "$DOCKER" tag "$old_id" "$RI_APP_IMAGE" >/dev/null 2>&1; }
+
+    update_status downloading "Downloading the newest version… this can take several minutes."
+    if ! timeout 3000 "$DOCKER" pull "$RI_APP_IMAGE" >"$RUN/update.log" 2>&1; then
+        restore_tag
+        update_fail "The download did not finish: $(tail -n 1 "$RUN/update.log" | cut -c1-160)"
+    fi
+    local new_id new_version
+    new_id="$("$DOCKER" image inspect --format '{{.Id}}' "$RI_APP_IMAGE" 2>/dev/null)"
+    new_version="$(image_version "$RI_APP_IMAGE")"
+    UP_TO="$new_version"
+    if [ -n "$old_id" ] && [ "$new_id" = "$old_id" ]; then
+        update_status current "This is already the newest version${UP_FROM:+ ($UP_FROM)}."
+        exit 0
+    fi
+    if [ -z "$new_version" ]; then
+        restore_tag; "$DOCKER" image prune -f >/dev/null 2>&1
+        update_fail "The newest image has no version number, so it was not installed."
+    fi
+    if ! version_gt "$new_version" "$UP_FROM"; then
+        restore_tag; "$DOCKER" image prune -f >/dev/null 2>&1
+        update_status current "This is already the newest version (${UP_FROM:-unknown}); the registry has $new_version."
+        exit 0
+    fi
+
+    update_status installing "Installing version $new_version…"
+    export_env
+    compose up -d --no-build --pull never --remove-orphans >"$RUN/update.log" 2>&1
+    update_status restarting "Starting version $new_version… database updates can take a few minutes."
+    if ! wait_for_app "$UPDATE_WAIT_SECONDS"; then
+        # Put the previous version back. It will refuse to start if the new one already changed the database (the
+        # entrypoint's downgrade check); the backup it took first is under Local server > backups.
+        if [ -n "$old_id" ] && restore_tag; then
+            compose up -d --no-build --pull never --remove-orphans >"$RUN/update.log" 2>&1
+            if wait_for_app 180; then
+                record_version
+                update_fail "Version $new_version did not start, so version ${UP_FROM:-the previous one} was put back. Try again later, or report this."
+            fi
+        fi
+        update_fail "Version $new_version did not start and the previous version could not be restored. Restart the device; a backup is in the backups list."
+    fi
+    record_version
+    "$DOCKER" image prune -f >/dev/null 2>&1   # the replaced version's layers
+    update_status updated "Updated to version $new_version."
+}
+
 enable() {
     ensure_dirs
     touch "$FLAG"
@@ -205,6 +345,7 @@ case "${1:-}" in
     enable) enable ;;
     disable) disable ;;
     reset) reset ;;
+    update) update ;;
     status) cat "$STATUS" 2>/dev/null || echo '{"phase":"stopped"}' ;;
-    *) echo "usage: $0 run|enable|disable|reset|status" >&2; exit 2 ;;
+    *) echo "usage: $0 run|enable|disable|reset|update|status" >&2; exit 2 ;;
 esac

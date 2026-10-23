@@ -7,6 +7,10 @@
 #
 #   rstation/build-offline-bundle.sh                       # ghcr.io/fiforms/reliefinventory:latest
 #   rstation/build-offline-bundle.sh 0.1.0                 # ghcr.io/fiforms/reliefinventory:0.1.0 (a leading v is dropped)
+#
+# Whatever tag is pulled, the bundle stores and runs the image as <repo>:latest and records the release number
+# (the image's RI_VERSION) in manifest.json: the device's Settings > Local server > Update pulls :latest over it,
+# and a baked image only replaces an installed one if its version is newer (see slide-announcer-local-server).
 #   APP_IMAGE=ghcr.io/fiforms/reliefinventory:1.2.3 rstation/build-offline-bundle.sh
 #   npm run build:offline-bundle -- 0.1.0                  # the same, from the repo root
 #
@@ -44,9 +48,23 @@ for ref in "$APP_IMAGE" "$DB_IMAGE"; do
     [ "$arch" = arm64 ] || { echo "$ref is '${arch}', not arm64 — is another platform's copy cached under that tag?" >&2; exit 1; }
 done
 
+# The device always runs the image as :latest, so an update (a pull of :latest) replaces it in place. A bundle built
+# from a pinned version is therefore re-tagged; the version itself stays in the image (RI_VERSION) and the manifest.
+RUN_IMAGE="${APP_IMAGE%:*}:latest"
+if [ "$RUN_IMAGE" != "$APP_IMAGE" ]; then
+    docker tag "$APP_IMAGE" "$RUN_IMAGE"
+fi
+
 # What the app was built from, for the Settings page and bug reports (the image carries RI_GIT_COMMIT).
 APP_COMMIT="$(inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$APP_IMAGE" | sed -n 's/^RI_GIT_COMMIT=//p' | head -n1)"
 APP_ID="$(inspect --format '{{.Id}}' "$APP_IMAGE")"
+APP_VERSION="$(inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$APP_IMAGE" | sed -n 's/^RI_VERSION=//p' | head -n1)"
+APP_VERSION="${APP_VERSION#v}"
+# An image published under a version tag always has the version stamped in; fall back to the tag only for a hand-built one.
+[ -n "$APP_VERSION" ] || { [ -n "$DEFAULT_TAG" ] && [ "$DEFAULT_TAG" != latest ] && APP_VERSION="$DEFAULT_TAG"; }
+if [ -z "$APP_VERSION" ]; then
+    echo "WARNING: $APP_IMAGE carries no RI_VERSION; the device can't compare it with later releases (a pulled update would always win)." >&2
+fi
 
 PKG="$WORK/pkg"
 ROOT="$PKG/opt/relief-inventory"
@@ -55,15 +73,15 @@ mkdir -p "$ROOT" "$PKG/DEBIAN"
 echo "==> Saving"
 # One archive for both so `docker load` runs once. Not compressed again: the layers inside already are, and zstd
 # measured no gain (~480 MB either way).
-docker save "${SAVE_ARGS[@]}" "$APP_IMAGE" "$DB_IMAGE" -o "$ROOT/images.tar"
+docker save "${SAVE_ARGS[@]}" "$RUN_IMAGE" "$DB_IMAGE" -o "$ROOT/images.tar"
 
 cp "$HERE/product/offline/compose.yaml" "$ROOT/compose.yaml"
 cat > "$ROOT/images.env" <<ENV
-RI_APP_IMAGE=$APP_IMAGE
+RI_APP_IMAGE=$RUN_IMAGE
 RI_DB_IMAGE=$DB_IMAGE
 ENV
 cat > "$ROOT/manifest.json" <<JSON
-{"app_image": "$APP_IMAGE", "db_image": "$DB_IMAGE", "app_commit": "${APP_COMMIT:-unknown}", "app_image_id": "$APP_ID", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
+{"app_image": "$RUN_IMAGE", "app_version": "${APP_VERSION}", "db_image": "$DB_IMAGE", "app_commit": "${APP_COMMIT:-unknown}", "app_image_id": "$APP_ID", "built": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"}
 JSON
 
 VERSION="0.$(date -u +%Y%m%d).${APP_COMMIT:0:7}"

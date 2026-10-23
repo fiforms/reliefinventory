@@ -3,7 +3,7 @@
 # Not edited by hand and not started by hand: slide-announcer-local-server (the supervisor unit)
 # exports the RI_* variables below and runs `docker compose up` against this file. It is the
 # docker/compose.yaml stack, reduced for a Pi: images come from the tarball baked into the OS
-# image (never pulled), state lives in bind mounts under /data/relief-inventory (one folder to
+# image, or from an update pulled by Settings > Local server (never pulled by compose itself), state lives in bind mounts under /data/relief-inventory (one folder to
 # back up or wipe), and MariaDB is capped small. See rstation/LOCAL_SERVER.md.
 name: reliefinventory
 
@@ -28,10 +28,14 @@ x-app: &app
     QUEUE_CONNECTION: database
     CACHE_STORE: database
     RI_BACKUP_ENABLED: "true"
+    # Every role shares /backups (below), as in docker/compose.yaml: the web container's pre-migration backup (the
+    # entrypoint refuses to migrate without one), backups made from Updates & Backups in the app, and the scheduler's nightly dump.
+    RI_BACKUP_DIR: /backups
     RI_BACKUP_KEEP_DAYS: 14
   volumes:
     - ${RI_DATA}/storage:/var/www/html/storage
     - ${RI_DATA}/secrets:/secrets:ro
+    - ${RI_DATA}/backups:/backups
 
 services:
   init:
@@ -91,10 +95,6 @@ services:
     command: ["scheduler"]
     healthcheck:
       disable: true
-    volumes:
-      - ${RI_DATA}/storage:/var/www/html/storage
-      - ${RI_DATA}/secrets:/secrets:ro
-      - ${RI_DATA}/backups:/backups
     depends_on:
       app:
         condition: service_healthy

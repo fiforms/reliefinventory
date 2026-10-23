@@ -45,6 +45,10 @@ def build_router(server: LocalServer | None = None) -> APIRouter:
     async def disable():
         return await act("disable")
 
+    @router.post("/api/local/local-server/update")
+    async def update():
+        return await act("update")
+
     @router.post("/api/local/local-server/home")
     async def home(body: Home):
         try:
