@@ -188,13 +188,35 @@ mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 # verbatim (SystemAdmin.vue's formatStamp) as if they were already in the
 # configured backup timezone, so the stamp actually has to be in it.
 STAMP="$(TZ="$BACKUP_TZ" date +%Y%m%d-%H%M%S)"
-LOG_FILE="$LOG_DIR/update-$STAMP.log"
+# Instance name in the file name: several instances share LOG_DIR, and two started in the same second (in the same
+# BACKUP_TZ) would otherwise write into one log.
+LOG_NAME="update-$_instance_suffix-$STAMP.log"
+LOG_FILE="$LOG_DIR/$LOG_NAME"
 exec > >(tee -a "$LOG_FILE") 2>&1
 echo "== Relief Inventory update $STAMP (log: $LOG_FILE) =="
 
-# Refuse to run twice at once (matters once a UI button or timer can trigger this).
+# One update/backup at a time on this server, across every instance on it: they share the box's CPU, memory and
+# php-fpm, and two npm builds or database dumps at once is what can actually break things. A run that finds the
+# lock taken waits its turn (up to LOCK_WAIT_SECONDS) instead of giving up — giving up used to leave the admin
+# panel showing "waiting for the updater to start" until it timed out as "stalled". While waiting it refreshes the
+# status every 15 s, so the panel says what it's waiting for and never mistakes the wait for a stall.
+LOCK_WAIT_SECONDS="${LOCK_WAIT_SECONDS:-3600}"
 exec 200>"/var/lock/reliefinventory-update.lock"
-flock -n 200 || { echo "Another update/backup is already running; aborting." >&2; exit 3; }
+if ! flock -n 200; then
+    echo "-- Another update or backup is running on this server; waiting for it to finish..."
+    write_status running "Waiting for another update or backup on this server to finish"
+    waited=0
+    until flock -w 15 200; do
+        waited=$((waited + 15))
+        if [ "$waited" -ge "$LOCK_WAIT_SECONDS" ]; then
+            echo "!! Still waiting after ${LOCK_WAIT_SECONDS}s; giving up." >&2
+            write_status failed "Gave up after waiting $((LOCK_WAIT_SECONDS / 60)) minutes for another update or backup on this server to finish. Try again later."
+            exit 3
+        fi
+        write_status running "Waiting for another update or backup on this server to finish (${waited}s so far)"
+    done
+    echo "-- Lock acquired after ${waited}s."
+fi
 
 cd "$APP_DIR"
 
@@ -206,7 +228,7 @@ env_get() {
 MAINTENANCE_DOWN=0
 on_error() {
     echo "!! FAILED at line $1. See $LOG_FILE" >&2
-    write_status failed "Update failed (line $1, log update-$STAMP.log)"
+    write_status failed "Update failed (line $1, log $LOG_NAME)"
     if [ "$MAINTENANCE_DOWN" -eq 1 ]; then
         echo "!! The site has been LEFT IN MAINTENANCE MODE on purpose." >&2
         echo "!! To roll back, as $APP_USER in $APP_DIR:" >&2
