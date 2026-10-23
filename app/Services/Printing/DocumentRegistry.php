@@ -160,6 +160,11 @@ class DocumentRegistry
                 'title' => fn () => 'Training pallet labels',
                 'build' => fn () => app(PalletReportController::class)->trainingLabelsBuilder(),
             ],
+            'training-signup-poster' => [
+                'media' => 'report', 'permission' => 'manage-training', 'rules' => [],
+                'title' => fn () => 'Training sign-up poster',
+                'build' => fn () => app(TrainingAdminController::class)->signupPosterBuilder(),
+            ],
             'training-all-teams' => [
                 'media' => 'report', 'permission' => null, 'rules' => [],
                 'title' => fn () => 'Training team sheets (all teams)',

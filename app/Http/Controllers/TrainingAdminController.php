@@ -8,6 +8,7 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Auth\TrainingLoginController;
 use App\Models\ActivityLog;
 use App\Models\Person;
+use App\Models\TrainingRegistration;
 use App\Models\TrainingSetting;
 use App\Models\TrustedDevice;
 use App\Services\TrainingMode;
@@ -16,6 +17,8 @@ use App\Support\TrainingGuide;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
+use League\Csv\Writer;
+use Milon\Barcode\DNS2D;
 use RuntimeException;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
@@ -41,6 +44,12 @@ class TrainingAdminController extends Controller
             'can_toggle' => Auth::user()->hasPermission('admin-system'),
             'approved_devices' => TrustedDevice::where('status', 'approved')->count(),
             'teams' => TrainingMode::TEAMS,
+            'signup' => [
+                'url' => route('join'),
+                'qr_svg' => self::signupQrSvg(),
+                'today' => TrainingRegistration::where('created_at', '>=', now()->startOfDay())->count(),
+                'total' => TrainingRegistration::count(),
+            ],
             'trainees' => Person::where('is_trainee', true)->orderBy('training_team')->orderBy('last_name')->orderBy('first_name')->get()
                 ->map(fn (Person $p) => [
                     'id' => $p->id, 'first_name' => $p->first_name, 'last_name' => $p->last_name, 'full_name' => $p->full_name,
@@ -139,5 +148,47 @@ class TrainingAdminController extends Controller
             ->driver('weasyprint')
             ->format('letter')
             ->name($team ? "training-team-$team.pdf" : 'training-team-sheets.pdf');
+    }
+
+    /** The /join sign-up URL as a QR code (SVG) — on the Training Mode page and the poster. */
+    public static function signupQrSvg(int $size = 6): string
+    {
+        $svg = (new DNS2D)->getBarcodeSVG(route('join'), 'QRCODE', $size, $size);
+
+        return preg_replace('/^.*?(<svg)/s', '$1', $svg); // drop the XML prolog/doctype so it can be inlined
+    }
+
+    public function signupPoster()
+    {
+        return $this->signupPosterBuilder();
+    }
+
+    /** Unrendered PDF — shared by the download route and the print queue. A page to show or post: QR + URL. */
+    public function signupPosterBuilder(): PdfBuilder
+    {
+        return Pdf::view('reports.training.signup-poster', ['qr' => self::signupQrSvg(14), 'url' => route('join')])
+            ->driver('weasyprint')
+            ->format('letter')
+            ->name('training-signup-poster.pdf');
+    }
+
+    /** Everyone who signed up at /join, with their follow-up answers — for contacting them later. */
+    public function signupsCsv()
+    {
+        $csv = Writer::fromString('');
+        $csv->insertOne(['Signed up', 'First name', 'Last name', 'Email', 'Phone', 'Wants updates', 'Volunteer at a warehouse',
+            'Software / IT', 'Bring to my organization', 'Other', 'Recommends', 'Comments', 'Team']);
+        foreach (TrainingRegistration::with('person')->orderBy('created_at')->get() as $r) {
+            $csv->insertOne([
+                $r->created_at?->format('Y-m-d H:i'), $r->person?->first_name, $r->person?->last_name, $r->email, $r->phone,
+                ...array_map(fn ($v) => $v ? 'yes' : '', [$r->wants_updates, $r->help_volunteer, $r->help_software, $r->help_organization, $r->help_other]),
+                $r->recommend, $r->comments, $r->person?->training_team,
+            ]);
+        }
+
+        return response($csv->toString(), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="training-signups-'.now()->format('Y-m-d').'.csv"',
+        ]);
     }
 }

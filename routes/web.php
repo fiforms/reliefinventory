@@ -371,6 +371,11 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 // The public/staff submission page — no 'auth' middleware, since the same
 // route serves an anonymous prospective partner and a logged-in staffer.
 // PublicFormController itself enforces the form's access_mode.
+// Trainee self sign-up (TraineeSignupController): public, open only while Training Mode is on. A whole room signs
+// up at once from one Wi-Fi network (one IP), so the limit is generous; Turnstile keeps bots out.
+Route::get('/join', [TraineeSignupController::class, 'show'])->name('join');
+Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:600,1');
+
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
@@ -413,6 +418,8 @@ Route::put('/json/training/mode', [TrainingAdminController::class, 'setMode'])
     ->middleware(['auth', 'permission:admin-system']);
 Route::middleware(['auth', 'permission:manage-training'])->group(function () {
     Route::get('/report/training/setup-packet.pdf', [TrainingAdminController::class, 'setupPacket']);
+    Route::get('/report/training/signups.csv', [TrainingAdminController::class, 'signupsCsv']);
+    Route::get('/report/training/signup-poster.pdf', [TrainingAdminController::class, 'signupPoster']);
     Route::get('/report/training/pallet-labels.pdf', [PalletReportController::class, 'trainingLabelsBuilder']);
     Route::get('/report/training/report-cards.pdf', [TrainingReportController::class, 'pdf']);
     Route::get('/report/training/report-cards.csv', [TrainingReportController::class, 'csv']);
