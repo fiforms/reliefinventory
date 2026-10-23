@@ -23,6 +23,7 @@ class Location extends Model
         'use_id',
         'code',
         'status',
+        'warehouse_id',
     ];
     
     public function use()
