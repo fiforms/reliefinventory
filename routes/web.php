@@ -543,12 +543,16 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pe
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-users']], function () {
     Route::get('/users', [UserAdminController::class, 'index']);
+    Route::get('/users/export.csv', [UserAdminController::class, 'csv']);
     Route::post('/users', [UserAdminController::class, 'store']);
+    Route::post('/users/bulk', [UserAdminController::class, 'bulk']);
     Route::put('/users/{id}', [UserAdminController::class, 'update']);
     Route::post('/users/{id}/deactivate', [UserAdminController::class, 'deactivate']);
     Route::post('/users/{id}/reactivate', [UserAdminController::class, 'reactivate']);
     Route::post('/users/{id}/resend-invite', [UserAdminController::class, 'resendInvite']);
     Route::post('/users/{id}/approve', [UserAdminController::class, 'approve']);
+    Route::post('/users/{id}/set-password', [UserAdminController::class, 'setPassword']);
+    Route::post('/users/{id}/require-password-change', [UserAdminController::class, 'requirePasswordChange']);
 });
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-orders']], function () {
