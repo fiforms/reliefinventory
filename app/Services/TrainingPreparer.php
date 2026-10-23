@@ -24,22 +24,23 @@ use Illuminate\Support\Facades\Hash;
 use RuntimeException;
 
 /**
- * Prepare Training: spreads the trainer's real goods (the scanned list, App\Models\TrainingProduct) over the
- * stations so the first team at each one has something to do, and writes the records for the goods that are meant
- * to be part-way through the warehouse already (config/training.php `stage`):
+ * Prepare Training: loads starter work so the first team at each station has something to do (config/training.php
+ * `stage`). Receiving and Sorting use the trainer's own goods, put out by hand and never scanned: Receiving only gets
+ * offers to match deliveries to, and Sorting sorts what Receiving brings in; Stations 3–5 work on goods the system must already know are there, so those are the
+ * trainer's real products from the scanned list (App\Models\TrainingProduct), recorded as stock:
  *
- *   1 Receiving — boxes of goods to receive, each with a pending donation offer to match. No stock: they come in
- *                 for real, and every unit not needed elsewhere goes here.
- *   2 Sorting   — boxes already received (a donation + R pallet each), waiting to be sorted
- *   3 Inventory — sorted goods on the sorting-area table (sorted, not on a pallet)
- *   4 Picking   — sealed W pallets at table spots A-1 ... C-4, and Ready to Fill orders that can be picked from them
- *   5 Shipping  — Filled orders, already picked, staged at the door
+ *   1 Receiving — pending donation offers for the goods put out to receive (no stock: they come in for real)
+ *   2 Sorting   — nothing: what the receiving teams bring in (and label) is what gets sorted
+ *   3 Inventory — scanned goods on the sorting-area table (sorted, not on a pallet)
+ *   4 Picking   — sealed W pallets at table spots A-1 ... C-4 holding scanned goods (and any scanned beyond what
+ *                 Stations 3–5 need), and Ready to Fill orders that can be picked from them
+ *   5 Shipping  — Filled orders of scanned goods, already picked, staged at the door
  *   6 Ordering / Delivery — a "Team N Driver" per team (phone + PIN for the Driver Portal) and the training partners.
  *                 Nothing to stage: each team delivers the load it shipped itself at Station 5.
  *
  * After its first stop every team works on goods it handled itself one station earlier, which is why so little is
- * staged. The returned summary (also saved on training_settings.prepared_summary) is the setup packet: which goods
- * go in which box or at which spot. Every unit appears there exactly once.
+ * staged. The returned summary (also saved on training_settings.prepared_summary) is the setup packet: which scanned
+ * goods go at which spot or in which load. Every scanned unit appears there exactly once.
  *
  * Writes go through the real models in one transaction, recorded as the person who pressed the button, tagged
  * source_system = 'training', with ActivityRecorder paused (starter data isn't anyone's training work). Running it
@@ -51,8 +52,6 @@ class TrainingPreparer
 
     /** Locations an earlier version of Prepare Training made; retired on every run (archived if anything used them). */
     private const OLD_LOCATION_PATTERN = '/^TR-(DOCK|SORT|A-\d{2})$/';
-
-    public const RECEIVING_LOCATION = 'Receiving';
 
     public const SORTING_LOCATION = 'Sorting Area';
 
@@ -72,26 +71,22 @@ class TrainingPreparer
     private array $summary = [];
 
     /**
-     * How many units each station is staged with, what that comes to, and the goal to scan. `staged` (everything but
-     * Receiving) is the least Prepare Training accepts; Receiving takes the rest.
+     * How many scanned units Stations 3–5 are staged with; `target` is the least Prepare Training accepts (more is fine:
+     * the extra goes on the Station 4 trays). Stations 1 and 2 use the trainer's own, unscanned goods.
      */
     public static function plan(): array
     {
         $s = config('training.stage');
         $stations = [
-            1 => $s['receiving_boxes'] * $s['receiving_box_size'],
-            2 => $s['sorting_boxes'] * $s['sorting_box_size'],
             3 => $s['sorting_area_units'],
             4 => $s['rack_pallets'] * $s['rack_pallet_size'],
             5 => $s['orders_to_ship'] * $s['ship_order_size'],
-            6 => 0,
         ];
 
         return [
             'stations' => $stations,
-            'staged' => array_sum($stations) - $stations[1],
             'target' => array_sum($stations),
-            'min_products' => (int) config('training.min_products', 15),
+            'min_products' => (int) config('training.min_products', 10),
         ];
     }
 
@@ -124,8 +119,8 @@ class TrainingPreparer
             $partners = $this->buildPartners();
             $s = config('training.stage');
 
-            // The fixed-size stations first, so Receiving gets whatever is left.
-            $this->summary['pallets_to_sort'] = $this->palletsToSort($donors);
+            $this->summary['offers'] = $this->offers($donors);
+
             $stock = ['area' => $this->deal($s['sorting_area_units'])];
             foreach (range(1, $s['rack_pallets']) as $p) {
                 $stock['racks'][] = $this->deal($s['rack_pallet_size']);
@@ -133,10 +128,15 @@ class TrainingPreparer
             foreach (range(1, $s['orders_to_ship']) as $o) {
                 $stock['ship'][] = $this->deal($s['ship_order_size']);
             }
+            // Anything scanned beyond that goes on the trays, a unit at a time in turn, so there is more to pick.
+            for ($p = 0; $this->units; $p = ($p + 1) % count($stock['racks'])) {
+                foreach ($this->deal(1) as $itemId => $qty) {
+                    $stock['racks'][$p][$itemId] = ($stock['racks'][$p][$itemId] ?? 0) + $qty;
+                }
+            }
             $this->stockShelves($donors[0], $stock);
             $this->summary['orders_to_fill'] = $this->ordersToFill($partners, $stock['racks']);
             $this->summary['orders_to_ship'] = $this->ordersToShip($partners, $stock['ship']);
-            $this->summary['receiving'] = $this->receiving($donors);
 
             $this->summary['team_drivers'] = $this->buildDrivers();
             $this->summary['partners'] = array_map(fn (Person $p) => $p->organization, $partners);
@@ -154,7 +154,7 @@ class TrainingPreparer
 
     /**
      * The scanned goods, laid out as a single queue of units that deal() hands out from the front: products take
-     * turns, two units at a time, so each box gets a mix of products, and pairs give the sorters a quantity to count.
+     * turns, two units at a time, so each tray and load gets a mix of products, and pairs give a quantity to pick.
      */
     private function loadProducts(): void
     {
@@ -163,10 +163,9 @@ class TrainingPreparer
             ->sortBy([['qty', 'desc'], ['id', 'asc']])->values();
         $plan = self::plan();
         $total = (int) $products->sum('qty');
-        if ($total < $plan['staged']) {
+        if ($total < $plan['target']) {
             throw new RuntimeException(sprintf(
-                'Scan at least %d more items first: %d scanned, %d are needed for Stations 2–5 (the goal is %d, so Receiving gets the rest).',
-                $plan['staged'] - $total, $total, $plan['staged'], $plan['target']));
+                'Scan at least %d more items first: %d scanned, %d are needed for Stations 3–5.', $plan['target'] - $total, $total, $plan['target']));
         }
 
         $left = [];
@@ -191,10 +190,7 @@ class TrainingPreparer
         $this->summary['products'] = ['units' => $total, 'distinct' => $products->count()];
         $this->summary['warnings'] = [];
         if ($products->count() < $plan['min_products']) {
-            $this->summary['warnings'][] = "Only {$products->count()} different products were scanned (at least {$plan['min_products']} make better mixed boxes).";
-        }
-        if ($total < $plan['target']) {
-            $this->summary['warnings'][] = 'Receiving gets only '.($total - $plan['staged'])." items (the goal is {$plan['stations'][1]}).";
+            $this->summary['warnings'][] = "Only {$products->count()} different products were scanned (at least {$plan['min_products']} make better mixed trays and loads).";
         }
     }
 
@@ -241,7 +237,7 @@ class TrainingPreparer
     private function buildLocations(): void
     {
         $warehouse = Warehouse::first() ?? Warehouse::create(['name' => 'Main Warehouse', 'pallets_enabled' => true]);
-        $codes = [self::RECEIVING_LOCATION => [], self::SORTING_LOCATION => []];
+        $codes = [self::SORTING_LOCATION => []];
         foreach (self::spotCodes() as $i => $code) {
             [$table, $spot] = explode('-', $code);
             $codes[$code] = ['Aisle' => $table, 'Lane' => $spot, 'PullSequence' => 9000 + ($i + 1) * 10];
@@ -325,54 +321,22 @@ class TrainingPreparer
         return "{$team}0{$team}7{$team}";
     }
 
-    /** Station 1: the rest of the goods, split into boxes, each with a pending offer describing it. */
-    private function receiving(array $donors): array
+    /** Station 1: pending donation offers for the trainer's own goods, put out to arrive. */
+    private function offers(array $donors): array
     {
-        $boxes = max(1, (int) config('training.stage.receiving_boxes', 5));
-        $remaining = count($this->units);
+        $descriptions = ['Boxes of canned food', 'Mixed groceries', 'Snacks and drinks', 'Household goods', 'Small electronics and supplies'];
         $out = [];
-        for ($b = 0; $b < $boxes && $remaining > 0; $b++) {
-            $items = $this->deal((int) ceil($remaining / ($boxes - $b)));
-            $remaining = count($this->units);
-            $donor = $donors[$b % count($donors)];
-            $lines = $this->describe($items);
-            $names = array_column($lines, 'name');
+        for ($i = 0; $i < config('training.stage.offers', 5); $i++) {
+            $donor = $donors[$i % count($donors)];
             $offer = DonationOffer::create([
-                'person_id' => $donor->id, 'status' => DonationOffer::STATUS_OFFERED, 'entered_by_person_id' => $this->actorId,
-                'description' => 'Box of '.array_sum($items).' items: '.implode(', ', array_slice($names, 0, 4)).(count($names) > 4 ? ', and more' : ''),
+                'person_id' => $donor->id, 'description' => $descriptions[$i % count($descriptions)],
+                'status' => DonationOffer::STATUS_OFFERED, 'entered_by_person_id' => $this->actorId,
             ]);
             $offer->statusLogs()->create(['from_status' => null, 'to_status' => DonationOffer::STATUS_OFFERED,
                 'changed_by_person_id' => $this->actorId, 'contact_method' => 'phone', 'notes' => 'Training starter offer']);
             $offer->transitionTo(DonationOffer::STATUS_PENDING, $this->actorId,
                 ['eta_start' => now()->toDateString(), 'eta_end' => now()->toDateString()], 'phone', 'Accepted; arriving today');
-            $out[] = ['box' => $b + 1, 'offer_id' => $offer->id, 'donor' => $donor->organization, 'description' => $offer->description, 'items' => $lines];
-        }
-
-        return $out;
-    }
-
-    /** Station 2: received donations, one R pallet (a box) each, waiting to be sorted. */
-    private function palletsToSort(array $donors): array
-    {
-        $at = $this->locations[self::RECEIVING_LOCATION];
-        $out = [];
-        for ($i = 0; $i < config('training.stage.sorting_boxes', 2); $i++) {
-            $items = $this->deal((int) config('training.stage.sorting_box_size', 10));
-            $donor = $donors[$i % count($donors)];
-            $donation = Transaction::create([
-                'type' => 'donation', 'category' => 'donation', 'person_id' => $donor->id, 'person_id_user' => $this->actorId,
-                'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED), 'order_date' => now()->toDateString(),
-                'container_count' => 1, 'container_types' => ['box'], 'container_type_counts' => ['box' => 1],
-                'arrival_method' => 'box_truck', 'manifest' => '1 box — mixed goods (training)',
-                'source_system' => self::SOURCE, 'source_ref' => $this->batch.'-sort-'.($i + 1),
-            ]);
-            $pallet = Pallet::create([
-                'kind' => 'R', 'status' => 'received', 'container_type' => 'box', 'donor_person_id' => $donor->id,
-                'orderdonation_id' => $donation->id, 'location_id' => $at->id, 'datepacked' => now()->toDateString(),
-            ]);
-            $pallet->statuses()->create(['status' => 'received', 'location_id' => $at->id, 'notes' => 'Training starter box']);
-            $out[] = ['donation_id' => $donation->id, 'pallet_id' => $pallet->id, 'tag' => $pallet->tag, 'donor' => $donor->organization,
-                'items' => $this->describe($items)];
+            $out[] = ['id' => $offer->id, 'donor' => $donor->organization, 'description' => $offer->description];
         }
 
         return $out;

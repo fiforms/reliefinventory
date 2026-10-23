@@ -4,25 +4,23 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 /*
- * Training Mode's Prepare Training (App\Services\TrainingPreparer). The goods are the trainer's real products,
- * scanned on Setup > Training Mode > Scan Training Products; these numbers say how they are spread over the stations.
+ * Training Mode's Prepare Training (App\Services\TrainingPreparer). Receiving and Sorting use the trainer's own goods,
+ * staged by hand and never scanned: Prepare Training only makes the offers Receiving matches deliveries to; Sorting sorts
+ * what Receiving brings in. Stations 3-5 work on goods the system must already know are there, so those are the
+ * trainer's real products scanned on Setup > Training Mode > Scan Training Products, spread as below.
  *
  * Only what the first team at each station needs is staged: the class rotates station N -> N+1, so after its first
- * stop every team works on the goods it handled itself one station earlier (what Team 1 receives it sorts next, then
- * puts away, ...). Everything left over goes to Receiving, so most of the goods come in through the door for real.
+ * stop every team works on the goods it handled itself one station earlier.
  */
 return [
 
     'stage' => [
-        // Station 1: boxes of real goods to receive (no records — they arrive). Each gets a pending offer to match.
-        'receiving_boxes' => 5,
-        'receiving_box_size' => 10,
-        // Station 2: boxes already received (an R pallet each), waiting to be sorted.
-        'sorting_boxes' => 2,
-        'sorting_box_size' => 10,
-        // Station 3: sorted goods on the sorting-area table, not on a pallet yet.
+        // Station 1: pending donation offers for the goods the trainer puts out to receive.
+        'offers' => 5,
+        // Station 3: scanned goods on the sorting-area table, sorted but not on a pallet yet.
         'sorting_area_units' => 10,
-        // Station 4: sealed W pallets (trays) at table spots, and Ready to Fill orders picked from them.
+        // Station 4: sealed W pallets (trays) at table spots, and Ready to Fill orders picked from them. Scanned items
+        // beyond what Stations 3-5 need are added to these trays.
         'rack_pallets' => 4,
         'rack_pallet_size' => 6,
         'orders_to_fill' => 3,
@@ -31,8 +29,8 @@ return [
         'ship_order_size' => 5,
     ],
 
-    // At least this many different products, so a box isn't all one thing.
-    'min_products' => 15,
+    // At least this many different scanned products, so a tray or load isn't all one thing.
+    'min_products' => 10,
 
     // The table spots Station 3 puts pallets on and Station 4 picks from: three tables, four spots each (A-1 ... C-4).
     'tables' => ['A', 'B', 'C'],

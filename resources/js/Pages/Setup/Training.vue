@@ -240,13 +240,13 @@ onMounted(load);
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Prepare Training</h2>
 					<p class="text-sm text-gray-700">
-						First scan the real goods you have for the class. Prepare Training then spreads them over the
-						stations so the first team at each one has something to do: delivery boxes with offers waiting
-						at Receiving (most of the goods, so they come in for real), received boxes to sort, sorted goods
-						on the sorting area table, sealed trays at the table spots with orders to pick, picked orders
-						to ship, and a driver for each team. After that every team works on the goods it handled itself
-						one station earlier. The setup packet says which goods go in which box or at which spot, with a
-						contents slip for each and a sign for each station.
+						Receiving and Sorting use your own goods, not scanned: put out boxes to receive, and the teams
+						sort what they bring in. Prepare Training adds offers for those deliveries to match. The goods
+						that start out already in the warehouse — the sorting area table, sealed trays at the table spots
+						with orders to pick, and picked orders to ship (Stations 3–5) — are the ones you scan first, so the
+						system knows exactly what is there. Each team also gets a driver. After its first station every
+						team works on the goods it handled one station earlier. The setup packet says which scanned goods
+						go at which spot or in which load, with a contents slip for each and a sign for each station.
 					</p>
 					<div class="flex flex-wrap items-center gap-4 border rounded p-3 text-sm">
 						<div><span class="text-lg font-semibold">{{ status.products.units }}</span> of {{ status.products.plan.target }} items scanned</div>
@@ -255,7 +255,7 @@ onMounted(load);
 					</div>
 					<div v-if="preparing" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">Preparing training data…</div>
 					<div class="flex flex-wrap items-center gap-3">
-						<button type="button" :disabled="!status.enabled || preparing || status.products.units < status.products.plan.staged" @click="prepare"
+						<button type="button" :disabled="!status.enabled || preparing || status.products.units < status.products.plan.target" @click="prepare"
 							class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white disabled:opacity-50"
 							:class="confirmingPrepare ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'">
 							{{ confirmingPrepare ? 'Confirm — adds a full set of training records' : 'Prepare Training' }}
@@ -271,8 +271,8 @@ onMounted(load);
 							label="Table Spot Labels" download-href="/report/training/spot-labels.pdf" />
 					</div>
 					<p v-if="!status.enabled" class="text-sm text-gray-500">Turn Training Mode on first.</p>
-					<p v-else-if="status.products.units < status.products.plan.staged" class="text-sm text-gray-500">
-						Scan at least {{ status.products.plan.staged }} items first ({{ status.products.plan.staged - status.products.units }} more).
+					<p v-else-if="status.products.units < status.products.plan.target" class="text-sm text-gray-500">
+						Scan at least {{ status.products.plan.target }} items first ({{ status.products.plan.target - status.products.units }} more).
 					</p>
 					<p class="text-xs text-gray-500">
 						Last prepared: <span class="font-mono">{{ status.prepared_at ? formatTime(status.prepared_at) : 'never' }}</span>.

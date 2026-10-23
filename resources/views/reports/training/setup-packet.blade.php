@@ -1,6 +1,7 @@
-{{-- Training Mode setup packet (TrainingAdminController::setupPacketBuilder): where the last Prepare Training put each of the
-     scanned goods, so trainers can stage the floor to match — a placement list per station, a contents slip for every
-     box / spot / load (cut apart, one goes with each), and a plain sign per station. $summary =
+{{-- Training Mode setup packet (TrainingAdminController::setupPacketBuilder): what the last Prepare Training loaded, so
+     trainers can stage the floor to match — the offers Station 1 matches the trainer's own goods to,
+     where each scanned item goes for Stations 3–5 (a placement list, and a contents slip per spot / load to cut apart), and
+     a plain sign per station. $summary =
      training_settings.prepared_summary; $stations = TrainingMode::STATIONS. --}}
 <!DOCTYPE html>
 <html lang="en">
@@ -38,12 +39,6 @@
             return collect($items)->map(fn ($i) => ['what' => $i['name'], 'acs' => trim($i['number'].' '.$i['type']), 'qty' => $i['qty']]);
         };
         $slips = [];
-        foreach ($summary['receiving'] as $b) {
-            $slips[] = ['station' => 1, 'title' => 'Delivery box '.$b['box'], 'sub' => $b['donor'].' — offer #'.$b['offer_id'], 'items' => $b['items']];
-        }
-        foreach ($summary['pallets_to_sort'] as $p) {
-            $slips[] = ['station' => 2, 'title' => 'Box '.$p['tag'], 'sub' => 'Put pallet label '.$p['tag'].' on this box. Donor: '.$p['donor'], 'items' => $p['items']];
-        }
         $slips[] = ['station' => 3, 'title' => 'Sorting area table', 'sub' => 'Already sorted — build new pallets from these', 'items' => $summary['sorting_area']];
         foreach ($summary['warehouse_pallets'] as $p) {
             $slips[] = ['station' => 4, 'title' => 'Spot '.$p['location'].' — pallet '.$p['tag'], 'sub' => 'Put pallet label '.$p['tag'].' on this tray', 'items' => $p['items']];
@@ -55,7 +50,7 @@
 
     <h1>Training Setup Packet</h1>
     <div class="subtitle">{{ config('app.name') }} — prepared {{ \Carbon\Carbon::parse($summary['prepared_at'])->format('F j, Y g:i A') }}
-        — {{ $summary['products']['units'] }} items, {{ $summary['products']['distinct'] }} different products</div>
+        — {{ $summary['products']['units'] }} scanned items, {{ $summary['products']['distinct'] }} different products</div>
 
     @foreach ($summary['warnings'] ?? [] as $warning)
         <p class="warning">{{ $warning }}</p>
@@ -64,13 +59,14 @@
     <div class="section">
         <h2>How it works</h2>
         <p>Only the first team at each station needs staged goods: teams move from station N to N+1, so after its first stop
-            every team works on what it handled itself one station earlier. Most goods start at Receiving and come in for real.
-            When a team marks a load delivered (Station 6, Round 2), carry that box back to Receiving as a new delivery.</p>
+            every team works on what it handled itself one station earlier. Receiving uses your own goods (not scanned): put out
+            boxes to receive, and the teams sort what they bring in. Stations 3–5 hold the scanned goods, placed
+            as listed below. When a team marks a load delivered (Station 6, Round 2), carry that box back to Receiving as a new delivery.</p>
         <table>
             <thead><tr><th>Station</th><th>Put out</th><th class="num">Items</th></tr></thead>
             <tbody>
-                <tr><td>1 {{ $stations[1] }}</td><td>{{ count($summary['receiving']) }} delivery boxes (offers waiting to arrive)</td><td class="num">{{ collect($summary['receiving'])->flatMap(fn ($b) => $b['items'])->sum('qty') }}</td></tr>
-                <tr><td>2 {{ $stations[2] }}</td><td>{{ count($summary['pallets_to_sort']) }} received boxes with pallet labels</td><td class="num">{{ collect($summary['pallets_to_sort'])->flatMap(fn ($b) => $b['items'])->sum('qty') }}</td></tr>
+                <tr><td>1 {{ $stations[1] }}</td><td>Boxes of your own goods to receive ({{ count($summary['offers']) }} offers waiting for them)</td><td class="num">yours</td></tr>
+                <tr><td>2 {{ $stations[2] }}</td><td>Nothing — the teams sort what they received</td><td class="num">0</td></tr>
                 <tr><td>3 {{ $stations[3] }}</td><td>Sorted goods on the sorting area table</td><td class="num">{{ collect($summary['sorting_area'])->sum('qty') }}</td></tr>
                 <tr><td>4 {{ $stations[4] }}</td><td>{{ count($summary['warehouse_pallets']) }} sealed trays at table spots, {{ count($summary['orders_to_fill']) }} orders to pick</td><td class="num">{{ collect($summary['warehouse_pallets'])->flatMap(fn ($p) => $p['items'])->sum('qty') }}</td></tr>
                 <tr><td>5 {{ $stations[5] }}</td><td>{{ count($summary['orders_to_ship']) }} picked orders at the door</td><td class="num">{{ collect($summary['orders_to_ship'])->flatMap(fn ($o) => $o['items'])->sum('qty') }}</td></tr>
@@ -78,28 +74,20 @@
             </tbody>
         </table>
         <p class="note">Tape the table spot labels (Setup &gt; Training Mode &gt; Table Spot Labels) on the tables: {{ implode(', ', $summary['locations']) }}.
-            Print the pallet labels too, for the Station 2 boxes and the Station 4 trays. The contents slips and station signs are at the back of this packet.</p>
+            Print the pallet labels too, for the Station 4 trays. The contents slips (Stations 3–5) and station signs are at the back of this packet.</p>
     </div>
 
     <div class="section">
-        <h2>Station 1 — {{ $stations[1] }}: delivery boxes</h2>
-        <p class="note">Each box has a phoned-in offer waiting for it; the receiving team matches the delivery to the offer.</p>
-        @foreach ($summary['receiving'] as $b)
-            <h3>Box {{ $b['box'] }} — {{ $b['donor'] }} (offer #{{ $b['offer_id'] }})</h3>
-            <table>
-                <tbody>@foreach ($itemRows($b['items']) as $r)<tr><td>{{ $r['what'] }}</td><td>{{ $r['acs'] }}</td><td class="num">{{ $r['qty'] }}</td></tr>@endforeach</tbody>
-            </table>
-        @endforeach
-    </div>
-
-    <div class="section">
-        <h2>Station 2 — {{ $stations[2] }}: received boxes waiting to be sorted</h2>
-        @foreach ($summary['pallets_to_sort'] as $p)
-            <h3>{{ $p['tag'] }} — donation #{{ $p['donation_id'] }}, {{ $p['donor'] }}</h3>
-            <table>
-                <tbody>@foreach ($itemRows($p['items']) as $r)<tr><td>{{ $r['what'] }}</td><td>{{ $r['acs'] }}</td><td class="num">{{ $r['qty'] }}</td></tr>@endforeach</tbody>
-            </table>
-        @endforeach
+        <h2>Station 1 — {{ $stations[1] }}: offers waiting for arrival</h2>
+        <p class="note">Put out boxes of your own goods to receive; the receiving team matches each delivery to one of these phoned-in offers.</p>
+        <table>
+            <thead><tr><th>Offer #</th><th>Donor</th><th>What's coming</th></tr></thead>
+            <tbody>
+                @foreach ($summary['offers'] as $o)
+                    <tr><td>{{ $o['id'] }}</td><td>{{ $o['donor'] }}</td><td>{{ $o['description'] }}</td></tr>
+                @endforeach
+            </tbody>
+        </table>
     </div>
 
     <div class="section">
@@ -156,7 +144,7 @@
 
     {{-- Contents slips: cut apart; one goes in each box / on each tray. --}}
     <div class="new-page">
-        <h2>Contents slips — cut apart, one with each box</h2>
+        <h2>Contents slips — cut apart, one with each spot and load</h2>
         @foreach ($slips as $slip)
             <div class="slip">
                 <div class="slip-station">Station {{ $slip['station'] }} — {{ $stations[$slip['station']] }}</div>

@@ -122,13 +122,13 @@ class PalletReportController extends Controller
     }
 
     /**
-     * Labels for the pallets the last Prepare Training made (Training Mode's setup packet): the R pallets waiting
-     * to be sorted, then the sealed W pallets. Only those ids, so it can't print anyone else's labels.
+     * Labels for the pallets the last Prepare Training made (Training Mode's setup packet): the sealed W pallets on
+     * the table spots. Only those ids, so it can't print anyone else's labels.
      */
     public function trainingLabelsBuilder(): PdfBuilder
     {
         $summary = TrainingSetting::current()->prepared_summary ?? [];
-        $ids = [...array_column($summary['pallets_to_sort'] ?? [], 'pallet_id'), ...array_column($summary['warehouse_pallets'] ?? [], 'id')];
+        $ids = array_column($summary['warehouse_pallets'] ?? [], 'id');
         $pallets = Pallet::with(['contentItem', 'location'])->whereIn('id', $ids)->orderBy('kind')->orderBy('id')->get();
 
         if ($pallets->isEmpty()) {

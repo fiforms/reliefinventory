@@ -27,8 +27,7 @@ function statusCount(string $type, string $status): int
 /** Every unit in the summary, by item id. */
 function placedUnits(array $summary): array
 {
-    $groups = [...array_column($summary['receiving'], 'items'), ...array_column($summary['pallets_to_sort'], 'items'),
-        $summary['sorting_area'], ...array_column($summary['warehouse_pallets'], 'items'), ...array_column($summary['orders_to_ship'], 'items')];
+    $groups = [$summary['sorting_area'], ...array_column($summary['warehouse_pallets'], 'items'), ...array_column($summary['orders_to_ship'], 'items')];
     $out = [];
     foreach ($groups as $items) {
         foreach ($items as $i) {
@@ -47,8 +46,8 @@ test('Prepare Training refuses while training mode is off', function () {
     expect(Transaction::count())->toBe(0);
 });
 
-test('Prepare Training refuses with fewer scanned items than Stations 2–5 need', function () {
-    scannedProducts(5, 2);
+test('Prepare Training refuses with fewer scanned items than Stations 3–5 need', function () {
+    scannedProducts(10, 4); // 40 of 44
     TrainingSetting::current()->update(['enabled' => true]);
     $this->actingAs(userWithPermissions('manage-training'));
 
@@ -56,8 +55,8 @@ test('Prepare Training refuses with fewer scanned items than Stations 2–5 need
     expect(Transaction::count())->toBe(0);
 });
 
-test('Prepare Training places every scanned unit once, staging Stations 2–5 and giving Receiving the rest', function () {
-    $items = scannedProducts(15, 8); // 120 units
+test('Prepare Training places every scanned unit once in Stations 3–5, extra on the trays; Receiving gets only offers', function () {
+    $items = scannedProducts(15, 4); // 60 units: 44 needed, 16 extra
     TrainingSetting::current()->update(['enabled' => true]);
     $this->actingAs(userWithPermissions('manage-training'));
 
@@ -65,23 +64,22 @@ test('Prepare Training places every scanned unit once, staging Stations 2–5 an
     $plan = TrainingPreparer::plan();
 
     // Every scanned unit is in exactly one place.
-    expect(placedUnits($summary))->toEqualCanonicalizing(collect($items)->mapWithKeys(fn ($i) => [$i->id => 8])->all())
-        ->and($summary['products'])->toBe(['units' => 120, 'distinct' => 15])
+    expect(placedUnits($summary))->toEqualCanonicalizing(collect($items)->mapWithKeys(fn ($i) => [$i->id => 4])->all())
+        ->and($summary['products'])->toBe(['units' => 60, 'distinct' => 15])
         ->and($summary['warnings'])->toBe([]);
 
     $sum = fn (array $groups) => collect($groups)->flatten(1)->sum('qty');
-    expect($sum(array_column($summary['pallets_to_sort'], 'items')))->toBe($plan['stations'][2])
-        ->and(collect($summary['sorting_area'])->sum('qty'))->toBe($plan['stations'][3])
-        ->and($sum(array_column($summary['warehouse_pallets'], 'items')))->toBe($plan['stations'][4])
+    expect(collect($summary['sorting_area'])->sum('qty'))->toBe($plan['stations'][3])
+        ->and($sum(array_column($summary['warehouse_pallets'], 'items')))->toBe($plan['stations'][4] + 16)
         ->and($sum(array_column($summary['orders_to_ship'], 'items')))->toBe($plan['stations'][5])
-        ->and($sum(array_column($summary['receiving'], 'items')))->toBe(120 - $plan['staged'])
-        ->and($summary['receiving'])->toHaveCount(5);
+        ->and($summary['offers'])->toHaveCount(5)
+        ->and($summary)->not->toHaveKeys(['receiving', 'pallets_to_sort']);
 
-    // A box is a mix of products, two at a time.
-    expect(count($summary['pallets_to_sort'][0]['items']))->toBe(5);
+    // The sorting area is a mix of products, two at a time.
+    expect(count($summary['sorting_area']))->toBe(5);
 
     expect(DonationOffer::where('status', DonationOffer::STATUS_PENDING)->count())->toBe(5)
-        ->and(Pallet::where('kind', 'R')->where('status', 'received')->count())->toBe(2)
+        ->and(Pallet::where('kind', 'R')->where('status', 'received')->count())->toBe(0)
         ->and(Pallet::where('kind', 'W')->where('status', 'sealed')->count())->toBe(4)
         ->and(statusCount('order', Transaction::STATUS_READY_TO_FILL))->toBe(3)
         ->and(statusCount('order', Transaction::STATUS_FILLED))->toBe(2)
@@ -125,15 +123,15 @@ test('Prepare Training places every scanned unit once, staging Stations 2–5 an
     }
 });
 
-test('Prepare Training warns about few products and a short Receiving, but runs', function () {
-    scannedProducts(8, 9); // 72 units: 64 staged, 8 for Receiving
+test('Prepare Training warns about too few different products, but runs', function () {
+    scannedProducts(4, 11); // 44 units, 4 products
     TrainingSetting::current()->update(['enabled' => true]);
     $this->actingAs(userWithPermissions('manage-training'));
 
     $summary = app(TrainingPreparer::class)->run();
 
-    expect($summary['warnings'])->toHaveCount(2)
-        ->and(collect($summary['receiving'])->flatMap(fn ($b) => $b['items'])->sum('qty'))->toBe(8);
+    expect($summary['warnings'])->toHaveCount(1)
+        ->and(placedUnits($summary))->toHaveCount(4);
 });
 
 test('Prepare Training retires the TR- locations an earlier version made', function () {
@@ -169,7 +167,7 @@ test('the setup packet lists the placements and prints a sign per station; spot 
 
     $path = tempnam(sys_get_temp_dir(), 'pkt').'.pdf';
     app(TrainingAdminController::class)->setupPacketBuilder()->save($path);
-    expect(pdfText($path))->toContain('Delivery box 1')->toContain('Spot A-1')->toContain('Station 2')->toContain('Sorting')
+    expect(pdfText($path))->toContain('offers waiting for arrival')->toContain('Spot A-1')->toContain('Station 2')->toContain('Sorting')
         ->toContain('Product 1')->not->toContain('TR-');
     unlink($path);
 

@@ -359,21 +359,22 @@ printed team sheets). **Only the login changes; the system otherwise works norma
   Certificates (landscape PDF, no station list) for trainees who did all six, showing the event title and location
   entered on the Training Mode page (`training_settings.event_title`/`event_location`, `PUT /json/training/event`); report-card PDF + CSV.
 - **Training products** (2026-10-23, `/setup/training/products`, `TrainingProductController`, `TrainingProducts.vue`): the
-  trainer scans their *real* goods, one unit per scan (UpcResolver, catalog only; an unknown barcode opens the shared
-  `Components/NewItemModal.vue` — extracted from `DonationSorting.vue`, which uses it too). `training_products` (item_id → qty)
-  is a list of props, **not stock**. The page shows progress against `TrainingPreparer::plan()`.
+  trainer scans the *real* goods that start out "already in the warehouse" (Stations 3–5), one unit per scan (UpcResolver,
+  catalog only; an unknown barcode opens the shared `Components/NewItemModal.vue` — extracted from `DonationSorting.vue`,
+  which uses it too). `training_products` (item_id → qty) is a list of props, **not stock**. Receiving's goods are the
+  trainer's own and never scanned. The page shows progress against `TrainingPreparer::plan()`.
 - **Prepare Training** (`TrainingPreparer`, refused unless training mode is on, and with fewer scanned units than
-  `plan()['staged']`): spreads the scanned units over the stations per `config/training.php` `stage` — only the first
-  team at each station is staged, since teams move N → N+1 and then work on goods they handled one station earlier. Station 2
-  gets received boxes (R pallets), 3 sorted goods in the sorting area, 4 sealed W pallets at table spots `A-1`…`C-4`
-  (`spotCodes()`) plus Ready to Fill orders they can cover, 5 Filled orders; **every leftover unit goes to Receiving** as
-  delivery boxes with a pending offer each (no stock — they arrive for real). Nothing staged for Station 6: each team
-  delivers the load it shipped to its own team driver. Every unit appears in the summary exactly once (tested). Through the
-  real models, one transaction, ActivityRecorder paused; also retires the old `TR-DOCK`/`TR-SORT`/`TR-A-nn` locations
-  (deleted if unused, else archived). Summary in `training_settings.prepared_summary` → the **setup packet** (placement per
-  station, a contents slip per box/tray/load, and a plain "Station N / Name" sign per station), the training pallet labels
-  (`PalletReportController::trainingLabelsBuilder`) and the **table spot labels** (`training-spot-labels`, pallet label
-  stock, barcode = the location code). Running again adds another set.
+  `plan()['target']`): only the first team at each station is staged, since teams move N → N+1 and then work on goods they
+  handled one station earlier (`config/training.php` `stage`). Station 1 gets pending offers only (the trainer's own goods
+  arrive for real); Station 2 gets nothing (it sorts what Receiving brings in — no R pallets are made); 3 scanned goods sorted
+  into the sorting area; 4 sealed W pallets at table spots `A-1`…`C-4` (`spotCodes()`) — plus every scanned unit beyond the
+  target — and Ready to Fill orders they can cover; 5 Filled orders; 6 nothing (each team delivers the load it shipped to its
+  own team driver). Every scanned unit appears in the summary exactly once (tested). Through the real models, one transaction,
+  ActivityRecorder paused; also retires the old `TR-DOCK`/`TR-SORT`/`TR-A-nn` locations (deleted if unused, else archived).
+  Summary in `training_settings.prepared_summary` → the **setup packet** (offers, placement per station, a contents slip per
+  tray/load, and a plain "Station N / Name" sign per station), the training pallet labels (the W trays,
+  `PalletReportController::trainingLabelsBuilder`) and the **table spot labels** (`training-spot-labels`, pallet label stock,
+  barcode = the location code). Running again adds another set.
 - **Self sign-up** (`/join`, `TraineeSignupController`, `Join.vue`, public; QR code + poster + follow-up CSV on the Training
   Mode page): only while training mode is on; first + last name required, then optional email, phone, project updates,
   how they'd help (checkboxes), someone to recommend, comments. Makes a trainee via `TrainingLoginController::createTrainee`
