@@ -20,6 +20,10 @@ body {
 .pallet-contents {
     font-weight: bold;
 }
+.pallet-location {
+    font-weight: bold;
+    font-size: {{ $compact ? 20 : 34 }}px;
+}
 .barcode {
     margin-top: {{ $compact ? 10 : 20 }}px;
     height: {{ $compact ? 110 : 200 }}px;
