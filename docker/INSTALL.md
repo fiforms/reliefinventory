@@ -9,7 +9,7 @@ else on the machine gets changed. **Docker Desktop** is the free app that runs D
 install it once, like any other program.
 
 > This guide gets you a working copy you can open on that computer, or from other computers on the same network.
-> If you are putting Relief Inventory on the internet, also read [README.md](README.md) in this folder first. It
+> If you are putting Relief Inventory on the internet, also read [the Docker README](README.md) first. It
 > covers HTTPS, email, backups and security.
 
 ## What you need
@@ -114,7 +114,7 @@ Your data is stored by Docker in the background, not in your folder, so deleting
 
 - Copy those backup files to another computer or a USB drive regularly. A backup on the same machine won't help if
   the machine fails.
-- Uploaded photos are not in the daily backups by default. See "Data and backups" in [README.md](README.md) to
+- Uploaded photos are not in the daily backups by default. See "Data and backups" in [the Docker README](README.md) to
   include them.
 
 ## Updating to a new version
@@ -139,12 +139,11 @@ Release notes are on the [Releases page](https://github.com/fiforms/reliefinvent
 - **The browser says it can't connect:** run `docker compose ps` and check that the `app` line says it's running.
   If it keeps restarting, `docker compose logs app` shows why.
 - **Phone camera scanning doesn't work:** phones only allow camera access on secure (HTTPS) addresses. Put
-  Relief Inventory behind HTTPS (see [README.md](README.md)), or use a USB or Bluetooth barcode scanner.
+  Relief Inventory behind HTTPS (see [the Docker README](README.md)), or use a USB or Bluetooth barcode scanner.
 - **Start completely over:** `docker compose down -v` stops Relief Inventory and **permanently deletes all its data**.
   Only do this on a test copy.
 
 ## Taking it further
 
-Email, HTTPS, restoring a backup, running unattended and everything else are covered in [README.md](README.md) in this
-folder. Questions and bug reports are welcome on the project's
+Email, HTTPS, restoring a backup, running unattended and everything else are covered in [the Docker README](README.md). Questions and bug reports are welcome on the project's
 [GitHub issues page](https://github.com/fiforms/reliefinventory/issues).
