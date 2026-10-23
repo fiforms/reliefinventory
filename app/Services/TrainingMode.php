@@ -63,8 +63,8 @@ class TrainingMode
     }
 
     /** Training login is offered on this device: training mode is on and the device is approved. */
-    public static function availableOn(TrustedDevice $device): bool
+    public static function availableOn(?TrustedDevice $device): bool
     {
-        return $device->isApproved() && self::enabled();
+        return (bool) $device?->isApproved() && self::enabled();
     }
 }

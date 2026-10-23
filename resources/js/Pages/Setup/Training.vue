@@ -143,8 +143,9 @@ onMounted(load);
 					</div>
 					<p v-else class="text-sm text-gray-500">Turning Training Mode on or off needs the System Administration permission.</p>
 					<p class="text-xs text-gray-500">
-						Devices are approved on <Link href="/setup/pin-login" class="underline">PIN Login</Link>
-						(the same approval PIN unlock uses). Staff can still log in on a training device with their
+						To approve a tablet, log in on it and choose <strong>PIN Login on This Device</strong> from the
+						profile menu (the same approval PIN unlock uses; requests from others wait on
+						<Link href="/setup/pin-login" class="underline">PIN Login</Link>). Staff can still log in on a training device with their
 						PIN or email from the links under the name tiles.
 					</p>
 				</section>

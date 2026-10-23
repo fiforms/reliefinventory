@@ -66,7 +66,7 @@ class SetupController extends Controller
         Auth::login($result['user']);
         $request->session()->regenerate();
         // Same as a real login: this browser earns device trust.
-        $pinLogin->grantTrust($pinLogin->resolveDevice($request), $result['user']->id);
+        $pinLogin->grantTrust($pinLogin->currentDevice($request), $result['user']->id);
 
         // The simulation keeps running after this response; its progress page is the useful place to land.
         if ($result['simulation_started']) {

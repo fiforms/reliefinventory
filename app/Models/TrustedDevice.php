@@ -7,6 +7,11 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * A browser that may offer PIN login (and kiosk / training mode), identified by an opaque cookie token. Only
+ * recorded when someone logged in on it asks for that (ThisDeviceController): pending until an admin with
+ * manage-trusted-devices approves or denies it — or approved at once when that admin is the one asking.
+ */
 class TrustedDevice extends Model
 {
     protected $table = 'trusted_devices';
@@ -15,7 +20,13 @@ class TrustedDevice extends Model
         'device_token',
         'label',
         'status',
+        'requested_by_person_id',
+        'request_reason',
         'user_agent',
+        'ip_address',
+        'last_ip_address',
+        'browser',
+        'os',
         'requested_at',
         'approved_by',
         'approved_at',
@@ -33,6 +44,11 @@ class TrustedDevice extends Model
         'kiosk_mode' => 'boolean',
         'kiosk_mode_enabled_at' => 'datetime',
     ];
+
+    public function requester()
+    {
+        return $this->belongsTo(Person::class, 'requested_by_person_id');
+    }
 
     public function approver()
     {

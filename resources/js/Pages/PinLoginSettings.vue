@@ -12,9 +12,9 @@
 -->
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue';
+import { ref, reactive, computed, onMounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import axios from 'axios';
 
@@ -73,6 +73,12 @@ const devicesError = ref(null);
 const devices = ref([]);
 const labelDrafts = reactive({});
 const confirmingRevoke = ref(null);
+const showClosed = ref(false);
+
+// Requests waiting for a decision, approved devices, and the denied/revoked record (hidden unless asked for).
+const pendingDevices = computed(() => devices.value.filter((d) => d.status === 'pending'));
+const approvedDevices = computed(() => devices.value.filter((d) => d.status === 'approved'));
+const closedDevices = computed(() => devices.value.filter((d) => d.status === 'denied' || d.status === 'revoked'));
 
 async function fetchDevices() {
 	devicesLoading.value = true;
@@ -98,6 +104,20 @@ async function approveDevice(device) {
 	} catch (error) {
 		devicesError.value = 'Could not approve device.';
 	}
+}
+
+async function denyDevice(device) {
+	devicesError.value = null;
+	try {
+		const response = await axios.post(`/json/trusted-devices/${device.id}/deny`);
+		Object.assign(device, response.data.record);
+	} catch (error) {
+		devicesError.value = 'Could not deny that request.';
+	}
+}
+
+function describe(device) {
+	return [device.browser, device.os].filter(Boolean).join(' on ') || 'Unknown browser';
 }
 
 async function saveLabel(device) {
@@ -132,6 +152,7 @@ function statusBadgeClass(status) {
 		pending: 'bg-amber-100 text-amber-800',
 		approved: 'bg-green-100 text-green-800',
 		revoked: 'bg-gray-200 text-gray-600',
+		denied: 'bg-red-100 text-red-800',
 	}[status] || 'bg-gray-100 text-gray-600';
 }
 
@@ -220,65 +241,113 @@ onMounted(() => {
 
 			<!-- ======================= TRUSTED DEVICES ======================= -->
 			<section v-if="canManageDevices" class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Trusted Devices</h2>
+				<h2 class="text-lg font-semibold">Devices</h2>
 				<p class="text-sm text-gray-600">
-					A device must be approved here before PIN login is offered on it at all — even if
-					someone has already done a real login there. A pending device just means someone
-					visited the unlock screen on it; it grants nothing on its own.
+					PIN login is only offered on a device approved here. A device is added when someone
+					logged in on it asks for PIN login there (profile menu &gt; <strong>PIN Login on This
+					Device</strong>): you can approve your own device on the spot from that page, and anyone
+					else's request waits here.
+					<Link href="/this-device" class="text-blue-600 underline">Approve the device you're on</Link>
 				</p>
 
 				<div v-if="devicesError" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ devicesError }}</div>
 				<p v-if="devicesLoading" class="text-gray-500">Loading devices…</p>
-				<p v-else-if="!devices.length" class="text-gray-400">No devices have visited the unlock screen yet.</p>
 
-				<div v-else class="space-y-3">
-					<div v-for="device in devices" :key="device.id" class="border rounded p-3 space-y-2">
-						<div class="flex items-center justify-between flex-wrap gap-2">
-							<span class="text-xs font-semibold uppercase tracking-widest px-2 py-1 rounded"
-								:class="statusBadgeClass(device.status)">{{ device.status }}</span>
-							<span class="text-xs text-gray-500 font-mono">
-								{{ device.grants_count }} active login{{ device.grants_count === 1 ? '' : 's' }}
-							</span>
-						</div>
+				<template v-else>
+					<div v-for="group in [
+						{ key: 'pending', title: 'Requests waiting for approval', list: pendingDevices, empty: 'No requests waiting.' },
+						{ key: 'approved', title: 'Approved devices', list: approvedDevices, empty: 'No devices approved yet.' },
+					]" :key="group.key" class="space-y-3">
+						<h3 class="font-semibold text-gray-800">{{ group.title }} ({{ group.list.length }})</h3>
+						<p v-if="!group.list.length" class="text-sm text-gray-400">{{ group.empty }}</p>
 
-						<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
-							<label class="block">
-								<span class="text-gray-700">Label</span>
-								<input type="text" v-model="labelDrafts[device.id]" placeholder="e.g. Sorting Station 1"
-									class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-							</label>
-							<div class="text-xs text-gray-500 self-end">
-								<div>First seen: {{ new Date(device.requested_at).toLocaleString() }}</div>
-								<div v-if="device.last_seen_at">Last seen: {{ new Date(device.last_seen_at).toLocaleString() }}</div>
-								<div v-if="device.approver">Approved by: {{ device.approver.full_name }}</div>
-								<div class="truncate" :title="device.user_agent">{{ device.user_agent }}</div>
+						<div v-for="device in group.list" :key="device.id" class="border rounded p-3 space-y-2">
+							<div class="flex items-center justify-between flex-wrap gap-2">
+								<div class="flex items-center gap-2">
+									<span class="text-xs font-semibold uppercase tracking-widest px-2 py-1 rounded"
+										:class="statusBadgeClass(device.status)">{{ device.status }}</span>
+									<span class="font-medium">{{ device.label || describe(device) }}</span>
+								</div>
+								<span v-if="device.status === 'approved'" class="text-xs text-gray-500 font-mono">
+									{{ device.grants_count }} active login{{ device.grants_count === 1 ? '' : 's' }}
+								</span>
+							</div>
+
+							<div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+								<div class="space-y-1">
+									<label class="block">
+										<span class="text-gray-700">Station name</span>
+										<input type="text" v-model="labelDrafts[device.id]" placeholder="e.g. Sorting Station 1"
+											class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+									</label>
+									<p v-if="device.request_reason" class="text-gray-700"><span class="text-gray-500">Reason:</span> {{ device.request_reason }}</p>
+								</div>
+								<div class="text-xs text-gray-600 space-y-0.5">
+									<div>{{ describe(device) }}</div>
+									<div>IP address: <span class="font-mono">{{ device.ip_address || '—' }}</span>
+										<template v-if="device.last_ip_address && device.last_ip_address !== device.ip_address">
+											(last seen from <span class="font-mono">{{ device.last_ip_address }}</span>)</template>
+									</div>
+									<div>Requested {{ new Date(device.requested_at).toLocaleString() }}<template v-if="device.requester"> by {{ device.requester.full_name }}</template></div>
+									<div v-if="device.last_seen_at">Last seen: {{ new Date(device.last_seen_at).toLocaleString() }}</div>
+									<div v-if="device.approver && device.status === 'approved'">Approved by {{ device.approver.full_name }}</div>
+									<div v-if="device.kiosk_mode" class="text-amber-700">In kiosk mode</div>
+									<div class="truncate text-gray-400" :title="device.user_agent">{{ device.user_agent }}</div>
+								</div>
+							</div>
+
+							<div class="flex items-center gap-2 flex-wrap">
+								<template v-if="device.status === 'pending'">
+									<button @click="approveDevice(device)"
+										class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-green-600 hover:bg-green-500">
+										Approve
+									</button>
+									<button @click="denyDevice(device)"
+										class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-gray-600 hover:bg-gray-500">
+										Deny
+									</button>
+								</template>
+								<template v-else>
+									<button @click="saveLabel(device)"
+										class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-gray-600 hover:bg-gray-500">
+										Save Name
+									</button>
+									<button @click="revokeDevice(device)"
+										class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white"
+										:class="confirmingRevoke === device.id ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'">
+										{{ confirmingRevoke === device.id ? 'Confirm — signs everyone out of PIN login here' : 'Revoke' }}
+									</button>
+									<button v-if="confirmingRevoke === device.id" @click="confirmingRevoke = null"
+										class="text-sm text-gray-500 underline">Cancel</button>
+								</template>
 							</div>
 						</div>
+					</div>
 
-						<div class="flex items-center gap-2">
-							<button v-if="device.status !== 'approved'" @click="approveDevice(device)"
-								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-green-600 hover:bg-green-500">
-								Approve
-							</button>
-							<button v-else @click="saveLabel(device)"
-								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-gray-600 hover:bg-gray-500">
-								Save Label
-							</button>
-							<button v-if="device.status !== 'revoked'" @click="revokeDevice(device)"
-								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white"
-								:class="confirmingRevoke === device.id ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'">
-								{{ confirmingRevoke === device.id ? 'Confirm — signs everyone out of PIN login here' : 'Revoke' }}
-							</button>
-							<button v-if="confirmingRevoke === device.id" @click="confirmingRevoke = null"
-								class="text-sm text-gray-500 underline">Cancel</button>
+					<div v-if="closedDevices.length" class="space-y-2">
+						<button type="button" class="text-sm underline text-gray-600" @click="showClosed = !showClosed">
+							{{ showClosed ? 'Hide' : 'Show' }} denied and revoked ({{ closedDevices.length }})
+						</button>
+						<div v-if="showClosed" class="space-y-2">
+							<div v-for="device in closedDevices" :key="device.id" class="border rounded p-3 text-sm flex flex-wrap items-center justify-between gap-2">
+								<div>
+									<span class="text-xs font-semibold uppercase tracking-widest px-2 py-1 rounded mr-2"
+										:class="statusBadgeClass(device.status)">{{ device.status }}</span>
+									{{ device.label || describe(device) }}
+									<span class="text-xs text-gray-500">
+										— {{ describe(device) }}, <span class="font-mono">{{ device.ip_address || '—' }}</span><template v-if="device.requester">, asked by {{ device.requester.full_name }}</template>
+									</span>
+								</div>
+								<button @click="approveDevice(device)" class="text-sm underline text-green-700">Approve after all</button>
+							</div>
 						</div>
 					</div>
-				</div>
+				</template>
 
 				<p class="text-xs text-gray-500">
-					Revoking a device immediately clears anyone's active PIN-login trust on it — the next
-					visit to the unlock screen there shows "log in with email" only, for everyone, until
-					re-approved.
+					Revoking a device immediately clears anyone's active PIN-login trust on it — PIN login
+					stops there for everyone until it's approved again. Denied and revoked devices stay listed
+					as a record of who asked from where.
 				</p>
 			</section>
 		</div>

@@ -38,11 +38,11 @@ class UnlockController extends Controller
             return redirect()->route('login', ['email' => 1]);
         }
 
-        $device = $pinLogin->resolveDevice($request);
-        $people = $device->isApproved() ? $pinLogin->peopleTrustedOnDevice($device) : collect();
+        $device = $pinLogin->currentDevice($request);
+        $people = $device?->isApproved() ? $pinLogin->peopleTrustedOnDevice($device) : collect();
 
         return Inertia::render('Auth/Unlock', [
-            'deviceApproved' => $device->isApproved(),
+            'deviceApproved' => (bool) $device?->isApproved(),
             'people' => $people->map(fn (Person $p) => ['id' => $p->id, 'full_name' => $p->full_name])->values(),
             'requireBadgeAndPin' => $settings->require_badge_and_pin,
             'badgeLoginEnabled' => $settings->badge_login_enabled,
@@ -61,8 +61,8 @@ class UnlockController extends Controller
         $data = $request->validate(['badge_code' => 'required|string|max:255']);
 
         $settings = $pinLogin->settings();
-        $device = $pinLogin->resolveDevice($request);
-        if (! $settings->enabled || ! $settings->badge_login_enabled || ! $device->isApproved()) {
+        $device = $pinLogin->currentDevice($request);
+        if (! $settings->enabled || ! $settings->badge_login_enabled || ! $device?->isApproved()) {
             return response()->json(['message' => 'PIN unlock is not available on this device.'], 403);
         }
 
@@ -97,8 +97,8 @@ class UnlockController extends Controller
         ]);
 
         $settings = $pinLogin->settings();
-        $device = $pinLogin->resolveDevice($request);
-        if (! $settings->enabled || ! $device->isApproved()) {
+        $device = $pinLogin->currentDevice($request);
+        if (! $settings->enabled || ! $device?->isApproved()) {
             return response()->json(['message' => 'PIN unlock is not available on this device.'], 403);
         }
 

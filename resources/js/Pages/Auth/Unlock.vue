@@ -121,8 +121,9 @@ async function submitBadge() {
 		<!-- ======================= DEVICE NOT APPROVED ======================= -->
 		<div v-if="!deviceApproved" class="text-center space-y-4">
 			<p class="text-sm text-gray-600">
-				This device isn't set up for quick login yet. Log in with your email and password —
-				an administrator can approve this device for PIN login afterward under Settings.
+				This device isn't set up for quick login yet. Log in with your email and password, then
+				choose <strong>PIN Login on This Device</strong> from your profile menu to approve it
+				(or ask an administrator to).
 			</p>
 			<Link :href="route('login', { email: 1 })"
 				class="inline-flex items-center px-4 py-2 bg-gray-800 border border-transparent rounded-md font-semibold text-xs text-white uppercase tracking-widest hover:bg-gray-700">

@@ -38,7 +38,7 @@ class KioskModeController extends Controller
             }
         }
 
-        $device = $pinLogin->resolveDevice($request);
+        $device = $pinLogin->currentDevice($request);
 
         if (! $pinLogin->enableKioskMode($device, $request->user()->id)) {
             return response()->json([

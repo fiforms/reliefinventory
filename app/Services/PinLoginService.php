@@ -9,6 +9,7 @@ use App\Models\DeviceTrustGrant;
 use App\Models\Person;
 use App\Models\PinLoginSetting;
 use App\Models\TrustedDevice;
+use App\Support\UserAgent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cookie;
@@ -34,35 +35,44 @@ class PinLoginService
     }
 
     /**
-     * Get-or-create the TrustedDevice for this browser, identified by an
-     * opaque cookie token — never anything that fingerprints the actual
-     * hardware. A brand-new device starts 'pending' and stays that way
-     * until an admin approves it; nothing about visiting this page grants
-     * any access on its own.
+     * The TrustedDevice for this browser, if it has one (an opaque cookie token — never anything that fingerprints
+     * the hardware), noting when and from where it was last seen. Read-only otherwise: visiting a page never records
+     * a device; only asking for PIN login on it does (registerThisDevice()).
      */
-    public function resolveDevice(Request $request): TrustedDevice
+    public function currentDevice(Request $request): ?TrustedDevice
     {
-        $token = $request->cookie(self::COOKIE_NAME);
+        $device = $this->deviceFromCookie($request);
+        $device?->update(['last_seen_at' => now(), 'last_ip_address' => $request->ip()]);
 
-        if ($token) {
-            $device = TrustedDevice::where('device_token', $token)->first();
-            if ($device) {
-                $device->update(['last_seen_at' => now()]);
+        return $device;
+    }
 
-                return $device;
-            }
+    /**
+     * Record this browser as a device asking for PIN login (or update its existing record): what it is (IP,
+     * browser, OS from the user agent) plus the station name and reason, as $status — approved straight away when
+     * the person asking may approve devices. Issues the cookie the first time.
+     */
+    public function registerThisDevice(Request $request, array $attributes): TrustedDevice
+    {
+        $seen = [
+            'user_agent' => substr((string) $request->userAgent(), 0, 255),
+            'ip_address' => $request->ip(),
+            'last_ip_address' => $request->ip(),
+            'last_seen_at' => now(),
+            ...UserAgent::parse($request->userAgent()),
+        ];
+
+        $device = $this->deviceFromCookie($request);
+        if ($device) {
+            $device->update($attributes + $seen);
+
+            return $device;
         }
 
         $token = Str::random(64);
         Cookie::queue(Cookie::make(self::COOKIE_NAME, $token, 60 * 24 * 365 * self::COOKIE_YEARS, null, null, null, true));
 
-        return TrustedDevice::create([
-            'device_token' => $token,
-            'status' => 'pending',
-            'user_agent' => substr((string) $request->userAgent(), 0, 255),
-            'requested_at' => now(),
-            'last_seen_at' => now(),
-        ]);
+        return TrustedDevice::create($attributes + $seen + ['device_token' => $token, 'requested_at' => now()]);
     }
 
     /**
@@ -76,10 +86,10 @@ class PinLoginService
      * CLAUDE.md), and the caller here (AuthenticatedSessionController)
      * only ever has a User in hand; the id is all this actually needs.
      */
-    public function grantTrust(TrustedDevice $device, int $personId): void
+    public function grantTrust(?TrustedDevice $device, int $personId): void
     {
         $settings = $this->settings();
-        if (! $settings->enabled || ! $device->isApproved()) {
+        if (! $device || ! $settings->enabled || ! $device->isApproved()) {
             return;
         }
 
@@ -93,10 +103,8 @@ class PinLoginService
     /**
      * Whether "Switch User" should be offered on the current request's
      * device — feature on, and this device already approved for PIN
-     * unlock. Deliberately read-only (unlike resolveDevice()): this runs
-     * on every authenticated page load via HandleInertiaRequests, so it
-     * must never create a TrustedDevice row or queue a cookie as a side
-     * effect of just rendering a page. No device cookie yet simply means
+     * unlock. Runs on every authenticated page load via HandleInertiaRequests,
+     * so it doesn't even touch last_seen_at. No device cookie yet simply means
      * no switch-user shortcut yet, same as a first-ever visit.
      */
     public function switchUserAvailable(Request $request): bool
@@ -114,10 +122,10 @@ class PinLoginService
     }
 
     /**
-     * Read-only device lookup for the kiosk's guest-access guard — unlike
-     * resolveDevice(), never creates a TrustedDevice or queues a cookie.
-     * No cookie yet simply means this device has never been approved for
-     * anything, so it can't be in kiosk mode either.
+     * Read-only device lookup (the kiosk's guest-access guard, among others) —
+     * unlike currentDevice(), doesn't even note it was seen. No cookie yet
+     * simply means this device has never asked for anything, so it can't be
+     * approved or in kiosk mode either.
      */
     public function deviceFromCookie(Request $request): ?TrustedDevice
     {
@@ -138,9 +146,9 @@ class PinLoginService
      * comment. Caller is responsible for logging the enabling person out
      * immediately after — this method only flips the flag.
      */
-    public function enableKioskMode(TrustedDevice $device, int $personId): bool
+    public function enableKioskMode(?TrustedDevice $device, int $personId): bool
     {
-        if (! $this->settings()->enabled || ! $device->isApproved()) {
+        if (! $device || ! $this->settings()->enabled || ! $device->isApproved()) {
             return false;
         }
 
@@ -162,9 +170,9 @@ class PinLoginService
      * locked kiosk back to the kiosk page (with its "Confirm Building
      * Empty" action available) instead of straight to the dashboard.
      */
-    public function clearKioskMode(TrustedDevice $device): bool
+    public function clearKioskMode(?TrustedDevice $device): bool
     {
-        if ($device->kiosk_mode) {
+        if ($device?->kiosk_mode) {
             $device->update(['kiosk_mode' => false]);
 
             return true;
@@ -173,8 +181,12 @@ class PinLoginService
         return false;
     }
 
-    public function activeGrant(TrustedDevice $device, int $personId): ?DeviceTrustGrant
+    public function activeGrant(?TrustedDevice $device, int $personId): ?DeviceTrustGrant
     {
+        if (! $device) {
+            return null;
+        }
+
         return DeviceTrustGrant::active()
             ->where('trusted_device_id', $device->id)
             ->where('person_id', $personId)
@@ -188,8 +200,12 @@ class PinLoginService
      * grantTrust()), so without this filter someone who's never set a PIN
      * would still get a tile that can only ever fail to unlock.
      */
-    public function peopleTrustedOnDevice(TrustedDevice $device): Collection
+    public function peopleTrustedOnDevice(?TrustedDevice $device): Collection
     {
+        if (! $device) {
+            return collect();
+        }
+
         return DeviceTrustGrant::active()
             ->where('trusted_device_id', $device->id)
             ->with('person')

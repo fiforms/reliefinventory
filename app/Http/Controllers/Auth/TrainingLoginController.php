@@ -38,7 +38,7 @@ class TrainingLoginController extends Controller
         if (! TrainingMode::enabled()) {
             return redirect()->route('login', ['email' => 1]);
         }
-        $device = $pinLogin->resolveDevice($request);
+        $device = $pinLogin->currentDevice($request);
         if (! TrainingMode::availableOn($device)) {
             return redirect()->route('login', ['email' => 1]);
         }
@@ -146,7 +146,7 @@ class TrainingLoginController extends Controller
 
     private function ensureAvailable(Request $request, PinLoginService $pinLogin): void
     {
-        if (! TrainingMode::enabled() || ! TrainingMode::availableOn($pinLogin->resolveDevice($request))) {
+        if (! TrainingMode::enabled() || ! TrainingMode::availableOn($pinLogin->currentDevice($request))) {
             abort(response()->json(['message' => 'Training login is not available on this device.'], 403));
         }
     }
