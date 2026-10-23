@@ -16,13 +16,13 @@
         @page { size: letter landscape; margin: 0.5in; }
         body { font-family: Georgia, 'Times New Roman', serif; color: #222; margin: 0; }
         .cert {
-            border: 6px double #1e3a8a; padding: 0.5in 0.8in; height: 7.45in; box-sizing: border-box;
+            border: 6px double #0347a4; padding: 0.5in 0.8in; height: 7.45in; box-sizing: border-box;
             display: flex; flex-direction: column; justify-content: center; align-items: center;
             text-align: center; page-break-after: always;
         }
         .cert:last-child { page-break-after: auto; }
         .logo { width: 2.2in; }
-        h1 { font-size: 44px; margin: 20px 0 40px 0; color: #1e3a8a; }
+        h1 { font-size: 44px; margin: 20px 0 40px 0; color: #0347a4; }
         .lead { font-size: 18px; margin: 0; }
         .name { font-size: 38px; font-weight: bold; border-bottom: 1px solid #888; padding: 0 48px 6px 48px; margin: 18px 0 34px 0; }
         .event { font-size: 24px; font-style: italic; margin: 14px 0 20px 0; }
