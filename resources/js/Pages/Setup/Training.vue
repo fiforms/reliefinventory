@@ -150,6 +150,43 @@ onMounted(load);
 					</p>
 				</section>
 
+				<!-- ======================= SELF SIGN-UP ======================= -->
+				<section class="bg-white shadow rounded-lg p-6 space-y-4">
+					<h2 class="text-lg font-semibold">Sign-up page</h2>
+					<p class="text-sm text-gray-700">
+						People sign themselves up on their own phones: name, and optionally email, phone, whether
+						they'd like project updates, how they'd like to help, and someone they'd recommend. Each
+						sign-up goes straight onto the trainee list. The page only accepts sign-ups while Training
+						Mode is on, and it never logs anyone in.
+					</p>
+					<div class="flex flex-wrap items-center gap-6">
+						<div class="w-40 h-40 shrink-0 [&>svg]:w-full [&>svg]:h-full" v-html="status.signup.qr_svg"></div>
+						<div class="space-y-3 text-sm">
+							<div><a :href="status.signup.url" target="_blank" class="font-mono text-blue-600 underline break-all">{{ status.signup.url }}</a></div>
+							<div class="grid grid-cols-2 gap-4">
+								<div class="border rounded p-3">
+									<div class="text-gray-500">Signed up today</div>
+									<div class="text-lg font-semibold">{{ status.signup.today }}</div>
+								</div>
+								<div class="border rounded p-3">
+									<div class="text-gray-500">All time</div>
+									<div class="text-lg font-semibold">{{ status.signup.total }}</div>
+								</div>
+							</div>
+							<div class="flex flex-wrap gap-2">
+								<PrintMenu document-key="training-signup-poster" media="report" variant="form" label="QR Poster"
+									download-href="/report/training/signup-poster.pdf" />
+								<a href="/report/training/signups.csv" class="ri_formbutton">Follow-up List (CSV)</a>
+								<button type="button" class="ri_formbutton" @click="load">Refresh</button>
+							</div>
+						</div>
+					</div>
+					<p class="text-xs text-gray-500">
+						Point your short link at the address above. The follow-up list has everyone's answers
+						(contact details, updates, how they'd help, recommendations).
+					</p>
+				</section>
+
 				<!-- ======================= PREPARE ======================= -->
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Prepare Training</h2>

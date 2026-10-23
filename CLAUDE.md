@@ -363,6 +363,12 @@ printed team sheets). **Only the login changes; the system otherwise works norma
   with a Shipped load each, and Delivered orders awaiting BOL review. Items/amounts: `config/training.php` (by ACS number).
   Summary saved in `training_settings.prepared_summary` → the **setup packet** PDF and the training pallet labels
   (`PalletReportController::trainingLabelsBuilder`, only those pallets). Running again adds another set.
+- **Self sign-up** (`/join`, `TraineeSignupController`, `Join.vue`, public; QR code + poster + follow-up CSV on the Training
+  Mode page): only while training mode is on; first + last name required, then optional email, phone, project updates,
+  how they'd help (checkboxes), someone to recommend, comments. Makes a trainee via `TrainingLoginController::createTrainee`
+  (same name again updates that person) and keeps the answers in `training_registrations` (contact email lives there, not
+  on `people.email`, which is the trainee's placeholder login). **Never logs anyone in.** A whole room shares one Wi-Fi IP,
+  so the POST limit is 80/min per IP (enough for ~55 people at once) and Turnstile is the bot gate — don't tighten it to a per-person-sized one.
 - Print documents: `training-report-cards`, `training-certificates`, `training-setup-packet`, `training-pallet-labels`
   (manage-training), `training-team-{1..5}` / `training-all-teams` (anyone signed in, listed on `/help`).
 - Driver Portal shows staff (manage-orders) the staff view, so the Round 2 delivery is done on a device not logged in —
