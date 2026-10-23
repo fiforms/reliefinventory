@@ -5,7 +5,7 @@
     $f = $report['filters'];
     $date = $f['from'] === $f['to'] ? \Carbon\Carbon::parse($f['from'])->format('F j, Y')
         : \Carbon\Carbon::parse($f['from'])->format('F j').' – '.\Carbon\Carbon::parse($f['to'])->format('F j, Y');
-    $logo = 'data:image/png;base64,'.base64_encode(file_get_contents(public_path('icons/icon-192.png')));
+    $logo = 'data:image/png;base64,'.base64_encode(file_get_contents(public_path('img/relief-inventory-logo.png')));
 @endphp
 <!DOCTYPE html>
 <html lang="en">
@@ -21,8 +21,7 @@
             text-align: center; page-break-after: always;
         }
         .cert:last-child { page-break-after: auto; }
-        .logo { width: 0.9in; height: 0.9in; margin-bottom: 14px; }
-        .org { font-family: Arial, sans-serif; font-size: 14px; letter-spacing: 2px; text-transform: uppercase; color: #1e3a8a; }
+        .logo { width: 2.2in; }
         h1 { font-size: 44px; margin: 20px 0 40px 0; color: #1e3a8a; }
         .lead { font-size: 18px; margin: 0; }
         .name { font-size: 38px; font-weight: bold; border-bottom: 1px solid #888; padding: 0 48px 6px 48px; margin: 18px 0 34px 0; }
@@ -38,7 +37,6 @@
     @forelse ($trainees as $t)
         <div class="cert">
             <img class="logo" src="{{ $logo }}" alt="">
-            <div class="org">{{ config('app.name') }}</div>
             <h1>Certificate of Completion</h1>
             <div class="lead">This certifies that</div>
             <div class="name">{{ $t['name'] }}</div>
