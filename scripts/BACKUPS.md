@@ -121,6 +121,10 @@ extracted and checked against a strict pattern, bad values fall back to defaults
 through the sudoers rule in `scripts/systemd/reliefinventory-sudoers`, which allows exactly those two
 `systemctl start --no-block` commands. The panel follows a running update through `storage/app/system-update-status.json`
 (written by `update.sh`); during the maintenance window its polls get 503s and it shows that as progress, not an error.
+Only one update or backup runs at a time on a server, across all its instances (`/var/lock/reliefinventory-update.lock`):
+a run that finds it taken — e.g. updating two instances at once, or an update during another instance's hourly
+backup — waits its turn (up to `LOCK_WAIT_SECONDS`, default 1 hour) and shows "Waiting for another update or backup on
+this server to finish" in the panel meanwhile. Logs are `/var/log/reliefinventory/update-<instance>-<stamp>.log`.
 
 ### One-time install (per server)
 
