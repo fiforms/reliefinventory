@@ -7,7 +7,7 @@ enumerates on a Raspberry Pi 4 (it keeps accepting print data), after which the 
 only see it as "usb://Unknown/Printer" and the queue sits on "Waiting for printer to become
 available". This backend never uses the control endpoint: it identifies the printer from sysfs
 (vendor, product and serial are read when the device enumerates) and writes the job to the usblp
-node, the bulk-out path that keeps working. See SATO_PRINTER_TROUBLESHOOTING.md.
+node, the bulk-out path that keeps working. The investigation is in README.md next to this file.
 
     device URI    rstationlp://SATO/WS408?serial=<usb serial>
     discovery     `rstationlp` with no arguments lists every matching, currently attached printer

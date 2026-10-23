@@ -547,7 +547,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   requests ~100 s after it enumerates (never on a laptop; cause on the Pi's USB path, unconfirmed), which breaks CUPS's stock `usb` backend, so the package
   also ships `rstationlp` (`rstationlp://SATO/WS408?serial=…`, writes to the kernel `/dev/usb/lp*` node, found through sysfs by serial) and a `blacklist`
   quirk so the stock backend ignores the WS408; `slide-announcer-printer-setup` allows that scheme. No paper-out status for it. Add another model to
-  `PRINTERS` in `rstationlp` and to `rstation-sato.usb-quirks`. Investigation: `rstation/SATO_PRINTER_TROUBLESHOOTING.md`.
+  `PRINTERS` in `rstationlp` and to `rstation-sato.usb-quirks`. Investigation and a poller to re-test it: `rstation/sato-driver/README.md`, `usb-control-poll.py`.
 - **Print a PDF** (2026-10-22): the Printers page (`/setup/printers`) has a card to upload any PDF to a chosen printer — `POST /json/print-upload`
   (`PrintController::storeUpload`, `manage-print-queue`, the same people who can clear/divert the queue). The file is user data and is never rendered
   or interpreted server-side: it must be `application/pdf` by content *and* carry a `%PDF-` signature in its first KB, is capped by

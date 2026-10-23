@@ -49,3 +49,26 @@ Pi's Printers page, or a real Relief Inventory pallet label.
 - Only the models in SATO's PPD set that emit this `ESC GB` bitmap format are expected to work; WS408 is the one tested.
 - Printer-side settings the SATO PPDs expose (darkness, speed, cutter, sensor type) are not sent; set them on the
   printer's panel.
+
+## Why `rstationlp` exists: the investigation (2026-10-22)
+
+Symptom: on a Raspberry Pi 4 (CUPS 2.4.20, kernel 6.18) the WS408's queue sat on "Waiting for printer to become available" after
+the first minutes of uptime; `/usr/lib/cups/backend/usb` listed `usb://Unknown/Printer?serial=0.0` with a garbage device ID; a
+power-cycle fixed it for a couple of minutes. Raw writes to `/dev/usb/lp0` and the SBPL stream itself always worked.
+
+What the tests showed:
+- `LIBUSB_DEBUG=4` and `usbmon`: in the bad state the printer answers **every control read with zero bytes** — `GET_CONFIGURATION` (so
+  the backend logs "Switching USB device configuration: 0 -> 1") and all `GET_DEVICE_ID` attempts (so the ID is garbage). The bulk-out
+  endpoint keeps working, which is why labels still print.
+- `usb-control-poll.py`, with CUPS stopped and nothing else using the printer: valid answers for ~99 s after the printer
+  enumerates, then zero-length ones until it is powered off (three power-cycles: ~78–102 s). So it is **time since enumeration**, not
+  job count, CUPS, our filter/PPD, the `no-reattach` quirk or `usblp` re-binding (60 unbind/bind cycles were fine).
+- The same printer on an Ubuntu laptop (CUPS 2.4.16): the poller ran 225 s with no failure and 40 CUPS jobs printed. The trigger is
+  therefore on the Pi's side of the USB path (VL805 xHCI behind the VIA Labs hub). **What exactly is not identified.**
+- Ruled out: USB autosuspend (`power/control=on`, never suspended), `usbcore` parameters (same as the laptop), undervoltage
+  (`get_throttled=0x0`), and the Pi's bootloader/VL805 firmware (updated to the latest, same failure). Not tried: another hub or
+  cable between the Pi and the printer, or a different host (a Pi 5, say).
+
+If a future Pi kernel, hub or printer firmware stops this (poller stays at `len=1` for several minutes after a power-cycle), the
+stock `usb` backend would work again and `rstationlp` plus the quirk could be dropped — at the price of the Pi relying on CUPS's
+device-ID matching. Otherwise keep it: it also avoids that matching entirely.
