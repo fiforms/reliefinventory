@@ -14,6 +14,8 @@ import { injectScan, isTextField } from '@/scanInject';
 const props = defineProps({
   target: { type: Function, default: null },
   label: { type: String, default: 'Scan' },
+  // Icon only, squared off on the left so it sits flush against the text box to its left.
+  compact: { type: Boolean, default: false },
 });
 
 const open = ref(false);
@@ -56,7 +58,7 @@ function onCameraError(message) {
 
 <template>
   <span class="scanbtn">
-    <button type="button" class="ri_formbutton" @click="begin">📷 {{ label }}</button>
+    <button type="button" class="ri_formbutton" :class="{ scanbtn_compact: compact }" :title="compact ? 'Scan with camera' : null" :aria-label="compact ? 'Scan with camera' : null" @click="begin">📷<template v-if="!compact"> {{ label }}</template></button>
     <span v-if="error" class="scanbtn_error" role="alert">{{ error }}</span>
     <Teleport to="body">
       <div v-if="open" class="scanbtn_overlay" @click.self="open = false">
@@ -71,6 +73,7 @@ function onCameraError(message) {
 
 <style scoped>
 .scanbtn { display: inline-block; }
+.scanbtn_compact { height: 100%; margin-left: -1px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .scanbtn_error { margin-left: 0.5rem; color: #b00020; font-size: 0.85rem; }
 .scanbtn_overlay {
   position: fixed; inset: 0; z-index: 10000; background: rgba(0, 0, 0, 0.85);

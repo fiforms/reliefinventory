@@ -8,7 +8,10 @@
 <script setup>
 import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
-import { Head } from '@inertiajs/vue3';
+import { Head, usePage } from '@inertiajs/vue3';
+import axios from 'axios';
+import Modal from '@/Components/Modal.vue';
+import SearchSelect from '@/Components/SearchSelect.vue';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
 import RIForm from '@/Components/RIForm.vue';
@@ -20,6 +23,34 @@ defineProps({
         type: Array,
     },
 });
+
+// Moving an item (one SKU row) to another ACS # - Administrators only. Everything in
+// the database links to the item itself, so its stock and history move with it.
+const canMove = computed(() => !!usePage().props.catalog?.canMoveItems);
+const move = ref({ open: false, item: null, impact: null, itemtype_id: null, busy: false, error: '' });
+
+async function openMove(item) {
+	move.value = { open: true, item, impact: null, itemtype_id: null, busy: false, error: '' };
+	try {
+		move.value.impact = (await axios.get(`/json/items/${item.id}/move-impact`)).data;
+	} catch (e) {
+		move.value.error = e.response?.data?.message || 'Could not load what this item is linked to.';
+	}
+}
+
+async function confirmMove() {
+	const m = move.value;
+	if (!m.itemtype_id) { m.error = 'Choose the ACS # to move this item to.'; return; }
+	m.busy = true;
+	m.error = '';
+	try {
+		await axios.post(`/json/items/${m.item.id}/move`, { itemtype_id: m.itemtype_id });
+		window.location.reload(); // the open Item Type record is stale now
+	} catch (e) {
+		m.error = e.response?.data?.message || e.response?.data?.errors?.itemtype_id?.[0] || 'The move failed.';
+		m.busy = false;
+	}
+}
 
 // Search box: narrows the list in place by ACS Item# or Item Type name (same
 // pattern as People.vue's name/organization search).
@@ -173,6 +204,7 @@ const itemSort = computed(() => (a, b) => {
 					<th colspan="3">Package</th>
 					<th>Total {{ record.unit.abbreviation }}</th>
 					<th>UPC</th>
+					<th v-if="canMove"></th>
 				</template>
 				<template #tbody="{ subrecord, index }">
 					<td>{{ subrecord.pluscode }}</td>
@@ -182,6 +214,7 @@ const itemSort = computed(() => (a, b) => {
 					 <td><span v-if="subrecord.case_qty"> {{ subrecord.case_qty * subrecord.size }}</span>
 					     <span v-else>{{ subrecord.size * 1.0 }}</span></td>	 
 					 <td> {{ subrecord.upc }}</td>
+					 <td v-if="canMove"><button v-if="subrecord.id" type="button" class="ri_formbutton" @click="openMove(subrecord)">Move to ACS #&hellip;</button></td>
 				</template>
 				<template #default="{ subrecord, index }">
 				  <td>
@@ -232,15 +265,52 @@ const itemSort = computed(() => (a, b) => {
 				  		:enabled="true"
 				    /> 
 				  </td>
+				  <td v-if="canMove"><button v-if="subrecord.id" type="button" class="ri_formbutton" @click="openMove(subrecord)">Move to ACS #&hellip;</button></td>
 				</template>
 			</RISubform>  
 	  </div>
 	  </template>
 	</RIForm>
+
+	<Modal :show="move.open" max-width="lg" @close="move.open = false">
+		<div class="item_move">
+			<h3>Move item to a different ACS #</h3>
+			<p v-if="move.item"><strong>{{ move.item.description || '(no description)' }}</strong><span v-if="move.impact"> &mdash; now under {{ move.impact.item.acs }} {{ move.impact.item.itemtype }}</span></p>
+			<label>New ACS # / item type:</label>
+			<SearchSelect
+				v-model="move.itemtype_id"
+				optionsource="/json/itemtypes/noitems"
+				display="name"
+				:searchfields="['name', 'display_number']"
+				placeholder="Search item types..."
+			/>
+			<div v-if="move.impact" class="item_move_warn">
+				<strong>This changes history, not just the catalog.</strong>
+				Everything recorded against this item moves to the new ACS #: its
+				{{ move.impact.ledger_rows }} sorting/fill ledger row(s) (so stock on hand and the inventory and flow reports change),
+				{{ move.impact.pallet_assignments }} pallet stock entr{{ move.impact.pallet_assignments === 1 ? 'y' : 'ies' }}
+				and any carton barcodes pointing at it.
+				<span v-if="move.impact.order_fills">
+					{{ move.impact.order_fills }} of its ledger rows are fills for order lines; those lines still request the old item type,
+					so past orders will show goods of a different type than was requested. Orders themselves are not changed.
+				</span>
+				Already-printed inventory labels keep the old number. This cannot be undone automatically &mdash; you would move it back by hand.
+			</div>
+			<p v-if="move.error" class="item_move_error">{{ move.error }}</p>
+			<div class="item_move_actions">
+				<button type="button" class="ri_defaultbutton" :disabled="move.busy || !move.impact" @click="confirmMove">{{ move.busy ? 'Moving...' : 'Move item' }}</button>
+				<button type="button" class="ri_formbutton" @click="move.open = false">Cancel</button>
+			</div>
+		</div>
+	</Modal>
 	</AuthenticatedLayout>
 </template>
 
 <style scoped>
+.item_move { padding: 1.25rem; display: grid; gap: 0.75rem; }
+.item_move_warn { background: #fef3c7; border: 1px solid #d97706; border-radius: 6px; padding: 0.75rem; font-size: 0.9rem; }
+.item_move_error { color: #b00020; }
+.item_move_actions { display: flex; gap: 0.5rem; }
 .item_search {
   max-width: 20rem;
 }

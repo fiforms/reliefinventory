@@ -610,6 +610,12 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-or
     Route::delete('/donations/{id}', [DonationController::class, 'destroy']);
 });
 
+// Re-pointing an item at another ACS # rewrites how all of its history reads, so it is Administrator-only.
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-system']], function () {
+    Route::get('/items/{id}/move-impact', [ItemController::class, 'moveImpact'])->whereNumber('id');
+    Route::post('/items/{id}/move', [ItemController::class, 'move'])->whereNumber('id');
+});
+
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-items']], function () {
     Route::get('/items', [ItemController::class, 'index']);
     Route::post('/items', [ItemController::class, 'store']);
