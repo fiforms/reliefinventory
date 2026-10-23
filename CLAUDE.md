@@ -375,6 +375,17 @@ printed team sheets). **Only the login changes; the system otherwise works norma
   tray/load, and a plain "Station N / Name" sign per station), the training pallet labels (the W trays,
   `PalletReportController::trainingLabelsBuilder`) and the **table spot labels** (`training-spot-labels`, pallet label stock,
   barcode = the location code). Running again adds another set.
+- **Reset after training** (2026-10-23, `App\Services\TrainingReset`, `training:reset`): turning the mode on first takes a
+  **reset point** — a database-only backup (`BackupService::createIn`) in `<backup dir>/training`, one at a time; its file
+  name/time go on `training_settings` *after* the dump, so the restored row doesn't carry them. If the dump fails the mode
+  stays off (the page offers "on without a reset point"). "Turn off and reset" (`POST /json/training/reset`, `admin-system`,
+  typed `RESET`) first saves a **class archive** to the local disk (`training-archives/<stamp>/`: sign-ups CSV, report cards
+  PDF + CSV, certificates — files, so a database restore leaves them; downloads at `/report/training/archives/{stamp}/{file}`,
+  known names only), then starts `training:reset` detached, which runs `RestoreService::runFromFiles(..., force)` — same
+  maintenance-mode rules as `backup:restore --force` (left on if the load fails) — and deletes the zip on success. Progress
+  is in `<backup dir>/training/reset-status.json`. Everything in the database since the reset point is gone (trainees,
+  sign-ups, practice records, new catalog items, devices approved since), so approve devices and scan training products
+  *before* turning the mode on. `TrainingResetTest` runs a real dump + restore.
 - **Self sign-up** (`/join`, `TraineeSignupController`, `Join.vue`, public; QR code + poster + follow-up CSV on the Training
   Mode page): only while training mode is on; first + last name required, then optional email, phone, project updates,
   how they'd help (checkboxes), someone to recommend, comments. Makes a trainee via `TrainingLoginController::createTrainee`

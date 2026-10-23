@@ -15,6 +15,7 @@ use App\Models\TrainingSetting;
 use App\Models\TrustedDevice;
 use App\Services\TrainingMode;
 use App\Services\TrainingPreparer;
+use App\Services\TrainingReset;
 use App\Support\TrainingGuide;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -25,6 +26,7 @@ use Milon\Barcode\DNS2D;
 use RuntimeException;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
+use Throwable;
 
 /**
  * Setup > Training Mode (`manage-training`; switching the mode itself needs `admin-system`): the switch, the
@@ -53,6 +55,9 @@ class TrainingAdminController extends Controller
                 'signature_version' => $settings->{"trainer{$slot}_signature"} ? md5($settings->{"trainer{$slot}_signature"}) : null,
             ], TrainingSetting::TRAINER_SLOTS),
             'can_toggle' => Auth::user()->hasPermission('admin-system'),
+            'reset_point' => app(TrainingReset::class)->resetPoint(),
+            'reset_status' => app(TrainingReset::class)->status(),
+            'archives' => app(TrainingReset::class)->archives(),
             'approved_devices' => TrustedDevice::where('status', 'approved')->count(),
             'teams' => TrainingMode::TEAMS,
             'products' => [
@@ -74,15 +79,58 @@ class TrainingAdminController extends Controller
         ]);
     }
 
-    public function setMode(Request $request)
+    /**
+     * Turning the mode on takes a reset point first (TrainingReset) unless `reset_point` is false; if that backup fails
+     * the mode stays off and the reason comes back, so the page can offer to turn it on without one. Turning it off
+     * here keeps everything — "Turn off and reset" is reset().
+     */
+    public function setMode(Request $request, TrainingReset $reset)
     {
-        $data = $request->validate(['enabled' => 'required|boolean']);
+        $data = $request->validate(['enabled' => 'required|boolean', 'reset_point' => 'sometimes|boolean']);
         $settings = TrainingSetting::current();
+        if ($data['enabled'] && ! $settings->enabled && ($data['reset_point'] ?? true)) {
+            try {
+                $reset->takeResetPoint();
+            } catch (Throwable $e) {
+                report($e);
+
+                return response()->json(['message' => 'Training Mode is still off: the reset point (a database backup) could not be taken — '
+                    .$e->getMessage(), 'reset_point_failed' => true], 422);
+            }
+        }
         $settings->update($data['enabled']
             ? ['enabled' => true, 'enabled_at' => now(), 'enabled_by' => Auth::id()]
             : ['enabled' => false]);
 
         return $this->status();
+    }
+
+    /**
+     * "Turn off and reset": save the class archive and restore the reset point in the background (TrainingReset). The
+     * typed confirmation is checked here, not only in the page. Everyone is logged out when it finishes.
+     */
+    public function reset(Request $request, TrainingReset $reset)
+    {
+        $request->validate(['confirm' => 'required|string']);
+        if (trim($request->input('confirm')) !== 'RESET') {
+            return response()->json(['message' => 'Type RESET to confirm.'], 422);
+        }
+        try {
+            $archive = $reset->start();
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['archive' => $archive, 'status' => $reset->status()], 202);
+    }
+
+    /** One file from a class archive (only the names TrainingReset::ARCHIVE_FILES lists). */
+    public function archiveFile(string $stamp, string $file, TrainingReset $reset)
+    {
+        $path = $reset->archiveFile($stamp, $file);
+        abort_unless($path, 404);
+
+        return Storage::disk('local')->download($path, 'training-'.$stamp.'-'.$file);
     }
 
     /** The event title, location and trainer names printed on the certificates. */
@@ -266,6 +314,15 @@ class TrainingAdminController extends Controller
     /** Everyone who signed up at /join, with their follow-up answers — for contacting them later. */
     public function signupsCsv()
     {
+        return response(self::signupsCsvString(), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="training-signups-'.now()->format('Y-m-d').'.csv"',
+        ]);
+    }
+
+    /** The sign-ups as CSV text — the download, and the class archive kept by a training reset. */
+    public static function signupsCsvString(): string
+    {
         $csv = Writer::fromString('');
         $csv->insertOne(['Signed up', 'First name', 'Last name', 'Email', 'Phone', 'Wants updates', 'Volunteer at a warehouse',
             'Software / IT', 'Bring to my organization', 'Other', 'Recommends', 'Comments', 'Team']);
@@ -277,9 +334,6 @@ class TrainingAdminController extends Controller
             ]);
         }
 
-        return response($csv->toString(), 200, [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="training-signups-'.now()->format('Y-m-d').'.csv"',
-        ]);
+        return $csv->toString();
     }
 }

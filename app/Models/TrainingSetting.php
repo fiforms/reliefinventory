@@ -14,13 +14,14 @@ class TrainingSetting extends Model
     protected $table = 'training_settings';
 
     protected $fillable = ['enabled', 'enabled_at', 'enabled_by', 'prepared_at', 'prepared_by', 'prepared_summary', 'event_title', 'event_location',
-        'trainer1_name', 'trainer1_signature', 'trainer2_name', 'trainer2_signature'];
+        'trainer1_name', 'trainer1_signature', 'trainer2_name', 'trainer2_signature', 'reset_point_file', 'reset_point_at'];
 
     protected $casts = [
         'enabled' => 'boolean',
         'enabled_at' => 'datetime',
         'prepared_at' => 'datetime',
         'prepared_summary' => 'array',
+        'reset_point_at' => 'datetime',
     ];
 
     /** The two trainers who sign the certificates. */
