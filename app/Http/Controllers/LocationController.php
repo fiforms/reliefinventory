@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Location;
+use App\Models\Warehouse;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -62,6 +63,8 @@ class LocationController extends Controller
     public function store(Request $request)
     {
         $data = $request->validate(self::validation);
+        // locations.warehouse_id is NOT NULL; the app runs a single warehouse, so new locations go in it.
+        $data['warehouse_id'] = (Warehouse::first() ?? Warehouse::create(['name' => 'Main Warehouse']))->id;
         $location = Location::create($data);
 
         return response()->json([
