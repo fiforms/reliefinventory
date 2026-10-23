@@ -7,7 +7,7 @@ import { Link } from '@inertiajs/vue3';
 
 <template>
     <div
-        class="relative flex min-h-screen flex-col items-center bg-gray-100 pt-6 sm:justify-center sm:pt-0"
+        class="guest-splash relative flex min-h-screen flex-col items-center px-4 sm:px-0"
     >
         <Link
             href="/"
@@ -16,14 +16,25 @@ import { Link } from '@inertiajs/vue3';
             &larr; Home
         </Link>
 
-        <div class="text-xl sm:text-2xl font-bold text-blue-600">
-            Relief Inventory
-        </div>
-
+        <!-- The splash image carries the logo and name; the box starts below them. -->
         <div
-            class="mt-6 w-full overflow-hidden bg-white px-6 py-4 shadow-md sm:max-w-md sm:rounded-lg"
+            class="guest-box mb-8 w-full overflow-hidden bg-white px-6 py-4 shadow-md sm:max-w-md sm:rounded-lg"
         >
             <slot />
         </div>
     </div>
 </template>
+
+<style scoped>
+/* Image is 16:9 with the logo and name in its top ~62%, fading to white at the bottom.
+   Never rendered narrower than 640px so the logo stays legible on phones (centred crop). */
+.guest-splash {
+    --splash-width: max(100vw, 640px);
+    background-color: #fefefe;
+    background-image: url('/img/splash_screen_gradient.webp');
+    background-repeat: no-repeat;
+    background-position: top center;
+    background-size: var(--splash-width) auto;
+    padding-top: calc(var(--splash-width) * 0.37);
+}
+</style>
