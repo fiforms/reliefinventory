@@ -215,7 +215,7 @@ def test_add_rejects_names_that_could_be_options_or_paths(name):
 
 @pytest.mark.parametrize("uri", [
     "file:///etc/shadow", "pipe:/bin/sh", "smb://host/share", "ipp", "ipp:/missing-slashes", "http://h/", "ipp://", "usb://",
-    "ipp://h/has space", "ipp://h/\nx", "", None, "ipp://" + "h" * 600])
+    "rstationlp://", "rstationlp:/dev/usb/lp0", "ipp://h/has space", "ipp://h/\nx", "", None, "ipp://" + "h" * 600])
 def test_add_rejects_schemes_and_shapes_that_arent_a_printer_connection(uri):
     fake = FakeRun()
 
@@ -225,7 +225,8 @@ def test_add_rejects_schemes_and_shapes_that_arent_a_printer_connection(uri):
 
 @pytest.mark.parametrize("uri", [
     "ipp://10.0.0.50/ipp/print", "ipps://printer.local:631/ipp/print", "socket://10.0.0.50:9100", "lpd://10.0.0.50/queue",
-    "dnssd://Brother%20MFC._ipp._tcp.local/?uuid=abc", "usb://Zebra/ZD421?serial=123"])
+    "dnssd://Brother%20MFC._ipp._tcp.local/?uuid=abc", "usb://Zebra/ZD421?serial=123",
+    "rstationlp://SATO/WS408?serial=JH4127900705"])
 def test_add_accepts_real_connections(uri):
     assert _code(helper.Helper(run=FakeRun()), {"op": "add", "name": "P", "uri": uri}) == "ok"
 
