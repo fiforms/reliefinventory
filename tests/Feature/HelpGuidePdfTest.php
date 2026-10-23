@@ -4,6 +4,7 @@
 // with its margins on @page so they hold past the first page.
 
 use App\Http\Controllers\HelpReportController;
+use App\Models\MenuItem;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -44,6 +45,34 @@ test('a guide page renders for a signed-in user and the page shares its guide sl
     $this->actingAs($user)->get('/help/nonexistent')->assertNotFound();
     $this->actingAs($user)->get('/receiving')->assertInertia(fn ($page) => $page->where('helpGuide', 'receiving'));
 });
+
+test('the combined PDF holds every guide, each starting on its own page', function () {
+    $path = tempnam(sys_get_temp_dir(), 'help').'.pdf';
+    app(HelpReportController::class)->allBuilder()->save($path);
+
+    $text = pdfText($path);
+    foreach (HelpReportController::GUIDES as $title) {
+        expect(substr_count($text, $title))->toBeGreaterThanOrEqual(2); // contents + its own heading
+    }
+    expect($text)->toContain('Welcoming the driver')->and($text)->toContain('Complete Session');
+    preg_match('/Pages:\s+(\d+)/', pdfInfo($path), $m);
+    expect((int) $m[1])->toBeGreaterThan(count(HelpReportController::GUIDES));
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
+test('the help list shows every guide, is on the main menu, and the combined PDF downloads', function () {
+    $user = userWithPermissions('general-access');
+    $this->actingAs($user)->get('/help')->assertOk()->assertInertia(fn ($page) => $page
+        ->component('Help/Index')
+        ->has('guides', count(HelpReportController::GUIDES))
+        ->where('guides.0.slug', array_key_first(HelpReportController::GUIDES)));
+    $this->actingAs($user)->get('/help/shipping')->assertInertia(fn ($page) => $page
+        ->where('breadcrumb.0.href', '/help')
+        ->where('breadcrumb.1.title', 'Shipping Guide'));
+    expect(MenuItem::where('link_url', '/help')->whereNull('permission_key')->exists())->toBeTrue();
+    $this->actingAs($user)->get('/report/help/all')->assertOk();
+    auth()->logout();
+    $this->get('/help')->assertRedirect('/login');
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
 
 test('an unknown help guide is a 404', function () {
     app(HelpReportController::class)->builder('nonexistent');

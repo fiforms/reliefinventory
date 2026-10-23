@@ -16,6 +16,7 @@ use App\Models\ManagedDevice;
 use App\Models\MenuItem;
 use App\Services\GitVersionService;
 use App\Services\PinLoginService;
+use App\Services\TurnstileService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -76,7 +77,7 @@ Route::get('/', function () {
     return Inertia::render('Welcome', [
         'canLogin' => Route::has('login'),
         // Hidden while Turnstile is on but keyless: the page would only show a setup notice.
-        'canRegister' => Route::has('register') && ! app(\App\Services\TurnstileService::class)->misconfigured(),
+        'canRegister' => Route::has('register') && ! app(TurnstileService::class)->misconfigured(),
         'laravelVersion' => Application::VERSION,
         'phpVersion' => PHP_VERSION,
         'hostedBy' => config('app.hosted_by'),
@@ -363,11 +364,27 @@ Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
 // Help pages: static how-to guides, one per data-entry page, reached from that page's (?) button
-// (HelpReportController::PAGE_GUIDES). Visible to anyone authenticated (no permission gate).
+// (HelpReportController::PAGE_GUIDES) or from the main-menu Help tile's /help list.
+// Visible to anyone authenticated (no permission gate).
+Route::get('/help', function () {
+    return Inertia::render('Help/Index', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/help'),
+        'guides' => collect(HelpReportController::GUIDES)
+            ->map(fn ($title, $slug) => ['slug' => $slug, 'title' => $title])->values(),
+    ]);
+})->middleware(['auth']);
+
 Route::get('/help/{guide}', function (string $guide) {
-    return Inertia::render('Help/'.Str::studly($guide),
-        ['breadcrumb' => MenuItem::getBreadcrumb('/help/'.$guide)]);
+    return Inertia::render('Help/'.Str::studly($guide), ['breadcrumb' => [
+        ...MenuItem::getBreadcrumb('/help'),
+        ['href' => '/help/'.$guide, 'title' => HelpReportController::GUIDES[$guide]],
+    ]]);
 })->whereIn('guide', array_keys(HelpReportController::GUIDES))->middleware(['auth']);
+
+// Every guide in one printable PDF (the /help list's "Print all guides").
+Route::get('/report/help/all', [HelpReportController::class, 'showAll'])
+    ->name('report.help.all')
+    ->middleware(['auth']);
 
 // Printable PDF version of a help guide — same no-permission-gate rule as
 // the guide pages themselves. One route for every guide listed in
