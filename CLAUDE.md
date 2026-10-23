@@ -330,6 +330,44 @@ table beside it, and no dual-axis charts); the PDFs are tables only.
   for watch/decline; it never blocks anything (like `donor_identification_pending`). Not built: the donor notification letter, and the
   badge on Donation Offers / People.
 
+### Training Mode (`/setup/training`, `manage-training`) — 2026-10-23, branch `training-mode`
+
+For a hands-on class on a training instance (cs26): 6 stations (1 Receiving, 2 Sorting, 3 Inventory, 4 Picking, 5 Shipping,
+6 Delivery/Ordering), 5 teams, two 50-minute segments — team N starts at station N, each slot every team moves on one
+(6 → 1), Round 1 activities in segment 1, Round 2 in segment 2 (`App\Support\TrainingGuide` is the single source for the
+printed team sheets). **Only the login changes; the system otherwise works normally** — practice records are real data.
+- **Switch:** `training_settings` singleton (on/off is `admin-system`). While on, an approved `TrustedDevice` (the same
+  approval PIN unlock uses) sends `/login` to `/training-login` (`TrainingLoginController`, `Auth/TrainingLogin.vue`):
+  trainee name tiles grouped by team, tap → confirm team → logged in, no password; **Add New** (first + last name, team)
+  creates one on the spot. Staff PIN / email links stay under the tiles. Only `TrainingMode::enabled()` is checked before
+  `resolveDevice()`, so the login page doesn't register device rows while training is off.
+- **Trainees** are `people.is_trainee` + `training_team` + the **Trainee** role (`TrainingMode::TRAINING_KEYS`). `User`
+  only sees people with an email, so a trainee gets a placeholder `trainee-<id>@training.invalid` (reserved TLD, never
+  deliverable), `email_verified_at`/`approved_at` set and **no password**. Taking one off the list sets `disabled_at`.
+- **The cap:** a training login sets session `training_login_person_id`; `HasPermissions::effectivePermissionKeys()`
+  intersects with `TRAINING_KEYS` while it matches `Auth::id()` (even for a tapped admin), so menus, `permission:`
+  middleware and `hasPermission()` all follow. `CheckPermission` renders `Auth/TrainingFullLogin` (Inertia) / 403 JSON
+  instead of a bare 403; `POST /training-login/exit` logs out first (the login pages are guest-only). Email/PIN logins
+  forget the session key. A yellow strip in `AuthenticatedLayout` (shared prop `training`) shows a training login.
+- **Activity log** (`activity_log`, `App\Services\ActivityRecorder`) — **always on**, from model events (Transaction
+  created/status changes, ItemLedger fills/sorted rows, PalletStockAssignment, W-pallet PalletStatus rows, donation offer
+  log rows), not controller edits, so every path is covered. Actor = `Auth::id()`; nothing is logged with nobody logged
+  in (artisan, simulator) except a Driver Portal BOL upload (session `driver_id`). Team is snapshotted from a trainee's
+  (or team driver's, `drivers.training_team`) team. Never throws.
+- **Report cards** (`TrainingReportController`, `/reports/training`): per trainee per station in a date range (default
+  today); a station is done with ≥1 action; a team driver's delivery counts for everyone who worked on that team.
+  Certificates (landscape PDF) for trainees who did all six; report-card PDF + CSV.
+- **Prepare Training** (`TrainingPreparer`, refused unless training mode is on): through the real models, in one
+  transaction, with ActivityRecorder paused — pending offers, R pallets to sort, starter stock (sorted, part on sealed W
+  pallets at `TR-A-0n`), Ready to Fill / Filled orders, a "Team N Driver" per team (PIN `TrainingPreparer::teamDriverPin`)
+  with a Shipped load each, and Delivered orders awaiting BOL review. Items/amounts: `config/training.php` (by ACS number).
+  Summary saved in `training_settings.prepared_summary` → the **setup packet** PDF and the training pallet labels
+  (`PalletReportController::trainingLabelsBuilder`, only those pallets). Running again adds another set.
+- Print documents: `training-report-cards`, `training-certificates`, `training-setup-packet`, `training-pallet-labels`
+  (manage-training), `training-team-{1..5}` / `training-all-teams` (anyone signed in, listed on `/help`).
+- Driver Portal shows staff (manage-orders) the staff view, so the Round 2 delivery is done on a device not logged in —
+  the team sheet says so.
+
 ### Email Settings (`/setup/email`, `admin-system`) — 2026-10-22
 
 Outgoing mail is configured in the app, not only in `.env`: `MailSetting` (singleton row, every column nullable, null =

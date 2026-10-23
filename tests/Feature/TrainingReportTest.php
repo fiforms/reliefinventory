@@ -1,0 +1,165 @@
+<?php
+
+// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// Licensed under the GNU GPL v. 3. See LICENSE.md for details
+
+// The activity log behind Training Mode's report cards, the report itself, and the training PDFs.
+
+use App\Http\Controllers\Auth\TrainingLoginController;
+use App\Http\Controllers\TrainingAdminController;
+use App\Http\Controllers\TrainingReportController;
+use App\Models\ActivityLog;
+use App\Models\Driver;
+use App\Models\ItemLedger;
+use App\Models\TrainingSetting;
+use App\Models\Transaction;
+use App\Models\User;
+use App\Services\TrainingMode;
+use App\Services\TrainingPreparer;
+use App\Support\TrainingGuide;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+
+function preparedTraining(): array
+{
+    $packagetypeId = DB::table('packagetypes')->value('id') ?? DB::table('packagetypes')->insertGetId(['singular' => 'Box', 'plural' => 'Boxes']);
+    $type = urrItemtype('Water');
+    $type->forceFill(['family' => '0901', 'variant' => '00', 'active' => true])->save();
+    $item = $type->items()->first() ?? $type->items()->create(['packagetypes_id' => $packagetypeId, 'pluscode' => '0000', 'size' => 1, 'case_qty' => 1, 'active' => true, 'description' => 'Water']);
+    config(['training.items' => [['number' => '901', 'qty' => 400]]]);
+    TrainingSetting::current()->update(['enabled' => true]);
+
+    test()->actingAs(userWithPermissions('manage-training'));
+    $summary = app(TrainingPreparer::class)->run();
+    auth()->logout();
+
+    return ['summary' => $summary, 'item' => $item];
+}
+
+/** Act as $trainee through a training login (the session key is what marks it). */
+function asTrainee(User $user)
+{
+    return test()->actingAs($user)->withSession([TrainingMode::SESSION_KEY => $user->id]);
+}
+
+test('station actions are logged with the trainee and their team; nothing is logged with nobody logged in', function () {
+    ['summary' => $summary, 'item' => $item] = preparedTraining();
+    $trainee = TrainingLoginController::createTrainee('Ann', 'Able', 2);
+    $user = User::find($trainee->id);
+
+    // No one logged in (artisan, the simulator): nothing recorded.
+    Transaction::create(['type' => 'donation', 'category' => 'donation', 'order_date' => now()->toDateString(), 'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED)]);
+    expect(ActivityLog::count())->toBe(0);
+
+    asTrainee($user);
+    Transaction::create(['type' => 'donation', 'category' => 'donation', 'order_date' => now()->toDateString(), 'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED)]);
+    $order = Transaction::find($summary['orders_to_fill'][0]['id']);
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_FILLING)]);
+    ItemLedger::create(['orderdonation_id' => $order->id, 'item_id' => $item->id, 'order_line_id' => $summary['orders_to_fill'][0]['lines'][0]['line_id'],
+        'qty_subtracted' => 1, 'disposition' => 'usable']);
+    Transaction::find($summary['orders_to_ship'][0]['id'])->update(['status_id' => Transaction::statusId(Transaction::STATUS_READY_TO_SHIP)]);
+
+    expect(ActivityLog::orderBy('id')->get(['person_id', 'training_team', 'station', 'action'])->toArray())->toBe([
+        ['person_id' => $trainee->id, 'training_team' => 2, 'station' => 1, 'action' => 'receiving.intake'],
+        ['person_id' => $trainee->id, 'training_team' => 2, 'station' => 4, 'action' => 'picking.started'],
+        ['person_id' => $trainee->id, 'training_team' => 2, 'station' => 4, 'action' => 'picking.fill'],
+        ['person_id' => $trainee->id, 'training_team' => 2, 'station' => 5, 'action' => 'shipping.driver_assigned'],
+    ]);
+});
+
+test('a Driver Portal delivery by a team driver counts for that team', function () {
+    ['summary' => $summary] = preparedTraining();
+    Storage::fake('local');
+    $trainee = TrainingLoginController::createTrainee('Bo', 'Baker', 3);
+    $delivery = collect($summary['orders_to_deliver'])->firstWhere('team', 3);
+    $driver = Driver::where('training_team', 3)->first();
+
+    $this->postJson('/driver-portal/login', ['phone' => $driver->phone, 'pin' => TrainingPreparer::teamDriverPin(3)])->assertOk();
+    $this->post('/driver-portal/loads/'.$delivery['id'].'/bol', ['file' => UploadedFile::fake()->image('bol.jpg')])->assertOk();
+
+    $row = ActivityLog::sole();
+    expect($row->only(['person_id', 'driver_id', 'training_team', 'station', 'action']))
+        ->toBe(['person_id' => null, 'driver_id' => $driver->id, 'training_team' => 3, 'station' => 6, 'action' => 'delivery.bol_uploaded']);
+
+    $card = collect(app(TrainingReportController::class)->buildReport()['trainees'])->firstWhere('person_id', $trainee->id);
+    // Only the team delivery — no work of their own — so they aren't listed.
+    expect($card)->toBeNull();
+
+    asTrainee(User::find($trainee->id));
+    Transaction::create(['type' => 'donation', 'category' => 'donation', 'order_date' => now()->toDateString(), 'status_id' => Transaction::statusId(Transaction::STATUS_RECEIVED)]);
+    $card = collect(app(TrainingReportController::class)->buildReport()['trainees'])->firstWhere('person_id', $trainee->id);
+    expect($card['stations'][1]['done'])->toBeTrue()
+        ->and($card['stations'][6]['done'])->toBeTrue()
+        ->and($card['stations'][6]['actions'][0]['label'])->toBe('Delivered (uploaded a signed BOL)')
+        ->and($card['done'])->toBe(2)
+        ->and($card['complete'])->toBeFalse();
+});
+
+test('a trainee who worked all six stations is complete and gets a certificate', function () {
+    $trainee = TrainingLoginController::createTrainee('Cy', 'Complete', 1);
+    $other = TrainingLoginController::createTrainee('Di', 'Partial', 4);
+    foreach (range(1, 6) as $station) {
+        ActivityLog::create(['person_id' => $trainee->id, 'training_team' => 1, 'station' => $station, 'action' => 'x.y']);
+    }
+    ActivityLog::create(['person_id' => $other->id, 'training_team' => 4, 'station' => 2, 'action' => 'sorting.line']);
+    // Another day doesn't count toward today's class.
+    ActivityLog::create(['person_id' => $other->id, 'training_team' => 4, 'station' => 3, 'action' => 'inventory.put_on_pallet'])
+        ->forceFill(['created_at' => now()->subDays(2)])->save();
+
+    $report = app(TrainingReportController::class)->buildReport();
+    expect($report['totals'])->toBe(['trainees' => 2, 'complete' => 1])
+        ->and(collect($report['trainees'])->firstWhere('person_id', $other->id)['done'])->toBe(1)
+        ->and(app(TrainingReportController::class)->buildReport(['team' => 4])['trainees'])->toHaveCount(1);
+
+    $path = tempnam(sys_get_temp_dir(), 'cert').'.pdf';
+    app(TrainingReportController::class)->certificatesBuilder([])->save($path);
+    $text = pdfText($path);
+    expect($text)->toContain('Certificate of Completion')->toContain('Cy Complete')->not->toContain('Di Partial');
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
+test('the training pages and PDFs are gated and render', function () {
+    preparedTraining();
+    $trainer = userWithPermissions('manage-training');
+    $staff = userWithPermissions('general-access');
+
+    $this->actingAs($staff)->getJson('/json/training/status')->assertForbidden();
+    $this->actingAs($trainer)->get('/setup/training')->assertInertia(fn ($page) => $page->component('Setup/Training'));
+    $this->actingAs($trainer)->get('/reports/training')->assertInertia(fn ($page) => $page->component('TrainingReport'));
+    $this->actingAs($staff)->get('/help')->assertInertia(fn ($page) => $page->has('trainingTeams', 5));
+    $this->actingAs($trainer)->getJson('/json/training/status')->assertOk()
+        ->assertJsonPath('enabled', true)->assertJsonPath('can_toggle', false)->assertJsonPath('prepared', true);
+    $this->actingAs($trainer)->putJson('/json/training/mode', ['enabled' => false])->assertForbidden();
+    $this->actingAs(userWithPermissions('admin-system'))->putJson('/json/training/mode', ['enabled' => false])->assertOk();
+    expect(TrainingSetting::current()->enabled)->toBeFalse();
+
+    $this->actingAs($trainer)->postJson('/json/training/trainees', ['first_name' => 'Ed', 'last_name' => 'East', 'team' => 5])
+        ->assertOk()->assertJsonPath('trainees.0.full_name', 'Ed East');
+
+    foreach (['/report/training/setup-packet.pdf' => 'Training Setup Packet', '/report/training/report-cards.pdf' => 'Training Report Cards'] as $url => $title) {
+        $this->actingAs($trainer)->get($url)->assertOk();
+    }
+    $this->actingAs($trainer)->get('/report/training/report-cards.pdf?team=3')->assertOk();
+    $this->actingAs($trainer)->get('/report/training/report-cards.csv')->assertOk();
+    $this->actingAs($trainer)->get('/report/training/pallet-labels.pdf')->assertOk();
+    $this->actingAs($staff)->get('/report/training/setup-packet.pdf')->assertForbidden();
+    $this->actingAs($staff)->get('/report/training/team-sheets.pdf?team=2')->assertOk();
+});
+
+test('team sheets rotate each team through all six stations and carry its driver login', function () {
+    preparedTraining();
+    $path = tempnam(sys_get_temp_dir(), 'sheet').'.pdf';
+    app(TrainingAdminController::class)->teamSheetsBuilder(2)->save($path);
+    $text = pdfText($path);
+
+    expect($text)->toContain('Team 2 — Activity Sheet')
+        ->toContain('PIN '.TrainingPreparer::teamDriverPin(2))
+        ->toContain('Station 2: Sorting')->toContain('Station 1: Receiving');
+    // Team 2 starts at station 2 and ends at station 1.
+    expect(TrainingGuide::sheetFor(2)['slots'][0]['station'])->toBe(2)
+        ->and(TrainingGuide::sheetFor(2)['slots'][5]['station'])->toBe(1)
+        ->and(array_column(TrainingGuide::sheetFor(5)['slots'], 'station'))->toBe([5, 6, 1, 2, 3, 4]);
+
+    app(TrainingAdminController::class)->setupPacketBuilder()->save($path);
+    expect(pdfText($path))->toContain('Training Setup Packet')->toContain('Team 1 Driver');
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');

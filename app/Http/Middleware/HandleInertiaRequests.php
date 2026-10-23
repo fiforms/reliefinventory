@@ -9,6 +9,7 @@ use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
 use App\Services\PinLoginService;
+use App\Services\TrainingMode;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,6 +41,11 @@ class HandleInertiaRequests extends Middleware
             ...parent::share($request),
             'auth' => [
                 'user' => $request->user(),
+            ],
+            // A Training Mode tap-your-name session (capped to station work) — the layout shows a strip saying so.
+            'training' => [
+                'session' => TrainingMode::isTrainingSession(),
+                'team' => TrainingMode::isTrainingSession() ? $request->user()?->training_team : null,
             ],
             'pinLogin' => [
                 'switchUserAvailable' => $request->user()

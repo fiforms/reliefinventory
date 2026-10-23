@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\LabelSetting;
 use App\Models\Pallet;
+use App\Models\TrainingSetting;
 use App\Models\Transaction;
 use App\Support\PalletKind;
 use Illuminate\Http\Request;
@@ -116,5 +117,24 @@ class PalletReportController extends Controller
         return $this->labelPaper(Pdf::view('reports.pallet-batch', [
             'labels' => $pallets->map(fn (Pallet $pallet) => $this->labelData($pallet))->all(),
         ] + $this->layout()))->name('pallet-labels-preprint.pdf');
+    }
+
+    /**
+     * Labels for the pallets the last Prepare Training made (Training Mode's setup packet): the R pallets waiting
+     * to be sorted, then the sealed W pallets. Only those ids, so it can't print anyone else's labels.
+     */
+    public function trainingLabelsBuilder(): PdfBuilder
+    {
+        $summary = TrainingSetting::current()->prepared_summary ?? [];
+        $ids = [...array_column($summary['pallets_to_sort'] ?? [], 'pallet_id'), ...array_column($summary['warehouse_pallets'] ?? [], 'id')];
+        $pallets = Pallet::with('contentItem')->whereIn('id', $ids)->orderBy('kind')->orderBy('id')->get();
+
+        if ($pallets->isEmpty()) {
+            abort(404, 'Prepare Training has not made any pallets yet.');
+        }
+
+        return $this->labelPaper(Pdf::view('reports.pallet-batch', [
+            'labels' => $pallets->map(fn (Pallet $pallet) => $this->labelData($pallet))->all(),
+        ] + $this->layout()))->name('pallet-labels-training.pdf');
     }
 }
