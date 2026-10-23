@@ -372,9 +372,9 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 // route serves an anonymous prospective partner and a logged-in staffer.
 // PublicFormController itself enforces the form's access_mode.
 // Trainee self sign-up (TraineeSignupController): public, open only while Training Mode is on. A whole room signs
-// up at once from one Wi-Fi network (one IP), so the limit is generous; Turnstile keeps bots out.
+// up at once from one Wi-Fi network (one IP), so the limit (80/min) covers a room of ~55; Turnstile keeps bots out.
 Route::get('/join', [TraineeSignupController::class, 'show'])->name('join');
-Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:600,1');
+Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:80,1');
 
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');

@@ -21,7 +21,7 @@ use Inertia\Inertia;
  * answers in training_registrations. It never logs anyone in: station access stays on the approved tablets.
  *
  * Built for a room full of people on one Wi-Fi network, so all 50+ share an IP address: the route's rate limit is
- * generous and Turnstile (TurnstileService, when enabled) is what keeps bots out. Signing up again with the same
+ * 80 a minute per IP and Turnstile (TurnstileService, when enabled) is what keeps bots out. Signing up again with the same
  * name (a double tap, or coming back to add an email) updates that person rather than adding a second tile.
  */
 class TraineeSignupController extends Controller
