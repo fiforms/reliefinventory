@@ -16,6 +16,7 @@ use App\Services\TrainingPreparer;
 use App\Support\TrainingGuide;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use League\Csv\Writer;
 use Milon\Barcode\DNS2D;
@@ -43,6 +44,12 @@ class TrainingAdminController extends Controller
             'prepared' => (bool) $settings->prepared_summary,
             'event_title' => $settings->event_title,
             'event_location' => $settings->event_location,
+            'trainers' => array_map(fn (int $slot) => [
+                'slot' => $slot,
+                'name' => $settings->{"trainer{$slot}_name"},
+                'has_signature' => (bool) $settings->{"trainer{$slot}_signature"},
+                'signature_version' => $settings->{"trainer{$slot}_signature"} ? md5($settings->{"trainer{$slot}_signature"}) : null,
+            ], TrainingSetting::TRAINER_SLOTS),
             'can_toggle' => Auth::user()->hasPermission('admin-system'),
             'approved_devices' => TrustedDevice::where('status', 'approved')->count(),
             'teams' => TrainingMode::TEAMS,
@@ -71,16 +78,56 @@ class TrainingAdminController extends Controller
         return $this->status();
     }
 
-    /** The event title and location printed on the certificates. */
+    /** The event title, location and trainer names printed on the certificates. */
     public function setEvent(Request $request)
     {
         $data = $request->validate([
             'event_title' => 'nullable|string|max:150',
             'event_location' => 'nullable|string|max:150',
+            'trainer1_name' => 'nullable|string|max:100',
+            'trainer2_name' => 'nullable|string|max:100',
         ]);
         TrainingSetting::current()->update(array_map(fn ($v) => ($v = trim((string) $v)) === '' ? null : $v, $data));
 
         return $this->status();
+    }
+
+    /** A trainer's signature image for the certificates (PNG or JPEG; replaces any earlier one for that trainer). */
+    public function uploadSignature(Request $request, int $slot)
+    {
+        abort_unless(in_array($slot, TrainingSetting::TRAINER_SLOTS, true), 404);
+        $request->validate(['signature' => 'required|file|mimes:png,jpg,jpeg|max:2048']);
+
+        $settings = TrainingSetting::current();
+        $old = $settings->{"trainer{$slot}_signature"};
+        $settings->update(["trainer{$slot}_signature" => $request->file('signature')->store('training-signatures', 'local')]);
+        if ($old) {
+            Storage::disk('local')->delete($old);
+        }
+
+        return $this->status();
+    }
+
+    public function deleteSignature(int $slot)
+    {
+        abort_unless(in_array($slot, TrainingSetting::TRAINER_SLOTS, true), 404);
+        $settings = TrainingSetting::current();
+        if ($path = $settings->{"trainer{$slot}_signature"}) {
+            Storage::disk('local')->delete($path);
+            $settings->update(["trainer{$slot}_signature" => null]);
+        }
+
+        return $this->status();
+    }
+
+    /** The uploaded signature image itself, for the preview on the Training Mode page. */
+    public function signature(int $slot)
+    {
+        abort_unless(in_array($slot, TrainingSetting::TRAINER_SLOTS, true), 404);
+        $path = TrainingSetting::current()->{"trainer{$slot}_signature"};
+        abort_unless($path && Storage::disk('local')->exists($path), 404);
+
+        return Storage::disk('local')->response($path);
     }
 
     public function prepare()

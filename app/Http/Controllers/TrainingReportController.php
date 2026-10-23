@@ -89,6 +89,10 @@ class TrainingReportController extends Controller
             'trainees' => $trainees,
             'eventTitle' => $settings->event_title,
             'eventLocation' => $settings->event_location,
+            'signers' => array_map(fn (int $slot) => [
+                'name' => $settings->{"trainer{$slot}_name"},
+                'signature' => $settings->signatureDataUri($slot),
+            ], TrainingSetting::TRAINER_SLOTS),
         ])
             ->driver('weasyprint')
             ->format('letter')

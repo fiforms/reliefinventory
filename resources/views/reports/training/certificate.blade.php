@@ -1,5 +1,6 @@
 {{-- Training certificates (TrainingReportController::certificatesBuilder): one landscape page per trainee who
-     completed all six stations. The event title and location come from Setup > Training Mode. --}}
+     completed all six stations. The event title, location, trainer names and signature images come from Setup >
+     Training Mode. --}}
 @php
     $f = $report['filters'];
     $date = $f['from'] === $f['to'] ? \Carbon\Carbon::parse($f['from'])->format('F j, Y')
@@ -26,7 +27,11 @@
         .lead { font-size: 18px; margin: 0; }
         .name { font-size: 38px; font-weight: bold; border-bottom: 1px solid #888; padding: 0 48px 6px 48px; margin: 18px 0 34px 0; }
         .event { font-size: 24px; font-style: italic; margin: 14px 0 20px 0; }
-        .sign { width: 3in; border-top: 1px solid #444; margin-top: 80px; padding-top: 4px; font-family: Arial, sans-serif; font-size: 12px; color: #444; }
+        .signers { display: flex; justify-content: space-between; width: 100%; margin-top: 44px; }
+        .signer { width: 3in; }
+        .signature { height: 0.6in; display: flex; align-items: flex-end; justify-content: center; }
+        .signature img { max-height: 0.6in; max-width: 2.8in; }
+        .sign { border-top: 1px solid #444; padding-top: 4px; font-family: Arial, sans-serif; font-size: 12px; color: #444; }
     </style>
 </head>
 <body>
@@ -40,7 +45,14 @@
             <div class="lead">has completed</div>
             <div class="event">{{ $eventTitle ?: 'Hands-on Warehouse Training' }}</div>
             <div class="lead">{{ $eventLocation ? 'held at '.$eventLocation.' on ' : 'on ' }}{{ $date }}</div>
-            <div class="sign">Trainer</div>
+            <div class="signers">
+                @foreach ($signers as $signer)
+                    <div class="signer">
+                        <div class="signature">@if ($signer['signature'])<img src="{{ $signer['signature'] }}" alt="">@endif</div>
+                        <div class="sign">{{ $signer['name'] ?: 'Trainer' }}</div>
+                    </div>
+                @endforeach
+            </div>
         </div>
     @empty
         <p style="font-family: Arial, sans-serif;">No trainee has completed all six stations in this range yet.</p>

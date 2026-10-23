@@ -29,7 +29,8 @@ const confirmingPrepare = ref(false);
 const preparing = ref(false);
 const newTrainee = ref({ first_name: '', last_name: '', team: null });
 const showInactive = ref(false);
-const event = ref({ event_title: '', event_location: '' });
+const event = ref({ event_title: '', event_location: '', trainer1_name: '', trainer2_name: '' });
+const uploadingSlot = ref(null);
 const savingEvent = ref(false);
 
 const trainees = computed(() => (status.value?.trainees || []).filter((t) => showInactive.value || t.active));
@@ -37,7 +38,12 @@ const trainees = computed(() => (status.value?.trainees || []).filter((t) => sho
 async function load() {
 	try {
 		status.value = (await axios.get('/json/training/status')).data;
-		event.value = { event_title: status.value.event_title || '', event_location: status.value.event_location || '' };
+		event.value = {
+			event_title: status.value.event_title || '',
+			event_location: status.value.event_location || '',
+			trainer1_name: status.value.trainers[0].name || '',
+			trainer2_name: status.value.trainers[1].name || '',
+		};
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not load Training Mode settings.';
 	}
@@ -106,6 +112,33 @@ async function updateTrainee(trainee, changes) {
 		status.value = (await axios.patch('/json/training/trainees/' + trainee.id, changes)).data;
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not update that trainee.';
+	}
+}
+
+async function uploadSignature(slot, input) {
+	const file = input.files[0];
+	if (!file) return;
+	error.value = notice.value = null;
+	uploadingSlot.value = slot;
+	try {
+		const form = new FormData();
+		form.append('signature', file);
+		status.value = (await axios.post('/json/training/signatures/' + slot, form)).data;
+		notice.value = 'Signature uploaded.';
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not upload that signature.';
+	} finally {
+		uploadingSlot.value = null;
+		input.value = '';
+	}
+}
+
+async function removeSignature(slot) {
+	error.value = notice.value = null;
+	try {
+		status.value = (await axios.delete('/json/training/signatures/' + slot)).data;
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not remove that signature.';
 	}
 }
 
@@ -243,22 +276,46 @@ onMounted(load);
 							download-href="/report/training/team-sheets.pdf" />
 						<Link href="/reports/training" class="ri_formbutton">Report Cards &amp; Certificates</Link>
 					</div>
-					<form class="grid grid-cols-1 sm:grid-cols-5 gap-4 text-sm items-end" @submit.prevent="saveEvent">
-						<label class="block sm:col-span-2">
-							<span class="text-gray-700">Training event title (on certificates)</span>
+					<h3 class="font-semibold">Certificates</h3>
+					<form class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm" @submit.prevent="saveEvent">
+						<label class="block">
+							<span class="text-gray-700">Training event title</span>
 							<input v-model="event.event_title" maxlength="150" placeholder="Hands-on Warehouse Training"
 								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
 						</label>
-						<label class="block sm:col-span-2">
+						<label class="block">
 							<span class="text-gray-700">Where the class was held</span>
 							<input v-model="event.event_location" maxlength="150" placeholder="e.g. Statesville Warehouse, Statesville, NC"
 								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
 						</label>
-						<div><PrimaryButton :disabled="savingEvent">{{ savingEvent ? 'Saving…' : 'Save' }}</PrimaryButton></div>
+						<div v-for="trainer in status.trainers" :key="trainer.slot" class="border rounded p-3 space-y-2">
+							<label class="block">
+								<span class="text-gray-700">{{ trainer.slot === 1 ? 'Left' : 'Right' }} signature — trainer's name</span>
+								<input v-model="event['trainer' + trainer.slot + '_name']" maxlength="100" placeholder="Trainer"
+									class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+							</label>
+							<div class="h-16 border border-dashed rounded flex items-center justify-center bg-gray-50">
+								<img v-if="trainer.has_signature" :src="'/json/training/signatures/' + trainer.slot + '?v=' + trainer.signature_version"
+									alt="Signature" class="max-h-14 max-w-full" />
+								<span v-else class="text-xs text-gray-400">No signature — the line prints blank to sign by hand</span>
+							</div>
+							<div class="flex flex-wrap items-center gap-3">
+								<label class="ri_formbutton cursor-pointer">
+									{{ uploadingSlot === trainer.slot ? 'Uploading…' : (trainer.has_signature ? 'Replace signature' : 'Upload signature') }}
+									<input type="file" accept="image/png,image/jpeg" class="hidden" :disabled="uploadingSlot !== null"
+										@change="uploadSignature(trainer.slot, $event.target)" />
+								</label>
+								<button v-if="trainer.has_signature" type="button" class="text-sm underline" @click="removeSignature(trainer.slot)">Remove</button>
+							</div>
+						</div>
+						<div class="sm:col-span-2"><PrimaryButton :disabled="savingEvent">{{ savingEvent ? 'Saving…' : 'Save certificate details' }}</PrimaryButton></div>
 					</form>
 					<p class="text-xs text-gray-500">
-						A certificate reads "has completed <em>title</em> held at <em>location</em> on <em>date</em>". Left
-						blank, the title is "Hands-on Warehouse Training" and the location is left out.
+						A certificate reads "has completed <em>title</em> held at <em>location</em> on <em>date</em>", with the two
+						trainers' signature lines at the bottom left and right. Left blank, the title is "Hands-on Warehouse
+						Training", the location is left out and each line is labelled "Trainer". Signatures are PNG or JPEG
+						(up to 2 MB) — a scan or photo of a signature on white paper cropped close works; a PNG with a
+						transparent background looks best. Uploading a signature takes effect right away; names need Save.
 					</p>
 					<p class="text-xs text-gray-500">
 						Each team's sheet can also be printed from the <Link href="/help" class="underline">Help</Link> page.

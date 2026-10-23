@@ -7,7 +7,10 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/** The training event's title and where the class was held, printed on the certificates (Setup > Training Mode). */
+/**
+ * What the training certificates print (Setup > Training Mode): the event's title, where the class was held, and two
+ * trainers — each a name under a signature line and an optional uploaded signature image (a path on the private disk).
+ */
 return new class extends Migration
 {
     public function up(): void
@@ -15,13 +18,17 @@ return new class extends Migration
         Schema::table('training_settings', function (Blueprint $table) {
             $table->string('event_title', 150)->nullable()->after('prepared_summary');
             $table->string('event_location', 150)->nullable()->after('event_title');
+            $table->string('trainer1_name', 100)->nullable()->after('event_location');
+            $table->string('trainer1_signature')->nullable()->after('trainer1_name');
+            $table->string('trainer2_name', 100)->nullable()->after('trainer1_signature');
+            $table->string('trainer2_signature')->nullable()->after('trainer2_name');
         });
     }
 
     public function down(): void
     {
         Schema::table('training_settings', function (Blueprint $table) {
-            $table->dropColumn(['event_title', 'event_location']);
+            $table->dropColumn(['event_title', 'event_location', 'trainer1_name', 'trainer1_signature', 'trainer2_name', 'trainer2_signature']);
         });
     }
 };
