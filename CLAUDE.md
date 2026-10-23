@@ -356,7 +356,8 @@ printed team sheets). **Only the login changes; the system otherwise works norma
   (or team driver's, `drivers.training_team`) team. Never throws.
 - **Report cards** (`TrainingReportController`, `/reports/training`): per trainee per station in a date range (default
   today); a station is done with ≥1 action; a team driver's delivery counts for everyone who worked on that team.
-  Certificates (landscape PDF) for trainees who did all six; report-card PDF + CSV.
+  Certificates (landscape PDF, no station list) for trainees who did all six, showing the event title and location
+  entered on the Training Mode page (`training_settings.event_title`/`event_location`, `PUT /json/training/event`); report-card PDF + CSV.
 - **Prepare Training** (`TrainingPreparer`, refused unless training mode is on): through the real models, in one
   transaction, with ActivityRecorder paused — pending offers, R pallets to sort, starter stock (sorted, part on sealed W
   pallets at `TR-A-0n`), Ready to Fill / Filled orders, a "Team N Driver" per team (PIN `TrainingPreparer::teamDriverPin`)

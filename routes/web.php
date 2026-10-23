@@ -410,6 +410,10 @@ Route::get('/reports/training', function () {
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-training']], function () {
     Route::get('/training/status', [TrainingAdminController::class, 'status']);
     Route::post('/training/prepare', [TrainingAdminController::class, 'prepare']);
+    Route::put('/training/event', [TrainingAdminController::class, 'setEvent']);
+    Route::get('/training/signatures/{slot}', [TrainingAdminController::class, 'signature'])->whereNumber('slot');
+    Route::post('/training/signatures/{slot}', [TrainingAdminController::class, 'uploadSignature'])->whereNumber('slot');
+    Route::delete('/training/signatures/{slot}', [TrainingAdminController::class, 'deleteSignature'])->whereNumber('slot');
     Route::post('/training/trainees', [TrainingAdminController::class, 'storeTrainee']);
     Route::patch('/training/trainees/{id}', [TrainingAdminController::class, 'updateTrainee'])->whereNumber('id');
     Route::get('/reports/training', [TrainingReportController::class, 'index']);

@@ -118,6 +118,67 @@ test('a trainee who worked all six stations is complete and gets a certificate',
     expect($text)->toContain('Certificate of Completion')->toContain('Cy Complete')->not->toContain('Di Partial');
 })->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
 
+test('the certificate shows the event title and location set on the Training Mode page', function () {
+    $trainee = TrainingLoginController::createTrainee('Cy', 'Complete', 1);
+    foreach (range(1, 6) as $station) {
+        ActivityLog::create(['person_id' => $trainee->id, 'training_team' => 1, 'station' => $station, 'action' => 'x.y']);
+    }
+
+    $this->actingAs(userWithPermissions('general-access'))
+        ->putJson('/json/training/event', ['event_title' => 'X', 'event_location' => 'Y'])->assertForbidden();
+    $this->actingAs(userWithPermissions('manage-training'))
+        ->putJson('/json/training/event', ['event_title' => ' Fall Warehouse Class ', 'event_location' => 'Statesville Warehouse'])
+        ->assertOk()->assertJson(['event_title' => 'Fall Warehouse Class', 'event_location' => 'Statesville Warehouse']);
+
+    $path = tempnam(sys_get_temp_dir(), 'cert').'.pdf';
+    app(TrainingReportController::class)->certificatesBuilder([])->save($path);
+    expect(pdfText($path))->toContain('Fall Warehouse Class')->toContain('held at Statesville Warehouse')
+        ->not->toContain('Receiving');
+    expect((int) preg_replace('/\D/', '', shell_exec('pdfinfo '.escapeshellarg($path).' | grep Pages')))->toBe(1);
+
+    // Blank fields fall back to the default title and leave the location out.
+    $this->putJson('/json/training/event', ['event_title' => '', 'event_location' => null])->assertOk()
+        ->assertJson(['event_title' => null, 'event_location' => null]);
+    app(TrainingReportController::class)->certificatesBuilder([])->save($path);
+    expect(pdfText($path))->toContain('Hands-on Warehouse Training')->not->toContain('held at');
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
+test('trainer signatures upload, print on the certificate side by side, and can be removed', function () {
+    Storage::fake('local');
+    $trainee = TrainingLoginController::createTrainee('Cy', 'Complete', 1);
+    foreach (range(1, 6) as $station) {
+        ActivityLog::create(['person_id' => $trainee->id, 'training_team' => 1, 'station' => $station, 'action' => 'x.y']);
+    }
+
+    $this->actingAs(userWithPermissions('general-access'))
+        ->post('/json/training/signatures/1', ['signature' => UploadedFile::fake()->image('sig.png')])->assertForbidden();
+
+    $this->actingAs(userWithPermissions('manage-training'));
+    $this->putJson('/json/training/event', ['trainer1_name' => 'Pat Morgan', 'trainer2_name' => 'Chris Lee'])->assertOk();
+    $this->postJson('/json/training/signatures/3', ['signature' => UploadedFile::fake()->image('sig.png')])->assertNotFound();
+    $this->postJson('/json/training/signatures/1', ['signature' => UploadedFile::fake()->create('sig.svg', 1, 'image/svg+xml')])
+        ->assertUnprocessable();
+    $this->postJson('/json/training/signatures/1', ['signature' => UploadedFile::fake()->image('sig.png', 300, 80)])
+        ->assertOk()->assertJsonPath('trainers.0.has_signature', true)->assertJsonPath('trainers.1.has_signature', false);
+    $first = TrainingSetting::current()->trainer1_signature;
+    Storage::disk('local')->assertExists($first);
+    $this->get('/json/training/signatures/1')->assertOk();
+    $this->get('/json/training/signatures/2')->assertNotFound();
+
+    // Replacing removes the old file.
+    $this->postJson('/json/training/signatures/1', ['signature' => UploadedFile::fake()->image('sig.jpg', 300, 80)])->assertOk();
+    Storage::disk('local')->assertMissing($first);
+
+    $path = tempnam(sys_get_temp_dir(), 'cert').'.pdf';
+    app(TrainingReportController::class)->certificatesBuilder([])->save($path);
+    expect(pdfText($path))->toContain('Pat Morgan')->toContain('Chris Lee')->not->toContain('Trainer');
+    expect((int) shell_exec('pdfimages -list '.escapeshellarg($path)." | awk '\$3 == \"image\"' | wc -l"))->toBe(2); // logo + one signature (not their alpha masks)
+
+    $this->deleteJson('/json/training/signatures/1')->assertOk()->assertJsonPath('trainers.0.has_signature', false);
+    Storage::disk('local')->assertMissing(TrainingSetting::current()->getOriginal('trainer1_signature') ?? 'none');
+    expect(TrainingSetting::current()->trainer1_signature)->toBeNull();
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
 test('the training pages and PDFs are gated and render', function () {
     preparedTraining();
     $trainer = userWithPermissions('manage-training');
