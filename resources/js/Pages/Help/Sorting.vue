@@ -4,7 +4,7 @@
 <!-- Help/Sorting.vue
 
 	Static how-to guide for Donation Sorting (resources/js/Pages/DonationSorting.vue).
-	Reached from the help (?) button on that page; the printable copy is
+	Reached from the help "Help: ..." link on that page; the printable copy is
 	resources/views/reports/help/sorting.blade.php — keep the two in step.
 -->
 

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginHistory;
 use App\Services\PinLoginService;
+use App\Services\TrainingMode;
 use App\Services\TurnstileService;
 use App\Support\EmailFailureMessage;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
@@ -35,6 +36,12 @@ class AuthenticatedSessionController extends Controller
      */
     public function create(Request $request, PinLoginService $pinLogin): Response|RedirectResponse
     {
+        // Training Mode: an approved device goes to the tap-your-name screen (staff PIN/email links are on it).
+        if (! $request->boolean('email') && TrainingMode::enabled()
+            && TrainingMode::availableOn($pinLogin->resolveDevice($request))) {
+            return redirect()->route('training-login');
+        }
+
         if ($pinLogin->settings()->enabled && ! $request->boolean('email')) {
             $device = $pinLogin->resolveDevice($request);
             if ($device->isApproved() && $pinLogin->peopleTrustedOnDevice($device)->isNotEmpty()) {
@@ -102,6 +109,7 @@ class AuthenticatedSessionController extends Controller
         }
 
         $request->session()->regenerate();
+        $request->session()->forget(TrainingMode::SESSION_KEY);
 
         LoginHistory::record($user->id, 'password', $request->ip(), $request->userAgent());
 

@@ -49,6 +49,13 @@ async function markAllNotificationsRead() {
     <div>
         <div class="min-h-screen bg-gray-100">
             <Banner @open-feedback="showingFeedbackModal = true" />
+            <!-- Training Mode tap-your-name login: station work only (App\Services\TrainingMode) -->
+            <div v-if="$page.props.training?.session" class="bg-amber-100 text-amber-900 text-sm px-4 py-1 flex justify-between items-center">
+                <span>
+                    Training login — {{ $page.props.auth.user.first_name }} {{ $page.props.auth.user.last_name }}<template v-if="$page.props.training.team">, Team {{ $page.props.training.team }}</template>
+                </span>
+                <Link :href="route('training-login.exit')" method="post" as="button" class="underline">Staff login</Link>
+            </div>
             <PrintToast />
 
             <nav
@@ -82,15 +89,6 @@ async function markAllNotificationsRead() {
                         </div>
 
                         <div class="hidden sm:ms-6 sm:flex sm:items-center">
-                            <!-- Help for this page (only pages with a guide — HelpReportController::PAGE_GUIDES) -->
-                            <Link
-                                v-if="$page.props.helpGuide"
-                                :href="'/help/' + $page.props.helpGuide"
-                                title="Help for this page"
-                                aria-label="Help for this page"
-                                class="inline-flex items-center rounded-md px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
-                            >❓</Link>
-
                             <!-- Notification Bell -->
                             <div class="relative ms-3">
                                 <Dropdown align="right" width="96">

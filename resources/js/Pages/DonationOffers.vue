@@ -24,6 +24,7 @@
 
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import TextArea from '@/Components/TextArea.vue';
@@ -92,6 +93,7 @@ const statusClasses = {
 					Pending (ETA-sorted) only
 				</label>
 				<Link href="/receiving" class="don_backlink">&larr; Back to Receiving</Link>
+				<HelpLink guide="donation-offers">Donation Offers Guide</HelpLink>
 			</template>
 
 			<template #thead>

@@ -16,8 +16,11 @@ use App\Http\Controllers\OutstandingOrdersReportController;
 use App\Http\Controllers\PalletReportController;
 use App\Http\Controllers\PartnerReportController;
 use App\Http\Controllers\SitrepController;
+use App\Http\Controllers\TrainingAdminController;
+use App\Http\Controllers\TrainingReportController;
 use App\Http\Controllers\UnfulfilledRequestsReportController;
 use App\Models\LabelSetting;
+use App\Services\TrainingMode;
 use App\Services\WarehouseMetrics;
 use Closure;
 use Spatie\LaravelPdf\PdfBuilder;
@@ -130,7 +133,48 @@ class DocumentRegistry
                 'title' => fn (array $p) => 'Pre-printed pallet labels ('.count($p['ids']).')',
                 'build' => fn (array $p) => app(PalletReportController::class)->preprintLabelsBuilder(array_map('intval', $p['ids'])),
             ],
-        ], $this->helpGuides());
+        ], $this->helpGuides(), $this->training());
+    }
+
+    /** Training Mode: report cards, certificates, the setup packet + labels, and the team activity sheets. */
+    private function training(): array
+    {
+        $documents = [
+            'training-report-cards' => [
+                'media' => 'report', 'permission' => 'manage-training', 'rules' => TrainingReportController::FILTER_RULES,
+                'title' => fn () => 'Training report cards',
+                'build' => fn (array $p) => app(TrainingReportController::class)->pdfBuilder($p),
+            ],
+            'training-certificates' => [
+                'media' => 'report', 'permission' => 'manage-training', 'rules' => TrainingReportController::FILTER_RULES,
+                'title' => fn () => 'Training certificates',
+                'build' => fn (array $p) => app(TrainingReportController::class)->certificatesBuilder($p),
+            ],
+            'training-setup-packet' => [
+                'media' => 'report', 'permission' => 'manage-training', 'rules' => [],
+                'title' => fn () => 'Training setup packet',
+                'build' => fn () => app(TrainingAdminController::class)->setupPacketBuilder(),
+            ],
+            'training-pallet-labels' => [
+                'media' => LabelSetting::palletMedia(), 'permission' => 'manage-training', 'rules' => [],
+                'title' => fn () => 'Training pallet labels',
+                'build' => fn () => app(PalletReportController::class)->trainingLabelsBuilder(),
+            ],
+            'training-all-teams' => [
+                'media' => 'report', 'permission' => null, 'rules' => [],
+                'title' => fn () => 'Training team sheets (all teams)',
+                'build' => fn () => app(TrainingAdminController::class)->teamSheetsBuilder(),
+            ],
+        ];
+        foreach (TrainingMode::TEAMS as $team) {
+            $documents['training-team-'.$team] = [
+                'media' => 'report', 'permission' => null, 'rules' => [],
+                'title' => fn () => "Training Team $team sheet",
+                'build' => fn () => app(TrainingAdminController::class)->teamSheetsBuilder($team),
+            ];
+        }
+
+        return $documents;
     }
 
     /** One `help-<slug>` document per guide in HelpReportController::GUIDES, plus `help-all` (every guide in one PDF). */

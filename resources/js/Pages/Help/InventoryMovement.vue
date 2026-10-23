@@ -5,7 +5,7 @@
 
 	Static how-to guide for Inventory Movement (resources/js/Pages/PalletLocation.vue,
 	/inventory-movement), with a short section on Pallet Management
-	(resources/js/Pages/PalletManagement.vue). Reached from the help (?) button
+	(resources/js/Pages/PalletManagement.vue). Reached from the "Help: ..." link
 	on those pages; the printable copy is
 	resources/views/reports/help/inventory-movement.blade.php — keep the two in step.
 -->

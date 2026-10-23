@@ -34,6 +34,7 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head } from '@inertiajs/vue3';
 import SearchSelect from '@/Components/SearchSelect.vue';
 import ScanButton from '@/Components/ScanButton.vue';
@@ -44,7 +45,7 @@ import axios from 'axios';
 const NEED_LEVEL_LABELS = { critical: 'Critical', moderate: 'Moderate', low: 'Low' };
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, ScanButton, PrintMenu },
+	components: { AuthenticatedLayout, HelpLink, Head, SearchSelect, ScanButton, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -443,6 +444,7 @@ export default {
 		<div v-if="view === 'list'" class="of_container">
 			<h2 class="ri_datatable_head">
 				Order Filling
+				<HelpLink guide="order-filling">Order Filling Guide</HelpLink>
 				<span class="of_headeractions">
 					<button @click="showAllocation = !showAllocation" class="ri_formbutton">
 						{{ showAllocation ? 'Hide' : 'Review' }} Allocation

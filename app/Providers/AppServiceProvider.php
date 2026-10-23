@@ -5,6 +5,7 @@
 
 namespace App\Providers;
 
+use App\Services\ActivityRecorder;
 use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
 use Illuminate\Foundation\Http\Events\RequestHandled;
@@ -34,6 +35,9 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Who did what at each station (activity_log) — read by the Training report card.
+        ActivityRecorder::register();
 
         // Email Settings (/setup/email) override .env mail config: applied when mail is first used in a request,
         // and before every queued job so a long-running worker sees a change without a restart.

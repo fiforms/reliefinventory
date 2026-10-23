@@ -16,6 +16,7 @@ use App\Models\ManagedDevice;
 use App\Models\MenuItem;
 use App\Services\GitVersionService;
 use App\Services\PinLoginService;
+use App\Services\TrainingMode;
 use App\Services\TurnstileService;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
@@ -363,14 +364,16 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
-// Help pages: static how-to guides, one per data-entry page, reached from that page's (?) button
-// (HelpReportController::PAGE_GUIDES) or from the main-menu Help tile's /help list.
+// Help pages: static how-to guides, one per data-entry page, reached from that page's "Help: ..."
+// text link (Components/HelpLink.vue) or from the main-menu Help tile's /help list.
 // Visible to anyone authenticated (no permission gate).
 Route::get('/help', function () {
     return Inertia::render('Help/Index', [
         'breadcrumb' => MenuItem::getBreadcrumb('/help'),
         'guides' => collect(HelpReportController::GUIDES)
             ->map(fn ($title, $slug) => ['slug' => $slug, 'title' => $title])->values(),
+        // Training Mode's team activity sheets (TrainingAdminController::teamSheetsBuilder).
+        'trainingTeams' => TrainingMode::TEAMS,
     ]);
 })->middleware(['auth']);
 
@@ -380,6 +383,32 @@ Route::get('/help/{guide}', function (string $guide) {
         ['href' => '/help/'.$guide, 'title' => HelpReportController::GUIDES[$guide]],
     ]]);
 })->whereIn('guide', array_keys(HelpReportController::GUIDES))->middleware(['auth']);
+
+// Training Mode (App\Services\TrainingMode). Setup > Training Mode is manage-training; switching the mode on/off
+// is admin-system. The team activity sheets print from /help, for anyone signed in, like the help guides.
+Route::get('/setup/training', function () {
+    return Inertia::render('Setup/Training', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/training')]);
+})->middleware(['auth', 'permission:manage-training']);
+Route::get('/reports/training', function () {
+    return Inertia::render('TrainingReport', ['breadcrumb' => MenuItem::getBreadcrumb('/reports/training')]);
+})->middleware(['auth', 'permission:manage-training']);
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-training']], function () {
+    Route::get('/training/status', [TrainingAdminController::class, 'status']);
+    Route::post('/training/prepare', [TrainingAdminController::class, 'prepare']);
+    Route::post('/training/trainees', [TrainingAdminController::class, 'storeTrainee']);
+    Route::patch('/training/trainees/{id}', [TrainingAdminController::class, 'updateTrainee'])->whereNumber('id');
+    Route::get('/reports/training', [TrainingReportController::class, 'index']);
+});
+Route::put('/json/training/mode', [TrainingAdminController::class, 'setMode'])
+    ->middleware(['auth', 'permission:admin-system']);
+Route::middleware(['auth', 'permission:manage-training'])->group(function () {
+    Route::get('/report/training/setup-packet.pdf', [TrainingAdminController::class, 'setupPacket']);
+    Route::get('/report/training/pallet-labels.pdf', [PalletReportController::class, 'trainingLabelsBuilder']);
+    Route::get('/report/training/report-cards.pdf', [TrainingReportController::class, 'pdf']);
+    Route::get('/report/training/report-cards.csv', [TrainingReportController::class, 'csv']);
+    Route::get('/report/training/certificates.pdf', [TrainingReportController::class, 'certificates']);
+});
+Route::get('/report/training/team-sheets.pdf', [TrainingAdminController::class, 'teamSheets'])->middleware(['auth']);
 
 // Every guide in one printable PDF (the /help list's "Print all guides").
 Route::get('/report/help/all', [HelpReportController::class, 'showAll'])

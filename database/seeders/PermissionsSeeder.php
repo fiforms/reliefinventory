@@ -7,6 +7,7 @@ namespace Database\Seeders;
 
 use App\Models\Permission;
 use App\Models\Role;
+use App\Services\TrainingMode;
 use Illuminate\Database\Seeder;
 
 /**
@@ -151,6 +152,8 @@ class PermissionsSeeder extends Seeder
         'adjust-inventory' => 'Manually adjust the quantities recorded on a warehouse pallet, with a reason',
         // The Donor Report only suggests a standing; setting one is a deliberate staff decision. Office/Administrator by default.
         'manage-donor-standing' => "Set a donor's standing (preferred / normal / watch / decline) from the Donor Report",
+        // Training Mode (App\Services\TrainingMode): trainees, Prepare Training, setup packet, report cards.
+        'manage-training' => 'Run Training Mode classes: trainees, Prepare Training, setup packet and training report cards',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -187,6 +190,7 @@ class PermissionsSeeder extends Seeder
         'manage-print-queue',
         'adjust-inventory',
         'manage-donor-standing',
+        'manage-training',
     ];
 
     /**
@@ -235,6 +239,11 @@ class PermissionsSeeder extends Seeder
 
         if ($administrator) {
             $administrator->permissions()->syncWithoutDetaching($permissions->pluck('id'));
+        }
+
+        // Training Mode's tap-your-name trainees (created by the 2026_10_23 training-mode migration).
+        if ($trainee = Role::where('name', TrainingMode::ROLE)->first()) {
+            $trainee->permissions()->syncWithoutDetaching($permissions->only(TrainingMode::TRAINING_KEYS)->pluck('id'));
         }
     }
 }

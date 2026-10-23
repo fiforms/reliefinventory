@@ -8,6 +8,7 @@ namespace App\Models\Concerns;
 use App\Models\PeopleRoles;
 use App\Models\Permission;
 use App\Models\Role;
+use App\Services\TrainingMode;
 
 /**
  * Shared between Person (the general party record) and User (the auth
@@ -68,7 +69,19 @@ trait HasPermissions
             }
         }
 
+        // A Training Mode tap-your-name login is capped to the station permissions, whatever this person's roles
+        // grant — anything else needs a full login (see App\Services\TrainingMode).
+        if (TrainingMode::capApplies((int) $this->id)) {
+            $keys = $keys->intersect(TrainingMode::TRAINING_KEYS);
+        }
+
         return $keys->unique()->values()->all();
+    }
+
+    /** True when the Training Mode cap is the only thing keeping this person from $key. */
+    public function blockedOnlyByTrainingCap(string $key): bool
+    {
+        return TrainingMode::capApplies((int) $this->id) && ! in_array($key, TrainingMode::TRAINING_KEYS, true);
     }
 
     public function hasPermission(string $key): bool

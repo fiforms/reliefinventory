@@ -28,6 +28,7 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head, router } from '@inertiajs/vue3';
 import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
 import ScanButton from '@/Components/ScanButton.vue';
@@ -59,7 +60,7 @@ function dispositionFor(disposition, condition) {
 }
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, ScanButton, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
+	components: { AuthenticatedLayout, HelpLink, Head, SearchSelect, ScanButton, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -1064,6 +1065,7 @@ export default {
 		<div v-if="view === 'list'" class="sort_container">
 			<h2 class="ri_datatable_head">
 				Donation Sorting
+				<HelpLink guide="sorting">Donation Sorting Guide</HelpLink>
 				<button @click="startSession()" class="ri_defaultbutton">Start Sorting (untagged)</button>
 			</h2>
 

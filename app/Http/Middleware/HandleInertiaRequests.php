@@ -5,11 +5,11 @@
 
 namespace App\Http\Middleware;
 
-use App\Http\Controllers\HelpReportController;
 use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
 use App\Services\PinLoginService;
+use App\Services\TrainingMode;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -42,8 +42,11 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
-            // Slug of the Help guide for this page, if it has one — the layout's (?) button.
-            'helpGuide' => HelpReportController::guideForPath($request->path()),
+            // A Training Mode tap-your-name session (capped to station work) — the layout shows a strip saying so.
+            'training' => [
+                'session' => TrainingMode::isTrainingSession(),
+                'team' => TrainingMode::isTrainingSession() ? $request->user()?->training_team : null,
+            ],
             'pinLogin' => [
                 'switchUserAvailable' => $request->user()
                     ? app(PinLoginService::class)->switchUserAvailable($request)

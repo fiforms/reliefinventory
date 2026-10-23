@@ -151,6 +151,7 @@ class Person extends Model
         'updated_at' => 'datetime',
         'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
+        'is_trainee' => 'boolean',
         'approved_at' => 'datetime',
         'address_verified_at' => 'datetime',
         'is_volunteer' => 'boolean',

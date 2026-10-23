@@ -4,7 +4,7 @@
 <!-- Help/OrderFilling.vue
 
 	Static how-to guide for Order Filling (resources/js/Pages/OrderFilling.vue).
-	Reached from the (?) button on that page (HelpReportController::PAGE_GUIDES) —
+	Reached from the "Help: ..." link on that page —
 	there is no Help menu any more. Hand-kept in step with that page and with
 	resources/views/reports/help/order-filling.blade.php.
 -->

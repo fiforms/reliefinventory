@@ -8,6 +8,7 @@
 <script setup>
 import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head, usePage } from '@inertiajs/vue3';
 import axios from 'axios';
 import Modal from '@/Components/Modal.vue';
@@ -125,6 +126,7 @@ const itemSort = computed(() => (a, b) => {
 		  class="ri_forminput item_search"
 		  placeholder="Search by ACS Item# or Item Type..."
 		/>
+	    <HelpLink guide="items">Master Item List Guide</HelpLink>
 	  </template>
 
 	    <template #thead>

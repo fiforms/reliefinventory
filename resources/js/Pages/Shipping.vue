@@ -21,6 +21,7 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import Modal from '@/Components/Modal.vue';
@@ -28,7 +29,7 @@ import PrintMenu from '@/Components/PrintMenu.vue';
 import axios from 'axios';
 
 export default {
-	components: { AuthenticatedLayout, Head, TextInput, Modal, PrintMenu },
+	components: { AuthenticatedLayout, HelpLink, Head, TextInput, Modal, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -284,6 +285,7 @@ export default {
 		<div class="ship_container">
 			<p v-if="error" class="ship_error">{{ error }}</p>
 			<p v-if="loading">Loading...</p>
+			<p class="ship_helplink"><HelpLink guide="shipping">Shipping Guide</HelpLink></p>
 
 			<h2 class="ri_datatable_head">Filled — Ready to Assign a Driver ({{ filled.length }})</h2>
 			<p class="ship_hint">Assigning a driver moves the order to Ready to Ship.</p>
@@ -528,6 +530,10 @@ export default {
 	display: flex;
 	align-items: center;
 	justify-content: space-between;
+}
+.ship_helplink {
+	text-align: right;
+	margin: 0;
 }
 .ship_hint {
 	color: #666;
