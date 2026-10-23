@@ -31,6 +31,7 @@ error (a single try so far, so the launcher's wait-for-`/up` path under a slower
 | Docker unit overrides | `image/system/docker.service`, `docker.socket` | Debian's units + `ConditionPathExists=/data/relief-inventory/enabled` and `--data-root=/data/docker`. |
 | Backend | `product/backend/local_server.py`, `local_server_api.py` | `/api/local/local-server[/enable|disable|reset]`, loopback only. |
 | Settings page | `product/frontend/LocalServerSettings.vue` | Start/stop, open, URLs for other devices, first-run code, backups, erase. |
+| Update action | `slide-announcer-local-server-update.service` + the script's `update` | Settings > Local server > Software updates. Pulls `:latest`; see "Updates" below. |
 | Launcher | `product/frontend/Main.vue` | If the confirmed server is `localhost`, waits for `/up` before navigating (the server needs a minute or two at boot). |
 
 Building an image **without** the .deb is fine: the page says the feature isn't included and nothing else changes.
@@ -45,6 +46,32 @@ PRODUCT_ROOT=…/rstation/product image-builder/build.sh
 ```
 
 `APP_IMAGE=ghcr.io/fiforms/reliefinventory:<tag>` pins a build. `DB_IMAGE` must match `docker/compose.yaml`.
+
+## Updates (2026-10-23)
+
+Settings > Local server > **Software updates** pulls the newest release from the registry and restarts the stack on it —
+`docker pull` of the bundle's own image reference, which is always `ghcr.io/fiforms/reliefinventory:latest` (the build script
+re-tags a pinned version to `:latest` before saving). GitHub releases publish `:<version>` and `:latest` together and stamp the
+version into the image as `RI_VERSION`; the device compares those, never digests or tags alone.
+
+- **Never backwards.** The baked-in image and a pulled one share the one local tag, so both paths compare versions
+  (`version_gt`, `sort -V`; unknown counts as oldest). An update installs a pulled image only if its version is higher than
+  the running one — otherwise the old image is put back under the tag and the page says it is up to date; an image with no
+  `RI_VERSION` is refused. A new OS image's baked build (`manifest.json` `app_version`, written by `build-offline-bundle.sh`)
+  is loaded over what is in `/data/docker` only if it is newer; the decision is remembered per baked image id
+  (`state/loaded-image-id`), so a reboot doesn't re-decide. A bundle from before versions were stamped (both unknown) still reloads as before.
+- **Needs the server started** (Docker only runs while the flag exists) and Internet (`https://ghcr.io/v2/` is checked first, with a
+  plain "connect to the Internet" message), and ~1 GB free. Nothing else may stop/erase the server while it runs (the backend answers 409).
+- **Data safety.** Updates run `compose up -d`; the app container's entrypoint backs the database up before pending migrations
+  and refuses to start on a database a newer version has migrated. The offline compose file now mounts `${RI_DATA}/backups`
+  into every service (the shared `x-app` block, like `docker/compose.yaml`) and sets `RI_BACKUP_DIR=/backups`. Before, only the scheduler had it, so the web
+  container couldn't write its pre-migration backup (and the entrypoint aborts startup when that fails). Backups made from the web UI
+  (Updates & Backups, `manage-backups`) land there too and show in this page's list.
+  If the new version doesn't answer `/up` within 15 minutes it is rolled back to the previous image (which may itself refuse, if migrations
+  already ran — the message says so and points at the backup).
+- **State.** The script writes `state/update.json` (phase/message/from/to) and `state/app-version` (what runs); the page reads them
+  (an in-progress phase with no live unit shows as interrupted). The database image is not updated from the registry.
+- Tests: `backend/test_local_server.py` (fake Docker that models the tag, ids and versions). Not yet run on a real Pi.
 
 ## Where the data lives
 
@@ -110,5 +137,5 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
   bare-metal install are not implemented for the local server (TODO.md item 14) — a long-running site should copy backups off the card.
 - **Printing from the local server works** (verified, below): the device pairs with its own server and prints through
   its own print server. Home on its own only moves the kiosk's screen; pairing is a separate step.
-- No automatic update of the containers apart from the OS image; no Reverb (realtime) in this stack.
+- Updates are manual (the button), not automatic; no Reverb (realtime) in this stack.
 - The Updates & Backups page hides its systemd/git-only sections inside the container and shows the compose backup settings read-only (see `scripts/DOCKER_PLAN.md`).

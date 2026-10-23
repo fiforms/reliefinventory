@@ -27,6 +27,7 @@ ACTION_UNITS = {
     "enable": "slide-announcer-local-server-enable.service",
     "disable": "slide-announcer-local-server-disable.service",
     "reset": "slide-announcer-local-server-reset.service",
+    "update": "slide-announcer-local-server-update.service",
 }
 # Unpacked images (~1.6 GB) plus room to work; the supervisor enforces the same floor (MIN_FREE_BYTES).
 NEEDED_BYTES = 3_000_000_000
@@ -34,6 +35,8 @@ NEEDED_BYTES = 3_000_000_000
 RECOMMENDED_RAM_BYTES = 3_000_000_000
 # Phases whose status file can be trusted without the supervisor unit running.
 SETTLED = {"stopped", "error", "resetting"}
+# An update's phases while it is working (the rest — current, updated, failed — are results).
+UPDATING = {"checking", "downloading", "installing", "restarting"}
 
 
 class LocalServerError(Exception):
@@ -178,6 +181,31 @@ class LocalServer:
             return None
         return data if isinstance(data, dict) else None
 
+    def _read_json(self, path: Path) -> dict | None:
+        try:
+            data = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return None
+        return data if isinstance(data, dict) else None
+
+    def _installed_version(self) -> str | None:
+        """The release the stack runs: what the supervisor recorded (it asks Docker), else what was baked in."""
+        try:
+            recorded = (self.data / "state" / "app-version").read_text().strip()
+        except OSError:
+            recorded = ""
+        baked = (self._app_manifest() or {}).get("app_version") or ""
+        return (recorded or baked).lstrip("v") or None
+
+    async def _update_state(self, available: bool) -> dict | None:
+        """The last (or current) update, as the update script wrote it; an in-progress one whose unit is gone was interrupted."""
+        raw = self._read_json(self.data / "state" / "update.json") if available else None
+        if not raw:
+            return None
+        if raw.get("phase") in UPDATING and not await self._unit_active(ACTION_UNITS["update"]):
+            raw = {**raw, "phase": "failed", "message": "The update was interrupted (the device may have restarted). Try again."}
+        return {k: raw.get(k) for k in ("phase", "message", "from", "to", "updated")}
+
     def _backups(self) -> list[dict]:
         try:
             files = sorted((p for p in (self.data / "backups").iterdir() if p.is_file()),
@@ -245,6 +273,8 @@ class LocalServer:
             # The status file is from before a reboot or a crash; the unit is the truth.
             phase, message = "stopped", ""
 
+        update = await self._update_state(available)
+        update_busy = bool(update and update["phase"] in UPDATING)
         up = phase in ("running", "starting", "degraded") and supervisor
         pending = await self._setup_pending() if phase == "running" else None
         host = socket.gethostname()
@@ -269,6 +299,11 @@ class LocalServer:
             "hostname_change_pending": self._hostname_change_pending(host),
             "setup_code": (raw.get("setup_code") or None) if pending else None,
             "app": self._app_manifest(),
+            "app_version": self._installed_version(),
+            "update": update,
+            "update_busy": update_busy,
+            # Docker only runs while the server is started, and an update swaps the image under a live stack.
+            "can_update": available and phase in ("running", "degraded") and not update_busy,
             "backups": self._backups(),
             "backup_dir": str(self.data / "backups"),
             "free_bytes": free,
@@ -290,6 +325,13 @@ class LocalServer:
         status = await self.status()
         if action == "reset" and status["busy"] and status["phase"] == "resetting":
             raise LocalServerError(409, "The server's data is already being erased.")
+        if action == "update":
+            if status["update_busy"]:
+                raise LocalServerError(409, "An update is already in progress.")
+            if not status["can_update"]:
+                raise LocalServerError(409, "Start the local server and wait for it to be running, then update.")
+        elif status["update_busy"]:
+            raise LocalServerError(409, "An update is in progress. Wait for it to finish before stopping or erasing the server.")
         # --no-block: starting the server, and above all stopping it (the database gets a minute to close
         # cleanly) outlasts any reasonable HTTP request; the page polls the status instead.
         code, out = await _run("systemctl", "start", "--no-block", ACTION_UNITS[action], timeout=20)

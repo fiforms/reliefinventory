@@ -440,3 +440,251 @@ def test_script_and_units_are_executable_and_named_for_polkit():
         assert re.fullmatch(r"slide-announcer-[a-z0-9-]+\.service", unit)   # system/polkit/50-slide-announcer-system.rules
         assert (_product_root / "image/system" / unit).is_file()
     assert (_product_root / "image/system" / local_server.UNIT).is_file()
+
+
+# --- updates: pulling :latest, and never stepping backwards ------------------------------------
+
+def test_update_needs_the_server_running(paths, monkeypatch):
+    _install(paths[0])
+    calls = []
+    monkeypatch.setattr(local_server, "_run", _fake_run({}, calls))   # supervisor inactive: stopped
+
+    with pytest.raises(local_server.LocalServerError) as caught:
+        run(_server(paths).act("update"))
+
+    assert caught.value.status == 409
+    assert not any("update.service" in a for call in calls for a in call)
+
+
+def test_update_starts_its_unit_when_running(paths, monkeypatch):
+    _install(paths[0])
+    (paths[2] / "status.json").write_text(json.dumps({"phase": "running"}))
+    calls = []
+    monkeypatch.setattr(local_server, "_run", _fake_run({local_server.UNIT: "active"}, calls))
+
+    status = run(_server(paths).status())
+    assert status["can_update"] is True
+    run(_server(paths).act("update"))
+
+    assert ("systemctl", "start", "--no-block", "slide-announcer-local-server-update.service") in calls
+    assert hasattr(build_router(_server(paths)), "routes")
+    assert _endpoint(build_router(_server(paths)), "/api/local/local-server/update", "POST")
+
+
+def test_nothing_else_may_run_while_an_update_is_in_progress(paths, monkeypatch):
+    _install(paths[0])
+    (paths[2] / "status.json").write_text(json.dumps({"phase": "running"}))
+    (paths[1] / "state").mkdir()
+    (paths[1] / "state" / "update.json").write_text(json.dumps({"phase": "downloading", "message": "Downloading…"}))
+    monkeypatch.setattr(local_server, "_run", _fake_run({local_server.UNIT: "active", local_server.ACTION_UNITS["update"]: "activating"}))
+    server = _server(paths)
+
+    status = run(server.status())
+    assert status["update_busy"] is True and status["can_update"] is False
+    for action in ("update", "disable", "reset"):
+        with pytest.raises(local_server.LocalServerError) as caught:
+            run(server.act(action))
+        assert caught.value.status == 409
+
+
+def test_an_update_whose_unit_vanished_is_reported_as_interrupted(paths, monkeypatch):
+    _install(paths[0])
+    (paths[1] / "state").mkdir()
+    (paths[1] / "state" / "update.json").write_text(json.dumps({"phase": "installing", "message": "Installing…"}))
+
+    status = run(_server(paths).status())
+
+    assert status["update"]["phase"] == "failed" and status["update_busy"] is False
+
+
+def test_installed_version_prefers_what_the_supervisor_recorded_over_the_baked_one(paths):
+    _install(paths[0])
+    (paths[0] / "manifest.json").write_text(json.dumps({"app_version": "0.1.5"}))
+    assert run(_server(paths).status())["app_version"] == "0.1.5"
+
+    (paths[1] / "state").mkdir()
+    (paths[1] / "state" / "app-version").write_text("0.2.0")
+    assert run(_server(paths).status())["app_version"] == "0.2.0"
+
+
+# The fake Docker keeps one "image store": the id under the :latest tag, and each id's version. `pull` swaps in
+# FAKE_STATE/pull_id; `load` swaps in load_id. The app answers /up only while the running id isn't broken_id.
+UPDATE_DOCKER = """#!/bin/sh
+echo "docker $*" >> "$FAKE_LOG"
+S="$FAKE_STATE"
+case "$1 $2" in
+  "image inspect")
+    [ -e "$S/loaded" ] || exit 1
+    case "$*" in
+      *Config.Env*) v="$(cat "$S/ver_$(cat "$S/id")" 2>/dev/null)"; [ -n "$v" ] && echo "RI_VERSION=$v"; exit 0 ;;
+      *.Id*) cat "$S/id"; echo; exit 0 ;;
+    esac
+    exit 0 ;;
+  "pull "*) [ -e "$S/pull_fail" ] && { echo "denied: no" >&2; exit 1; }; cp "$S/pull_id" "$S/id"; exit 0 ;;
+  "tag "*) echo "$2" > "$S/id"; exit 0 ;;
+  "load -i") touch "$S/loaded"; cp "$S/load_id" "$S/id"; exit 0 ;;
+esac
+exit 0
+"""
+UPDATE_SYSTEMCTL = """#!/bin/sh
+echo "systemctl $*" >> "$FAKE_LOG"
+case "$1 $2" in
+  "is-active --quiet") [ -e "$FAKE_STATE/active" ] ;;
+esac
+"""
+UPDATE_CURL = """#!/bin/sh
+case "$*" in
+  *127.0.0.1*) [ "$(cat "$FAKE_STATE/id")" != "$(cat "$FAKE_STATE/broken_id" 2>/dev/null)" ] ;;
+  *) [ ! -e "$FAKE_STATE/offline" ] ;;
+esac
+"""
+
+
+@pytest.fixture
+def upd(sandbox):
+    state = Path(sandbox.env["FAKE_STATE"])
+    for name, body in (("docker", UPDATE_DOCKER), ("systemctl", UPDATE_SYSTEMCTL), ("curl", UPDATE_CURL)):
+        f = Path(sandbox.env[name.upper()])
+        f.write_text(body)
+        f.chmod(0o755)
+    sandbox.env["RI_LOCAL_UPDATE_WAIT_SECONDS"] = "1"
+    (state / "loaded").touch()
+    (state / "active").touch()
+    (state / "id").write_text("sha256:old\n")
+    (state / "ver_sha256:old").write_text("1.0.0")
+    (state / "pull_id").write_text("sha256:new")
+    (state / "ver_sha256:new").write_text("1.1.0")
+    (sandbox.root / "images.env").write_text("RI_APP_IMAGE=ghcr.io/x/app:latest\nRI_DB_IMAGE=db:1\n")
+    (sandbox.data / "state").mkdir(parents=True)
+    sandbox.state = state
+    sandbox.result = lambda: json.loads((sandbox.data / "state" / "update.json").read_text())
+    return sandbox
+
+
+def test_update_installs_a_newer_version_and_records_it(upd):
+    result = _script(upd, "update")
+
+    assert result.returncode == 0, result.stderr
+    outcome = upd.result()
+    assert (outcome["phase"], outcome["from"], outcome["to"]) == ("updated", "1.0.0", "1.1.0")
+    assert (upd.data / "state" / "app-version").read_text() == "1.1.0"
+    log = upd.log.read_text()
+    assert "pull ghcr.io/x/app:latest" in log and "up -d --no-build --pull never" in log
+
+
+def test_update_with_nothing_new_changes_nothing(upd):
+    (upd.state / "pull_id").write_text("sha256:old")
+
+    assert _script(upd, "update").returncode == 0
+
+    assert upd.result()["phase"] == "current"
+    assert "up -d" not in upd.log.read_text()
+
+
+def test_an_older_registry_image_never_replaces_a_newer_installed_one(upd):
+    (upd.state / "pull_id").write_text("sha256:ancient")
+    (upd.state / "ver_sha256:ancient").write_text("0.9.0")
+
+    assert _script(upd, "update").returncode == 0
+
+    assert upd.result()["phase"] == "current"
+    assert (upd.state / "id").read_text().strip() == "sha256:old"   # the tag was put back
+    assert "up -d" not in upd.log.read_text()
+
+
+def test_an_unversioned_image_is_not_installed(upd):
+    (upd.state / "pull_id").write_text("sha256:mystery")
+
+    assert _script(upd, "update").returncode == 1
+
+    assert upd.result()["phase"] == "failed" and "version number" in upd.result()["message"]
+    assert (upd.state / "id").read_text().strip() == "sha256:old"
+
+
+def test_update_says_so_when_offline_and_downloads_nothing(upd):
+    (upd.state / "offline").touch()
+
+    assert _script(upd, "update").returncode == 1
+
+    assert "Internet" in upd.result()["message"]
+    assert "docker pull" not in upd.log.read_text()
+
+
+def test_update_refuses_when_the_server_is_not_started(upd):
+    (upd.state / "active").unlink()
+
+    assert _script(upd, "update").returncode == 1
+
+    assert "Start the local server" in upd.result()["message"]
+    assert "docker pull" not in upd.log.read_text()
+
+
+def test_a_failed_download_leaves_the_running_version_alone(upd):
+    (upd.state / "pull_fail").touch()
+
+    assert _script(upd, "update").returncode == 1
+
+    assert upd.result()["phase"] == "failed"
+    assert (upd.state / "id").read_text().strip() == "sha256:old"
+
+
+def test_a_new_version_that_never_starts_is_rolled_back(upd):
+    (upd.state / "broken_id").write_text("sha256:new")
+
+    assert _script(upd, "update", timeout=60).returncode == 1
+
+    outcome = upd.result()
+    assert outcome["phase"] == "failed" and "put back" in outcome["message"]
+    assert (upd.state / "id").read_text().strip() == "sha256:old"
+    assert (upd.data / "state" / "app-version").read_text() == "1.0.0"
+
+
+def _supervise(box):
+    """Runs the supervisor until it has issued `compose up`, then stops it."""
+    (box.data / "enabled").touch()
+    proc = subprocess.Popen([str(SCRIPT), "run"], env=box.env, stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(100):
+            if "up -d" in box.log.read_text():
+                break
+            subprocess.run(["sleep", "0.1"])
+        proc.terminate()
+        proc.wait(timeout=20)
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+    return box.log.read_text()
+
+
+def _baked(box, version, image_id="sha256:baked"):
+    (box.root / "manifest.json").write_text(json.dumps({"app_image_id": image_id, "app_version": version}))
+    (Path(box.env["FAKE_STATE"]) / "load_id").write_text(image_id)
+    (Path(box.env["FAKE_STATE"]) / f"ver_{image_id}").write_text(version)
+
+
+def test_a_baked_image_that_is_not_newer_does_not_overwrite_an_updated_one(upd):
+    (upd.state / "ver_sha256:old").write_text("2.0.0")   # updated from the registry since the OS image was built
+    _baked(upd, "1.5.0")
+
+    log = _supervise(upd)
+
+    assert "docker load" not in log
+    assert (upd.state / "id").read_text().strip() == "sha256:old"
+    assert (upd.data / "state" / "loaded-image-id").read_text() == "sha256:baked"   # decided once, not on every boot
+    assert (upd.data / "state" / "app-version").read_text() == "2.0.0"
+
+
+def test_a_newer_baked_image_replaces_the_installed_one(upd):
+    _baked(upd, "3.0.0")
+
+    log = _supervise(upd)
+
+    assert "docker load" in log
+    assert (upd.state / "id").read_text().strip() == "sha256:baked"
+    assert (upd.data / "state" / "app-version").read_text() == "3.0.0"
+
+
+def test_the_same_baked_version_is_not_reloaded(upd):
+    _baked(upd, "1.0.0", image_id="sha256:rebuilt")
+
+    assert "docker load" not in _supervise(upd)

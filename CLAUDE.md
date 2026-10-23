@@ -613,6 +613,8 @@ Debian's `docker.service`/`docker.socket`), the root supervisor is `slide-announ
 backend can only start fixed enable/disable/reset units — read LOCAL_SERVER.md before touching it. It's a standalone site,
 not a sync target; proven end to end on a real Pi 2026-10-20 (install, first-run setup, self-pairing, printing) —
 LOCAL_SERVER.md lists what is still unverified (QR/external-site/reset paths, OTA reload, power loss, phone `.local` resolution).
+Settings > Local server also has **Software updates** (2026-10-23): it pulls `ghcr.io/fiforms/reliefinventory:latest` over the baked image and restarts the stack,
+comparing the `RI_VERSION` each image carries so neither the pull nor a newer OS image's baked image can ever install an older version (LOCAL_SERVER.md, "Updates").
 
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 
