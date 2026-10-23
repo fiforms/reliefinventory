@@ -1,0 +1,143 @@
+#!/usr/bin/python3
+"""CUPS backend: send a job to a USB printer through the kernel's usblp node (/dev/usb/lp*).
+
+CUPS's stock usb backend finds a printer by asking it for its IEEE-1284 device ID over the USB
+control endpoint. The SATO WS408 stops answering control requests about 100 seconds after it
+enumerates on a Raspberry Pi 4 (it keeps accepting print data), after which the stock backend can
+only see it as "usb://Unknown/Printer" and the queue sits on "Waiting for printer to become
+available". This backend never uses the control endpoint: it identifies the printer from sysfs
+(vendor, product and serial are read when the device enumerates) and writes the job to the usblp
+node, the bulk-out path that keeps working. See SATO_PRINTER_TROUBLESHOOTING.md.
+
+    device URI    rstationlp://SATO/WS408?serial=<usb serial>
+    discovery     `rstationlp` with no arguments lists every matching, currently attached printer
+    printing      rstationlp job-id user title copies options [file]
+
+The stock backend is told to ignore the same printers (rstation-sato.usb-quirks, `blacklist`), so
+the Printers page offers one entry, not two. To support another model add it to PRINTERS here and
+add its `<vendor> <product> blacklist` line to that quirks file.
+
+Trade-off: no paper-out / offline status reaches CUPS (that also needs the control endpoint).
+"""
+import errno
+import glob
+import os
+import sys
+import time
+from urllib.parse import parse_qs, quote, urlsplit
+
+# CUPS backend exit codes (cups/backend.h)
+OK, FAILED, RETRY_CURRENT = 0, 1, 7
+
+SCHEME = "rstationlp"
+# (USB vendor id, product id) -> (make, model) used in the URI and the discovery line.
+PRINTERS = {("0828", "a003"): ("SATO", "WS408")}
+SYSFS = os.environ.get("RSTATIONLP_SYSFS", "/sys")  # overridden only by tests
+DEVDIR = os.environ.get("RSTATIONLP_DEVDIR", "/dev/usb")
+OPEN_WAIT_SECONDS = 30
+CHUNK = 64 * 1024
+
+
+def _read(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return ""
+
+
+def attached_printers():
+    """Every attached printer in PRINTERS that has a usblp node: a list of dicts (make, model, serial, node)."""
+    found = []
+    for entry in sorted(glob.glob(os.path.join(SYSFS, "class/usbmisc/lp*"))):
+        name = os.path.basename(entry)
+        # .../usb1/1-1.4/1-1.4:1.0 is the interface the node hangs off; its parent is the USB device.
+        usb_device = os.path.dirname(os.path.realpath(os.path.join(entry, "device")))
+        ids = (_read(os.path.join(usb_device, "idVendor")).lower(), _read(os.path.join(usb_device, "idProduct")).lower())
+        if ids not in PRINTERS:
+            continue
+        make, model = PRINTERS[ids]
+        found.append({"make": make, "model": model, "serial": _read(os.path.join(usb_device, "serial")),
+                      "node": os.path.join(DEVDIR, name)})
+    return found
+
+
+def device_uri(printer):
+    uri = "%s://%s/%s" % (SCHEME, quote(printer["make"]), quote(printer["model"]))
+    return uri + ("?serial=" + quote(printer["serial"]) if printer["serial"] else "")
+
+
+def node_for_uri(uri):
+    """The /dev/usb/lp* node of the attached printer a queue's URI names, or None."""
+    parts = urlsplit(uri)
+    if parts.scheme != SCHEME:
+        return None
+    wanted = parse_qs(parts.query).get("serial", [""])[0]
+    matches = [p for p in attached_printers() if (not wanted or p["serial"] == wanted)]
+    # With no serial in the URI only an unambiguous single printer is acceptable.
+    if not wanted and len(matches) != 1:
+        return None
+    return matches[0]["node"] if matches else None
+
+
+def discover():
+    for p in attached_printers():
+        print('direct %s "%s %s" "%s %s (USB, bulk only)" "MFG:%s;MDL:%s;"' % (
+            device_uri(p), p["make"], p["model"], p["make"], p["model"], p["make"], p["model"]))
+
+
+def send(uri, source):
+    deadline = time.time() + OPEN_WAIT_SECONDS
+    fd = None
+    while fd is None:
+        node = node_for_uri(uri)
+        try:
+            if node is None:
+                raise OSError(errno.ENODEV, "printer not attached")
+            fd = os.open(node, os.O_WRONLY)
+        except OSError as e:
+            # Not plugged in / powered off, or another process has the node (usblp allows one opener).
+            if e.errno in (errno.ENODEV, errno.ENOENT, errno.EBUSY, errno.EACCES) and time.time() < deadline:
+                sys.stderr.write("STATE: +offline-report\nINFO: Waiting for the printer (%s)\n" % os.strerror(e.errno))
+                sys.stderr.flush()
+                time.sleep(2)
+                continue
+            sys.stderr.write("ERROR: cannot open the printer: %s\n" % os.strerror(e.errno))
+            return RETRY_CURRENT
+    sys.stderr.write("STATE: -offline-report\n")
+    try:
+        while True:
+            chunk = source.read(CHUNK)
+            if not chunk:
+                break
+            view = memoryview(chunk)
+            while view:
+                view = view[os.write(fd, view):]
+    except OSError as e:
+        # A job that failed part-way is resent from the start (CUPS reruns the whole job).
+        sys.stderr.write("ERROR: writing to the printer failed: %s\n" % os.strerror(e.errno))
+        return RETRY_CURRENT
+    finally:
+        os.close(fd)
+    return OK
+
+
+def main(argv):
+    if len(argv) == 1:
+        discover()
+        return OK
+    if len(argv) not in (6, 7):
+        sys.stderr.write("Usage: rstationlp job-id user title copies options [file]\n")
+        return FAILED
+    uri = os.environ.get("DEVICE_URI", "")
+    if urlsplit(uri).scheme != SCHEME:
+        sys.stderr.write("ERROR: DEVICE_URI is not an %s:// address\n" % SCHEME)
+        return FAILED
+    if len(argv) == 7:
+        with open(argv[6], "rb") as f:
+            return send(uri, f)
+    return send(uri, sys.stdin.buffer)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

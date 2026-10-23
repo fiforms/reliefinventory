@@ -71,7 +71,7 @@ DRIVER_LIST_LIMIT_SECONDS = 90  # `lpinfo -m` reads every installed PPD; a few s
 
 # Only schemes a driverless queue can sensibly use. Notably not file:, pipe:, smb:, or
 # anything that runs a program or writes a file.
-ALLOWED_SCHEMES = ("ipp", "ipps", "dnssd", "socket", "lpd", "usb")
+ALLOWED_SCHEMES = ("ipp", "ipps", "dnssd", "socket", "lpd", "usb", "rstationlp")
 # Driver choice -> the -m value. Everything but "everywhere" comes from cups-common's sample.drv
 # (compiled by cups-ppdc), which the image already has; the image ships no other drivers.
 DRIVERS = {

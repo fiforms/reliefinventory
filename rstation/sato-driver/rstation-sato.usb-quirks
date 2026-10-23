@@ -1,0 +1,9 @@
+# Read by CUPS's stock usb backend (every file in /usr/share/cups/usb/ is loaded).
+#
+# `blacklist` makes the stock backend ignore a printer, so Settings > Printers lists it only once, through
+# the rstationlp backend (which uses the kernel's usblp node and never the USB control endpoint).
+# The SATO WS408 stops answering control requests ~100 s after it enumerates on a Pi 4, which leaves the
+# stock backend unable to identify it ("usb://Unknown/Printer"). Keep this in step with PRINTERS in rstationlp.
+#
+# vendor   product  quirk
+0x0828 0xa003 blacklist
