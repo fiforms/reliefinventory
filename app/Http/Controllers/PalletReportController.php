@@ -23,6 +23,8 @@ class PalletReportController extends Controller
             'contents' => $pallet->contentItem?->name
                 ?: $pallet->contentItem?->description
                 ?: $pallet->content_description,
+            // Where the pallet was headed when printed (set by Fill Pallet); can go stale if moved later.
+            'location' => $pallet->location?->code,
             'date_created' => $pallet->created_at->format('F d, Y'),
         ];
     }
@@ -61,7 +63,7 @@ class PalletReportController extends Controller
     // (see App\Services\Printing\DocumentRegistry).
     public function singleLabelBuilder($id): PdfBuilder
     {
-        $pallet = Pallet::with('contentItem')->findOrFail($id);
+        $pallet = Pallet::with(['contentItem', 'location'])->findOrFail($id);
 
         return $this->labelPaper(Pdf::view('reports.pallet', ['label' => $this->labelData($pallet)] + $this->layout()))
             ->name('pallet-label-'.$pallet->tag.'.pdf');
@@ -78,7 +80,7 @@ class PalletReportController extends Controller
 
     public function donationLabelsBuilder($id): PdfBuilder
     {
-        $donation = Transaction::where('type', 'donation')->with('pallets.contentItem')->findOrFail($id);
+        $donation = Transaction::where('type', 'donation')->with(['pallets.contentItem', 'pallets.location'])->findOrFail($id);
 
         if ($donation->pallets->isEmpty()) {
             abort(404, 'No pallets have been created for this donation.');
@@ -127,7 +129,7 @@ class PalletReportController extends Controller
     {
         $summary = TrainingSetting::current()->prepared_summary ?? [];
         $ids = [...array_column($summary['pallets_to_sort'] ?? [], 'pallet_id'), ...array_column($summary['warehouse_pallets'] ?? [], 'id')];
-        $pallets = Pallet::with('contentItem')->whereIn('id', $ids)->orderBy('kind')->orderBy('id')->get();
+        $pallets = Pallet::with(['contentItem', 'location'])->whereIn('id', $ids)->orderBy('kind')->orderBy('id')->get();
 
         if ($pallets->isEmpty()) {
             abort(404, 'Prepare Training has not made any pallets yet.');
