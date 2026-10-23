@@ -543,7 +543,10 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   `rstation/build-sato-driver-deb.sh` into `product/image/debs/` (the image `packages` file adds Ghostscript; Settings > Printers >
   "Find a specific driver" > "sato"). Verified on a WS408 over USB at 203 dpi on 2.312 x 4 in stock, both with `lp -o raw` and
   through a laptop CUPS queue using this PPD (frame, multi-page, copies, a WeasyPrint label with a Code 128 barcode); **not** yet
-  run on a Pi or from an image build. The horizontal shift is empirical per stock width (default `Left5`).
+  run from the web UI on a real Pi (an image build, queue added on the Printers page, labels printed, 2026-10-22). **On a Pi use a USB 2.0
+  port:** on a USB 3.0 port CUPS's USB backend couldn't read the WS408's device ID (queue stuck on "Waiting for printer to become available",
+  printer listed as `usb://Unknown/Printer?serial=0.0`) while a raw write to `/dev/usb/lp0` worked — see the driver README. The horizontal
+  shift is empirical per stock width (default `Left5`).
 - **Print a PDF** (2026-10-22): the Printers page (`/setup/printers`) has a card to upload any PDF to a chosen printer — `POST /json/print-upload`
   (`PrintController::storeUpload`, `manage-print-queue`, the same people who can clear/divert the queue). The file is user data and is never rendered
   or interpreted server-side: it must be `application/pdf` by content *and* carry a `%PDF-` signature in its first KB, is capped by
