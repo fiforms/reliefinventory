@@ -440,6 +440,29 @@ const containerTypeOptions = [
 						</div>
 					</div>
 
+					<template v-if="record.id && (record.pallets || []).length">
+						<h3 class="recv_subhead">Intake Labels</h3>
+						<div class="recv_tablewrap">
+							<table class="ri_datatable" border="1">
+								<thead>
+									<tr><th>Tag</th><th>Type</th><th>Status</th><th></th></tr>
+								</thead>
+								<tbody>
+									<tr v-for="pallet in record.pallets" :key="pallet.id">
+										<td class="recv_mono">{{ pallet.tag }}</td>
+										<td>{{ pallet.container_type }}</td>
+										<td>{{ pallet.status }}</td>
+										<td><PrintMenu document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" variant="link" label="Reprint"
+											:params="{ id: pallet.id }" :download-href="'/report/pallet/' + pallet.id" /></td>
+									</tr>
+								</tbody>
+							</table>
+						</div>
+						<PrintMenu document-key="donation-pallet-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
+							:label="'Reprint All Labels (' + (record.pallets || []).length + ')'"
+							:params="{ id: record.id }" :download-href="'/report/pallets/donation/' + record.id" />
+					</template>
+
 					<template v-if="record.id && record.photo_path">
 						<h3 class="recv_subhead">Photo of the Shipment</h3>
 						<a :href="photoUrl(record)" target="_blank">
@@ -577,20 +600,6 @@ const containerTypeOptions = [
 						</a>
 						<button v-if="confirmingDelete" @click="keepRecord()" class="ri_linkbutton">Keep Record</button>
 					</div>
-					<div class="ri_formactions recv_actionsrow" v-if="record.id && record.category === 'donation' && (record.pallets || []).length">
-						<button v-if="!confirmingReprint" @click="confirmingReprint = true" class="ri_formbutton">
-							Re-print Labels
-						</button>
-						<PrintMenu
-							v-else
-							document-key="donation-pallet-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
-							extra-class="recv_cancel_confirming"
-							label="Confirm — this reprints all labels, don't duplicate a batch already printed"
-							:params="{ id: record.id }" :download-href="'/report/pallets/donation/' + record.id"
-							@sent="onLabelsReprinted" @downloaded="onLabelsReprinted"
-						/>
-						<button v-if="confirmingReprint" @click="confirmingReprint = false" class="ri_linkbutton">Cancel</button>
-					</div>
 				</template>
 				<div class="ri_formactions recv_actionsrow" v-else-if="wizardStep === 'photo'">
 					<button @click="wizardStep = 'details'" class="ri_formbutton">Back to Details</button>
@@ -638,7 +647,6 @@ export default {
 			webcamOpen: false,
 
 			confirmingCancel: false,
-			confirmingReprint: false,
 			arrivalMode: null, // 'pallet' | 'other' | null — derived from record.container_types on open, see onOpenRecord()
 
 			palletCount: null,
@@ -738,7 +746,6 @@ export default {
 			this.contactError = null;
 			this.photoError = null;
 			this.confirmingCancel = false;
-			this.confirmingReprint = false;
 			this.selectedDriver = record?.driver || null;
 			if (record) record.container_type_counts = record.container_type_counts || {};
 			const types = record?.container_types || [];
@@ -784,13 +791,6 @@ export default {
 			}
 			this.confirmingCancel = false;
 			cancel();
-		},
-		// Same two-step confirm pattern — reprinting a whole batch risks a
-		// warehouse ending up with duplicate labels on the floor if someone
-		// clicks it without meaning to.
-		onLabelsReprinted() {
-			this.confirmingReprint = false;
-			this.wizardStep = 'labels';
 		},
 		remainingContainers(record) {
 			const target = Number(record.container_count) || 0;
