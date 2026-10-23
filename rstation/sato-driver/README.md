@@ -17,7 +17,7 @@ the Pi. This directory replaces that binary and bundles a PPD, as the `rstation-
   available" (or the printer shows as `usb://Unknown/Printer`). `rstationlp` identifies it from sysfs (vendor/product/serial are read at
   enumeration) and only uses the bulk-out path. Several printers work: each queue's URI carries its own serial, resolved to a node on
   every job. Costs: CUPS gets no paper-out/offline status for it, and a model must be added to `PRINTERS` in `rstationlp` *and* to the
-  quirks file (the wire details and the investigation are in `../SATO_PRINTER_TROUBLESHOOTING.md`). `slide-announcer-printer-setup`
+  quirks file (the investigation is summarised at the end of this file). `slide-announcer-printer-setup`
   allows the `rstationlp` scheme.
 - `test_pdftosbpl.py`, `test_rstationlp.py` — `python3 -m pytest rstation/sato-driver` (the filter tests need `gs`).
 - `../build-sato-driver-deb.sh` builds the `.deb` into `product/image/debs/`; run it before the image build (the
