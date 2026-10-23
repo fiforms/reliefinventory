@@ -284,14 +284,15 @@ re-enter those numbers as manual batches — it's idempotent, topping up only wh
 re-entered, and a manual "Add Label(s)" line stays available underneath for one-off corrections.
 
 In-app Help guides (`resources/js/Pages/Help/*.vue`) are built on `Components/HelpPage.vue`, which always
-renders the "Print these instructions" `PrintMenu`. They are reached from a ❓ button in the nav bar of the page they
-describe — `HelpReportController::PAGE_GUIDES` maps page path → guide slug and `HandleInertiaRequests` shares it as the
-`helpGuide` prop that `AuthenticatedLayout` renders; one `/help/{guide}` route serves every guide — and from the main-menu
+renders the "Print these instructions" `PrintMenu`. They are reached from a "Help: <guide>" text link on the page they
+describe (`Components/HelpLink.vue`, `<HelpLink guide="receiving">Receiving Guide</HelpLink>`, opens in a new tab — RIForm
+pages put it in `#listactions`, the others next to their title; the nav-bar ❓ of 2026-10-22 was replaced by these on
+2026-10-23, and a test fails if a guide isn't linked from any page); one `/help/{guide}` route serves every guide — and from the main-menu
 **Help** tile (restored 2026-10-23, a direct link, not a sub-menu page), which opens `/help` (`Help/Index.vue`): every guide in
 `GUIDES` with Open/Print, plus **Print all guides** — one PDF, `/report/help/all` / print document `help-all`
 (`HelpReportController::allBuilder`, `reports/help/all.blade.php`: a contents list, then each guide's own `content` section
 on a new page, so there's no separate copy to keep in sync). Adding a guide: add its slug to
-`HelpReportController::GUIDES` (and its page to `PAGE_GUIDES`), write `resources/views/reports/help/<slug>.blade.php` extending
+`HelpReportController::GUIDES`, put a `<HelpLink>` on its page, write `resources/views/reports/help/<slug>.blade.php` extending
 `reports.help.layout`, and wrap the page in `<HelpPage guide="<slug>">` — the `/report/help/{guide}` route,
 the `help-<slug>` print-queue entry and the button all follow from `GUIDES`. The PDF content is a hand-kept
 copy of the Vue page's, so edit both.

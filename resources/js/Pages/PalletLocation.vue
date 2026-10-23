@@ -11,6 +11,7 @@
 
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head } from '@inertiajs/vue3';
 import { computed, nextTick, onMounted, ref } from 'vue';
 import axios from 'axios';
@@ -520,7 +521,7 @@ onMounted(() => {
 		<template #header></template>
 
 		<div class="pm_page">
-			<h2 class="pm_title">Inventory Movement</h2>
+			<h2 class="pm_title">Inventory Movement <HelpLink guide="inventory-movement">Inventory Movement Guide</HelpLink></h2>
 
 			<div class="pm_tabs">
 				<button type="button" :class="['ri_formbutton', { pm_active: tab === 'pallet' }]" @click="show('pallet')">Pallets</button>

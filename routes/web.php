@@ -363,8 +363,8 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
-// Help pages: static how-to guides, one per data-entry page, reached from that page's (?) button
-// (HelpReportController::PAGE_GUIDES) or from the main-menu Help tile's /help list.
+// Help pages: static how-to guides, one per data-entry page, reached from that page's "Help: ..."
+// text link (Components/HelpLink.vue) or from the main-menu Help tile's /help list.
 // Visible to anyone authenticated (no permission gate).
 Route::get('/help', function () {
     return Inertia::render('Help/Index', [

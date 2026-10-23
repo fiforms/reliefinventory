@@ -82,15 +82,6 @@ async function markAllNotificationsRead() {
                         </div>
 
                         <div class="hidden sm:ms-6 sm:flex sm:items-center">
-                            <!-- Help for this page (only pages with a guide — HelpReportController::PAGE_GUIDES) -->
-                            <Link
-                                v-if="$page.props.helpGuide"
-                                :href="'/help/' + $page.props.helpGuide"
-                                title="Help for this page"
-                                aria-label="Help for this page"
-                                class="inline-flex items-center rounded-md px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
-                            >❓</Link>
-
                             <!-- Notification Bell -->
                             <div class="relative ms-3">
                                 <Dropdown align="right" width="96">

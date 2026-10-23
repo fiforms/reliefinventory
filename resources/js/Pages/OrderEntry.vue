@@ -51,6 +51,7 @@
 
 <script>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head } from '@inertiajs/vue3';
 import SearchSelect, { invalidateOptions } from '@/Components/SearchSelect.vue';
 import ComboBox from '@/Components/ComboBox.vue';
@@ -68,7 +69,7 @@ const WEEK_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const IDLE_ADDRESS_CHECK = { status: 'idle', casingOnly: false, entered: {}, suggested: {} };
 
 export default {
-	components: { AuthenticatedLayout, Head, SearchSelect, ComboBox, TextArea, AddressCorrectionCheck, PrintMenu },
+	components: { AuthenticatedLayout, HelpLink, Head, SearchSelect, ComboBox, TextArea, AddressCorrectionCheck, PrintMenu },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -757,6 +758,7 @@ export default {
 		<div v-if="view === 'list'" class="oe_container">
 			<h2 class="ri_datatable_head">
 				Order Entry
+				<HelpLink guide="order-entry">Order Entry Guide</HelpLink>
 				<span class="oe_headeractions">
 					<PrintMenu document-key="order-form" media="report" variant="form" label="Offline Order Form"
 						download-href="/report/order-form.pdf" />

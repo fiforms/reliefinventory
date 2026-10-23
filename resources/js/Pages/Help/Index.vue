@@ -31,7 +31,7 @@ defineProps({
 					<h1 class="text-2xl font-bold">Help Guides</h1>
 					<p class="text-gray-600 mt-1">
 						Step-by-step guides for each part of the warehouse workflow. Each page
-						with a guide also has a ❓ button in the top bar that opens it.
+						with a guide also has a "Help: ..." link near its title that opens it.
 					</p>
 				</div>
 				<PrintMenu

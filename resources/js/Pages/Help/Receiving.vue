@@ -4,7 +4,7 @@
 <!-- Help/Receiving.vue
 
 	Static how-to guide for the Receiving page (resources/js/Pages/Receiving.vue).
-	Reached from the (?) button on that page (HelpReportController::PAGE_GUIDES) —
+	Reached from the "Help: ..." link on that page —
 	there is no Help menu any more. Hand-kept in step with the wizard there
 	(Details -> Photo -> Print Labels) and with
 	resources/views/reports/help/receiving.blade.php.

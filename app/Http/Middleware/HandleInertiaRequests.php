@@ -5,7 +5,6 @@
 
 namespace App\Http\Middleware;
 
-use App\Http\Controllers\HelpReportController;
 use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
@@ -42,8 +41,6 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
-            // Slug of the Help guide for this page, if it has one — the layout's (?) button.
-            'helpGuide' => HelpReportController::guideForPath($request->path()),
             'pinLogin' => [
                 'switchUserAvailable' => $request->user()
                     ? app(PinLoginService::class)->switchUserAvailable($request)

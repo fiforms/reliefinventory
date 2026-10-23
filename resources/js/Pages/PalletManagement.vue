@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
@@ -49,6 +50,9 @@ const containerTypeOptions = [
       datasource="/json/pallets"
 	  :precreate="false"
 	  >
+      <template #listactions>
+        <HelpLink guide="inventory-movement">Inventory Movement Guide</HelpLink>
+      </template>
 
       <template #thead>
 		<th>Tag</th>

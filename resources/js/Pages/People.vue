@@ -1,5 +1,6 @@
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import ComboBox from '@/Components/ComboBox.vue';
@@ -40,6 +41,7 @@ defineProps({
           class="ri_forminput people_search"
           placeholder="Search by name or organization..."
         />
+        <HelpLink guide="people">Partner &amp; Donor Info Guide</HelpLink>
       </template>
 
       <template #thead>

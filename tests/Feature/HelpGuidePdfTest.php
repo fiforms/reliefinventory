@@ -22,7 +22,7 @@ test('a help guide renders as weasyprint letter pages with its content', functio
         expect($text)->toContain($phrase);
     }
 })->with([
-    'receiving' => ['receiving', ['Receiving Guide', 'Welcoming the driver', 'Step by step', 'ready to go to the staging area']],
+    'receiving' => ['receiving', ['Receiving Guide', 'Welcoming the driver', 'Step 1', 'Print Labels']],
     'sorting' => ['sorting', ['Donation Sorting Guide', 'Working a pallet', 'Pallet Empty', 'Complete Session']],
 ])->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
 
@@ -31,19 +31,23 @@ test('every registered guide has a printable view and a Vue page', function (str
         ->and(file_exists(resource_path('js/Pages/Help/'.Str::studly($guide).'.vue')))->toBeTrue();
 })->with(array_keys(HelpReportController::GUIDES));
 
-test('every page guide mapping points at a registered guide', function () {
-    foreach (HelpReportController::PAGE_GUIDES as $path => $slug) {
-        expect(HelpReportController::GUIDES)->toHaveKey($slug);
-        expect(HelpReportController::guideForPath('/'.$path.'/'))->toBe($slug);
+test('every guide is linked from at least one page with a HelpLink', function (string $guide) {
+    $linked = false;
+    $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator(resource_path('js/Pages')));
+    foreach ($files as $file) {
+        if ($file->getExtension() === 'vue' && ! str_contains($file->getPathname(), '/Pages/Help/')
+            && str_contains(file_get_contents($file->getPathname()), '<HelpLink guide="'.$guide.'"')) {
+            $linked = true;
+            break;
+        }
     }
-    expect(HelpReportController::guideForPath('dashboard'))->toBeNull();
-});
+    expect($linked)->toBeTrue();
+})->with(array_keys(HelpReportController::GUIDES));
 
-test('a guide page renders for a signed-in user and the page shares its guide slug', function () {
+test('a guide page renders for a signed-in user', function () {
     $user = userWithPermissions('general-access', 'manage-receiving');
     $this->actingAs($user)->get('/help/order-entry')->assertOk();
     $this->actingAs($user)->get('/help/nonexistent')->assertNotFound();
-    $this->actingAs($user)->get('/receiving')->assertInertia(fn ($page) => $page->where('helpGuide', 'receiving'));
 });
 
 test('the combined PDF holds every guide, each starting on its own page', function () {

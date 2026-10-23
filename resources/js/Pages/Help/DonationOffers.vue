@@ -5,7 +5,7 @@
 
 	Static how-to guide for the Donation Offers page
 	(resources/js/Pages/DonationOffers.vue, /receiving/offers). Reached from the
-	(?) button on that page (HelpReportController::PAGE_GUIDES) — there is no Help
+	"Help: ..." link on that page — there is no Help
 	menu any more. Hand-kept in step with
 	resources/views/reports/help/donation-offers.blade.php.
 -->

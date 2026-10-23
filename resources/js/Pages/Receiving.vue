@@ -16,6 +16,7 @@
 
 <script setup>
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
+import HelpLink from '@/Components/HelpLink.vue';
 import { Head, Link } from '@inertiajs/vue3';
 import TextInput from '@/Components/TextInput.vue';
 import TextArea from '@/Components/TextArea.vue';
@@ -152,6 +153,7 @@ const containerTypeOptions = [
 					<input type="checkbox" v-model="flaggedOnly" />
 					Flagged for donor ID only
 				</label>
+				<HelpLink guide="receiving">Receiving Guide</HelpLink>
 			</template>
 
 			<template #thead>
@@ -178,6 +180,7 @@ const containerTypeOptions = [
 
 			<template #default="{ record, editing, templates }">
 				<template v-if="wizardStep === 'details'">
+					<div class="recv_helplink_form"><HelpLink guide="receiving">Receiving Guide</HelpLink></div>
 					<div class="ri_formtable">
 						<div class="ri_fieldset" v-if="!record.id">
 							<div class="ri_fieldlabel">Does this match a phoned-in offer?</div>
@@ -1255,6 +1258,10 @@ export default {
 }
 .recv_search {
 	min-width: 220px;
+}
+.recv_helplink_form {
+	text-align: right;
+	margin-bottom: 0.75rem;
 }
 
 /* Cancel (left) and Next (right), pushed to opposite ends and given real
