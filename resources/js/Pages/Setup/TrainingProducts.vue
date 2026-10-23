@@ -4,7 +4,8 @@
 <!-- Setup/TrainingProducts.vue
 
 	Setup > Training Mode > Scan Training Products (TrainingProductController, manage-training): the trainer scans
-	every real item they have for the class, one unit per scan. A barcode the catalog already knows just counts; an
+	the real goods that start out "already in the warehouse" — Stations 3–5 (sorting area, table-spot trays, loads to
+	ship) — one unit per scan. Receiving's goods are the trainer's own and are not scanned. A barcode the catalog already knows just counts; an
 	unknown one opens the shared Add New Item box (NewItemModal) and counts once saved. The list is not stock —
 	Prepare Training spreads it over the stations (App\Services\TrainingPreparer) and the progress line shows how
 	many items that needs. The scan bar keeps focus (see SCANNING_INTERFACE_NOTES.md).
@@ -41,7 +42,6 @@ const confirmingClear = ref(false);
 
 const plan = computed(() => data.value?.plan);
 const percent = computed(() => (plan.value ? Math.min(100, Math.round((data.value.units / plan.value.target) * 100)) : 0));
-const receivingGets = computed(() => (plan.value ? Math.max(0, data.value.units - plan.value.staged) : 0));
 
 async function load() {
 	try {
@@ -206,10 +206,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onPageClick));
 				<!-- ======================= PROGRESS ======================= -->
 				<section class="bg-white shadow rounded-lg p-6 space-y-3">
 					<p class="text-sm text-gray-700">
-						Scan every item you have for the class, one at a time — each scan counts one. Scan a variety:
-						at least <strong>{{ plan.min_products }} different products</strong>. Prepare Training then
-						decides which items go to which station, and the setup packet tells you where to put each one.
-						Items scanned here are not stock; nothing is added to inventory until Prepare Training.
+						Scan the goods that start out already in the warehouse — the sorting area table, the trays on the
+						table spots and the loads waiting to ship (Stations 3–5) — one at a time; each scan counts one.
+						Scan a variety: at least <strong>{{ plan.min_products }} different products</strong>. Goods for
+						Receiving are not scanned here: put them out yourself, and the teams receive and sort them. Prepare
+						Training decides which scanned items go where, and the setup packet tells you where to put each
+						one. Items scanned here are not stock until Prepare Training.
 					</p>
 					<div class="flex flex-wrap items-baseline gap-x-6 gap-y-1">
 						<div><span class="text-3xl font-bold">{{ data.units }}</span> <span class="text-gray-600">of {{ plan.target }} items</span></div>
@@ -223,17 +225,13 @@ onBeforeUnmount(() => document.removeEventListener('click', onPageClick));
 						<tbody>
 							<tr v-for="(n, station) in plan.stations" :key="station">
 								<td>{{ station }} {{ STATION_NAMES[station] }}</td>
-								<td>
-									<template v-if="Number(station) === 1">{{ n }} goal — gets everything not needed elsewhere (now {{ receivingGets }})</template>
-									<template v-else-if="n">{{ n }}</template>
-									<template v-else>none — each team delivers the load it shipped</template>
-								</td>
+								<td>{{ n }}</td>
 							</tr>
 						</tbody>
 					</table>
 					<p class="text-xs text-gray-500">
-						Prepare Training needs at least {{ plan.staged }} items (Stations 2–5). Scanning more than
-						{{ plan.target }} is fine: the extra goes to Receiving.
+						Prepare Training needs at least {{ plan.target }} items. Scanning more is fine: the extra goes on
+						the Station 4 trays, so there is more to pick.
 					</p>
 				</section>
 

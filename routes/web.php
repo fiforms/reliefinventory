@@ -429,12 +429,15 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-tr
 });
 Route::put('/json/training/mode', [TrainingAdminController::class, 'setMode'])
     ->middleware(['auth', 'permission:admin-system']);
+Route::post('/json/training/reset', [TrainingAdminController::class, 'reset'])
+    ->middleware(['auth', 'permission:admin-system']);
 Route::middleware(['auth', 'permission:manage-training'])->group(function () {
     Route::get('/report/training/setup-packet.pdf', [TrainingAdminController::class, 'setupPacket']);
     Route::get('/report/training/signups.csv', [TrainingAdminController::class, 'signupsCsv']);
     Route::get('/report/training/signup-poster.pdf', [TrainingAdminController::class, 'signupPoster']);
     Route::get('/report/training/pallet-labels.pdf', [PalletReportController::class, 'trainingLabelsBuilder']);
     Route::get('/report/training/spot-labels.pdf', [TrainingAdminController::class, 'spotLabels']);
+    Route::get('/report/training/archives/{stamp}/{file}', [TrainingAdminController::class, 'archiveFile']);
     Route::get('/report/training/report-cards.pdf', [TrainingReportController::class, 'pdf']);
     Route::get('/report/training/report-cards.csv', [TrainingReportController::class, 'csv']);
     Route::get('/report/training/certificates.pdf', [TrainingReportController::class, 'certificates']);

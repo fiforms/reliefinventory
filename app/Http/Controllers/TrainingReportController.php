@@ -102,7 +102,16 @@ class TrainingReportController extends Controller
 
     public function csv(Request $request)
     {
-        $report = $this->buildReport($this->filters($request));
+        return response($this->csvString($this->filters($request)), 200, [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => 'attachment; filename="training-report-cards-'.now()->format('Y-m-d').'.csv"',
+        ]);
+    }
+
+    /** The report cards as CSV text — the download, and the class archive kept by a training reset. */
+    public function csvString(array $filters = []): string
+    {
+        $report = $this->buildReport($filters);
 
         $csv = Writer::fromString('');
         $csv->insertOne(['Trainee', 'Team', ...array_values(TrainingMode::STATIONS), 'Stations done', 'Complete']);
@@ -111,10 +120,7 @@ class TrainingReportController extends Controller
                 $t['done'], $t['complete'] ? 'yes' : 'no']);
         }
 
-        return response($csv->toString(), 200, [
-            'Content-Type' => 'text/csv',
-            'Content-Disposition' => 'attachment; filename="training-report-cards-'.now()->format('Y-m-d').'.csv"',
-        ]);
+        return $csv->toString();
     }
 
     private function filters(Request $request): array

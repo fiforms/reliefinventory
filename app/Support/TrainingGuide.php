@@ -45,13 +45,13 @@ class TrainingGuide
         2 => [
             'page' => 'Donation Sorting',
             'round1' => [
-                'title' => 'Sort a pallet',
+                'title' => 'Sort a donation',
                 'steps' => [
-                    'Open Donation Sorting and tap a donation under Ready to Sort.',
-                    'Scan the pallet\'s label (or type its number).',
+                    'Open Donation Sorting. If a donation is under Ready to Sort, tap it and scan its pallet label.',
+                    'Otherwise tap Start Sorting (untagged), then Edit next to the donor to choose who it came from.',
                     'For each item: scan its barcode or search for it, enter the quantity and choose New or Usable.',
                     'Put anything expired or damaged on its own line as Outdated or Trashed.',
-                    'When the pallet is empty, tap Pallet Empty, then Pallet looks OK.',
+                    'With a pallet label: when the pallet is empty, tap Pallet Empty, then Pallet looks OK. Untagged: tap Complete Session.',
                 ],
             ],
             'round2' => [
