@@ -27,7 +27,7 @@ class PinLoginSettingsController extends Controller
         $data = $request->validate([
             'enabled' => 'required|boolean',
             'trust_mode' => ['required', Rule::in(['time_of_day', 'session_duration', 'indefinite'])],
-            'trust_time_of_day' => 'nullable|date_format:H:i',
+            'trust_time_of_day' => ['nullable', 'date_format:H:i,H:i:s'],
             'trust_session_minutes' => 'nullable|integer|min:1|max:10080', // up to 7 days
             'require_badge_and_pin' => 'required|boolean',
             'badge_login_enabled' => 'required|boolean',
