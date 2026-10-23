@@ -33,14 +33,29 @@ flashed earlier needs the new image (or `dpkg -i` of the `.deb`, which doesn't s
 
 ## Verified
 
+On a real Pi (2026-10-22): the driver came from an image build, the queue was added on the Printers page, and labels printed from the
+web UI — until the stock USB backend lost the printer (see the investigation below), which `rstationlp` was added to fix.
+
+Earlier, on a laptop:
+
 2026-10-22, WS408 over USB, 203 dpi, 2.312 x 4 in labels: a test frame, then a 2-page PDF with 2 copies (4 identical labels)
 printed correctly with the default shift (`Left5`) using the filter's bytes and `lp -o raw`. The package was then installed
 on a laptop, a CUPS queue created from this PPD, and a WeasyPrint label (text + a Code 128 barcode) printed through it with
-plain `lp`; it looked right and the barcode scanned. 2026-10-22 evening, Raspberry Pi 4 (CUPS 2.4.20): with the printer's control endpoint dead, `rstationlp` printed every job; the package installed by `dpkg -i`, `lpinfo -v` listed the printer once, and a queue added with the same `lpadmin` call the Printers page makes printed. **Not yet tested:** a build of the image, two printers on one Pi, the Printers page itself (rather than `lpadmin`), USB label printers on the
-Pi's Printers page, or a real Relief Inventory pallet label.
+plain `lp`; it looked right. **Not yet tested:** scanning the barcode of any label printed on the small stock (pallet or item label).
+
+2026-10-22 evening, Raspberry Pi 4 (CUPS 2.4.20), printer already in its dead-control-endpoint state: `rstationlp` printed every job; the package
+installed by `dpkg -i`, `lpinfo -v` listed the printer once, and a queue added with the same `lpadmin` call the Printers page makes printed.
+**Not yet tested:** a rebuilt image with `rstationlp`, two printers on one Pi, the Printers page itself (rather than `lpadmin`), copies/multi-page and
+a real app pallet or item label on the Pi.
 
 ## Things to know
 
+- **The USB port does not matter on a Pi** (an earlier version of this note said to use a USB 2.0 port — that was wrong). A power-cycle plus a move
+  to another port had coincided with a good spell, but the failure came back on the "USB 2.0" port: on a Pi 4 every port is behind the same xHCI hub,
+  and the real cause is the printer ceasing to answer USB control requests ~100 s after it enumerates (details below). The queue's symptom is
+  "Waiting for printer to become available" with the printer listed as `usb://Unknown/Printer?serial=0.0`; `rstationlp` avoids it. To diagnose on
+  a printer using the stock backend: `sudo /usr/lib/cups/backend/usb` should list the printer under its real name, and `usb-control-poll.py` shows
+  when the control endpoint goes quiet.
 - **Horizontal position is empirical.** The label's position on the head depends on the stock; `Left5` was measured for
   2.312 x 4 in labels. Other widths may need another `Horizontal position` value (print a page with a border to see).
 - **Printer must speak SBPL.** Some SATO models offer other languages on the front panel (Protocol/Emulation).

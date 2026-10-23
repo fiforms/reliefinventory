@@ -10,6 +10,7 @@ use App\Http\Controllers\Auth\PasswordResetLinkController;
 use App\Http\Controllers\Auth\PinController;
 use App\Http\Controllers\Auth\RegisteredUserController;
 use App\Http\Controllers\Auth\RegistrationTrackController;
+use App\Http\Controllers\Auth\RequiredPasswordChangeController;
 use App\Http\Controllers\Auth\UnlockController;
 use App\Http\Controllers\Auth\VerifyEmailController;
 use Illuminate\Http\Request;
@@ -90,6 +91,12 @@ Route::middleware('auth')->group(function () {
     Route::post('confirm-password', [ConfirmablePasswordController::class, 'store']);
 
     Route::put('password', [PasswordController::class, 'update'])->name('password.update');
+
+    // Temporary password set by an administrator (EnsurePasswordChanged).
+    Route::get('change-password', [RequiredPasswordChangeController::class, 'show'])
+        ->name('password.change-required');
+    Route::post('change-password', [RequiredPasswordChangeController::class, 'store'])
+        ->name('password.change-required.store');
 
     Route::put('pin', [PinController::class, 'update'])->name('pin.update');
     Route::delete('pin', [PinController::class, 'destroy'])->name('pin.destroy');

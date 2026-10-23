@@ -158,6 +158,7 @@ class Person extends Model
         'volunteer_window_start' => 'date',
         'volunteer_window_end' => 'date',
         'is_organization' => 'boolean',
+        'password_change_required' => 'boolean',
     ];
 
     /**
@@ -321,6 +322,23 @@ class Person extends Model
     public function category()
     {
         return $this->belongsTo(PersonCategory::class, 'category_id');
+    }
+
+    /** The administrator who created this account on User Administration (null if self-registered). */
+    public function createdBy()
+    {
+        return $this->belongsTo(self::class, 'created_by_person_id');
+    }
+
+    /** The administrator who approved this account (null if not yet approved, or approved before this was recorded). */
+    public function approvedBy()
+    {
+        return $this->belongsTo(self::class, 'approved_by_person_id');
+    }
+
+    public function loginHistory()
+    {
+        return $this->hasMany(LoginHistory::class);
     }
 
     /**
