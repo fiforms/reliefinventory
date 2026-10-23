@@ -323,6 +323,16 @@ Route::get('/setup/pin-login', function () {
     ]);
 })->middleware(['auth', 'permission:general-access']);
 
+// PIN Login on This Device (profile menu): any signed-in user asks for PIN login on the device they're on; an
+// approver (manage-trusted-devices) approves it at once. See ThisDeviceController.
+Route::get('/this-device', function () {
+    return Inertia::render('ThisDevice', ['breadcrumb' => [['href' => '/this-device', 'title' => 'PIN Login on This Device']]]);
+})->middleware(['auth', 'permission:general-access']);
+Route::middleware(['auth', 'permission:general-access'])->group(function () {
+    Route::get('/json/this-device', [ThisDeviceController::class, 'show']);
+    Route::post('/json/this-device', [ThisDeviceController::class, 'store']);
+});
+
 Route::get('/setup/feedback', function () {
     return Inertia::render('FeedbackReports', [
         'breadcrumb' => MenuItem::getBreadcrumb('/setup/feedback'),
@@ -1255,6 +1265,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-tr
     Route::get('/trusted-devices', [TrustedDeviceController::class, 'index']);
     Route::post('/trusted-devices/{id}/approve', [TrustedDeviceController::class, 'approve']);
     Route::post('/trusted-devices/{id}/revoke', [TrustedDeviceController::class, 'revoke']);
+    Route::post('/trusted-devices/{id}/deny', [TrustedDeviceController::class, 'deny']);
     Route::put('/trusted-devices/{id}', [TrustedDeviceController::class, 'relabel']);
 });
 

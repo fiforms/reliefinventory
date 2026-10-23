@@ -111,14 +111,13 @@ test('an unrecognized device sees no trusted people, even with the feature enabl
         ->where('people', []));
 });
 
-test('visiting unlock on a new device creates a pending TrustedDevice but grants nothing', function () {
+test('visiting the login or unlock page records no device (only asking for PIN login does)', function () {
     enablePinLogin();
 
-    expect(TrustedDevice::count())->toBe(0);
-    $this->get('/unlock');
+    $this->get('/unlock')->assertCookieMissing('pin_device_token');
+    $this->get('/login')->assertCookieMissing('pin_device_token');
 
-    expect(TrustedDevice::count())->toBe(1)
-        ->and(TrustedDevice::first()->status)->toBe('pending');
+    expect(TrustedDevice::count())->toBe(0);
 });
 
 test('a real login does not grant device trust when the device is not yet approved', function () {

@@ -38,13 +38,13 @@ class AuthenticatedSessionController extends Controller
     {
         // Training Mode: an approved device goes to the tap-your-name screen (staff PIN/email links are on it).
         if (! $request->boolean('email') && TrainingMode::enabled()
-            && TrainingMode::availableOn($pinLogin->resolveDevice($request))) {
+            && TrainingMode::availableOn($pinLogin->currentDevice($request))) {
             return redirect()->route('training-login');
         }
 
         if ($pinLogin->settings()->enabled && ! $request->boolean('email')) {
-            $device = $pinLogin->resolveDevice($request);
-            if ($device->isApproved() && $pinLogin->peopleTrustedOnDevice($device)->isNotEmpty()) {
+            $device = $pinLogin->currentDevice($request);
+            if ($device?->isApproved() && $pinLogin->peopleTrustedOnDevice($device)->isNotEmpty()) {
                 return redirect()->route('unlock');
             }
         }
@@ -116,7 +116,7 @@ class AuthenticatedSessionController extends Controller
         // A real password login is what earns a device its PIN-unlock
         // trust for this person — see PinLoginService for the two-gate
         // reasoning (device approval + per-person grant).
-        $device = $pinLogin->resolveDevice($request);
+        $device = $pinLogin->currentDevice($request);
         $pinLogin->grantTrust($device, $user->id);
         $wasKiosk = $pinLogin->clearKioskMode($device);
 

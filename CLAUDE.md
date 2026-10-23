@@ -339,8 +339,8 @@ printed team sheets). **Only the login changes; the system otherwise works norma
 - **Switch:** `training_settings` singleton (on/off is `admin-system`). While on, an approved `TrustedDevice` (the same
   approval PIN unlock uses) sends `/login` to `/training-login` (`TrainingLoginController`, `Auth/TrainingLogin.vue`):
   trainee name tiles grouped by team, tap → confirm team → logged in, no password; **Add New** (first + last name, team)
-  creates one on the spot. Staff PIN / email links stay under the tiles. Only `TrainingMode::enabled()` is checked before
-  `resolveDevice()`, so the login page doesn't register device rows while training is off.
+  creates one on the spot. Staff PIN / email links stay under the tiles. Devices are approved through
+  **PIN Login on This Device** (see "PIN login devices" below).
 - **Trainees** are `people.is_trainee` + `training_team` + the **Trainee** role (`TrainingMode::TRAINING_KEYS`). `User`
   only sees people with an email, so a trainee gets a placeholder `trainee-<id>@training.invalid` (reserved TLD, never
   deliverable), `email_verified_at`/`approved_at` set and **no password**. Taking one off the list sets `disabled_at`.
@@ -678,6 +678,19 @@ its own one-time provisioning step per server, same as the backup timer's instal
 `scripts/systemd/reliefinventory-volunteer-sync.service` and `.timer` to `/etc/systemd/system/`,
 `systemctl daemon-reload`, `systemctl enable --now reliefinventory-volunteer-sync.timer`. Not yet done on
 any server as of 2026-08-23 (feature still in development on the `volunteer-hours-kiosk` branch).
+
+### PIN login devices — requested from the device itself (2026-10-23, branch `device-approval`)
+
+PIN unlock, kiosk mode and Training Mode all need the browser to be an approved `TrustedDevice` (opaque cookie
+`pin_device_token`). **Visiting a page never records a device** any more (it used to: every browser that reached /login
+became a "pending device", which made the list useless; the migration deleted those). `PinLoginService::currentDevice()`
+is read-only (returns null for an unknown browser — callers all accept null); `registerThisDevice()` is the only writer.
+A signed-in user opens **PIN Login on This Device** (profile menu, `/this-device`, `ThisDeviceController`) and gives an
+optional station name and reason: a `manage-trusted-devices` holder's own device is approved at once (and they get PIN
+trust there); anyone else's becomes `pending`, rings the approvers' bell (`DeviceApprovalRequested`, once per request)
+and waits on Setup > PIN Login, which lists Requests / Approved / Denied & revoked, with requester, reason, IP address
+(first and last seen), browser and OS (`App\Support\UserAgent`, best effort; raw UA kept). Status is
+`pending → approved | denied`, `approved → revoked`; a denied or revoked device can ask again.
 
 ### Kiosk Settings (`/setup/kiosk-settings`, `admin-system`) — real multi-location support
 

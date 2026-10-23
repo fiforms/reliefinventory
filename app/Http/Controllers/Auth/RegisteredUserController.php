@@ -100,7 +100,7 @@ class RegisteredUserController extends Controller
 
         // Same reasoning as AuthenticatedSessionController::store() — a
         // real login (registration counts) earns device trust.
-        $pinLogin->grantTrust($pinLogin->resolveDevice($request), $user->id);
+        $pinLogin->grantTrust($pinLogin->currentDevice($request), $user->id);
 
         return redirect(route('dashboard', absolute: false));
     }

@@ -193,6 +193,9 @@ async function markAllNotificationsRead() {
                                         >
                                             Switch User
                                         </DropdownLink>
+                                        <DropdownLink href="/this-device">
+                                            PIN Login on This Device
+                                        </DropdownLink>
                                         <DropdownLink href="/about-this-install">
                                             About
                                         </DropdownLink>
@@ -299,6 +302,9 @@ async function markAllNotificationsRead() {
                                 href="/building-safety"
                             >
                                 Who's In The Building
+                            </ResponsiveNavLink>
+                            <ResponsiveNavLink href="/this-device">
+                                PIN Login on This Device
                             </ResponsiveNavLink>
                             <ResponsiveNavLink
                                 v-if="$page.props.pinLogin.switchUserAvailable"
