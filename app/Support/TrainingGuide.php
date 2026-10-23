@@ -71,7 +71,7 @@ class TrainingGuide
                 'steps' => [
                     'Open Inventory Movement (Pallets tab). With no pallet showing, you are building a new one.',
                     'Tap items under In the sorting area and enter how many go on the pallet.',
-                    'Scan or choose the rack location (a TR-A location), then Seal & Place.',
+                    'Scan the table spot label (A-1 to C-4) where it will sit, then Seal & Place.',
                     'Print the item labels it offers and put them on the pallet.',
                 ],
             ],
@@ -81,7 +81,7 @@ class TrainingGuide
                     'Scan a W pallet\'s label: see where it is, what is on it and its history.',
                     'Scan a different location barcode to move it there.',
                     'Unseal a pallet, add items from the sorting area to it, then Re-seal it.',
-                    'Open the Locations tab and find what is at one rack.',
+                    'Open the Locations tab and find what is at one table spot.',
                 ],
             ],
         ],

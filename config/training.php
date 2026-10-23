@@ -4,42 +4,38 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 /*
- * Training Mode's Prepare Training (App\Services\TrainingPreparer): the starter work loaded for every station
- * so all teams can start at once, and what the setup packet tells trainers to stage on the floor. Edit to match
- * the props you actually have.
+ * Training Mode's Prepare Training (App\Services\TrainingPreparer). The goods are the trainer's real products,
+ * scanned on Setup > Training Mode > Scan Training Products; these numbers say how they are spread over the stations.
+ *
+ * Only what the first team at each station needs is staged: the class rotates station N -> N+1, so after its first
+ * stop every team works on the goods it handled itself one station earlier (what Team 1 receives it sorts next, then
+ * puts away, ...). Everything left over goes to Receiving, so most of the goods come in through the door for real.
  */
 return [
 
-    // Item types the mock warehouse stocks, by ACS number (Master Item List), with the starter quantity of each
-    // that is "already sorted" (on the shelf and in the sorting area). A number not in this instance's list is
-    // skipped and reported.
-    'items' => [
-        ['number' => '180', 'qty' => 120],     // Water
-        ['number' => '101', 'qty' => 80],      // Canned food, mixed
-        ['number' => '144', 'qty' => 60],      // Snacks, any kind
-        ['number' => '332', 'qty' => 60],      // Toilet paper, household
-        ['number' => '318', 'qty' => 48],      // Paper towels, household rolls
-        ['number' => '224', 'qty' => 40],      // Personal wipes
-        ['number' => '206', 'qty' => 40],      // Soap / body wash, mixed
-        ['number' => '203', 'qty' => 40],      // Toothpaste
-        ['number' => '724', 'qty' => 30],      // Bleach / OxiClean
-        ['number' => '730', 'qty' => 30],      // Gloves, cleaning
-        ['number' => '710', 'qty' => 20],      // Flood buckets
-        ['number' => '950-11', 'qty' => 20],   // Tarps, 8x10
+    'stage' => [
+        // Station 1: boxes of real goods to receive (no records — they arrive). Each gets a pending offer to match.
+        'receiving_boxes' => 5,
+        'receiving_box_size' => 10,
+        // Station 2: boxes already received (an R pallet each), waiting to be sorted.
+        'sorting_boxes' => 2,
+        'sorting_box_size' => 10,
+        // Station 3: sorted goods on the sorting-area table, not on a pallet yet.
+        'sorting_area_units' => 10,
+        // Station 4: sealed W pallets (trays) at table spots, and Ready to Fill orders picked from them.
+        'rack_pallets' => 4,
+        'rack_pallet_size' => 6,
+        'orders_to_fill' => 3,
+        // Station 5: picked (Filled) orders staged at the door.
+        'orders_to_ship' => 2,
+        'ship_order_size' => 5,
     ],
 
-    // How much starter work each station gets. Five teams visit every station twice (Round 1, Round 2).
-    'counts' => [
-        'offers' => 5,              // Station 1: pending donation offers ("items waiting to be offered" arrive against these)
-        'pallets_to_sort' => 10,    // Station 2: received R pallets waiting for sorting
-        'warehouse_pallets' => 6,   // Station 3/4: sealed W pallets on racks, built from the starter stock
-        'orders_to_fill' => 10,     // Station 4: Ready to Fill orders
-        'orders_to_ship' => 10,     // Station 5: Filled orders
-        'orders_to_review' => 5,    // Station 6: Delivered orders with a signed BOL waiting for review
-    ],
+    // At least this many different products, so a box isn't all one thing.
+    'min_products' => 15,
 
-    // Share of each item's starter quantity put on the sealed W pallets; the rest stays in the sorting area for
-    // Station 3 to build new pallets from.
-    'on_pallets_share' => 0.5,
+    // The table spots Station 3 puts pallets on and Station 4 picks from: three tables, four spots each (A-1 ... C-4).
+    'tables' => ['A', 'B', 'C'],
+    'spots_per_table' => 4,
 
 ];

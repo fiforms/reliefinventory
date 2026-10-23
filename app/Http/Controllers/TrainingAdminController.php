@@ -7,7 +7,9 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Auth\TrainingLoginController;
 use App\Models\ActivityLog;
+use App\Models\LabelSetting;
 use App\Models\Person;
+use App\Models\TrainingProduct;
 use App\Models\TrainingRegistration;
 use App\Models\TrainingSetting;
 use App\Models\TrustedDevice;
@@ -53,6 +55,11 @@ class TrainingAdminController extends Controller
             'can_toggle' => Auth::user()->hasPermission('admin-system'),
             'approved_devices' => TrustedDevice::where('status', 'approved')->count(),
             'teams' => TrainingMode::TEAMS,
+            'products' => [
+                'units' => (int) TrainingProduct::sum('qty'),
+                'distinct' => TrainingProduct::where('qty', '>', 0)->count(),
+                'plan' => TrainingPreparer::plan(),
+            ],
             'signup' => [
                 'url' => route('join'),
                 'qr_svg' => self::signupQrSvg(),
@@ -138,7 +145,7 @@ class TrainingAdminController extends Controller
             return response()->json(['message' => $e->getMessage()], 422);
         }
 
-        return response()->json(['summary' => $summary, 'missing_items' => $summary['missing_items']]);
+        return response()->json(['summary' => $summary, 'warnings' => $summary['warnings']]);
     }
 
     public function storeTrainee(Request $request)
@@ -183,10 +190,33 @@ class TrainingAdminController extends Controller
         $summary = TrainingSetting::current()->prepared_summary;
         abort_unless($summary, 404, 'Prepare Training has not been run yet.');
 
-        return Pdf::view('reports.training.setup-packet', ['summary' => $summary])
+        return Pdf::view('reports.training.setup-packet', ['summary' => $summary, 'stations' => TrainingMode::STATIONS])
             ->driver('weasyprint')
             ->format('letter')
             ->name('training-setup-packet.pdf');
+    }
+
+    public function spotLabels()
+    {
+        return $this->spotLabelsBuilder();
+    }
+
+    /**
+     * Unrendered PDF — shared by the download route and the print queue. One label per table spot (A-1 ... C-4) on the
+     * pallet label stock, to tape on the tables: the code large, and its barcode for Inventory Movement to scan.
+     */
+    public function spotLabelsBuilder(): PdfBuilder
+    {
+        $media = config('printing.media.'.LabelSetting::palletMedia());
+
+        return Pdf::view('reports.training.spot-labels', [
+            'spots' => TrainingPreparer::spotCodes(),
+            'paper' => ['width' => $media['width'], 'height' => $media['height']],
+            'compact' => LabelSetting::palletLabelIsCompact(),
+        ])
+            ->driver('weasyprint')
+            ->paperSize($media['width'], $media['height'], 'in')
+            ->name('training-spot-labels.pdf');
     }
 
     public function teamSheets(Request $request)

@@ -358,12 +358,22 @@ printed team sheets). **Only the login changes; the system otherwise works norma
   today); a station is done with ≥1 action; a team driver's delivery counts for everyone who worked on that team.
   Certificates (landscape PDF, no station list) for trainees who did all six, showing the event title and location
   entered on the Training Mode page (`training_settings.event_title`/`event_location`, `PUT /json/training/event`); report-card PDF + CSV.
-- **Prepare Training** (`TrainingPreparer`, refused unless training mode is on): through the real models, in one
-  transaction, with ActivityRecorder paused — pending offers, R pallets to sort, starter stock (sorted, part on sealed W
-  pallets at `TR-A-0n`), Ready to Fill / Filled orders, a "Team N Driver" per team (PIN `TrainingPreparer::teamDriverPin`)
-  with a Shipped load each, and Delivered orders awaiting BOL review. Items/amounts: `config/training.php` (by ACS number).
-  Summary saved in `training_settings.prepared_summary` → the **setup packet** PDF and the training pallet labels
-  (`PalletReportController::trainingLabelsBuilder`, only those pallets). Running again adds another set.
+- **Training products** (2026-10-23, `/setup/training/products`, `TrainingProductController`, `TrainingProducts.vue`): the
+  trainer scans their *real* goods, one unit per scan (UpcResolver, catalog only; an unknown barcode opens the shared
+  `Components/NewItemModal.vue` — extracted from `DonationSorting.vue`, which uses it too). `training_products` (item_id → qty)
+  is a list of props, **not stock**. The page shows progress against `TrainingPreparer::plan()`.
+- **Prepare Training** (`TrainingPreparer`, refused unless training mode is on, and with fewer scanned units than
+  `plan()['staged']`): spreads the scanned units over the stations per `config/training.php` `stage` — only the first
+  team at each station is staged, since teams move N → N+1 and then work on goods they handled one station earlier. Station 2
+  gets received boxes (R pallets), 3 sorted goods in the sorting area, 4 sealed W pallets at table spots `A-1`…`C-4`
+  (`spotCodes()`) plus Ready to Fill orders they can cover, 5 Filled orders; **every leftover unit goes to Receiving** as
+  delivery boxes with a pending offer each (no stock — they arrive for real). Nothing staged for Station 6: each team
+  delivers the load it shipped to its own team driver. Every unit appears in the summary exactly once (tested). Through the
+  real models, one transaction, ActivityRecorder paused; also retires the old `TR-DOCK`/`TR-SORT`/`TR-A-nn` locations
+  (deleted if unused, else archived). Summary in `training_settings.prepared_summary` → the **setup packet** (placement per
+  station, a contents slip per box/tray/load, and a plain "Station N / Name" sign per station), the training pallet labels
+  (`PalletReportController::trainingLabelsBuilder`) and the **table spot labels** (`training-spot-labels`, pallet label
+  stock, barcode = the location code). Running again adds another set.
 - **Self sign-up** (`/join`, `TraineeSignupController`, `Join.vue`, public; QR code + poster + follow-up CSV on the Training
   Mode page): only while training mode is on; first + last name required, then optional email, phone, project updates,
   how they'd help (checkboxes), someone to recommend, comments. Makes a trainee via `TrainingLoginController::createTrainee`

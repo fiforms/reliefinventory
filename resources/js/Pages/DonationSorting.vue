@@ -35,6 +35,7 @@ import ScanButton from '@/Components/ScanButton.vue';
 import TextArea from '@/Components/TextArea.vue';
 import TextInput from '@/Components/TextInput.vue';
 import Modal from '@/Components/Modal.vue';
+import NewItemModal from '@/Components/NewItemModal.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
@@ -60,7 +61,7 @@ function dispositionFor(disposition, condition) {
 }
 
 export default {
-	components: { AuthenticatedLayout, HelpLink, Head, SearchSelect, ScanButton, TextArea, TextInput, Modal, InputLabel, PrimaryButton, SecondaryButton },
+	components: { AuthenticatedLayout, HelpLink, Head, SearchSelect, ScanButton, TextArea, TextInput, Modal, NewItemModal, InputLabel, PrimaryButton, SecondaryButton },
 	props: {
 		breadcrumb: { type: Array },
 	},
@@ -107,16 +108,13 @@ export default {
 
 			// quick-add item modal
 			showItemModal: false,
-			itemModal: this.blankItemModal(),
-			itemModalSaving: false,
-			itemModalError: null,
+			itemModalInit: {}, // what the NewItemModal opens with: { description, upc } or { scan }
 
 			// barcode scan -> item (confirmed mappings first, online suggestion on a miss)
 			upcResolving: false,
 			qtyBurst: { startValue: '', digits: '', lastT: 0 }, // a scanner's keystroke burst in the Qty box
 			cartonDialog: null, // an unknown carton barcode being mapped to the item inside it
 			scanSounds: scanSoundsEnabled(),
-			modalScanBuffer: '',
 		};
 	},
 	computed: {
@@ -695,7 +693,6 @@ export default {
 				} else {
 					playScanUnknown();
 					this.openItemModalForScan(result);
-					if (result.online === 'pending') this.fetchSuggestion(result.code);
 				}
 			} catch (error) {
 				playScanError();
@@ -754,99 +751,22 @@ export default {
 			return code.startsWith('00') ? code.slice(2) : code.startsWith('0') ? code.slice(1) : code;
 		},
 
-		// ---------- quick-add item ----------
-		blankItemModal() {
-			return {
-				description: '',
-				upc: '',
-				scan: null, // set when opened from an unknown barcode scan: { code, online, suggestion }
-				kind: 'each', // switching to 'carton' hands the barcode to the carton dialog
-				itemtype_id: null,
-				creatingType: false,
-				newTypeName: '',
-				unit_id: null,
-				category_id: null,
-				creatingCategory: false,
-				newCategoryName: '',
-			};
-		},
+		// ---------- quick-add item (NewItemModal) ----------
 		openItemModal(searchText) {
-			this.itemModal = this.blankItemModal();
 			// A scanned barcode with no match lands here as all-digit text — that's
 			// the new item's UPC, not its description.
 			const text = (searchText || '').trim();
-			if (/^\d{6,14}$/.test(text)) {
-				this.itemModal.upc = text;
-			} else {
-				this.itemModal.description = text;
-			}
-			this.itemModalError = null;
+			this.itemModalInit = /^\d{6,14}$/.test(text) ? { upc: text } : { description: text };
 			this.showItemModal = true;
 		},
 		// An unknown barcode opens the normal Add New Item screen, prefilled: the
-		// scanned UPC, whatever an online lookup suggested (the sorter checks it),
-		// and, for a carton whose single-item barcode we already carry, that
-		// item's type and description. Saving adds a SKU row to the master list.
+		// scanned UPC and whatever an online lookup suggests (the sorter checks it).
+		// Saving adds a SKU row to the master list.
 		openItemModalForScan(result) {
-			const suggestion = result.suggestion;
-			this.itemModal = this.blankItemModal();
-			this.itemModal.upc = this.displayCode(result.code);
-			this.itemModal.description = [suggestion?.brand, suggestion?.description, suggestion?.size_text].filter(Boolean).join(' ');
-			this.modalScanBuffer = '';
-			this.itemModal.scan = { code: result.code, online: result.online, suggestion };
-			this.itemModalError = null;
+			this.itemModalInit = { scan: { code: result.code, online: result.online, suggestion: result.suggestion } };
 			this.showItemModal = true;
-			// Park focus on the modal itself, not the item box behind it, so the
-			// next scan can't append to the old barcode there (see onModalStrayKey).
-			this.$nextTick(() => this.$refs.itemModalBox?.focus());
 		},
-		// Keys typed while the modal box itself has focus (no field selected) are
-		// a scanner firing again before the sorter chose a match: discard them and
-		// repeat the "not found" tone so they know the form is still waiting.
-		onModalStrayKey(event) {
-			if (event.key === 'Enter') {
-				if (this.modalScanBuffer.length >= 8) playScanUnknown();
-				this.modalScanBuffer = '';
-				event.preventDefault();
-			} else if (/^\d$/.test(event.key)) {
-				this.modalScanBuffer += event.key;
-				event.preventDefault();
-			} // anything else (Tab to reach the fields, Escape) behaves normally
-		},
-		// The online half of an unknown scan, filled into the already-open form when it
-		// arrives. Skipped if the sorter has moved on, and never overwrites a description
-		// they have started typing.
-		async fetchSuggestion(code) {
-			let outcome;
-			try {
-				outcome = (await axios.get('/json/upc/suggest', { params: { code } })).data;
-			} catch (error) {
-				outcome = { online: 'unavailable', suggestion: null };
-			}
-			const modal = this.itemModal;
-			if (!this.showItemModal || !modal.scan || modal.scan.code !== code) return;
-			modal.scan.online = outcome.online;
-			modal.scan.suggestion = outcome.suggestion;
-			const suggestion = outcome.suggestion;
-			if (suggestion && !modal.description.trim()) {
-				modal.description = [suggestion.brand, suggestion.description, suggestion.size_text].filter(Boolean).join(' ');
-			}
-		},
-		scanNote() {
-			const scan = this.itemModal.scan;
-			if (scan.suggestion) {
-				return 'Suggested by ' + scan.suggestion.source_name + ' - check it against the product in front of you.';
-			}
-			return {
-				pending: 'Looking up product details online...',
-				none: 'Not found in Open Food Facts or Open Products Facts - enter the details by hand.',
-				unavailable: 'The online lookup is not responding right now - enter the details by hand.',
-				throttled: 'Too many online lookups this minute - enter the details by hand.',
-				disabled: 'Online lookup is off - enter the details by hand.',
-			}[scan.online] || '';
-		},
-		closeItemModal() {
-			const fromScan = !!this.itemModal.scan;
+		closeItemModal(fromScan) {
 			this.showItemModal = false;
 			if (this.cartonDialog) {
 				this.$nextTick(() => this.$refs.cartonItemSelect?.focus()); // back to the carton dialog underneath
@@ -854,13 +774,25 @@ export default {
 				this.$refs.itemSelect?.clearSelection(); // drop the unresolved barcode text
 			}
 		},
-		// The radio on a scanned item's form: this barcode is really a case/multipack of items we
-		// already carry, so map it to the item inside instead of adding a new row.
-		switchToCarton() {
-			const code = this.itemModal.scan?.code;
-			this.itemModal.kind = 'each';
+		// "This barcode is on a case of items already in the list": map it in the carton dialog instead.
+		switchToCarton(code) {
 			this.showItemModal = false;
-			if (code) this.openCartonDialog({ code, guess_item: null, candidates: [] });
+			this.openCartonDialog({ code, guess_item: null, candidates: [] });
+		},
+		async onItemModalSaved(newItem, scan) {
+			this.showItemModal = false;
+			if (this.cartonDialog) {
+				// added from the carton dialog: it is the item inside the carton
+				await this.$refs.cartonItemSelect?.refresh(newItem.id);
+				this.$refs.cartonPerPack?.focus();
+				return;
+			}
+			await this.$refs.itemSelect?.refresh(newItem.id);
+			if (scan) {
+				this.entry.scanCode = scan.code;
+				this.entry.scanUnit = 1;
+			}
+			this.$refs.qtyInput?.focus();
 		},
 
 		// ---------- carton barcode -> the item inside ----------
@@ -903,7 +835,6 @@ export default {
 				} else {
 					playScanUnknown();
 					this.openItemModalForScan(result);
-					if (result.online === 'pending') this.fetchSuggestion(result.code);
 				}
 			} catch (error) {
 				playScanError();
@@ -950,88 +881,6 @@ export default {
 			const code = this.cartonDialog.code;
 			this.cartonDialog = null;
 			this.openItemModalForScan({ code, kind: 'each', online: 'pending', suggestion: null });
-			this.fetchSuggestion(code);
-		},
-		startNewType(name) {
-			this.itemModal.creatingType = true;
-			this.itemModal.newTypeName = name || '';
-			this.itemModal.itemtype_id = null;
-		},
-		startNewCategory(name) {
-			this.itemModal.creatingCategory = true;
-			this.itemModal.newCategoryName = name || '';
-			this.itemModal.category_id = null;
-		},
-		async saveItemModal() {
-			this.itemModalError = null;
-			const modal = this.itemModal;
-
-			if (!modal.description.trim()) {
-				this.itemModalError = 'A description is required.';
-				return;
-			}
-			if (!modal.creatingType && !modal.itemtype_id) {
-				this.itemModalError = 'Choose an item type (or add a new one).';
-				return;
-			}
-			if (modal.creatingType && (!modal.newTypeName.trim() || !modal.unit_id ||
-				(!modal.creatingCategory && !modal.category_id) ||
-				(modal.creatingCategory && !modal.newCategoryName.trim()))) {
-				this.itemModalError = 'A new item type needs a name, a unit, and a category.';
-				return;
-			}
-
-			this.itemModalSaving = true;
-			try {
-				let categoryId = modal.category_id;
-				if (modal.creatingType && modal.creatingCategory) {
-					const response = await axios.post('/json/categories', { name: modal.newCategoryName.trim() });
-					categoryId = response.data.category.id;
-					invalidateOptions('/json/categories');
-				}
-
-				let itemtypeId = modal.itemtype_id;
-				if (modal.creatingType) {
-					const response = await axios.post('/json/itemtypes', {
-						name: modal.newTypeName.trim(),
-						category_id: categoryId,
-						unit_id: modal.unit_id,
-						active: true,
-						items: [],
-					});
-					itemtypeId = response.data.id;
-					invalidateOptions('/json/itemtypes/noitems');
-				}
-
-				const payload = {
-					itemtype_id: itemtypeId,
-					description: modal.description.trim(),
-					upc: modal.upc.trim() || null,
-				};
-				const response = await axios.post('/json/items', payload);
-				const newItem = response.data.record;
-
-				invalidateOptions('/json/items');
-				this.showItemModal = false;
-				if (this.cartonDialog) {
-					// added from the carton dialog: it is the item inside the carton
-					await this.$refs.cartonItemSelect?.refresh(newItem.id);
-					this.$refs.cartonPerPack?.focus();
-					return;
-				}
-				await this.$refs.itemSelect?.refresh(newItem.id);
-				if (modal.scan) {
-					this.entry.scanCode = modal.scan.code;
-					this.entry.scanUnit = 1;
-				}
-				this.$refs.qtyInput?.focus();
-			} catch (error) {
-				this.itemModalError = error.response?.data?.message
-					|| Object.values(error.response?.data?.errors || {}).flat().join(' ')
-					|| 'Could not save the new item.';
-			} finally {
-				this.itemModalSaving = false;
-			}
 		},
 	},
 	created() {
@@ -1468,82 +1317,8 @@ export default {
 		</div>
 
 		<!-- ======================= QUICK-ADD ITEM MODAL ======================= -->
-		<div v-if="showItemModal" class="sort_modal_overlay" @click.self="closeItemModal">
-			<div class="sort_modal" ref="itemModalBox" tabindex="-1" @keydown.self="onModalStrayKey">
-				<h3>Add New Item</h3>
-				<p v-if="itemModalError" class="sort_error">{{ itemModalError }}</p>
-				<template v-if="itemModal.scan">
-					<p class="sort_upc_note">{{ scanNote() }}</p>
-					<img v-if="itemModal.scan.suggestion?.image_url" :src="itemModal.scan.suggestion.image_url" alt="" class="sort_upc_image" />
-					<div class="sort_field" v-if="!cartonDialog">
-						<label>This barcode is on:</label>
-						<label class="sort_upc_radio"><input type="radio" value="each" v-model="itemModal.kind" /> One item</label>
-						<label class="sort_upc_radio"><input type="radio" value="carton" v-model="itemModal.kind" @change="switchToCarton" /> A case of items already in the list</label>
-					</div>
-				</template>
-
-				<div class="sort_field">
-					<label>Description:</label>
-					<input type="text" v-model="itemModal.description" class="ri_forminput" autofocus />
-				</div>
-				<div class="sort_field">
-					<label>UPC (optional):</label>
-					<input type="text" v-model="itemModal.upc" class="ri_forminput" placeholder="Scan barcode" />
-				</div>
-
-				<div class="sort_field" v-if="!itemModal.creatingType">
-					<label>Item Type:</label>
-					<SearchSelect
-						v-model="itemModal.itemtype_id"
-						optionsource="/json/itemtypes/noitems"
-						display="name"
-						:searchfields="['name', 'display_number']"
-						placeholder="Search item types..."
-						:allowcreate="true"
-						@create="startNewType"
-					/>
-				</div>
-				<template v-else>
-					<div class="sort_field">
-						<label>New Item Type:</label>
-						<input type="text" v-model="itemModal.newTypeName" class="ri_forminput" placeholder="Type name" />
-						<button @click="itemModal.creatingType = false" class="ri_formbutton">Pick existing instead</button>
-					</div>
-					<div class="sort_field">
-						<label>Measured By:</label>
-						<SearchSelect
-							v-model="itemModal.unit_id"
-							optionsource="/json/units"
-							display="name"
-							placeholder="Unit (e.g. Each, Pound)..."
-						/>
-					</div>
-					<div class="sort_field" v-if="!itemModal.creatingCategory">
-						<label>Category:</label>
-						<SearchSelect
-							v-model="itemModal.category_id"
-							optionsource="/json/categories"
-							display="name"
-							placeholder="Search categories..."
-							:allowcreate="true"
-							@create="startNewCategory"
-						/>
-					</div>
-					<div class="sort_field" v-else>
-						<label>New Category:</label>
-						<input type="text" v-model="itemModal.newCategoryName" class="ri_forminput" placeholder="Category name" />
-						<button @click="itemModal.creatingCategory = false" class="ri_formbutton">Pick existing instead</button>
-					</div>
-				</template>
-
-				<div class="sort_modal_buttons">
-					<button @click="saveItemModal" class="ri_defaultbutton" :disabled="itemModalSaving">
-						{{ itemModalSaving ? 'Saving...' : 'Save Item' }}
-					</button>
-					<button @click="closeItemModal" class="ri_formbutton">Cancel</button>
-				</div>
-			</div>
-		</div>
+		<NewItemModal v-if="showItemModal" :initial="itemModalInit" :allow-carton="!cartonDialog"
+			@saved="onItemModalSaved" @close="closeItemModal" @carton="switchToCarton" />
 	</AuthenticatedLayout>
 </template>
 

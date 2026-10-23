@@ -18,23 +18,18 @@ use App\Services\TrainingMode;
 use App\Services\TrainingPreparer;
 use App\Support\TrainingGuide;
 use Illuminate\Http\UploadedFile;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 function preparedTraining(): array
 {
-    $packagetypeId = DB::table('packagetypes')->value('id') ?? DB::table('packagetypes')->insertGetId(['singular' => 'Box', 'plural' => 'Boxes']);
-    $type = urrItemtype('Water');
-    $type->forceFill(['family' => '0901', 'variant' => '00', 'active' => true])->save();
-    $item = $type->items()->first() ?? $type->items()->create(['packagetypes_id' => $packagetypeId, 'pluscode' => '0000', 'size' => 1, 'case_qty' => 1, 'active' => true, 'description' => 'Water']);
-    config(['training.items' => [['number' => '901', 'qty' => 400]]]);
+    $items = scannedProducts();
     TrainingSetting::current()->update(['enabled' => true]);
 
     test()->actingAs(userWithPermissions('manage-training'));
     $summary = app(TrainingPreparer::class)->run();
     auth()->logout();
 
-    return ['summary' => $summary, 'item' => $item];
+    return ['summary' => $summary, 'item' => $items[0]];
 }
 
 /** Act as $trainee through a training login (the session key is what marks it). */
@@ -72,8 +67,12 @@ test('a Driver Portal delivery by a team driver counts for that team', function 
     ['summary' => $summary] = preparedTraining();
     Storage::fake('local');
     $trainee = TrainingLoginController::createTrainee('Bo', 'Baker', 3);
-    $delivery = collect($summary['orders_to_deliver'])->firstWhere('team', 3);
+    // The load Team 3 shipped to its own driver at Station 5.
     $driver = Driver::where('training_team', 3)->first();
+    $delivery = ['id' => $summary['orders_to_ship'][0]['id']];
+    $order = Transaction::find($delivery['id']);
+    $order->update(['driver_id' => $driver->id, 'status_id' => Transaction::statusId(Transaction::STATUS_READY_TO_SHIP), 'bol_number' => 'BOL-T3']);
+    $order->update(['status_id' => Transaction::statusId(Transaction::STATUS_SHIPPED)]);
 
     $this->postJson('/driver-portal/login', ['phone' => $driver->phone, 'pin' => TrainingPreparer::teamDriverPin(3)])->assertOk();
     $this->post('/driver-portal/loads/'.$delivery['id'].'/bol', ['file' => UploadedFile::fake()->image('bol.jpg')])->assertOk();

@@ -12,6 +12,7 @@ use App\Models\Permission;
 use App\Models\Person;
 use App\Models\Printer;
 use App\Models\SetupState;
+use App\Models\TrainingProduct;
 use App\Models\Transaction;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
@@ -196,4 +197,26 @@ function urrOrder(Person $partner, string $status, array $lines, string $date = 
     }
 
     return $order;
+}
+
+// Training Mode's scanned product list — shared by TrainingPreparerTest and TrainingReportTest.
+/** $products distinct scanned products over three item types, $each units of each. Returns the item rows. */
+function scannedProducts(int $products = 15, int $each = 8): array
+{
+    $packagetypeId = DB::table('packagetypes')->value('id') ?? DB::table('packagetypes')->insertGetId(['singular' => 'Can', 'plural' => 'Cans']);
+    $types = collect(['Canned food', 'Snacks', 'Electronics'])->map(function ($name, $i) {
+        $type = urrItemtype($name);
+        $type->forceFill(['family' => sprintf('%04d', 901 + $i), 'variant' => '00', 'active' => true])->save();
+
+        return $type;
+    });
+    $items = [];
+    foreach (range(1, $products) as $n) {
+        $item = $types[$n % 3]->items()->create(['packagetypes_id' => $packagetypeId, 'pluscode' => '0000', 'size' => 1, 'case_qty' => 1,
+            'active' => true, 'description' => "Product $n"]);
+        TrainingProduct::create(['item_id' => $item->id, 'qty' => $each]);
+        $items[] = $item;
+    }
+
+    return $items;
 }
