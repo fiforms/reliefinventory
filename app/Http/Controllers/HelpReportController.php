@@ -17,7 +17,8 @@ use Spatie\LaravelPdf\PdfBuilder;
  *
  * Adding a guide: add it to GUIDES (and PAGE_GUIDES, for its page's (?) button), write resources/views/reports/help/<slug>.blade.php
  * (extending reports.help.layout), and build its page on Components/HelpPage.vue —
- * the route, print-queue registry entry and Print button all follow from GUIDES.
+ * the route, print-queue registry entry, Print button and its line on the /help list (with
+ * "Print all guides") all follow from GUIDES.
  */
 class HelpReportController extends Controller
 {
@@ -36,8 +37,8 @@ class HelpReportController extends Controller
 
     /**
      * Page path (no leading slash) => guide slug. The layout shows a (?) button on exactly these
-     * pages (shared Inertia prop `helpGuide`), linking to /help/<slug>. The Help menu tile was
-     * removed — guides are reached from the page they describe.
+     * pages (shared Inertia prop `helpGuide`), linking to /help/<slug>. The main-menu Help tile
+     * opens /help, which lists every guide.
      */
     public const PAGE_GUIDES = [
         'receiving' => 'receiving',
@@ -72,5 +73,31 @@ class HelpReportController extends Controller
             ->driver('weasyprint')
             ->format('letter')
             ->name($guide.'-guide.pdf');
+    }
+
+    public function showAll()
+    {
+        return $this->allBuilder();
+    }
+
+    /**
+     * Every guide in one PDF, each starting on a new page, in GUIDES order. Each guide's own
+     * view is rendered on its own first (renderSections) so its title/content sections can't
+     * collide with the combined view's — the guides themselves stay single-guide views.
+     */
+    public function allBuilder(): PdfBuilder
+    {
+        $guides = [];
+        foreach (self::GUIDES as $slug => $title) {
+            $guides[] = [
+                'title' => $title,
+                'content' => view('reports.help.'.$slug)->renderSections()['content'],
+            ];
+        }
+
+        return Pdf::view('reports.help.all', ['guides' => $guides])
+            ->driver('weasyprint')
+            ->format('letter')
+            ->name('help-guides.pdf');
     }
 }

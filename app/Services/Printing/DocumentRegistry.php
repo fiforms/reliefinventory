@@ -133,7 +133,7 @@ class DocumentRegistry
         ], $this->helpGuides());
     }
 
-    /** One `help-<slug>` document per guide in HelpReportController::GUIDES. */
+    /** One `help-<slug>` document per guide in HelpReportController::GUIDES, plus `help-all` (every guide in one PDF). */
     private function helpGuides(): array
     {
         $documents = [];
@@ -144,6 +144,11 @@ class DocumentRegistry
                 'build' => fn () => app(HelpReportController::class)->builder($slug),
             ];
         }
+        $documents['help-all'] = [
+            'media' => 'report', 'permission' => null, 'rules' => [],
+            'title' => fn () => 'All Help Guides',
+            'build' => fn () => app(HelpReportController::class)->allBuilder(),
+        ];
 
         return $documents;
     }
