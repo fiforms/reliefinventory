@@ -404,6 +404,9 @@ Route::get('/help/{guide}', function (string $guide) {
 Route::get('/setup/training', function () {
     return Inertia::render('Setup/Training', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/training')]);
 })->middleware(['auth', 'permission:manage-training']);
+Route::get('/setup/training/products', function () {
+    return Inertia::render('Setup/TrainingProducts', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/training')]);
+})->middleware(['auth', 'permission:manage-training']);
 Route::get('/reports/training', function () {
     return Inertia::render('TrainingReport', ['breadcrumb' => MenuItem::getBreadcrumb('/reports/training')]);
 })->middleware(['auth', 'permission:manage-training']);
@@ -416,6 +419,12 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-tr
     Route::delete('/training/signatures/{slot}', [TrainingAdminController::class, 'deleteSignature'])->whereNumber('slot');
     Route::post('/training/trainees', [TrainingAdminController::class, 'storeTrainee']);
     Route::patch('/training/trainees/{id}', [TrainingAdminController::class, 'updateTrainee'])->whereNumber('id');
+    Route::get('/training/products', [TrainingProductController::class, 'index']);
+    Route::post('/training/products/scan', [TrainingProductController::class, 'scan']);
+    Route::post('/training/products', [TrainingProductController::class, 'store']);
+    Route::patch('/training/products/{id}', [TrainingProductController::class, 'update'])->whereNumber('id');
+    Route::delete('/training/products/{id}', [TrainingProductController::class, 'destroy'])->whereNumber('id');
+    Route::delete('/training/products', [TrainingProductController::class, 'clear']);
     Route::get('/reports/training', [TrainingReportController::class, 'index']);
 });
 Route::put('/json/training/mode', [TrainingAdminController::class, 'setMode'])
@@ -425,6 +434,7 @@ Route::middleware(['auth', 'permission:manage-training'])->group(function () {
     Route::get('/report/training/signups.csv', [TrainingAdminController::class, 'signupsCsv']);
     Route::get('/report/training/signup-poster.pdf', [TrainingAdminController::class, 'signupPoster']);
     Route::get('/report/training/pallet-labels.pdf', [PalletReportController::class, 'trainingLabelsBuilder']);
+    Route::get('/report/training/spot-labels.pdf', [TrainingAdminController::class, 'spotLabels']);
     Route::get('/report/training/report-cards.pdf', [TrainingReportController::class, 'pdf']);
     Route::get('/report/training/report-cards.csv', [TrainingReportController::class, 'csv']);
     Route::get('/report/training/certificates.pdf', [TrainingReportController::class, 'certificates']);

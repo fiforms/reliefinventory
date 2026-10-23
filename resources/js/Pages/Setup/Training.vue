@@ -85,8 +85,8 @@ async function prepare() {
 	preparing.value = true;
 	try {
 		const { data } = await axios.post('/json/training/prepare');
-		notice.value = 'Training data prepared. Print the setup packet and pallet labels below.'
-			+ (data.missing_items?.length ? ' Skipped item numbers not in the Master Item List: ' + data.missing_items.join(', ') + '.' : '');
+		notice.value = 'Training data prepared. Print the setup packet and labels below.'
+			+ (data.warnings?.length ? ' ' + data.warnings.join(' ') : '');
 		await load();
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not prepare training data.';
@@ -240,14 +240,22 @@ onMounted(load);
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Prepare Training</h2>
 					<p class="text-sm text-gray-700">
-						Loads starter work so every station has something to do from the first minute: donation
-						offers waiting to arrive, pallets waiting to sort, stock on sealed pallets and in the sorting
-						area, orders waiting to be picked and shipped, a driver for each team, and BOLs waiting for
-						review. Then print the setup packet and labels and stage the props to match.
+						First scan the real goods you have for the class. Prepare Training then spreads them over the
+						stations so the first team at each one has something to do: delivery boxes with offers waiting
+						at Receiving (most of the goods, so they come in for real), received boxes to sort, sorted goods
+						on the sorting area table, sealed trays at the table spots with orders to pick, picked orders
+						to ship, and a driver for each team. After that every team works on the goods it handled itself
+						one station earlier. The setup packet says which goods go in which box or at which spot, with a
+						contents slip for each and a sign for each station.
 					</p>
+					<div class="flex flex-wrap items-center gap-4 border rounded p-3 text-sm">
+						<div><span class="text-lg font-semibold">{{ status.products.units }}</span> of {{ status.products.plan.target }} items scanned</div>
+						<div><span class="text-lg font-semibold">{{ status.products.distinct }}</span> of {{ status.products.plan.min_products }} different products</div>
+						<Link href="/setup/training/products" class="ri_defaultbutton">Scan Training Products</Link>
+					</div>
 					<div v-if="preparing" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">Preparing training data…</div>
 					<div class="flex flex-wrap items-center gap-3">
-						<button type="button" :disabled="!status.enabled || preparing" @click="prepare"
+						<button type="button" :disabled="!status.enabled || preparing || status.products.units < status.products.plan.staged" @click="prepare"
 							class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white disabled:opacity-50"
 							:class="confirmingPrepare ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'">
 							{{ confirmingPrepare ? 'Confirm — adds a full set of training records' : 'Prepare Training' }}
@@ -259,12 +267,19 @@ onMounted(load);
 							<PrintMenu document-key="training-pallet-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
 								label="Pallet Labels" download-href="/report/training/pallet-labels.pdf" />
 						</template>
+						<PrintMenu document-key="training-spot-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
+							label="Table Spot Labels" download-href="/report/training/spot-labels.pdf" />
 					</div>
 					<p v-if="!status.enabled" class="text-sm text-gray-500">Turn Training Mode on first.</p>
+					<p v-else-if="status.products.units < status.products.plan.staged" class="text-sm text-gray-500">
+						Scan at least {{ status.products.plan.staged }} items first ({{ status.products.plan.staged - status.products.units }} more).
+					</p>
 					<p class="text-xs text-gray-500">
 						Last prepared: <span class="font-mono">{{ status.prepared_at ? formatTime(status.prepared_at) : 'never' }}</span>.
-						Running it again adds another full set (it never removes anything). The items and amounts
-						come from <span class="font-mono">config/training.php</span>.
+						Running it again adds another full set from the same scanned goods (it never removes anything).
+						How many items each station gets is set in <span class="font-mono">config/training.php</span>.
+						The table spot labels (A-1 to C-4, with a barcode for Inventory Movement to scan) print on the
+						pallet label stock.
 					</p>
 				</section>
 
