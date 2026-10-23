@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\ActivityLog;
 use App\Models\Person;
+use App\Models\TrainingSetting;
 use App\Services\TrainingMode;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -81,7 +82,14 @@ class TrainingReportController extends Controller
         $report = $this->buildReport($filters);
         $trainees = collect($report['trainees'])->where('complete', true)->values();
 
-        return Pdf::view('reports.training.certificate', ['report' => $report, 'trainees' => $trainees])
+        $settings = TrainingSetting::current();
+
+        return Pdf::view('reports.training.certificate', [
+            'report' => $report,
+            'trainees' => $trainees,
+            'eventTitle' => $settings->event_title,
+            'eventLocation' => $settings->event_location,
+        ])
             ->driver('weasyprint')
             ->format('letter')
             ->landscape()

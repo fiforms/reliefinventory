@@ -410,6 +410,7 @@ Route::get('/reports/training', function () {
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-training']], function () {
     Route::get('/training/status', [TrainingAdminController::class, 'status']);
     Route::post('/training/prepare', [TrainingAdminController::class, 'prepare']);
+    Route::put('/training/event', [TrainingAdminController::class, 'setEvent']);
     Route::post('/training/trainees', [TrainingAdminController::class, 'storeTrainee']);
     Route::patch('/training/trainees/{id}', [TrainingAdminController::class, 'updateTrainee'])->whereNumber('id');
     Route::get('/reports/training', [TrainingReportController::class, 'index']);

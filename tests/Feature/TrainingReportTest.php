@@ -118,6 +118,31 @@ test('a trainee who worked all six stations is complete and gets a certificate',
     expect($text)->toContain('Certificate of Completion')->toContain('Cy Complete')->not->toContain('Di Partial');
 })->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
 
+test('the certificate shows the event title and location set on the Training Mode page', function () {
+    $trainee = TrainingLoginController::createTrainee('Cy', 'Complete', 1);
+    foreach (range(1, 6) as $station) {
+        ActivityLog::create(['person_id' => $trainee->id, 'training_team' => 1, 'station' => $station, 'action' => 'x.y']);
+    }
+
+    $this->actingAs(userWithPermissions('general-access'))
+        ->putJson('/json/training/event', ['event_title' => 'X', 'event_location' => 'Y'])->assertForbidden();
+    $this->actingAs(userWithPermissions('manage-training'))
+        ->putJson('/json/training/event', ['event_title' => ' Fall Warehouse Class ', 'event_location' => 'Statesville Warehouse'])
+        ->assertOk()->assertJson(['event_title' => 'Fall Warehouse Class', 'event_location' => 'Statesville Warehouse']);
+
+    $path = tempnam(sys_get_temp_dir(), 'cert').'.pdf';
+    app(TrainingReportController::class)->certificatesBuilder([])->save($path);
+    expect(pdfText($path))->toContain('Fall Warehouse Class')->toContain('held at Statesville Warehouse')
+        ->not->toContain('Receiving');
+    expect((int) preg_replace('/\D/', '', shell_exec('pdfinfo '.escapeshellarg($path).' | grep Pages')))->toBe(1);
+
+    // Blank fields fall back to the default title and leave the location out.
+    $this->putJson('/json/training/event', ['event_title' => '', 'event_location' => null])->assertOk()
+        ->assertJson(['event_title' => null, 'event_location' => null]);
+    app(TrainingReportController::class)->certificatesBuilder([])->save($path);
+    expect(pdfText($path))->toContain('Hands-on Warehouse Training')->not->toContain('held at');
+})->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
+
 test('the training pages and PDFs are gated and render', function () {
     preparedTraining();
     $trainer = userWithPermissions('manage-training');

@@ -41,6 +41,8 @@ class TrainingAdminController extends Controller
             'enabled_at' => $settings->enabled_at,
             'prepared_at' => $settings->prepared_at,
             'prepared' => (bool) $settings->prepared_summary,
+            'event_title' => $settings->event_title,
+            'event_location' => $settings->event_location,
             'can_toggle' => Auth::user()->hasPermission('admin-system'),
             'approved_devices' => TrustedDevice::where('status', 'approved')->count(),
             'teams' => TrainingMode::TEAMS,
@@ -65,6 +67,18 @@ class TrainingAdminController extends Controller
         $settings->update($data['enabled']
             ? ['enabled' => true, 'enabled_at' => now(), 'enabled_by' => Auth::id()]
             : ['enabled' => false]);
+
+        return $this->status();
+    }
+
+    /** The event title and location printed on the certificates. */
+    public function setEvent(Request $request)
+    {
+        $data = $request->validate([
+            'event_title' => 'nullable|string|max:150',
+            'event_location' => 'nullable|string|max:150',
+        ]);
+        TrainingSetting::current()->update(array_map(fn ($v) => ($v = trim((string) $v)) === '' ? null : $v, $data));
 
         return $this->status();
     }

@@ -12,7 +12,7 @@ class TrainingSetting extends Model
 {
     protected $table = 'training_settings';
 
-    protected $fillable = ['enabled', 'enabled_at', 'enabled_by', 'prepared_at', 'prepared_by', 'prepared_summary'];
+    protected $fillable = ['enabled', 'enabled_at', 'enabled_by', 'prepared_at', 'prepared_by', 'prepared_summary', 'event_title', 'event_location'];
 
     protected $casts = [
         'enabled' => 'boolean',

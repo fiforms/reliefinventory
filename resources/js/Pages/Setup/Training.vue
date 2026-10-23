@@ -29,14 +29,30 @@ const confirmingPrepare = ref(false);
 const preparing = ref(false);
 const newTrainee = ref({ first_name: '', last_name: '', team: null });
 const showInactive = ref(false);
+const event = ref({ event_title: '', event_location: '' });
+const savingEvent = ref(false);
 
 const trainees = computed(() => (status.value?.trainees || []).filter((t) => showInactive.value || t.active));
 
 async function load() {
 	try {
 		status.value = (await axios.get('/json/training/status')).data;
+		event.value = { event_title: status.value.event_title || '', event_location: status.value.event_location || '' };
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not load Training Mode settings.';
+	}
+}
+
+async function saveEvent() {
+	error.value = notice.value = null;
+	savingEvent.value = true;
+	try {
+		status.value = (await axios.put('/json/training/event', event.value)).data;
+		notice.value = 'Certificate details saved.';
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not save the certificate details.';
+	} finally {
+		savingEvent.value = false;
 	}
 }
 
@@ -227,6 +243,23 @@ onMounted(load);
 							download-href="/report/training/team-sheets.pdf" />
 						<Link href="/reports/training" class="ri_formbutton">Report Cards &amp; Certificates</Link>
 					</div>
+					<form class="grid grid-cols-1 sm:grid-cols-5 gap-4 text-sm items-end" @submit.prevent="saveEvent">
+						<label class="block sm:col-span-2">
+							<span class="text-gray-700">Training event title (on certificates)</span>
+							<input v-model="event.event_title" maxlength="150" placeholder="Hands-on Warehouse Training"
+								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+						</label>
+						<label class="block sm:col-span-2">
+							<span class="text-gray-700">Where the class was held</span>
+							<input v-model="event.event_location" maxlength="150" placeholder="e.g. Statesville Warehouse, Statesville, NC"
+								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
+						</label>
+						<div><PrimaryButton :disabled="savingEvent">{{ savingEvent ? 'Saving…' : 'Save' }}</PrimaryButton></div>
+					</form>
+					<p class="text-xs text-gray-500">
+						A certificate reads "has completed <em>title</em> held at <em>location</em> on <em>date</em>". Left
+						blank, the title is "Hands-on Warehouse Training" and the location is left out.
+					</p>
 					<p class="text-xs text-gray-500">
 						Each team's sheet can also be printed from the <Link href="/help" class="underline">Help</Link> page.
 						Print the team sheets after Prepare Training so they include each team's driver login.
