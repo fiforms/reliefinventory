@@ -21,10 +21,14 @@ class TrainingMode
 {
     public const ROLE = 'Trainee';
 
-    /** What a tap-your-name login can do: the six stations' work, plus reports and printing. Nothing in Setup. */
+    /**
+     * What a tap-your-name login can do: the six stations' work, plus reports and printing. Nothing in Setup, except
+     * the catalog keys Sorting's own lookups need (/json/items, itemtypes, units, categories, and adding a new item).
+     */
     public const TRAINING_KEYS = [
         'general-access', 'manage-receiving', 'manage-donation-offers', 'manage-sorting', 'manage-pallets',
         'manage-people', 'manage-orders', 'view-reports', 'print-documents',
+        'manage-items', 'manage-itemtypes', 'manage-units', 'manage-categories',
     ];
 
     /** Session key holding the id of the person a training (tap-your-name) login was made for. */
