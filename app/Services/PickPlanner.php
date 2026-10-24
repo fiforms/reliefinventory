@@ -11,22 +11,22 @@ use App\Models\Pallet;
 /**
  * Where a picker should take an item type from, so as few pallets as possible leave the warehouse broken.
  *
- * For a need of N:
- *  1. the sorting-area pool (loose, not yet on a pallet);
+ * For a need of N, from the warehouse pallets only (the sorting area is not the shelf — taking from it skips FIFO):
  *  2. whole SEALED pallets (the item is everything on the pallet), expiring ones first (earliest date first), then oldest first, while the remaining need is at least that pallet's quantity — a full
  *     pallet ships intact and needs no opening;
  *  3. the rest from OPEN pallets, expiring first then oldest (they're already broken, so finishing one costs nothing);
  *  4. only if that still isn't enough, open the next remaining SEALED pallet in the same order for the last of it.
+ * Only when the pallets can't cover the need does the plan also offer the sorting-area pool, separately, as `others`
+ * ("look for others") — never as part of the main suggestion.
  * E.g. 750 water with ten sealed 100s and one open 75: seven sealed pallets, then 50 off the open one — a single broken
  * pallet, not 75 off the open one plus seven more sealed pallets opened.
  *
- * Steps come back in walking order (the admin's pick path, `locations.PullSequence`; the sorting area first, unknown
- * locations last). Advisory only: nothing is reserved, so it is recomputed from live stock every time.
+ * Steps come back in walking order (the admin's pick path, `locations.PullSequence`; unknown locations last). Advisory only: nothing is reserved, so it is recomputed from live stock every time.
  */
 class PickPlanner
 {
     /**
-     * @return array{steps: array<int, array<string, mixed>>, short: int, first_sequence: ?int}
+     * @return array{steps: array<int, array<string, mixed>>, others: array<int, array<string, mixed>>, pallet_short: int, short: int, first_sequence: ?int}
      */
     public static function plan(int $itemtypeId, int $need): array
     {
@@ -77,16 +77,6 @@ class PickPlanner
         $steps = [];
         $remaining = max(0, $need);
 
-        foreach ($holdings['pool'] as $pool) {
-            if ($remaining <= 0) {
-                break;
-            }
-            $take = min($remaining, $pool['qty']);
-            $steps[] = ['kind' => 'pool', 'item_id' => $pool['item_id'], 'item' => $pool['item'], 'qty' => $take,
-                'location' => null, 'sequence' => null, 'tag' => null, 'pallet_id' => null, 'status' => null, 'needs_open' => false];
-            $remaining -= $take;
-        }
-
         // Pallets with an expiration date go first, earliest date first; undated pallets follow, oldest pallet first.
         $byAge = fn (string $status) => collect($holdings['pallets'])->where('status', $status)
             ->sortBy(fn ($h) => [($h['expires_on'] ?? null) === null ? 1 : 0, (string) ($h['expires_on'] ?? ''), $h['pallet_id']])->values()->all();
@@ -129,17 +119,31 @@ class PickPlanner
             $remaining -= $take;
         }
 
-        // Walking order: sorting area first, then the pick path; locations with no sequence at the end.
-        usort($steps, fn ($a, $b) => [$a['kind'] === 'pool' ? 0 : 1, $a['sequence'] ?? PHP_INT_MAX, $a['pallet_id'] ?? 0]
-            <=> [$b['kind'] === 'pool' ? 0 : 1, $b['sequence'] ?? PHP_INT_MAX, $b['pallet_id'] ?? 0]);
+        // Walking order: the pick path; locations with no sequence at the end.
+        usort($steps, fn ($a, $b) => [$a['sequence'] ?? PHP_INT_MAX, $a['pallet_id']] <=> [$b['sequence'] ?? PHP_INT_MAX, $b['pallet_id']]);
+
+        // "Look for others": what the pallets couldn't cover, offered from the sorting area as a last resort.
+        $palletShort = $remaining;
+        $others = [];
+        foreach ($holdings['pool'] as $pool) {
+            if ($remaining <= 0) {
+                break;
+            }
+            $take = min($remaining, $pool['qty']);
+            $others[] = ['kind' => 'pool', 'item_id' => $pool['item_id'], 'item' => $pool['item'], 'qty' => $take,
+                'location' => null, 'sequence' => null, 'tag' => null, 'pallet_id' => null, 'status' => null, 'needs_open' => false];
+            $remaining -= $take;
+        }
 
         $sequences = array_filter(array_column($steps, 'sequence'), fn ($s) => $s !== null);
 
         return [
             'steps' => $steps,
+            'others' => $others,
+            'pallet_short' => $palletShort,
             'short' => $remaining,
             // Where this line first sends the picker, used to order lines along the path (null = unknown/last).
-            'first_sequence' => ($steps && $steps[0]['kind'] === 'pool') ? -1 : ($sequences ? min($sequences) : null),
+            'first_sequence' => $sequences ? min($sequences) : ($others ? -1 : null),
         ];
     }
 
@@ -165,7 +169,7 @@ class PickPlanner
     /** Deduct a plan's steps from the holdings it was made from. */
     public static function consume(array &$holdings, array $plan): void
     {
-        foreach ($plan['steps'] as $step) {
+        foreach (array_merge($plan['steps'], $plan['others'] ?? []) as $step) {
             if ($step['kind'] === 'pool') {
                 foreach ($holdings['pool'] as &$pool) {
                     if ($pool['item_id'] === $step['item_id']) {

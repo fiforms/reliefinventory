@@ -70,7 +70,8 @@ test('a sealed pallet must be opened before it can be picked from; then it draws
     $this->postJson("/json/order-filling/{$order->id}/lines/{$line->id}/fills", ['item_id' => $item->id, 'qty' => 25, 'pallet_tag' => $pallet->tag])
         ->assertStatus(422)->assertJsonPath('errors.pallet_tag.0', fn ($m) => str_contains($m, 'open it first'));
     $plan = $this->getJson("/json/order-filling/{$order->id}/plan")->assertOk()->json('lines.'.$line->id);
-    expect(collect($plan['steps'])->pluck('qty', 'kind')->all())->toBe(['pool' => 40, 'pallet' => 20]); // pool of 40 first, then 20 of the sealed 60 (opened first)
+    expect(collect($plan['steps'])->pluck('qty', 'kind')->all())->toBe(['pallet' => 60]); // the sorting-area 40 is not suggested; the sealed 60 is
+    expect($plan['others'])->toBe([]); // pallets cover the need, so no "look for others"
     expect(collect($plan['steps'])->firstWhere('kind', 'pallet')['needs_open'])->toBeTrue();
 
     $this->postJson("/json/order-filling/pallets/{$pallet->id}/open")->assertOk()->assertJsonPath('record.status', 'open');

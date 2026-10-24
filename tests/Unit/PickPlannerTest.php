@@ -23,13 +23,33 @@ test('whole sealed pallets first, then the open pallet for the remainder', funct
         ->and($plan['short'])->toBe(0);
 });
 
-test('the sorting-area pool goes first, then the rest follows the same rule', function () {
+test('the sorting-area pool is never part of the pick, only offered as "others" when the pallets fall short', function () {
     $plan = PickPlanner::planFor(planHoldings(
         [['item_id' => 1, 'item' => 'Water', 'qty' => 3]],
         [['pallet_id' => 1, 'status' => 'open', 'qty' => 2], ['pallet_id' => 2, 'status' => 'open', 'qty' => 50]],
     ), 7);
 
-    expect(summarize($plan))->toBe(['pool:3', '1:2o', '2:2o'])->and($plan['first_sequence'])->toBe(-1);
+    expect(summarize($plan))->toBe(['1:2o', '2:5o'])->and($plan['short'])->toBe(0)->and($plan['others'])->toBe([])
+        ->and($plan['first_sequence'])->toBe(10);
+
+    $short = PickPlanner::planFor(planHoldings(
+        [['item_id' => 1, 'item' => 'Water', 'qty' => 3]],
+        [['pallet_id' => 1, 'status' => 'open', 'qty' => 2]],
+    ), 4);
+
+    expect(summarize($short))->toBe(['1:2o'])->and($short['pallet_short'])->toBe(2)
+        ->and(array_column($short['others'], 'qty'))->toBe([2])->and($short['short'])->toBe(0);
+});
+
+test('different items of one type on a single sealed pallet are all suggested from that pallet', function () {
+    $mk = fn ($item, $qty) => ['pallet_id' => 1, 'status' => 'sealed', 'qty' => $qty, 'pallet_total' => 20, 'item_id' => $item, 'item' => "I$item"];
+    $plan = PickPlanner::planFor(planHoldings(
+        [['item_id' => 2, 'item' => 'Italian', 'qty' => 50]],
+        [$mk(1, 5), $mk(2, 7), $mk(3, 8)],
+    ), 15);
+
+    expect(array_column($plan['steps'], 'qty', 'item_id'))->toBe([1 => 5, 2 => 7, 3 => 3])
+        ->and(array_unique(array_column($plan['steps'], 'pallet_id')))->toBe([1])->and($plan['others'])->toBe([]);
 });
 
 test('open pallets run out, so the oldest sealed pallet is broken for the last of it', function () {

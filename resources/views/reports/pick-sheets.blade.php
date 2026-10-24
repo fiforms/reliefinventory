@@ -140,6 +140,10 @@
                                     @endif
                                 </div>
                             @endforeach
+                            @if(($plans[$line->id]['pallet_short'] ?? 0) > 0)
+                                @php($others = collect($plans[$line->id]['others'] ?? [])->map(fn ($o) => 'sorting area × '.$o['qty'])->implode(', '))
+                                <div><em>{{ $plans[$line->id]['pallet_short'] }} not on a pallet — look for others{{ $others !== '' ? ': '.$others : '' }}</em></div>
+                            @endif
                             @if(($plans[$line->id]['short'] ?? 0) > 0)
                                 <div><em>{{ $plans[$line->id]['short'] }} not found in stock</em></div>
                             @endif

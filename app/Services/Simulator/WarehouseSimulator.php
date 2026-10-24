@@ -915,8 +915,8 @@ class WarehouseSimulator
     }
 
     /**
-     * Take $qty of an item the way the real pick plan does (PickPlanner): sorting-area pool, whole sealed pallets, open
-     * pallets, then the oldest sealed one opened. Status changes happen as a picker would make them.
+     * Take $qty of an item the way the real pick plan does (PickPlanner): whole sealed pallets, open
+     * pallets, then the oldest sealed one opened, then the sorting area as a last resort. Status changes happen as a picker would make them.
      *
      * @return array<int, array{0: ?int, 1: int}> [pallet id (null = sorting area / over-pick), qty] chunks summing to $qty
      */
@@ -930,17 +930,10 @@ class WarehouseSimulator
                     'sequence' => $p['sequence'], 'item_id' => $itemId, 'item' => '', 'qty' => $p['items'][$itemId]];
             }
         }
-        $pool = ($this->pool[$itemId] ?? 0) > 0 ? [['item_id' => $itemId, 'item' => '', 'qty' => $this->pool[$itemId]]] : [];
-        $plan = PickPlanner::planFor(['pool' => $pool, 'pallets' => $held], $qty);
+        $plan = PickPlanner::planFor(['pool' => [], 'pallets' => $held], $qty);
 
         $chunks = [];
         foreach ($plan['steps'] as $step) {
-            if ($step['kind'] === 'pool') {
-                $this->pool[$itemId] -= $step['qty'];
-                $chunks[] = [null, $step['qty']];
-
-                continue;
-            }
             $palletId = $step['pallet_id'];
             $record = Pallet::find($palletId);
             if ($this->pallets[$palletId]['status'] === 'sealed') {
@@ -954,10 +947,18 @@ class WarehouseSimulator
             }
             $chunks[] = [$palletId, $step['qty']];
         }
-        if ($plan['short'] > 0) {
+        // Pallets couldn't cover it: look for others in the sorting area, as a picker would.
+        $short = $plan['short'];
+        $fromPool = min($short, max(0, $this->pool[$itemId] ?? 0));
+        if ($fromPool > 0) {
+            $this->pool[$itemId] -= $fromPool;
+            $chunks[] = [null, $fromPool];
+            $short -= $fromPool;
+        }
+        if ($short > 0) {
             // An injected over-pick: more keyed than the database says exists.
-            $this->pool[$itemId] = ($this->pool[$itemId] ?? 0) - $plan['short'];
-            $chunks[] = [null, $plan['short']];
+            $this->pool[$itemId] = ($this->pool[$itemId] ?? 0) - $short;
+            $chunks[] = [null, $short];
         }
 
         return $chunks;

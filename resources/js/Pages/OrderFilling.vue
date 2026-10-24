@@ -599,8 +599,7 @@ export default {
 								<span class="of_where_title">Pick:</span>
 								<span v-for="(step, i) in plans[line.id].steps" :key="i" class="of_where_chip"
 									:class="{ of_pallet_sealed: step.needs_open }">
-									<template v-if="step.kind === 'pool'">Sorting area &times;{{ step.qty }}</template>
-									<template v-else>
+									<template v-if="true">
 										<strong>{{ step.location || 'no location' }}</strong> {{ step.tag }} &times;{{ step.qty }}<span v-if="step.expires_on"> (exp {{ step.expires_on }})</span>
 										<template v-if="step.status === 'sealed'">
 											<em>{{ step.whole ? 'sealed — take the whole pallet' : 'sealed — open it first' }}</em>
@@ -613,6 +612,14 @@ export default {
 										:title="step.status === 'sealed' && !step.whole ? 'Open the pallet first' : 'Fill the entry row from this step'"
 										@click="useStep(line, step)">Use</button>
 								</span>
+								<template v-if="plans[line.id].pallet_short > 0">
+									<span class="of_hint">{{ plans[line.id].pallet_short }} not on a pallet.</span>
+									<span v-if="plans[line.id].others.length" class="of_hint">Look for others:</span>
+									<span v-for="(step, i) in plans[line.id].others" :key="'o' + i" class="of_where_chip">
+										Sorting area &times;{{ step.qty }}
+										<button type="button" class="ri_formbutton of_use" @click="useStep(line, step)">Use</button>
+									</span>
+								</template>
 								<span v-if="plans[line.id].short > 0" class="of_hint">{{ plans[line.id].short }} not found in stock</span>
 								<span v-if="!plans[line.id].steps.length && !(plans[line.id].short > 0)" class="of_hint">fully picked</span>
 							</div>
