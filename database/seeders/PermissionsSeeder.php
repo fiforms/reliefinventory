@@ -154,6 +154,8 @@ class PermissionsSeeder extends Seeder
         'manage-donor-standing' => "Set a donor's standing (preferred / normal / watch / decline) from the Donor Report",
         // Training Mode (App\Services\TrainingMode): trainees, Prepare Training, setup packet, report cards.
         'manage-training' => 'Run Training Mode classes: trainees, Prepare Training, setup packet and training report cards',
+        // Design Votes (App\Support\DesignPolls): voting itself is public; opening/closing polls and live results are this.
+        'manage-design-votes' => 'Open and close Design Votes polls and see their results',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -191,6 +193,7 @@ class PermissionsSeeder extends Seeder
         'adjust-inventory',
         'manage-donor-standing',
         'manage-training',
+        'manage-design-votes',
     ];
 
     /**

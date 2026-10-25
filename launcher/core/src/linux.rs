@@ -277,13 +277,6 @@ impl<R: Runner> Platform for LinuxBackend<R> {
         }
     }
 
-    fn host_path(&self, remote: &str) -> PathBuf {
-        match remote.strip_prefix(REMOTE_DIR) {
-            Some(rest) => self.stack.join(rest.trim_start_matches('/')),
-            None => PathBuf::from(remote),
-        }
-    }
-
     async fn pull(&self, remote: &str, local: &Path) -> Result<()> {
         let Some(inside) = Self::container_path(remote) else { return fail("that is not a backup file") };
         let from = format!("app:{inside}");

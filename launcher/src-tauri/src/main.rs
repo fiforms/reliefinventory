@@ -2,7 +2,7 @@
 //!
 //! Everything that installs, starts, stops, edits settings or touches backups lives in the core crate
 //! (and is tested there); this file wires it to the window (commands), the tray, start-at-login,
-//! single-instance behaviour and the elevated `--install` pass.
+//! single-instance behaviour and the elevated `--install` pass (Windows; a Mac installs in-process).
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -73,7 +73,8 @@ async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
     })
 }
 
-/// Elsewhere nothing needs elevation: install in this process, reporting through the same status file.
+/// Off Windows nothing needs administrator rights (a Mac, or Docker on Linux), so the install runs in this process — still
+/// reporting through the status file, so the window shows progress exactly as it does on Windows.
 #[cfg(not(windows))]
 #[tauri::command]
 async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
@@ -81,7 +82,7 @@ async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
     status::write(launcher.dir(), &InstallStatus { running: true, step: "Starting".into(), ..Default::default() });
     tauri::async_runtime::spawn(async move {
         if let Err(e) = launcher.install().await {
-            tracing::error!("install failed: {e}"); // the status file already carries the message
+            tracing::error!("install failed: {e}");
         }
     });
     Ok(())
@@ -96,6 +97,19 @@ async fn get_preflight(state: State<'_, AppState>) -> Result<Option<String>, Str
         Preflight::Ok => None,
         Preflight::Blocked(why) => Some(why),
     })
+}
+
+/// An install that ran in this process can't still be running when the program starts, so a status file
+/// that says so is left from a quit or crash mid-install: turn it into a "try again" (install resumes).
+#[cfg(not(windows))]
+fn recover_interrupted_install(dir: &std::path::Path) {
+    if status::read(dir).is_some_and(|s| s.running) {
+        status::write(dir, &InstallStatus {
+            step: "Install interrupted".into(),
+            error: Some("Setup stopped before it finished (RI Launcher was closed). Press Try again to continue where it left off.".into()),
+            ..Default::default()
+        });
+    }
 }
 
 #[tauri::command]
@@ -202,6 +216,7 @@ async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), S
     backups::import(state.launcher.platform().as_ref(), std::path::Path::new(&path)).await.map_err(err)
 }
 
+#[cfg(windows)]
 #[tauri::command]
 fn restart_computer() -> Result<(), String> {
     if !cfg!(windows) {
@@ -212,6 +227,13 @@ fn restart_computer() -> Result<(), String> {
         .spawn()
         .map(|_| ())
         .map_err(err)
+}
+
+/// Setup never asks a Mac to restart, so the window never offers this there.
+#[cfg(not(windows))]
+#[tauri::command]
+fn restart_computer() -> Result<(), String> {
+    Err("Restarting is only needed on Windows.".into())
 }
 
 #[tauri::command]
@@ -232,7 +254,19 @@ fn app_version(app: AppHandle) -> String {
     app.package_info().version.to_string()
 }
 
+/// On a Mac the launcher is a menu-bar app while its window is hidden (no Dock icon for a window that
+/// isn't there), and a normal app while the window is open.
+#[cfg(target_os = "macos")]
+fn set_dock_icon(app: &AppHandle, visible: bool) {
+    let policy = if visible { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
+    let _ = app.set_activation_policy(policy);
+}
+
+#[cfg(not(target_os = "macos"))]
+fn set_dock_icon(_app: &AppHandle, _visible: bool) {}
+
 fn show_main(app: &AppHandle) {
+    set_dock_icon(app, true);
     if let Some(w) = app.get_webview_window("main") {
         let _ = w.show();
         let _ = w.unminimize();
@@ -293,10 +327,13 @@ fn main() {
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let _ = window.hide();
+                set_dock_icon(window.app_handle(), false);
             }
         })
         .setup(|app| {
             let launcher = make_launcher();
+            #[cfg(not(windows))]
+            recover_interrupted_install(launcher.dir());
             app.manage(AppState { launcher: launcher.clone() });
 
             let open = MenuItem::with_id(app, "open_app", "Open Relief Inventory", true, None::<&str>)?;
@@ -308,7 +345,8 @@ fn main() {
                 .tooltip("RI Launcher")
                 .icon(tray_icon(false))
                 .menu(&menu)
-                .show_menu_on_left_click(false)
+                // a Mac's menu-bar icons open their menu on click; Windows' tray opens the window on click
+                .show_menu_on_left_click(cfg!(target_os = "macos"))
                 .on_menu_event(move |app, e| match e.id.as_ref() {
                     "open_app" => {
                         let _ = open_local(app, &l2);
@@ -318,6 +356,9 @@ fn main() {
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
+                    if cfg!(target_os = "macos") {
+                        return;
+                    }
                     if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
                         show_main(tray.app_handle());
                     }
@@ -327,7 +368,9 @@ fn main() {
             // Signed-in launch (--hidden): stay in the tray and bring Relief Inventory up so sharing resumes
             // without anyone opening the window. Otherwise show the window.
             let at_login = std::env::args().any(|a| a == "--hidden");
-            if !at_login {
+            if at_login {
+                set_dock_icon(app.handle(), false);
+            } else {
                 show_main(app.handle());
             }
             let l3 = launcher.clone();
@@ -354,6 +397,13 @@ fn main() {
             });
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running RI Launcher");
+        .build(tauri::generate_context!())
+        .expect("error while running RI Launcher")
+        .run(|_app, _event| {
+            // clicking the Dock icon while the window is hidden brings it back
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen { .. } = _event {
+                show_main(_app);
+            }
+        });
 }

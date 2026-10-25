@@ -1,27 +1,36 @@
 # RI Launcher
 
-Installs and runs Relief Inventory on Windows and Linux (macOS later) **without Docker Desktop** — on Windows, Docker Engine
-runs inside a small Linux layer the launcher creates (a private Alpine WSL 2 distro); on Linux it simply uses the Docker
-the person already has; a Lima VM is planned for macOS (`MAC_VERSION.md`). A window with buttons to install / start / stop / update, a **Run as a LAN service** switch, a **Copy
+Installs and runs Relief Inventory on Windows, macOS and Linux **without Docker Desktop** — Docker Engine runs
+inside a small Linux layer the launcher creates (a private Alpine WSL 2 distro on Windows; a private Alpine Lima VM on
+macOS), or, on Linux, is simply the Docker the person already has. A window with buttons to install / start / stop / update, a **Run as a LAN service** switch, a **Copy
 shareable link** button, an editable computer name, and backup tools. A separate program from `print-client/`, same
 repo and the same Rust + Tauri v2 + Vue approach.
 
 **Status (2026-10-25):** the core, CLI and Windows backend are built and were run end to end on a real Windows 11
 machine (clean install through reboot to a LAN-reachable app, backup list/create/export/restore, local ↔ LAN switch,
 host-name edit). The Tauri window (`src-tauri/`, `ui/`) compiles and its UI builds, but **has not been run yet** — the
-first real run is the CI build (`.github/workflows/launcher-windows.yml`, manual, unsigned installer). **Linux** (2026-10-25, `core/src/linux.rs`) is built and was run for real against Docker 29 on Ubuntu through the CLI (install, start,
+first real run is the CI build (`.github/workflows/launcher-windows.yml`, manual, unsigned installer).
+
+**macOS (2026-10-25):** the Lima backend (`lima.rs`) is built and was run end to end through the CLI on an Apple-silicon
+MacBook Pro (macOS 26.6): clean install, start/stop, LAN and local-only, backups, update, uninstall with and without
+keeping data (see "Proven on macOS"). A universal (arm64 + x86_64) unsigned `.dmg` builds locally;
+`.github/workflows/launcher-macos.yml` (manual) builds the same in CI but has not been run yet. **The Mac window has not been run yet**, and nothing has run on an Intel Mac.
+Plan, decisions and open questions: [`MAC_VERSION.md`](MAC_VERSION.md).
+
+**Linux** (2026-10-25, `core/src/linux.rs`) is built and was run for real against Docker 29 on Ubuntu through the CLI (install, start,
 LAN/local switch, backups create/export/restore, stop, update, uninstall keep/remove data); the window compiles there but has
-not been run. **macOS has no backend yet** (`platform::Unsupported`); see "Not built".
+not been run (`.github/workflows/launcher-linux.yml`, manual, builds the `.deb` and AppImage). See "Linux" below.
 
 ## Layout
 - `core/` (`ri-launcher-core`, plain crate, `cargo test` runs everywhere) — `platform.rs` (the `Platform` trait: what a
-  Linux layer must do), `wsl.rs` (Windows backend), `service.rs` (`Launcher`: settings + compose + proxy + backend),
+  Linux layer must do), `wsl.rs` (Windows backend), `lima.rs` (macOS backend), `layer.rs` (what runs *inside* the Linux
+  layer, shared by both: the Docker install, `/opt/ri`, compose commands), `service.rs` (`Launcher`: settings + compose + proxy + backend),
   `settings.rs`, `compose.rs`, `network.rs`, `proxy.rs`, `backups.rs`, `status.rs`, `download.rs`, `runner.rs`,
   `elevate.rs`, `linux.rs` (Linux backend). `bin/ri-launcher.rs` is a full command-line front end (`ri-launcher --help`) — useful for testing and
   for driving a remote machine.
 - `src-tauri/` (Tauri shell: commands, tray, start-at-login, single instance, the elevated `--install` pass) and
   `ui/` (Vue). Not a workspace member (own `Cargo.lock`), like print-client.
-- Tests: `cd launcher && cargo test` (backend command sequences run against a fake `Runner`, no Windows needed).
+- Tests: `cd launcher && cargo test` (both backends' command sequences run against a fake `Runner`, on any OS).
   `compose::tests::bundled_template_still_renders` fails if someone edits `docker/compose.yaml` in a way the launcher
   can no longer patch.
 
@@ -50,8 +59,9 @@ not been run. **macOS has no backend yet** (`platform::Unsupported`); see "Not b
   lists each LAN IP as a fallback. Virtual adapters (WSL, Docker, Hyper-V, VMs) are filtered out of that list.
   Local-only mode has no link (the button refuses rather than hand out one that can't work).
 - **Backups** (`backups.rs`, same files the app makes in `/opt/ri/backups` inside the layer): list, "Back up now"
-  (`php artisan backup:create`), **Save a copy** (copies through `\\wsl.localhost\ReliefInventory\…` to
-  Documents\Relief Inventory Backups and marks the copy **read-only**), and **Restore from file** (refuses non-zips,
+  (`php artisan backup:create`), **Save a copy** (`Platform::pull` — on Windows through `\\wsl.localhost\ReliefInventory\…`,
+  on a Mac staged through the VM's `/tmp` and `limactl copy` — to Documents/Relief Inventory Backups, marking the copy
+  **read-only**), and **Restore from file** (refuses non-zips,
   takes a safety backup first and stops if that fails, then `backup:restore … --force --no-interaction`; the window's own
   confirmation replaces the command's prompt). The encryption key (`APP_KEY`) is not in a backup — see docker/README.md.
 
@@ -78,6 +88,41 @@ install card shows what to run for their distribution (`install_hint`, from `/et
 - Start-at-login uses a `~/.config/autostart` entry; the tray needs an app-indicator on GNOME (same as the Print Client).
 - CI: `.github/workflows/launcher-linux.yml` (manual) builds the `.deb` and AppImage.
 
+## How it works on macOS
+- **Install**, no administrator rights and no restart, so it runs in the window's own process (still reporting through
+  `install-status.json`, so the UI is the same; a status left "running" by a quit mid-install becomes "Try again" at next
+  launch): download a pinned Lima release (SHA-256, `lima.rs::pins`) and unpack it into the data dir
+  (`~/Library/Application Support/ReliefInventory/lima`); download Lima's own pinned Alpine 3.23 cloud image; write
+  `ri-instance.yaml` (`vmType: vz`, 2 CPUs, 4 GiB — 2 GiB on an 8 GB Mac —, sparse 60 GiB disk, `mounts: []`, only port
+  18080 forwarded, to 127.0.0.1); `limactl create` + `start`; inside, the shared `apk add docker…`, then
+  `rc-update add docker default`; write the compose file; `docker compose pull`.
+- **Every `limactl` call runs as `env LIMA_HOME=~/.ri-lima limactl …`**, so a developer's own Lima/Colima is never touched.
+  `LIMA_HOME` is in the home folder, not the data dir, because Lima's socket paths must be under 104 bytes.
+- **Start:** `limactl start` if the VM isn't running (≈30 s; Lima's host agent is its own background process, so the VM
+  keeps running after the launcher quits, like the Windows distro), wait for dockerd (an OpenRC service in the VM),
+  write the compose file, `compose up -d`. **Stop:** `compose stop`, `limactl stop`. Commands inside run as
+  `limactl shell --workdir / ri -- sudo …`.
+- **Copying files in and out** (`pull`/`push`): `limactl copy` runs as the guest user, which can't read root's backups, so
+  files are staged in the VM's `/tmp` with `sudo` and the staging copy is always removed.
+- **Uninstall** `--keep-data` leaves the VM and Lima (a reinstall finds the database); a full uninstall runs
+  `limactl delete` and removes `~/.ri-lima`, Lima and the downloads.
+- **Share name:** `scutil --get LocalHostName` + `.local` (the name Bonjour answers to); the plain host name often already
+  ends in `.local`. macOS's virtual interfaces (`utun*`, `bridge*` — the VM's is `bridge100` —, `awdl*`, `llw*`, `anpi*`,
+  `ap*`) are left out of the address list.
+- The window is a menu-bar app while hidden (no Dock icon), a normal app while open; the menu-bar icon opens its menu on click.
+
+## Proven on macOS (2026-10-25, Apple-silicon MacBook Pro, macOS 26.6.2, Lima 2.2.1, via the CLI)
+Clean install from nothing in 3½ minutes (no password, no terminal step); the first-run wizard at `localhost:8080`; the
+`.local` name and LAN IP from the share link answer; local-only stops LAN access and back, switched while `ri-launcher run`
+was running; back up now, export (path with spaces, read-only, no overwrite), restore (safety backup first; a change made
+after the backup was undone); data kept across stop/start; the VM outlives the launcher process; update; uninstall
+`--keep-data` then reinstall (28 s, data still there); full uninstall leaves no process, listener or folder but
+`settings.json`. Lima's release `limactl` is ad-hoc signed *with* the virtualization entitlement and a file we download
+ourselves carries no quarantine flag, so it runs with no Gatekeeper prompt. **With the macOS firewall on, LAN connections
+are accepted but hang (no error) until "Allow incoming connections" is answered** for the launcher. Not yet tested: the
+window; the `.dmg` downloaded from the internet (Gatekeeper's "Open Anyway"); an Intel Mac; macOS 13/14; an 8 GB Mac;
+sleep/wake; other devices on the network (only this Mac's own LAN address was tried); start at login.
+
 ## Proven by hand and in the code on Windows 11 (2026-10-25)
 `wsl --install --no-distribution` (and `wsl --update`) **fail** on a machine with no WSL — the inbox stub only takes a bare
 `--install`, which pulls Ubuntu — which is why the sequence above uses DISM + the MSI. Anything started from an SSH session
@@ -87,8 +132,10 @@ profile on the test laptop), Windows 10, Home vs Pro, sleep/hibernate, the real 
 elevates as a *different* admin (the Linux layer is per Windows user, so that would install it for the admin — unsupported).
 
 ## Not built / possible future work
+- **macOS:** code signing + notarization (needs an Apple Developer ID); keeping the Mac awake while sharing; VM size as
+  a setting.
 - **Linux:** the window has not been run (only compiled); rootless Docker, Podman and Docker Desktop for Linux are untried; no check
-  that the port is free before install. **macOS backend** (Lima, `vmType: vz`, bundle `limactl`) — the `Platform` trait is the seam; `Unsupported` stands in.
+  that the port is free before install.
 - **Run as a Windows service** (LocalSystem, starts at boot, survives logout; the tray app becomes a controller). The
   distro is per-user, so it would be its own import under `C:\ProgramData\ReliefInventory`. Unproven: needs a test of WSL under
   SYSTEM with nobody logged in. Today's design is a per-user tray app with start-at-login.

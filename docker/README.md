@@ -3,6 +3,9 @@
 One image (`linux/amd64` and `linux/arm64`) runs every role; the compose file wires them to MariaDB.
 Nothing else is needed on the host — WeasyPrint (for PDF rendering), fonts and PHP are all in the image.
 
+> **On a Windows PC or a Mac without Docker Desktop?** [RI Launcher](../launcher/README.md) installs and runs this same
+> stack with no terminal: Docker Engine inside a small private Linux layer (WSL 2 on Windows, a Lima VM on macOS).
+
 ## Quick start
 
 You only need `compose.yaml` (it is self-contained; grab it from this directory, or clone the repo).

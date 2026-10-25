@@ -8,6 +8,7 @@ namespace App\Services;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\OfflineModeSetting;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
@@ -68,12 +69,12 @@ class FeedbackPushService
      * configured() above) but still does nothing if central isn't
      * configured at all.
      *
-     * @return array{attempted: bool, total: int, sent: int}
+     * @return array{attempted: bool, total: int, sent: int, error: ?string}
      */
     public function pushUnsent(): array
     {
         if (! $this->configured()) {
-            return ['attempted' => false, 'total' => 0, 'sent' => 0];
+            return ['attempted' => false, 'total' => 0, 'sent' => 0, 'error' => null];
         }
 
         $reports = FeedbackReport::whereNull('instance_identifier')
@@ -81,51 +82,103 @@ class FeedbackPushService
             ->get();
 
         if ($reports->isEmpty()) {
-            return ['attempted' => true, 'total' => 0, 'sent' => 0];
+            return ['attempted' => true, 'total' => 0, 'sent' => 0, 'error' => null];
         }
 
-        $sent = $this->push($reports);
+        $result = $this->push($reports);
 
-        return ['attempted' => true, 'total' => $reports->count(), 'sent' => $sent];
+        return ['attempted' => true, 'total' => $reports->count(), ...$result];
+    }
+
+    /**
+     * Checks the saved central address and secret without sending any
+     * report: posts a `ping` that central answers once the secret matches.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function testConnection(): array
+    {
+        if (! $this->configured()) {
+            return ['ok' => false, 'message' => 'Enter the central instance\'s address and shared secret (or paste a connection code) and save first.'];
+        }
+
+        $settings = FeedbackAggregationSetting::current();
+        $response = $this->send(['instance_identifier' => $this->instanceIdentifier(), 'ping' => true], $error);
+        if ($error !== null) {
+            return ['ok' => false, 'message' => $error];
+        }
+        if ($response->json('ok') !== true) {
+            return ['ok' => false, 'message' => $settings->ingestUrl().' answered, but not as a Relief Inventory central instance. Check the address, or update the central instance.'];
+        }
+        if ($response->json('instance_role') !== 'central') {
+            return ['ok' => false, 'message' => 'Connected, but that instance is set to Remote, not Central. Change its role to Central so reports sent there are triaged.'];
+        }
+
+        return ['ok' => true, 'message' => 'Connected to '.parse_url($settings->ingestUrl(), PHP_URL_HOST).' — the shared secret matches.'];
     }
 
     /**
      * Sends the given reports in one batch request and marks only the
      * uuids central actually acknowledges as submitted — a 200 response
      * alone is never treated as success, since a batch can partially fail
-     * (see the design brief). Returns how many were acknowledged.
+     * (see the design brief).
+     *
+     * @return array{sent: int, error: ?string} how many were acknowledged, and why none were if the request failed
      */
-    private function push(Collection $reports): int
+    private function push(Collection $reports): array
     {
-        $settings = FeedbackAggregationSetting::current();
-
-        try {
-            $response = Http::timeout(10)
-                ->withHeaders(['X-Feedback-Shared-Secret' => $settings->shared_secret])
-                ->post($settings->central_ingest_url, [
-                    'instance_identifier' => $this->instanceIdentifier(),
-                    'reports' => $reports->map(fn (FeedbackReport $r) => $this->serialize($r))->all(),
-                ]);
-        } catch (\Throwable $e) {
-            Log::warning('Feedback push to central failed: '.$e->getMessage());
-
-            return 0;
-        }
-
-        if (! $response->successful()) {
-            Log::warning('Feedback push to central failed with status '.$response->status());
-
-            return 0;
+        $response = $this->send([
+            'instance_identifier' => $this->instanceIdentifier(),
+            'reports' => $reports->map(fn (FeedbackReport $r) => $this->serialize($r))->all(),
+        ], $error);
+        if ($error !== null) {
+            return ['sent' => 0, 'error' => $error];
         }
 
         $received = collect($response->json('received', []))->filter()->values();
         if ($received->isEmpty()) {
-            return 0;
+            return ['sent' => 0, 'error' => 'Central answered but accepted none of the reports (see its log).'];
         }
 
         FeedbackReport::whereIn('uuid', $received)->update(['submitted_at' => now()]);
 
-        return $received->count();
+        return ['sent' => $received->count(), 'error' => null];
+    }
+
+    /**
+     * Posts to central. Never throws: on failure $error gets a message an
+     * admin can act on (it is also logged) and null is returned.
+     */
+    private function send(array $payload, ?string &$error): ?Response
+    {
+        $error = null;
+        $settings = FeedbackAggregationSetting::current();
+        $url = $settings->ingestUrl();
+
+        try {
+            $response = Http::timeout(10)
+                ->withHeaders(['X-Feedback-Shared-Secret' => $settings->shared_secret])
+                ->post($url, $payload);
+        } catch (\Throwable $e) {
+            Log::warning('Feedback push to central failed: '.$e->getMessage());
+            $error = 'Could not reach '.parse_url($url, PHP_URL_HOST).': '.$e->getMessage();
+
+            return null;
+        }
+
+        if ($response->successful()) {
+            return $response;
+        }
+
+        Log::warning('Feedback push to central failed with status '.$response->status());
+        $error = match ($response->status()) {
+            403 => 'Central refused the shared secret. Both instances need the same one — copy a fresh connection code from the central instance.',
+            404, 405 => $url.' isn\'t a Relief Inventory central instance (HTTP '.$response->status().'). Check the address.',
+            503 => 'Central is down for maintenance (HTTP 503). Try again later.',
+            default => 'Central answered with HTTP '.$response->status().'.',
+        };
+
+        return null;
     }
 
     private function serialize(FeedbackReport $report): array

@@ -397,6 +397,25 @@ printed team sheets). **Only the login changes; the system otherwise works norma
 - Driver Portal shows staff (manage-orders) the staff view, so the Round 2 delivery is done on a device not logged in —
   the team sheet says so.
 
+### Design Votes (`/vote/{slug}` public, `/setup/design-votes` `manage-design-votes`) — 2026-10-25
+
+People try live demos of a few UX designs and react to each: 👍 "I like this" or 👎 "Not for me", each with an
+optional why (`design_poll_reactions`, one per option per ballot). An option left alone is neutral; at least one
+reaction is required (disliking all is fine). Results rank by likes, then fewest dislikes; the best-liked gets built. Polls are **code**
+(`App\Support\DesignPolls`: title, question, options) because each option is a Vue demo
+(`resources/js/DesignPolls/index.js`, slug → option key → component; `DesignVoteTest` fails if the keys don't match).
+Only open/closed state (`design_polls`) and ballots (`design_poll_votes` + their reactions) are in the database. One
+ballot per browser (HttpOnly cookie token, stored hashed; a signed-in person's also follows them), voting again
+replaces all its reactions, and
+results stay hidden on the vote page until the poll is closed. A **"Have another idea?"** box on the same page
+(`POST /vote/{slug}/idea`, `design_poll_ideas`) takes free text about that question or anything else — several per
+person, no vote needed, even after closing; shown on the admin page and in the CSV. It takes an optional email and an
+"OK to contact me about this idea" box (email required only when ticked; `email`/`ok_to_contact` on the idea). Same protection as `/join`
+(Turnstile, one widget per form; 80/min per IP).
+Adding a poll: a registry entry, its demo components, and a migration inserting its `design_polls` row (closed). First
+poll: `delivery-days` (Order Entry's "Can Accept Delivery" picker, three designs: tap to cycle, pick then star, day grid; from the 2026-10-24 class). Run polls
+on demo, not cs26 (cs26's training reset would erase the votes).
+
 ### Email Settings (`/setup/email`, `admin-system`) — 2026-10-22
 
 Outgoing mail is configured in the app, not only in `.env`: `MailSetting` (singleton row, every column nullable, null =
@@ -431,6 +450,14 @@ specifically to support adding a comment without advancing) creates an immutable
 `FeedbackReportStatusLog` row and emails the reporter. The triage page renders full history —
 every log entry, always visible, not behind a click — distinguishing "moved to X" from "note while
 at X" purely by comparing each entry's status to the one before it, no extra column needed.
+
+**Centralized aggregation** (remote instances push their reports to one central instance, settings on `/setup/feedback`,
+`FeedbackAggregationSetting`): the central address may be typed as a bare domain — `normalizeCentralUrl()` adds https:// and
+`/json/feedback/ingest` (also applied when reading an older stored value). The easy path is a **connection code**
+(`RIFEED1-` + base64url JSON of URL + secret): central's **Show/Create Connection Code** (`POST
+/json/feedback-aggregation-settings/connection-code`, central only, creates a 40-char secret if none) and the remote's paste
+box (`connection_code` on the PUT). **Test Connection** posts a `ping` to ingest; push failures now come back as a message
+(`pushUnsent()['error']`) instead of only a log line.
 
 A local-only `feedback-triage` Claude Code skill (`.claude/skills/feedback-triage/` — gitignored,
 never committed, see that directory's own README.md if present on this machine) reviews New and
@@ -646,15 +673,18 @@ comparing the `RI_VERSION` each image carries so neither the pull nor a newer OS
 
 ### RI Launcher (`launcher/`, read its README) — 2026-10-25
 
-Installs and runs this app on Windows without Docker Desktop (Docker Engine inside a private Alpine WSL 2 distro, `ReliefInventory`) and on
-Linux (`core/src/linux.rs`: the host's own Docker, its own compose project `ri-launcher` — never the shipped `name:`, which another checkout may own — and
-the app port bound to 127.0.0.1; macOS/Lima is not built, see `launcher/MAC_VERSION.md`). Rust core (`launcher/core`: `Platform` trait, `wsl.rs`, `service.rs` `Launcher`, settings, compose editing, a LAN TCP proxy,
+Installs and runs this app on Windows, macOS and Linux without Docker Desktop (Docker Engine inside a private Alpine WSL 2 distro, `ReliefInventory`, on
+Windows; a private Alpine Lima VM, `vmType: vz`, on macOS — `launcher/MAC_VERSION.md`; on Linux `core/src/linux.rs` uses the host's own Docker, under its own
+compose project `ri-launcher` — never the shipped `name:`, which another checkout may own — with the app port bound to 127.0.0.1). Rust core (`launcher/core`: `Platform` trait, `wsl.rs`, `service.rs` `Launcher`, settings, compose editing, a LAN TCP proxy,
 backup tools) + CLI (`ri-launcher`) + a Tauri v2/Vue window (`launcher/src-tauri`, `launcher/ui`), a separate program from `print-client/`. Non-obvious:
 `wsl --install --no-distribution` fails on a machine with no WSL, so install = DISM features → restart → WSL's own MSI (pinned, SHA-256) → `wsl --import`
 → `apk add docker`; `docker/compose.yaml` is **embedded and regenerated from `settings.json` on every start** (only `APP_URL`, the `8080:8080` mapping →
 `18080:8080`, an optional timezone), and a launcher-process proxy owns the public port — "Run as a LAN service" = listen on every interface, "local only" =
 127.0.0.1; the share link is `<name>.local:<port>`. A launcher test fails if `docker/compose.yaml`'s `APP_URL` / `"8080:8080"` lines change shape, so
 keep those lines patchable. Run on real Windows 11 and on Ubuntu/Docker via the CLI (clean install, LAN, backups); the window has not been run yet.
+macOS (2026-10-25, `lima.rs`): no admin rights or restart, so the install runs in the window's process; every `limactl` call is `env LIMA_HOME=~/.ri-lima`
+(our own Lima, never the user's — and in the home folder because Lima socket paths must be < 104 bytes); `layer.rs` holds the in-VM steps both backends
+share, and `Platform::pull`/`push` (not a host path) move backup files. Proven via the CLI on an Apple-silicon Mac; the Mac window is not run yet.
 
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 

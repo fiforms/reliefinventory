@@ -242,3 +242,52 @@ test('send-unsent requires manage-feedback', function () {
     $user = userWithPermissions('general-access');
     $this->actingAs($user)->postJson('/json/feedback-reports/send-unsent')->assertForbidden();
 });
+
+test('central answers a ping with its role once the secret matches, and stores nothing', function () {
+    configureSharedSecret();
+    FeedbackAggregationSetting::current()->update(['instance_role' => 'central']);
+
+    $this->postJson('/json/feedback/ingest', ['instance_identifier' => 'r', 'ping' => true], ['X-Feedback-Shared-Secret' => 'test-shared-secret'])
+        ->assertOk()->assertExactJson(['ok' => true, 'instance_role' => 'central']);
+    $this->postJson('/json/feedback/ingest', ['instance_identifier' => 'r', 'ping' => true], ['X-Feedback-Shared-Secret' => 'wrong'])
+        ->assertForbidden();
+
+    expect(FeedbackReport::count())->toBe(0);
+});
+
+test('test connection reports success against a central instance', function () {
+    configureAsRemote();
+    Http::fake([CENTRAL_URL => Http::response(['ok' => true, 'instance_role' => 'central'])]);
+
+    $this->actingAs(userWithPermissions('manage-feedback'))->postJson('/json/feedback-aggregation-settings/test')
+        ->assertOk()->assertJsonPath('ok', true);
+
+    Http::assertSent(fn ($request) => $request['ping'] === true && $request->hasHeader('X-Feedback-Shared-Secret', 'test-shared-secret'));
+});
+
+test('test connection explains a wrong address, a wrong secret, and a non-central instance', function (array $reply, string $expected) {
+    configureAsRemote();
+    Http::fake([CENTRAL_URL => Http::response(...$reply)]);
+
+    $result = $this->actingAs(userWithPermissions('manage-feedback'))->postJson('/json/feedback-aggregation-settings/test')
+        ->assertOk()->assertJsonPath('ok', false)->json('message');
+
+    expect($result)->toContain($expected);
+})->with([
+    'wrong address' => [['', 405], 'isn\'t a Relief Inventory central instance'],
+    'wrong secret' => [['', 403], 'refused the shared secret'],
+    'not central' => [[['ok' => true, 'instance_role' => 'remote']], 'set to Remote'],
+]);
+
+test('send-unsent tells the admin why nothing was sent', function () {
+    configureAsRemote();
+    FeedbackReport::create([
+        'person_id' => userWithPermissions('general-access')->id,
+        'type' => 'bug', 'message' => 'm', 'page_url' => 'https://x.test', 'status' => 'new',
+    ]);
+    Http::fake([CENTRAL_URL => Http::response('', 405)]);
+
+    $this->actingAs(userWithPermissions('manage-feedback'))->postJson('/json/feedback-reports/send-unsent')
+        ->assertOk()->assertJsonPath('sent', 0)->assertJsonPath('total', 1)
+        ->assertJson(fn ($json) => $json->where('error', fn ($e) => str_contains($e, 'Check the address'))->etc());
+});

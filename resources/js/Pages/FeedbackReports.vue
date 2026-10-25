@@ -97,14 +97,95 @@ async function saveAggregationSettings() {
 			central_ingest_url: aggregationForm.value.central_ingest_url.trim() || null,
 			shared_secret: aggregationForm.value.shared_secret.trim() || null,
 		});
-		aggregationSettings.value = response.data.settings;
-		aggregationForm.value.shared_secret = '';
-		currentInstanceRole.value = response.data.settings.instance_role;
+		applySavedSettings(response.data.settings);
 		aggregationSaved.value = true;
+		if (response.data.settings.instance_role === 'remote') await testConnection();
 	} catch (e) {
 		aggregationError.value = e.response?.data?.message || 'Could not save these settings.';
 	} finally {
 		aggregationSaving.value = false;
+	}
+}
+
+function applySavedSettings(settings) {
+	aggregationSettings.value = settings;
+	aggregationForm.value.instance_role = settings.instance_role;
+	aggregationForm.value.central_ingest_url = settings.central_ingest_url || '';
+	aggregationForm.value.shared_secret = '';
+	currentInstanceRole.value = settings.instance_role;
+}
+
+// Remote: paste the code copied from the central instance — sets the
+// address and secret in one step, then checks them.
+const pastedCode = ref('');
+const connecting = ref(false);
+const connectError = ref(null);
+
+async function connectWithCode() {
+	connecting.value = true;
+	connectError.value = null;
+	connectionTest.value = null;
+	try {
+		const response = await axios.put('/json/feedback-aggregation-settings', {
+			connection_code: pastedCode.value.trim(),
+			instance_identifier: aggregationForm.value.instance_identifier.trim() || null,
+		});
+		applySavedSettings(response.data.settings);
+		pastedCode.value = '';
+		await testConnection();
+	} catch (e) {
+		connectError.value = e.response?.data?.message || 'Could not save the connection code.';
+	} finally {
+		connecting.value = false;
+	}
+}
+
+const testingConnection = ref(false);
+const connectionTest = ref(null); // { ok, message }
+
+async function testConnection() {
+	testingConnection.value = true;
+	connectionTest.value = null;
+	try {
+		const response = await axios.post('/json/feedback-aggregation-settings/test');
+		connectionTest.value = response.data;
+	} catch (e) {
+		connectionTest.value = { ok: false, message: e.response?.data?.message || 'Could not run the test.' };
+	} finally {
+		testingConnection.value = false;
+	}
+}
+
+// Central: the code remote instances paste. Fetched only on request, since
+// it carries the shared secret.
+const centralCode = ref(null);
+const loadingCode = ref(false);
+const codeError = ref(null);
+const codeCopied = ref(false);
+const confirmingNewSecret = ref(false);
+
+async function fetchConnectionCode(newSecret = false) {
+	loadingCode.value = true;
+	codeError.value = null;
+	codeCopied.value = false;
+	confirmingNewSecret.value = false;
+	try {
+		const response = await axios.post('/json/feedback-aggregation-settings/connection-code', { new_secret: newSecret });
+		centralCode.value = response.data.code;
+		aggregationSettings.value = response.data.settings;
+	} catch (e) {
+		codeError.value = e.response?.data?.message || 'Could not make a connection code.';
+	} finally {
+		loadingCode.value = false;
+	}
+}
+
+async function copyConnectionCode() {
+	try {
+		await navigator.clipboard.writeText(centralCode.value);
+		codeCopied.value = true;
+	} catch {
+		codeError.value = 'Copying isn\'t allowed here — select the code and copy it by hand.';
 	}
 }
 
@@ -215,13 +296,13 @@ async function sendUnsentReports() {
 	sendUnsentMessage.value = null;
 	try {
 		const response = await axios.post('/json/feedback-reports/send-unsent');
-		const { attempted, total, sent } = response.data;
+		const { attempted, total, sent, error: pushError } = response.data;
 		if (!attempted) {
 			sendUnsentMessage.value = 'Central push isn\'t configured on this instance.';
 		} else if (total === 0) {
 			sendUnsentMessage.value = 'Nothing to send — every report is already submitted.';
 		} else {
-			sendUnsentMessage.value = `Sent ${sent} of ${total} report${total === 1 ? '' : 's'}.`;
+			sendUnsentMessage.value = `Sent ${sent} of ${total} report${total === 1 ? '' : 's'}.` + (pushError ? ` ${pushError}` : '');
 		}
 		await fetchReports();
 	} catch (e) {
@@ -308,6 +389,50 @@ async function confirmCompose() {
 							</select>
 						</label>
 
+						<div v-if="aggregationForm.instance_role === 'central' && aggregationSettings?.instance_role === 'central'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
+							<p class="font-medium text-gray-700">Connection code</p>
+							<p class="text-gray-500">
+								Paste this code on each remote instance's Feedback page to connect it here. It contains
+								the shared secret, so share it like a password.
+							</p>
+							<div v-if="centralCode" class="space-y-2">
+								<textarea readonly rows="3" :value="centralCode" class="block w-full border-gray-300 rounded-md shadow-sm font-mono text-xs" @focus="$event.target.select()"></textarea>
+								<div class="flex items-center gap-3 flex-wrap">
+									<button type="button" class="px-3 py-1.5 bg-blue-600 text-white rounded-md" @click="copyConnectionCode">Copy</button>
+									<span v-if="codeCopied" class="text-green-600">Copied.</span>
+									<template v-if="!confirmingNewSecret">
+										<button type="button" class="text-xs text-gray-500 underline" @click="confirmingNewSecret = true">Make a new code…</button>
+									</template>
+									<template v-else>
+										<span class="text-xs text-red-700">A new code disconnects every remote using the old one until it's pasted there.</span>
+										<button type="button" class="text-xs text-red-700 font-medium underline" :disabled="loadingCode" @click="fetchConnectionCode(true)">Make new code</button>
+										<button type="button" class="text-xs text-gray-500 underline" @click="confirmingNewSecret = false">Cancel</button>
+									</template>
+								</div>
+							</div>
+							<button v-else type="button" class="px-3 py-1.5 bg-blue-600 text-white rounded-md disabled:bg-gray-400" :disabled="loadingCode" @click="fetchConnectionCode()">
+								{{ loadingCode ? 'Loading…' : (aggregationSettings?.shared_secret_set ? 'Show Connection Code' : 'Create Connection Code') }}
+							</button>
+							<p v-if="codeError" class="text-red-600">{{ codeError }}</p>
+						</div>
+						<p v-else-if="aggregationForm.instance_role === 'central'" class="text-sm text-gray-500">
+							Save to make this instance Central; its connection code for remote instances appears here after.
+						</p>
+
+						<div v-if="aggregationForm.instance_role === 'remote'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
+							<label class="block">
+								<span class="font-medium text-gray-700">Connection code</span>
+								<span class="block text-gray-500">Copy it from the central instance's Feedback page and paste it here.</span>
+								<textarea v-model="pastedCode" rows="2" placeholder="RIFEED1-…" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm font-mono text-xs"></textarea>
+							</label>
+							<div class="flex items-center gap-3">
+								<button type="button" class="px-3 py-1.5 bg-blue-600 text-white rounded-md disabled:bg-gray-400" :disabled="connecting || !pastedCode.trim()" @click="connectWithCode">
+									{{ connecting ? 'Connecting…' : 'Connect' }}
+								</button>
+								<span v-if="connectError" class="text-red-600">{{ connectError }}</span>
+							</div>
+						</div>
+
 						<label class="block text-sm">
 							<span class="text-gray-700">Instance identifier (optional)</span>
 							<input
@@ -318,14 +443,21 @@ async function confirmCompose() {
 							/>
 						</label>
 
+						<p v-if="aggregationForm.instance_role === 'remote'" class="text-sm text-gray-500">Or enter the details yourself:</p>
+
 						<label v-if="aggregationForm.instance_role === 'remote'" class="block text-sm">
-							<span class="text-gray-700">Central ingest URL</span>
+							<span class="text-gray-700">Central instance address</span>
 							<input
-								type="url"
+								type="text"
 								v-model="aggregationForm.central_ingest_url"
-								placeholder="https://central.example.org/json/feedback/ingest"
+								placeholder="demo.reliefinventory.app"
+								autocapitalize="off"
+								spellcheck="false"
 								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
 							/>
+							<span class="text-xs text-gray-400">
+								The address you'd type to open it. https:// and /json/feedback/ingest are added for you.
+							</span>
 						</label>
 
 						<label class="block text-sm">
@@ -346,7 +478,7 @@ async function confirmCompose() {
 							</span>
 						</label>
 
-						<div class="flex items-center gap-3">
+						<div class="flex items-center gap-3 flex-wrap">
 							<button
 								type="submit"
 								class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md disabled:bg-gray-400"
@@ -354,9 +486,21 @@ async function confirmCompose() {
 							>
 								{{ aggregationSaving ? 'Saving…' : 'Save Settings' }}
 							</button>
+							<button
+								v-if="aggregationSettings?.instance_role === 'remote'"
+								type="button"
+								class="px-4 py-2 border border-gray-300 text-sm rounded-md disabled:text-gray-400"
+								:disabled="testingConnection"
+								@click="testConnection"
+							>
+								{{ testingConnection ? 'Testing…' : 'Test Connection' }}
+							</button>
 							<span v-if="aggregationSaved" class="text-sm text-green-600">Saved.</span>
 							<span v-if="aggregationError" class="text-sm text-red-600">{{ aggregationError }}</span>
 						</div>
+						<p v-if="connectionTest" class="text-sm" :class="connectionTest.ok ? 'text-green-700' : 'text-red-600'">
+							{{ connectionTest.message }}
+						</p>
 					</form>
 				</div>
 			</details>

@@ -14,8 +14,6 @@ use tokio::task::JoinHandle;
 /// Everything the window shows, in one call.
 #[derive(Debug, Clone, Serialize)]
 pub struct Summary {
-    /// `std::env::consts::OS` ("windows", "linux", "macos"): the window words a few notes per platform.
-    pub platform: &'static str,
     pub state: State,
     pub proxy_running: bool,
     pub mode: Mode,
@@ -27,6 +25,8 @@ pub struct Summary {
     pub url: String,
     /// What to send to others on the network (empty in local-only mode).
     pub share_urls: Vec<String>,
+    /// `windows` / `macos`, so the window can word things for this computer (firewall prompt, tray vs menu bar).
+    pub os: &'static str,
 }
 
 /// Ties the settings file, the compose editor, the LAN proxy and a platform backend together. The proxy
@@ -73,7 +73,6 @@ impl<P: Platform + 'static> Launcher<P> {
     pub async fn summary(&self) -> Summary {
         let (s, m) = (self.settings(), Machine::detect());
         Summary {
-            platform: std::env::consts::OS,
             state: self.platform.state().await.unwrap_or(State::Stopped),
             proxy_running: self.proxy_running().await,
             mode: s.mode,
@@ -83,6 +82,7 @@ impl<P: Platform + 'static> Launcher<P> {
             timezone: s.timezone.clone(),
             url: network::app_url(&s, &m),
             share_urls: network::share_urls(&s, &m),
+            os: std::env::consts::OS,
         }
     }
 
@@ -264,8 +264,11 @@ mod tests {
         async fn exec(&self, _a: &[&str]) -> Result<String> {
             Ok(String::new())
         }
-        fn host_path(&self, r: &str) -> PathBuf {
-            PathBuf::from(r)
+        async fn pull(&self, _r: &str, _l: &std::path::Path) -> Result<()> {
+            Ok(())
+        }
+        async fn push(&self, _l: &std::path::Path, _r: &str) -> Result<()> {
+            Ok(())
         }
     }
 

@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Port the app is published on *inside* the Linux layer. WSL and Lima forward it to the host's
@@ -57,7 +57,8 @@ impl Progress {
 
 pub type ProgressFn = Arc<dyn Fn(Progress) + Send + Sync>;
 
-/// What the Linux layer must provide. `wsl::WslBackend` implements it for Windows; tests use a fake.
+/// What the Linux layer must provide. `wsl::WslBackend` implements it for Windows and `lima::LimaBackend`
+/// for macOS; tests use a fake.
 /// Every method is safe to call again after a failure or a reboot.
 #[async_trait]
 pub trait Platform: Send + Sync {
@@ -74,34 +75,17 @@ pub trait Platform: Send + Sync {
     async fn uninstall(&self, keep_data: bool) -> Result<()>;
     /// Run a command inside the Linux layer; an error if it exits non-zero. Returns stdout.
     async fn exec(&self, args: &[&str]) -> Result<String>;
-    /// Where a path inside the Linux layer can be read/written from the host (only while it is running).
-    fn host_path(&self, remote: &str) -> PathBuf;
-    /// Copy a file out of the Linux layer. The default reads it through `host_path`; a backend whose files
-    /// belong to another user (Docker on a Linux host) overrides it.
-    async fn pull(&self, remote: &str, local: &std::path::Path) -> Result<()> {
-        let src = self.host_path(remote);
-        copy_file(src, local.to_path_buf(), "could not copy the backup out").await
-    }
-    /// Copy a file into the Linux layer (see `pull`).
-    async fn push(&self, local: &std::path::Path, remote: &str) -> Result<()> {
-        let dest = self.host_path(remote);
-        copy_file(local.to_path_buf(), dest, "could not copy the file in").await
-    }
+    /// Copy a file out of the Linux layer to `local` (only while it is running). Any file, whoever owns it.
+    async fn pull(&self, remote: &str, local: &Path) -> Result<()>;
+    /// Copy `local` into the Linux layer at `remote` (only while it is running), replacing what is there.
+    async fn push(&self, local: &Path, remote: &str) -> Result<()>;
     /// How this backend's compose file differs from the shared one (see `StackOptions`).
     fn stack_options(&self) -> crate::compose::StackOptions {
         crate::compose::StackOptions::default()
     }
 }
 
-async fn copy_file(src: PathBuf, dest: PathBuf, what: &'static str) -> Result<()> {
-    tokio::task::spawn_blocking(move || std::fs::copy(src, dest))
-        .await
-        .map_err(|e| PlatformError::Failed(e.to_string()))?
-        .map(|_| ())
-        .map_err(|e| PlatformError::Failed(format!("{what}: {e}")))
-}
-
-/// Stand-in on operating systems with no backend yet (macOS/Lima is not built): everything that needs the
+/// Stand-in on operating systems with no backend (Linux): everything that needs the
 /// Linux layer says so plainly, while settings and links still work.
 pub struct Unsupported;
 
@@ -131,7 +115,10 @@ impl Platform for Unsupported {
     async fn exec(&self, _a: &[&str]) -> Result<String> {
         fail("RI Launcher does not support this operating system yet.")
     }
-    fn host_path(&self, remote: &str) -> PathBuf {
-        PathBuf::from(remote)
+    async fn pull(&self, _r: &str, _l: &Path) -> Result<()> {
+        fail("RI Launcher does not support this operating system yet.")
+    }
+    async fn push(&self, _l: &Path, _r: &str) -> Result<()> {
+        fail("RI Launcher does not support this operating system yet.")
     }
 }

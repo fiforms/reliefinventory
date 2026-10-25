@@ -5,6 +5,35 @@ Written 2026-10-25 for whoever builds the Mac side (first: Mark, on a MacBook, w
 what is *different* on a Mac and how to get there. Nothing here has been run on a Mac yet: **facts we proved** are
 marked as such; everything about Lima/macOS below is a **plan or an expectation to verify**, and some of it will be wrong.
 
+## Progress (2026-10-25, branch `launcher-macos`)
+
+Steps 1–4 of "Suggested order of work" are done, and the `.dmg` builds (step 6, first half). **Proven** on an
+Apple-silicon MacBook Pro, macOS 26.6.2, Lima 2.2.1 — details in README.md's "Proven on macOS"; the rest of this file is
+the original plan, with the places where reality differed noted here rather than rewritten:
+
+- **Built:** `core/src/lima.rs` (`LimaBackend`, fake-runner tests in the `wsl.rs` style), `core/src/layer.rs` (the shared
+  in-VM script, B3), `Platform::pull`/`push` replacing `host_path` (B1), in-process install on macOS + stale-status
+  recovery + `restart_computer` Windows-only (B2/B3), Mac wording in the UI (B4), `LocalHostName` and the Mac interface
+  filter (B5 — this also fixed a real bug: `hostname` on a Mac is often `name.local`, which became `name-local.local`),
+  the macOS arm of `default_backend` (B7), menu-bar behaviour (Accessory policy while hidden, menu on click, Dock reopen),
+  and `.github/workflows/launcher-macos.yml` (universal `.dmg`, not yet run).
+- **Different from the plan:** `LIMA_HOME` is **`~/.ri-lima`, not `<data dir>/lima`** — Lima refuses to create an instance
+  whose socket path is 104 bytes or more, and `~/Library/Application Support/ReliefInventory/lima/ri/ssh.sock.<16 digits>`
+  reaches that with a username of about ten characters. Lima's binaries and the downloads do stay in the data dir. Alpine is
+  **3.23.4** (the image Lima's own template pins), not 3.24 like Windows: 3.24's cloud images changed their naming and Lima
+  hasn't adopted them. `limactl copy` runs as the guest user and can't read root's files, so pull/push stage through
+  `/tmp` with `sudo`. There is no keep-alive process: dockerd is an OpenRC service in the VM (`rc-update add docker default`).
+  VM memory is 4 GiB, or 2 GiB on Macs with 8 GB (the stack idles at ~450 MB in the VM). Preflight requires macOS
+  **13.3** (Lima's note for Alpine aarch64 under `vz`), 10 GB free, and `kern.hv_support`.
+- **Answered "verify" items:** the downloaded `limactl` runs with no Gatekeeper prompt (ad-hoc signed with the
+  `com.apple.security.virtualization` entitlement, no quarantine flag); the VM survives the launcher quitting; the
+  forward is 127.0.0.1-only; nothing of ours lands in `~/Library/Caches/lima`. New: with the macOS firewall on, LAN
+  connections are accepted and then **hang with no error** until "Allow incoming connections" is answered.
+- **Still open:** run the window (`npm run tauri dev`, then the `.dmg`); Gatekeeper's "Open Anyway" on a *downloaded*
+  `.dmg` (a local build has no quarantine flag); an Intel Mac; macOS 13/14; an 8 GB Mac; another device on the network
+  opening the link; Sequoia's Local Network permission; sleep/wake (and guest clock); start at login; menu-bar icon
+  legibility in light/dark; the CI workflow's first run. Then step 7's remaining docs once the window is proven.
+
 ## Goal
 
 A Mac user downloads one installer, opens **RI Launcher**, presses **Install**, and gets Relief Inventory running with
