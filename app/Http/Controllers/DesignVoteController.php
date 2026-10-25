@@ -6,9 +6,11 @@
 namespace App\Http\Controllers;
 
 use App\Models\DesignPoll;
+use App\Models\DesignPollIdea;
 use App\Models\DesignPollVote;
 use App\Services\TurnstileService;
 use App\Support\DesignPolls;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -23,7 +25,7 @@ use Milon\Barcode\DNS2D;
  * HttpOnly cookie token (stored only as a hash); a signed-in person's vote also follows them to another device.
  * Voting again replaces the earlier vote while the poll is open. Results are shown on the vote page only once the
  * poll is closed, so early votes don't sway later ones; the admin page (/setup/design-votes, manage-design-votes)
- * sees them live.
+ * sees them live. The page also has a "Have another idea?" box (storeIdea) for anything that comes to mind.
  *
  * Built like TraineeSignupController for a room on one Wi-Fi network: the POST limit is 80 a minute per IP and
  * Turnstile (when enabled) keeps bots out.
@@ -60,9 +62,8 @@ class DesignVoteController extends Controller
         if (! DesignPoll::forSlug($slug)->is_open) {
             return response()->json(['message' => 'Voting on this has closed.'], 403);
         }
-        $turnstileEnabled = $this->turnstile->enabled();
-        if ($turnstileEnabled && $this->turnstile->misconfigured()) {
-            return response()->json(['message' => 'Voting can\'t accept entries right now (spam protection isn\'t set up on this server).'], 503);
+        if ($refused = $this->turnstileUnavailable()) {
+            return $refused;
         }
 
         $data = $request->validate([
@@ -70,11 +71,8 @@ class DesignVoteController extends Controller
             'voter_name' => 'nullable|string|max:100',
             'voter_role' => ['nullable', Rule::in(array_keys(DesignPolls::VOTER_ROLES))],
             'comment' => 'nullable|string|max:2000',
-            'cf-turnstile-response' => $turnstileEnabled ? 'required' : 'nullable',
-        ]);
-        if ($turnstileEnabled) {
-            $this->turnstile->verify($data['cf-turnstile-response'], $request->ip());
-        }
+        ] + $this->turnstileRule());
+        $this->verifyTurnstile($request, $data);
 
         $token = $this->cookieToken($request) ?? Str::random(40);
         $values = [
@@ -99,6 +97,34 @@ class DesignVoteController extends Controller
             ->cookie(self::COOKIE, $token, 60 * 24 * 365, '/', null, null, true, false, 'lax');
     }
 
+    /**
+     * "Have another idea?": free text about this question or anything else. Accepted whether or not the person
+     * voted and even after voting has closed — the point is to catch an idea when it comes. Each one is kept.
+     */
+    public function storeIdea(Request $request, string $slug)
+    {
+        DesignPolls::find($slug) ?? abort(404);
+        if ($refused = $this->turnstileUnavailable()) {
+            return $refused;
+        }
+
+        $data = $request->validate([
+            'idea' => 'required|string|max:4000',
+            'voter_name' => 'nullable|string|max:100',
+        ] + $this->turnstileRule());
+        $this->verifyTurnstile($request, $data);
+
+        DesignPollIdea::create([
+            'poll_slug' => $slug,
+            'idea' => trim($data['idea']),
+            'person_id' => Auth::id(),
+            'voter_name' => filled($data['voter_name'] ?? null) ? trim($data['voter_name']) : null,
+            'ip_address' => $request->ip(),
+        ]);
+
+        return response()->json(['saved' => true], 201);
+    }
+
     /** Admin page data: every poll with its state, live results, comments and voting link. */
     public function status()
     {
@@ -115,6 +141,7 @@ class DesignVoteController extends Controller
                 'results' => self::results($poll['slug']),
                 'comments' => DesignPollVote::where('poll_slug', $poll['slug'])->whereNotNull('comment')->latest('updated_at')
                     ->get(['option_key', 'voter_name', 'voter_role', 'comment', 'updated_at']),
+                'ideas' => DesignPollIdea::where('poll_slug', $poll['slug'])->latest()->get(['idea', 'voter_name', 'created_at']),
             ];
         }, DesignPolls::all()), 'voter_roles' => DesignPolls::VOTER_ROLES]);
     }
@@ -136,12 +163,14 @@ class DesignVoteController extends Controller
     {
         $poll = DesignPolls::find($slug) ?? abort(404);
         $votes = DesignPollVote::where('poll_slug', $slug)->orderBy('created_at')->get();
+        $ideas = DesignPollIdea::where('poll_slug', $slug)->orderBy('created_at')->get();
 
-        return response()->streamDownload(function () use ($poll, $votes) {
+        return response()->streamDownload(function () use ($poll, $votes, $ideas) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Voted', 'Updated', 'Choice', 'Name', 'I am a', 'Comment']);
+            fputcsv($out, ['Type', 'Sent', 'Updated', 'Choice', 'Name', 'I am a', 'Comment or idea']);
             foreach ($votes as $vote) {
                 fputcsv($out, [
+                    'Vote',
                     $vote->created_at?->toDateTimeString(),
                     $vote->updated_at?->toDateTimeString(),
                     $poll['options'][$vote->option_key]['label'] ?? $vote->option_key,
@@ -149,6 +178,9 @@ class DesignVoteController extends Controller
                     DesignPolls::VOTER_ROLES[$vote->voter_role] ?? $vote->voter_role,
                     $vote->comment,
                 ]);
+            }
+            foreach ($ideas as $idea) {
+                fputcsv($out, ['Idea', $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, null, $idea->idea]);
             }
             fclose($out);
         }, 'design-vote-'.$slug.'.csv', ['Content-Type' => 'text/csv']);
@@ -191,6 +223,26 @@ class DesignVoteController extends Controller
             'intro' => $poll['intro'],
             'options' => collect($poll['options'])->map(fn ($o, $key) => ['key' => $key] + $o)->values()->all(),
         ];
+    }
+
+    /** Enabled-but-no-keys is a server misconfiguration: refuse rather than skip the check (see TurnstileService). */
+    private function turnstileUnavailable(): ?JsonResponse
+    {
+        return $this->turnstile->enabled() && $this->turnstile->misconfigured()
+            ? response()->json(['message' => 'This page can\'t accept entries right now (spam protection isn\'t set up on this server).'], 503)
+            : null;
+    }
+
+    private function turnstileRule(): array
+    {
+        return ['cf-turnstile-response' => $this->turnstile->enabled() ? 'required' : 'nullable'];
+    }
+
+    private function verifyTurnstile(Request $request, array $data): void
+    {
+        if ($this->turnstile->enabled()) {
+            $this->turnstile->verify($data['cf-turnstile-response'], $request->ip());
+        }
     }
 
     private function cookieToken(Request $request): ?string

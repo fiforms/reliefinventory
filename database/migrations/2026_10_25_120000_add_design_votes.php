@@ -42,6 +42,19 @@ return new class extends Migration
             $table->index(['poll_slug', 'option_key']);
         });
 
+        // "Have another idea?" — free text sent from a vote page, about that question or anything else. Kept apart
+        // from votes so one browser can send several, with or without voting, even once voting has closed.
+        Schema::create('design_poll_ideas', function (Blueprint $table) {
+            $table->id();
+            $table->string('poll_slug', 60);
+            $table->text('idea');
+            $table->foreignId('person_id')->nullable()->constrained('people')->nullOnDelete();
+            $table->string('voter_name', 100)->nullable();
+            $table->string('ip_address', 45)->nullable();
+            $table->timestamps();
+            $table->index(['poll_slug', 'created_at']);
+        });
+
         DB::table('design_polls')->insert(['slug' => 'delivery-days', 'is_open' => false, 'created_at' => now(), 'updated_at' => now()]);
 
         $permissionId = DB::table('permissions')->where('key', 'manage-design-votes')->value('id')
@@ -75,6 +88,7 @@ return new class extends Migration
     {
         DB::table('menu_items')->where('link_url', '/setup/design-votes')->delete();
         DB::table('permissions')->where('key', 'manage-design-votes')->delete();
+        Schema::dropIfExists('design_poll_ideas');
         Schema::dropIfExists('design_poll_votes');
         Schema::dropIfExists('design_polls');
     }

@@ -5,7 +5,7 @@
 
 	Design Votes admin (/setup/design-votes, manage-design-votes; DesignVoteController::status). One card per poll in
 	App\Support\DesignPolls: open or close it, the voting link + QR code to share, live results (also split by
-	"I am a…"), every comment, and a CSV. Voters only see results once a poll is closed.
+	"I am a…"), every comment, the free-form "other ideas", and a CSV of both. Voters only see results once a poll is closed.
 -->
 
 <script setup>
@@ -155,6 +155,15 @@ onMounted(load);
 							{{ c.voter_name || 'Anonymous' }}<template v-if="c.voter_role"> · {{ roleLabel(c.voter_role) }}</template>
 							· voted {{ labelFor(poll, c.option_key) }}
 						</p>
+					</div>
+				</div>
+
+				<div class="text-sm space-y-2">
+					<h3 class="font-medium">Other ideas <span class="text-gray-500 font-normal">— from the "Have another idea?" box, about this or anything else</span></h3>
+					<p v-if="!poll.ideas.length" class="text-gray-400">none yet</p>
+					<div v-for="(idea, i) in poll.ideas" :key="i" class="border-l-4 border-amber-200 pl-3">
+						<p class="whitespace-pre-line">{{ idea.idea }}</p>
+						<p class="text-xs text-gray-500">{{ idea.voter_name || 'Anonymous' }} · {{ when(idea.created_at) }}</p>
 					</div>
 				</div>
 
