@@ -432,6 +432,14 @@ specifically to support adding a comment without advancing) creates an immutable
 every log entry, always visible, not behind a click — distinguishing "moved to X" from "note while
 at X" purely by comparing each entry's status to the one before it, no extra column needed.
 
+**Centralized aggregation** (remote instances push their reports to one central instance, settings on `/setup/feedback`,
+`FeedbackAggregationSetting`): the central address may be typed as a bare domain — `normalizeCentralUrl()` adds https:// and
+`/json/feedback/ingest` (also applied when reading an older stored value). The easy path is a **connection code**
+(`RIFEED1-` + base64url JSON of URL + secret): central's **Show/Create Connection Code** (`POST
+/json/feedback-aggregation-settings/connection-code`, central only, creates a 40-char secret if none) and the remote's paste
+box (`connection_code` on the PUT). **Test Connection** posts a `ping` to ingest; push failures now come back as a message
+(`pushUnsent()['error']`) instead of only a log line.
+
 A local-only `feedback-triage` Claude Code skill (`.claude/skills/feedback-triage/` — gitignored,
 never committed, see that directory's own README.md if present on this machine) reviews New and
 Acknowledged reports on the demo instance over SSH and leaves `"Comment by Claude: ..."` notes,

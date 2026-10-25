@@ -1121,6 +1121,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-fe
     // FeedbackAggregationSetting; gated the same as this whole page.
     Route::get('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'show']);
     Route::put('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'update']);
+    Route::post('/feedback-aggregation-settings/connection-code', [FeedbackAggregationSettingsController::class, 'connectionCode']);
+    Route::post('/feedback-aggregation-settings/test', [FeedbackAggregationSettingsController::class, 'test']);
 });
 
 // Central-side ingest for centralized feedback aggregation — instance-to-
