@@ -63,3 +63,9 @@ __pycache__/
 /ShoppingList/
 /landing/
 rstation/product/image/debs/
+# launcher (RI Launcher)
+/launcher/target
+/launcher/src-tauri/target
+/launcher/node_modules
+/launcher/ui/dist
+/launcher/src-tauri/gen

@@ -1,0 +1,62 @@
+:root {
+    --bg: #f5f6f8;
+    --card: #ffffff;
+    --text: #1d2330;
+    --muted: #5d6676;
+    --line: #e2e5ea;
+    --accent: #1b5fb4;
+    --accent-text: #ffffff;
+    --ok-bg: #dff3e4; --ok-text: #14602b;
+    --busy-bg: #dde9fb; --busy-text: #174a94;
+    --warn-bg: #fdf0cf; --warn-text: #7a5300;
+    --bad-bg: #fbe0dd; --bad-text: #8f1d12;
+    --off-bg: #e8eaee; --off-text: #4a5262;
+    color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --bg: #14171d;
+        --card: #1d222b;
+        --text: #e8ebf0;
+        --muted: #9aa3b2;
+        --line: #2c3340;
+        --accent: #5b9bf0;
+        --accent-text: #0b1220;
+        --ok-bg: #173a24; --ok-text: #8fdca8;
+        --busy-bg: #1a3358; --busy-text: #9cc4ff;
+        --warn-bg: #43330c; --warn-text: #f2cf7b;
+        --bad-bg: #4a1f1a; --bad-text: #ffaaa0;
+        --off-bg: #2a303b; --off-text: #aab2c0;
+    }
+}
+
+* { box-sizing: border-box; }
+
+body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+button, input { font: inherit; color: inherit; }
+
+/* ---- launcher ---- */
+.switch { display: flex; align-items: center; gap: 12px; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+.switch .track { width: 44px; height: 24px; border-radius: 12px; background: var(--off-bg); border: 1px solid var(--line); position: relative; flex: none; transition: background .15s; }
+.switch .track::after { content: ''; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px #0004; transition: left .15s; }
+.switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
+.switch input:checked + .track::after { left: 22px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+.switch:has(input:disabled) { opacity: .55; }
+.link-box { display: flex; gap: 8px; align-items: center; margin: 10px 0 4px; }
+.link-box code { flex: 1; min-width: 0; overflow-wrap: anywhere; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; font-size: 14px; }
+.bar { height: 8px; border-radius: 4px; background: var(--off-bg); overflow: hidden; margin: 10px 0 4px; }
+.bar > div { height: 100%; background: var(--accent); transition: width .3s; }
+.bar.indeterminate > div { width: 35%; animation: slide 1.2s ease-in-out infinite alternate; }
+@keyframes slide { from { margin-left: 0 } to { margin-left: 65% } }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+details > summary { cursor: pointer; color: var(--muted); margin-top: 12px; }
