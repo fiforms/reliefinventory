@@ -167,6 +167,20 @@ onMounted(() => {
 					</label>
 				</div>
 
+				<div v-if="selectedFileType === 'mailing_list'" class="rounded bg-blue-50 border border-blue-200 text-blue-900 px-4 py-3 text-sm space-y-1">
+					<p>
+						The first row must be headings. Recognized columns (any order, any you don't have can be left out):
+						<strong>First Name, Last Name</strong> (or one <strong>Name</strong> column), <strong>Organization,
+						Address, Address 2, City, State, Zip, Tags</strong>.
+					</p>
+					<p>
+						<strong>Tags</strong>: donor, partner, volunteer or other &mdash; several allowed, separated by commas.
+						A blank tag counts as other. Someone already in People with the same name and zip is updated
+						(their address replaced, tags added) rather than added twice.
+					</p>
+					<p>Print labels for them on <a href="/reports/mailing-labels" class="underline">Mailing Labels</a>.</p>
+				</div>
+
 				<PrimaryButton @click="upload" :disabled="uploading">
 					{{ uploading ? 'Uploading & Previewing…' : 'Upload & Preview' }}
 				</PrimaryButton>

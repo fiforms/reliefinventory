@@ -544,7 +544,16 @@ and a compact layout in `reports/partials/pallet_label*.blade.php` (smaller numb
 the three label documents in `DocumentRegistry` (so only printers loaded with that media are offered and accepted), and the shared Inertia prop
 `printing.palletLabelMedia` that every pallet-label `PrintMenu` passes as its `media` — don't hard-code `label_large` there. Changing it affects new
 labels only; a printer's own media is still set on R Station Devices. The compact layout was checked on paper; scanning it from a real small label is
-the thing to confirm. Not built: other label kinds (there are no inventory/item labels — only the generated UPC exists), or a per-printer size.
+the thing to confirm. Not built: a per-printer size.
+
+**Mailing labels** (2026-10-25, `MailingLabelController`, `/reports/mailing-labels`, document `mailing-labels`, all `manage-people` — it lists
+names and addresses): Avery 8160/5160 sheets (Letter, 3 x 10) on the `report` media, so any office printer — not `label_address`, which is a roll
+label nothing uses yet. Audiences: partner = Partner role or any request, donor = Donor role or any donation, volunteer = `is_volunteer`, other =
+none of those and no role at all; system records and trainees never appear. Only people with street + city + state + zip get a label. The PDF
+gets the filters plus `ids` or `exclude` (whichever is shorter) and `start` (first unused label on a partly-used sheet). Names come in through
+Data Import's **Names & addresses** CSV (`App\Services\Import\MailingListImporter`): headers matched loosely, tags donor/partner attach those
+(zero-permission) roles, volunteer sets `is_volunteer` (never the Volunteer role — it grants permissions), other/blank adds nothing; a row updates
+an existing person with the same name (or organization) and 5-digit zip, and two such matches is an error, not a guess.
 
 **One-time server provisioning:** the `weasyprint` binary (Python, with native Pango/Cairo deps —
 `apt install weasyprint` or `pip install weasyprint` depending on distro) must be on `PATH`, or set

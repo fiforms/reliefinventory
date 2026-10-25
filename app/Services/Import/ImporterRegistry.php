@@ -14,6 +14,7 @@ class ImporterRegistry
         FlowtracProductsImporter::class,
         FlowtracDonationsReceivedImporter::class,
         FlowtracInventoryReconciliationImporter::class,
+        MailingListImporter::class,
     ];
 
     /**
@@ -28,6 +29,7 @@ class ImporterRegistry
             'flowtrac_products' => 'Flowtrac — Products.csv',
             'flowtrac_donations_received' => 'Flowtrac — Donations Received.csv',
             'flowtrac_current_inventory' => 'Flowtrac — Current Inventory.csv (reconciliation only, never writes)',
+            'mailing_list' => 'Names & addresses (mailing list) .csv',
         ];
     }
 
