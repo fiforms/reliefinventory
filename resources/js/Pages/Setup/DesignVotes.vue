@@ -4,7 +4,8 @@
 <!-- DesignVotes.vue
 
 	Design Votes admin (/setup/design-votes, manage-design-votes; DesignVoteController::status). One card per poll in
-	App\Support\DesignPolls: open or close it, the voting link + QR code to share, live results, every comment, the free-form "other ideas", and a CSV of both. Voters only see results once a poll is closed.
+	App\Support\DesignPolls: open or close it, the voting link + QR code to share, live likes/dislikes per option,
+	the "why" comments grouped by option, the free-form "other ideas", and a CSV of both. Voters only see results once a poll is closed.
 -->
 
 <script setup>
@@ -86,7 +87,7 @@ onMounted(load);
 
 				<div class="flex items-center gap-3 flex-wrap">
 					<PrimaryButton v-if="!poll.open" :disabled="busy === poll.slug" @click="setOpen(poll, true)">
-						{{ busy === poll.slug ? 'Opening…' : (poll.results.total ? 'Reopen Voting' : 'Open Voting') }}
+						{{ busy === poll.slug ? 'Opening…' : (poll.results.voters ? 'Reopen Voting' : 'Open Voting') }}
 					</PrimaryButton>
 					<template v-else>
 						<button
@@ -111,30 +112,34 @@ onMounted(load);
 					</div>
 
 					<div class="border rounded p-3 sm:col-span-2 space-y-2 text-sm">
-						<p class="font-medium">{{ poll.results.total }} vote{{ poll.results.total === 1 ? '' : 's' }}</p>
+						<p class="font-medium">{{ poll.results.voters }} {{ poll.results.voters === 1 ? 'person has' : 'people have' }} voted</p>
 						<div v-for="row in poll.results.options" :key="row.key" class="space-y-1">
-							<div class="flex justify-between">
+							<div class="flex justify-between gap-3">
 								<span>{{ labelFor(poll, row.key) }}</span>
-								<span class="text-gray-600">{{ row.votes }} ({{ row.percent }}%)</span>
+								<span class="text-gray-600 whitespace-nowrap">👍 {{ row.likes }} · 👎 {{ row.dislikes }} · {{ row.percent }}% liked</span>
 							</div>
 							<div class="h-2.5 rounded bg-gray-200 overflow-hidden">
-								<div class="h-full bg-blue-600" :style="{ width: row.percent + '%' }"></div>
+								<div class="h-full bg-green-600" :style="{ width: row.percent + '%' }"></div>
 							</div>
 						</div>
+						<p class="text-xs text-gray-500">Ranked by likes, then fewest dislikes. A voter can like or dislike any number of designs; ones they skip count as neutral.</p>
 					</div>
 				</div>
 
 
-				<div class="text-sm space-y-2">
-					<h3 class="font-medium">Comments</h3>
+				<div class="text-sm space-y-3">
+					<h3 class="font-medium">Why people liked or didn't like each design</h3>
 					<p v-if="!poll.comments.length" class="text-gray-400">none yet</p>
-					<div v-for="(c, i) in poll.comments" :key="i" class="border-l-4 border-gray-200 pl-3">
-						<p class="whitespace-pre-line">{{ c.comment }}</p>
-						<p class="text-xs text-gray-500">
-							{{ c.voter_name || 'Anonymous' }}
-							· voted {{ labelFor(poll, c.option_key) }}
-						</p>
-					</div>
+					<template v-for="option in poll.options" :key="option.key">
+						<div v-if="poll.comments.some((c) => c.option_key === option.key)" class="space-y-2">
+							<p class="font-medium text-gray-700">{{ option.label }}</p>
+							<div v-for="(c, i) in poll.comments.filter((c) => c.option_key === option.key)" :key="i"
+								class="border-l-4 pl-3" :class="c.reaction === 'like' ? 'border-green-300' : 'border-red-300'">
+								<p class="whitespace-pre-line">{{ c.reaction === 'like' ? '👍' : '👎' }} {{ c.comment }}</p>
+								<p class="text-xs text-gray-500">{{ c.voter_name || 'Anonymous' }}</p>
+							</div>
+						</div>
+					</template>
 				</div>
 
 				<div class="text-sm space-y-2">

@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\DesignPoll;
 use App\Models\DesignPollIdea;
+use App\Models\DesignPollReaction;
 use App\Models\DesignPollVote;
 use App\Services\TurnstileService;
 use App\Support\DesignPolls;
@@ -21,9 +22,10 @@ use Milon\Barcode\DNS2D;
 
 /**
  * Design Votes (App\Support\DesignPolls). The public side is /vote/{slug} (Pages/DesignVote.vue): anyone with the
- * link, signed in or not, tries each option's live demo and votes for one. One vote per browser, kept by an
- * HttpOnly cookie token (stored only as a hash); a signed-in person's vote also follows them to another device.
- * Voting again replaces the earlier vote while the poll is open. Results are shown on the vote page only once the
+ * link, signed in or not, tries each option's live demo and says "I like this" or "Not for me" on any of them, each
+ * with an optional why. An option left alone stays neutral; at least one reaction is required (disliking every
+ * option is fine). One ballot per browser, kept by an HttpOnly cookie token (stored only as a hash); a signed-in
+ * person's ballot also follows them to another device. Voting again replaces the earlier reactions while open. Results are shown on the vote page only once the
  * poll is closed, so early votes don't sway later ones; the admin page (/setup/design-votes, manage-design-votes)
  * sees them live. The page also has a "Have another idea?" box (storeIdea) for anything that comes to mind.
  *
@@ -47,7 +49,11 @@ class DesignVoteController extends Controller
         return Inertia::render('DesignVote', [
             'poll' => $this->pollPayload($poll),
             'open' => $state->is_open,
-            'my_vote' => $vote?->only(['option_key', 'voter_name', 'comment']),
+            'my_vote' => $vote ? [
+                'voter_name' => $vote->voter_name,
+                'reactions' => $vote->reactions()->whereIn('option_key', array_keys($poll['options']))
+                    ->get(['option_key', 'reaction', 'comment'])->all(),
+            ] : null,
             'results' => $state->is_open ? null : self::results($slug),
             'turnstile_enabled' => $turnstileEnabled && ! $unavailable,
             'turnstile_site_key' => $turnstileEnabled && ! $unavailable ? $this->turnstile->siteKey() : null,
@@ -66,31 +72,44 @@ class DesignVoteController extends Controller
         }
 
         $data = $request->validate([
-            'option_key' => ['required', Rule::in(array_keys($poll['options']))],
+            'reactions' => 'required|array|min:1',
+            'reactions.*.option_key' => ['required', 'distinct', Rule::in(array_keys($poll['options']))],
+            'reactions.*.reaction' => ['required', Rule::in(DesignPollReaction::REACTIONS)],
+            'reactions.*.comment' => 'nullable|string|max:2000',
             'voter_name' => 'nullable|string|max:100',
-            'comment' => 'nullable|string|max:2000',
-        ] + $this->turnstileRule());
+        ] + $this->turnstileRule(), [
+            'reactions.required' => 'Say whether you like at least one of the designs.',
+            'reactions.min' => 'Say whether you like at least one of the designs.',
+        ]);
         $this->verifyTurnstile($request, $data);
 
         $token = $this->cookieToken($request) ?? Str::random(40);
         $values = [
-            'option_key' => $data['option_key'],
             'voter_name' => filled($data['voter_name'] ?? null) ? trim($data['voter_name']) : null,
-            'comment' => filled($data['comment'] ?? null) ? trim($data['comment']) : null,
             'ip_address' => $request->ip(),
         ];
         if (Auth::id()) {
             $values['person_id'] = Auth::id();
         }
+        $reactions = array_map(fn ($r) => [
+            'option_key' => $r['option_key'],
+            'reaction' => $r['reaction'],
+            'comment' => filled($r['comment'] ?? null) ? trim($r['comment']) : null,
+        ], $data['reactions']);
 
-        DB::transaction(function () use ($request, $slug, $token, $values) {
+        DB::transaction(function () use ($request, $slug, $token, $values, $reactions) {
             $vote = $this->existingVote($request, $slug, $token, lock: true);
-            $vote
-                ? $vote->update($values)
-                : DesignPollVote::create($values + ['poll_slug' => $slug, 'voter_token_hash' => hash('sha256', $token)]);
+            if ($vote) {
+                $vote->update($values);
+                $vote->touch(); // a re-vote with the same name still counts as an update
+                $vote->reactions()->delete();
+            } else {
+                $vote = DesignPollVote::create($values + ['poll_slug' => $slug, 'voter_token_hash' => hash('sha256', $token)]);
+            }
+            $vote->reactions()->createMany($reactions);
         });
 
-        return response()->json(['option_key' => $values['option_key']], 201)
+        return response()->json(['reactions' => $reactions], 201)
             ->cookie(self::COOKIE, $token, 60 * 24 * 365, '/', null, null, true, false, 'lax');
     }
 
@@ -136,8 +155,8 @@ class DesignVoteController extends Controller
                 'url' => $url,
                 'qr_svg' => (new DNS2D)->getBarcodeSVG($url, 'QRCODE', 5, 5),
                 'results' => self::results($poll['slug']),
-                'comments' => DesignPollVote::where('poll_slug', $poll['slug'])->whereNotNull('comment')->latest('updated_at')
-                    ->get(['option_key', 'voter_name', 'comment', 'updated_at']),
+                'comments' => self::reactionRows($poll['slug'])->whereNotNull('design_poll_reactions.comment')
+                    ->latest('design_poll_reactions.updated_at')->get(),
                 'ideas' => DesignPollIdea::where('poll_slug', $poll['slug'])->latest()->get(['idea', 'voter_name', 'created_at']),
             ];
         }, DesignPolls::all())]);
@@ -159,52 +178,73 @@ class DesignVoteController extends Controller
     public function csv(string $slug)
     {
         $poll = DesignPolls::find($slug) ?? abort(404);
-        $votes = DesignPollVote::where('poll_slug', $slug)->orderBy('created_at')->get();
+        $reactions = self::reactionRows($slug)->orderBy('design_poll_votes.id')->orderBy('design_poll_reactions.id')->get();
         $ideas = DesignPollIdea::where('poll_slug', $slug)->orderBy('created_at')->get();
 
-        return response()->streamDownload(function () use ($poll, $votes, $ideas) {
+        return response()->streamDownload(function () use ($poll, $reactions, $ideas) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Type', 'Sent', 'Updated', 'Choice', 'Name', 'Comment or idea']);
-            foreach ($votes as $vote) {
+            fputcsv($out, ['Type', 'Voter', 'Sent', 'Design', 'Reaction', 'Name', 'Comment or idea']);
+            foreach ($reactions as $row) {
                 fputcsv($out, [
                     'Vote',
-                    $vote->created_at?->toDateTimeString(),
-                    $vote->updated_at?->toDateTimeString(),
-                    $poll['options'][$vote->option_key]['label'] ?? $vote->option_key,
-                    $vote->voter_name,
-                    $vote->comment,
+                    $row->vote_id,
+                    $row->updated_at,
+                    $poll['options'][$row->option_key]['label'] ?? $row->option_key,
+                    $row->reaction === 'like' ? 'Likes it' : 'Not for them',
+                    $row->voter_name,
+                    $row->comment,
                 ]);
             }
             foreach ($ideas as $idea) {
-                fputcsv($out, ['Idea', $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, $idea->idea]);
+                fputcsv($out, ['Idea', null, $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, $idea->idea]);
             }
             fclose($out);
         }, 'design-vote-'.$slug.'.csv', ['Content-Type' => 'text/csv']);
     }
 
     /**
-     * Votes per option (every option listed, most votes first).
+     * Likes and dislikes per option, every option listed: most liked first, then fewest dislikes. `voters` counts
+     * ballots that reacted to at least one current option; `percent` is likes as a share of voters.
      *
-     * @return array{total: int, options: array<int, array{key: string, votes: int, percent: int}>}
+     * @return array{voters: int, options: array<int, array{key: string, likes: int, dislikes: int, percent: int}>}
      */
     public static function results(string $slug): array
     {
-        $poll = DesignPolls::find($slug);
-        // Only the options the poll still has: a design dropped after voting started stops counting.
-        $keys = array_keys($poll['options']);
-        $counts = DesignPollVote::where('poll_slug', $slug)->whereIn('option_key', $keys)
-            ->groupBy('option_key')->selectRaw('option_key, count(*) as n')->pluck('n', 'option_key');
-        $total = (int) $counts->sum();
+        $rows = self::reactionRows($slug)->get();
+        $voters = $rows->pluck('vote_id')->unique()->count();
 
-        $options = collect($keys)
-            ->map(fn ($key) => [
-                'key' => $key,
-                'votes' => (int) ($counts[$key] ?? 0),
-                'percent' => $total ? (int) round(100 * ($counts[$key] ?? 0) / $total) : 0,
-            ])
-            ->sortByDesc('votes')->values()->all();
+        $options = collect(array_keys(DesignPolls::find($slug)['options']))
+            ->map(function ($key) use ($rows, $voters) {
+                $likes = $rows->where('option_key', $key)->where('reaction', 'like')->count();
 
-        return ['total' => $total, 'options' => $options];
+                return [
+                    'key' => $key,
+                    'likes' => $likes,
+                    'dislikes' => $rows->where('option_key', $key)->where('reaction', 'dislike')->count(),
+                    'percent' => $voters ? (int) round(100 * $likes / $voters) : 0,
+                ];
+            })
+            ->sort(fn ($a, $b) => [$b['likes'], $a['dislikes']] <=> [$a['likes'], $b['dislikes']])
+            ->values()->all();
+
+        return ['voters' => $voters, 'options' => $options];
+    }
+
+    /**
+     * Every reaction on a poll's current options with its voter's name. Only the options the poll still has: a design
+     * dropped after voting started stops counting.
+     */
+    private static function reactionRows(string $slug)
+    {
+        return DesignPollReaction::query()
+            ->join('design_poll_votes', 'design_poll_votes.id', '=', 'design_poll_reactions.design_poll_vote_id')
+            ->where('design_poll_votes.poll_slug', $slug)
+            ->whereIn('design_poll_reactions.option_key', array_keys(DesignPolls::find($slug)['options']))
+            ->select([
+                'design_poll_votes.id as vote_id', 'design_poll_votes.voter_name',
+                'design_poll_reactions.option_key', 'design_poll_reactions.reaction',
+                'design_poll_reactions.comment', 'design_poll_reactions.updated_at',
+            ]);
     }
 
     private function pollPayload(array $poll): array
