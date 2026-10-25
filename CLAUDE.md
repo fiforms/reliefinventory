@@ -627,8 +627,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   the root Vite/Composer build — it has its own `Cargo.toml`/`package.json`. Tests: `cargo test -p ri-print-core`
   (mock server + fakes), `RI_CUPS_INTEGRATION=1 …--test cups_integration` (real CUPS), `print-client/e2e/run.sh
   [--realtime]` (real Laravel app on the disposable test DB; its PHP helpers refuse any other database).
-  Verified on Linux only; the Tauri shell has not yet been compiled on a machine with the webview libraries,
-  and Windows/macOS are untested on hardware.
+  Tested on Windows and macOS hardware (2026-10-24): works fully, Tauri shell included.
 - **SATO label printers (SBPL)** (2026-10-22, `rstation/sato-driver/` — read its README): SATO's own Linux driver is x86-only, so
   `pdftosbpl` (a Python + Ghostscript CUPS filter, PDF in, one SBPL bitmap job per page) and `sato-sbpl.ppd` replace it, packaged by
   `rstation/build-sato-driver-deb.sh` into `product/image/debs/` (the image `packages` file adds Ghostscript; Settings > Printers >
@@ -649,7 +648,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   name (path and control characters stripped, 120 chars) as its title. Any active, typed, sited printer is accepted whatever its media; the PDF prints at
   its own page size (print-scaling none), so it has to be made for that paper — the page size isn't checked.
 - **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
-  on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
+  on-device Printers page and CUPS admin access; an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
 ### R Station local server — a whole offline site on the device (`rstation/LOCAL_SERVER.md`) — built 2026-10-19, branch `rstation-local-server`
@@ -664,6 +663,17 @@ not a sync target; proven end to end on a real Pi 2026-10-20 (install, first-run
 LOCAL_SERVER.md lists what is still unverified (QR/external-site/reset paths, OTA reload, power loss, phone `.local` resolution).
 Settings > Local server also has **Software updates** (2026-10-23): it pulls `ghcr.io/fiforms/reliefinventory:latest` over the baked image and restarts the stack,
 comparing the `RI_VERSION` each image carries so neither the pull nor a newer OS image's baked image can ever install an older version (LOCAL_SERVER.md, "Updates").
+
+### RI Launcher (`launcher/`, read its README) — 2026-10-25
+
+Installs and runs this app on Windows without Docker Desktop (Docker Engine inside a private Alpine WSL 2 distro, `ReliefInventory`; macOS/Lima
+is not built). Rust core (`launcher/core`: `Platform` trait, `wsl.rs`, `service.rs` `Launcher`, settings, compose editing, a LAN TCP proxy,
+backup tools) + CLI (`ri-launcher`) + a Tauri v2/Vue window (`launcher/src-tauri`, `launcher/ui`), a separate program from `print-client/`. Non-obvious:
+`wsl --install --no-distribution` fails on a machine with no WSL, so install = DISM features → restart → WSL's own MSI (pinned, SHA-256) → `wsl --import`
+→ `apk add docker`; `docker/compose.yaml` is **embedded and regenerated from `settings.json` on every start** (only `APP_URL`, the `8080:8080` mapping →
+`18080:8080`, an optional timezone), and a launcher-process proxy owns the public port — "Run as a LAN service" = listen on every interface, "local only" =
+127.0.0.1; the share link is `<name>.local:<port>`. A launcher test fails if `docker/compose.yaml`'s `APP_URL` / `"8080:8080"` lines change shape, so
+keep those lines patchable. Run on real Windows 11 via the CLI (clean install, reboot resume, LAN, backups); the window has not been run yet.
 
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 

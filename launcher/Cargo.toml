@@ -1,0 +1,7 @@
+# The core is a plain crate so it builds and tests without a webview. src-tauri (the desktop shell) is
+# deliberately NOT a workspace member: it needs the platform webview libraries, and has its own Cargo.lock
+# like any Tauri app (same arrangement as print-client).
+[workspace]
+members = ["core"]
+exclude = ["src-tauri"]
+resolver = "2"

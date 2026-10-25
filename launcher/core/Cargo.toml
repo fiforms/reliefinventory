@@ -1,0 +1,32 @@
+[package]
+name = "ri-launcher-core"
+version = "0.1.0"
+edition = "2021"
+description = "Relief Inventory launcher: install, start/stop, LAN proxy, compose settings, backups"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "ri_launcher_core"
+
+[[bin]]
+name = "ri-launcher"
+path = "src/bin/ri-launcher.rs"
+
+[dependencies]
+async-trait = "0.1"
+clap = { version = "4", features = ["derive"] }
+dirs = "5"
+futures-util = "0.3"
+gethostname = "0.5"
+if-addrs = "0.13"
+reqwest = { version = "0.12", default-features = false, features = ["stream", "rustls-tls-native-roots"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+thiserror = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "process", "fs", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[dev-dependencies]
+tempfile = "3"

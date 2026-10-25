@@ -41,8 +41,7 @@ wake-up over a Pusher-protocol WebSocket (falls back to polling every 4 s on its
   leave the queue), so a job CUPS aborts (e.g. a broken filter) can be reported as printed unless the printer
   also shows a fault. The fix is an IPP client (`rstation/product/backend/ipp.py` is the reference);
   `PrintBackend` is the seam for it.
-- **Windows is untested on real Windows.** The parsers are unit-tested against sample PowerShell output and the
-  module compiles everywhere, but nobody has run it on a Windows machine with a printer yet.
+- **Windows and macOS are tested on real hardware** (2026-10-24) and work fully.
 - **Not built yet:** auto-update (needs signing-key decisions), code signing/notarization, a log file (stderr
   only), the token in the OS keychain (it lives in `config.json`, mode 0600, in the per-user data dir),
   staff notification when a printer goes offline (server side, `TODO.md` item 11).
