@@ -260,6 +260,7 @@ const staging = ref(null); // what's still in the sorting area, i.e. on hand but
 const fill = ref({ lines: [], locationCode: '', notes: '', expires: null });
 const fillError = ref(null);
 const fillResult = ref(null);
+const fillResultBox = ref(null);
 const filling = ref(false);
 
 // item_id -> its item type, so SKUs of one ACS item type can be shown together. Best effort: without
@@ -458,6 +459,9 @@ async function submitFill() {
 		else await applyPallet(await lookupPallet(existingTag));
 		loadStaging();
 		loadSummary();
+		if (sounds.value) playScanMatched();
+		// The Seal & Place button sits far below the result line, so bring the result into view.
+		nextTick(() => fillResultBox.value?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
 	} catch (e) {
 		const errors = e.response?.data?.errors;
 		fillError.value = (errors && Object.values(errors).flat().join(' ')) || e.response?.data?.message || 'Could not save.';
@@ -602,7 +606,7 @@ onMounted(() => {
 				</div>
 				<p v-if="scanMessage" :class="scanMessage.ok ? 'pm_ok' : 'ri_error'">{{ scanMessage.text }}</p>
 				<p v-if="fillError" class="ri_error">{{ fillError }}</p>
-				<div v-if="fillResult" class="pm_current">
+				<div v-if="fillResult" ref="fillResultBox" class="pm_current">
 					<strong>{{ fillResult.tag }}</strong> sealed<span v-if="fillResult.location"> at <strong>{{ fillResult.location.code }}</strong></span>:
 					<span v-for="(c, i) in fillResult.contents" :key="c.item_id">{{ c.qty }} × {{ c.name }}<span v-if="i < fillResult.contents.length - 1">, </span></span>.
 					<PrintMenu v-if="fillResult.isNew" document-key="pallet-label" :media="$page.props.printing.palletLabelMedia" variant="form" label="Print Pallet Label"
