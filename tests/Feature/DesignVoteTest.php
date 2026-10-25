@@ -200,6 +200,19 @@ test('anyone can send other ideas, as many as they like, with or without voting,
     $this->postJson('/vote/no-such-poll/idea', ['idea' => 'x'])->assertNotFound();
 });
 
+test('an idea can leave an email, which is needed only when it is OK to contact them', function () {
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'x', 'email' => ' cy@example.org '])->assertCreated();
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'y', 'ok_to_contact' => true])
+        ->assertJsonValidationErrors(['email' => 'Add your email so we can contact you, or untick the box.']);
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'z', 'email' => 'not-an-email'])->assertJsonValidationErrors('email');
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'w', 'email' => 'di@example.org', 'ok_to_contact' => true])->assertCreated();
+
+    expect(DesignPollIdea::orderBy('id')->get(['idea', 'email', 'ok_to_contact'])->toArray())->toBe([
+        ['idea' => 'x', 'email' => 'cy@example.org', 'ok_to_contact' => false],
+        ['idea' => 'w', 'email' => 'di@example.org', 'ok_to_contact' => true],
+    ]);
+});
+
 test('ideas need Turnstile when it is switched on', function () {
     config(['services.turnstile.enabled' => true, 'services.turnstile.site_key' => 'site', 'services.turnstile.secret_key' => 'secret']);
     Http::fake(['challenges.cloudflare.com/*' => Http::response(['success' => true])]);
@@ -210,15 +223,17 @@ test('ideas need Turnstile when it is switched on', function () {
 
 test('admins see the ideas and get them in the CSV', function () {
     $admin = userWithPermissions('manage-design-votes');
-    $this->postJson('/vote/delivery-days/idea', ['idea' => 'Show the truck schedule', 'voter_name' => 'Di']);
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'Show the truck schedule', 'voter_name' => 'Di', 'email' => 'di@example.org', 'ok_to_contact' => true]);
 
     $this->actingAs($admin)->getJson('/json/design-votes')
         ->assertJsonPath('polls.0.ideas.0.idea', 'Show the truck schedule')
         ->assertJsonPath('polls.0.ideas.0.voter_name', 'Di')
+        ->assertJsonPath('polls.0.ideas.0.email', 'di@example.org')
+        ->assertJsonPath('polls.0.ideas.0.ok_to_contact', true)
         ->assertJsonMissingPath('polls.0.ideas.0.ip_address');
 
     $csv = $this->actingAs($admin)->get('/json/design-votes/delivery-days/csv')->streamedContent();
-    expect($csv)->toContain('Idea')->toContain('Show the truck schedule');
+    expect($csv)->toContain('Idea')->toContain('Show the truck schedule')->toContain('di@example.org,Yes');
 });
 
 test('reactions to a design dropped from the poll stop counting', function () {

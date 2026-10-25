@@ -409,7 +409,8 @@ ballot per browser (HttpOnly cookie token, stored hashed; a signed-in person's a
 replaces all its reactions, and
 results stay hidden on the vote page until the poll is closed. A **"Have another idea?"** box on the same page
 (`POST /vote/{slug}/idea`, `design_poll_ideas`) takes free text about that question or anything else — several per
-person, no vote needed, even after closing; shown on the admin page and in the CSV. Same protection as `/join`
+person, no vote needed, even after closing; shown on the admin page and in the CSV. It takes an optional email and an
+"OK to contact me about this idea" box (email required only when ticked; `email`/`ok_to_contact` on the idea). Same protection as `/join`
 (Turnstile, one widget per form; 80/min per IP).
 Adding a poll: a registry entry, its demo components, and a migration inserting its `design_polls` row (closed). First
 poll: `delivery-days` (Order Entry's "Can Accept Delivery" picker, three designs: tap to cycle, pick then star, day grid; from the 2026-10-24 class). Run polls

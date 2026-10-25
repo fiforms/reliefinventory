@@ -147,7 +147,12 @@ onMounted(load);
 					<p v-if="!poll.ideas.length" class="text-gray-400">none yet</p>
 					<div v-for="(idea, i) in poll.ideas" :key="i" class="border-l-4 border-amber-200 pl-3">
 						<p class="whitespace-pre-line">{{ idea.idea }}</p>
-						<p class="text-xs text-gray-500">{{ idea.voter_name || 'Anonymous' }} · {{ when(idea.created_at) }}</p>
+						<p class="text-xs text-gray-500">
+							{{ idea.voter_name || 'Anonymous' }}
+							<template v-if="idea.email"> · <a :href="`mailto:${idea.email}`" class="underline">{{ idea.email }}</a></template>
+							<span v-if="idea.ok_to_contact" class="text-green-700 font-medium"> · OK to contact</span>
+							· {{ when(idea.created_at) }}
+						</p>
 					</div>
 				</div>
 
