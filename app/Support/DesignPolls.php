@@ -9,7 +9,8 @@ namespace App\Support;
  * Design Votes: the polls people vote on at /vote/{slug} to choose between UX designs. Each option is a live demo
  * (a Vue component registered under the same slug and key in resources/js/DesignPolls/index.js), so a poll is
  * defined here in code, not in an admin page. Only whether a poll is open, and the votes, are in the database
- * (design_polls / design_poll_votes). Adding a poll: an entry here, its demo components, and a design_polls row
+ * (design_polls / design_poll_votes), plus any free-form ideas people send from the page (design_poll_ideas — about
+ * this question or anything else). Adding a poll: an entry here, its demo components, and a design_polls row
  * (a migration, created closed).
  */
 class DesignPolls
@@ -30,10 +31,6 @@ class DesignPolls
                 .'better than others: a partner might accept Tuesday, Wednesday or Thursday but prefer Tuesday. '
                 .'Try each design below — tap the days as if you were entering a request — then pick the one you like best.',
             'options' => [
-                'pick' => [
-                    'label' => 'Pick the days',
-                    'description' => 'Tap each day the partner can accept. No preferred day. The simplest choice.',
-                ],
                 'cycle' => [
                     'label' => 'Tap to cycle',
                     'description' => 'Each tap moves a day along: cannot → can accept → preferred (★) → cannot.',
@@ -45,10 +42,6 @@ class DesignPolls
                 'grid' => [
                     'label' => 'Day grid',
                     'description' => 'One row per day. Choose Can\'t, OK or Preferred for each.',
-                ],
-                'rows' => [
-                    'label' => 'Two rows',
-                    'description' => 'One row of days for "can accept" and one for "preferred". A preferred day is also accepted.',
                 ],
             ],
         ],

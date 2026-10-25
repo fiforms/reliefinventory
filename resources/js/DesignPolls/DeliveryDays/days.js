@@ -17,10 +17,10 @@ export function resetDays(days) {
 }
 
 /** "Can accept: Tue, Wed, Thu · Preferred: Tue" — what the request would record. */
-export function summarize(days, { preferred = true } = {}) {
+export function summarize(days) {
 	const accepted = WEEK_DAYS.filter((day) => days[day] !== 'no');
 	if (!accepted.length) return 'No days chosen yet';
 	const canAccept = accepted.length === 7 ? 'Any day' : accepted.join(', ');
 	const pref = WEEK_DAYS.filter((day) => days[day] === 'pref');
-	return 'Can accept: ' + canAccept + (preferred && pref.length ? ' · Preferred: ' + pref.join(', ') : '');
+	return 'Can accept: ' + canAccept + (pref.length ? ' · Preferred: ' + pref.join(', ') : '');
 }
