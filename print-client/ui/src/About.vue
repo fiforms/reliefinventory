@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import * as api from './api'
+import logoUrl from './assets/relief-inventory-logo.png'
 
 const props = defineProps({ platform: { type: String, default: '' } })
 defineEmits(['close'])
@@ -27,6 +28,7 @@ onMounted(async () => {
     </header>
 
     <section class="card">
+        <img class="logo" :src="logoUrl" alt="Relief Inventory" />
         <h2>RI Print <span class="muted">version {{ version }}</span></h2>
         <p>
             RI Print is a print client that makes the printers attached to this computer available to the
@@ -74,6 +76,7 @@ onMounted(async () => {
 <style scoped>
 .top { display: flex; align-items: center; gap: 10px; }
 .top h1 { font-size: 20px; margin: 0; flex: 1; }
+.logo { display: block; width: 180px; max-width: 60%; margin: 0 auto 12px; }
 .mark { width: 28px; height: 28px; color: var(--accent); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 h2 { font-size: 15px; margin: 0 0 10px; }

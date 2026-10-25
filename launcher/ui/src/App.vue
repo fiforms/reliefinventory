@@ -1,6 +1,8 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import * as api from './api'
+import iconUrl from './assets/icon.png'
+import splashUrl from './assets/splash.webp'
 
 const summary = ref(null)
 const install = ref(null)
@@ -148,9 +150,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 <template>
     <main v-if="summary" class="wrap">
         <header class="top">
-            <svg class="mark" viewBox="0 0 24 24" aria-hidden="true">
-                <path d="M4 7l8-4 8 4v10l-8 4-8-4V7zM4 7l8 4m0 0l8-4m-8 4v10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round" />
-            </svg>
+            <img class="mark" :src="iconUrl" alt="" />
             <h1>RI Launcher</h1>
             <span class="pill" :class="pill.cls">{{ pill.text }}</span>
         </header>
@@ -158,6 +158,8 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
         <p v-if="msg" class="banner" :class="msg.kind === 'ok' ? 'good' : 'bad'" :role="msg.kind === 'ok' ? 'status' : 'alert'">
             {{ msg.text }} <button class="quiet" @click="msg = null">Dismiss</button>
         </p>
+
+        <img v-if="state === 'not_installed'" class="splash" :src="splashUrl" alt="Relief Inventory" />
 
         <!-- Not installed: install / progress / restart / error -->
         <section v-if="state === 'not_installed'" class="card">
@@ -333,7 +335,8 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 .wrap { max-width: 560px; margin: 0 auto; padding: 16px; display: flex; flex-direction: column; gap: 14px; }
 .top { display: flex; align-items: center; gap: 10px; }
 .top h1 { font-size: 20px; margin: 0; flex: 1; }
-.mark { width: 28px; height: 28px; color: var(--accent); }
+.mark { width: 32px; height: 32px; }
+.splash { width: 100%; border-radius: 10px; display: block; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 h2 { font-size: 15px; margin: 0 0 10px; }
 .muted { color: var(--muted); }
