@@ -66,7 +66,7 @@ function resetTurnstile(widget) {
 	if (props.turnstile_enabled && window.turnstile && widget) window.turnstile.reset(widget);
 }
 
-const idea = reactive({ text: '', voter_name: '' });
+const idea = reactive({ text: '', voter_name: '', email: '', ok_to_contact: false });
 const ideaErrors = ref({});
 const ideaMessage = ref(null);
 const ideaSending = ref(false);
@@ -79,8 +79,17 @@ async function sendIdea() {
 		ideaMessage.value = 'Type your idea first.';
 		return;
 	}
+	if (idea.ok_to_contact && !idea.email.trim()) {
+		ideaErrors.value = { email: ['Add your email so we can contact you, or untick the box.'] };
+		return;
+	}
 	ideaSending.value = true;
-	const payload = { idea: idea.text.trim(), voter_name: (idea.voter_name || form.voter_name).trim() || null };
+	const payload = {
+		idea: idea.text.trim(),
+		voter_name: (idea.voter_name || form.voter_name).trim() || null,
+		email: idea.email.trim() || null,
+		ok_to_contact: idea.ok_to_contact,
+	};
 	if (props.turnstile_enabled) payload['cf-turnstile-response'] = turnstileToken(ideaWidget.value);
 	try {
 		await axios.post(`/vote/${props.poll.slug}/idea`, payload);
@@ -89,7 +98,7 @@ async function sendIdea() {
 	} catch (e) {
 		ideaErrors.value = e.response?.data?.errors || {};
 		ideaMessage.value = e.response?.status === 422
-			? (ideaErrors.value.idea?.[0] || 'Please check your idea and try again.')
+			? (ideaErrors.value.idea?.[0] || (ideaErrors.value.email ? null : 'Please check your idea and try again.'))
 			: (e.response?.data?.message || 'Something went wrong — please try again.');
 	} finally {
 		resetTurnstile(ideaWidget.value);
@@ -275,6 +284,16 @@ function changeVote() {
 				<label v-if="!open || !changing" class="block">
 					<span class="text-sm text-gray-700">Your name (optional)</span>
 					<input v-model="idea.voter_name" autocomplete="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base" />
+				</label>
+				<label class="block">
+					<span class="text-sm text-gray-700">Your email ({{ idea.ok_to_contact ? 'needed so we can contact you' : 'optional' }})</span>
+					<input v-model="idea.email" type="email" autocomplete="email"
+						class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base" />
+					<span v-if="ideaErrors.email" class="text-sm text-red-600">{{ ideaErrors.email[0] }}</span>
+				</label>
+				<label class="flex items-center gap-2">
+					<input v-model="idea.ok_to_contact" type="checkbox" class="rounded border-gray-300" />
+					<span class="text-sm text-gray-700">OK to contact me about this idea</span>
 				</label>
 				<div v-if="turnstile_enabled" ref="ideaWidget" class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
 				<p v-if="ideasSent" class="text-sm text-green-700">Thank you — got it.{{ ideasSent > 1 ? ` (${ideasSent} sent)` : '' }} Send another any time.</p>

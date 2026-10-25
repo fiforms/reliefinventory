@@ -115,7 +115,8 @@ class DesignVoteController extends Controller
 
     /**
      * "Have another idea?": free text about this question or anything else. Accepted whether or not the person
-     * voted and even after voting has closed — the point is to catch an idea when it comes. Each one is kept.
+     * voted and even after voting has closed — the point is to catch an idea when it comes. Each one is kept. An
+     * email is optional, unless "OK to contact me about this idea" is ticked.
      */
     public function storeIdea(Request $request, string $slug)
     {
@@ -127,7 +128,11 @@ class DesignVoteController extends Controller
         $data = $request->validate([
             'idea' => 'required|string|max:4000',
             'voter_name' => 'nullable|string|max:100',
-        ] + $this->turnstileRule());
+            'email' => 'nullable|required_if_accepted:ok_to_contact|email|max:255',
+            'ok_to_contact' => 'boolean',
+        ] + $this->turnstileRule(), [
+            'email.required_if_accepted' => 'Add your email so we can contact you, or untick the box.',
+        ]);
         $this->verifyTurnstile($request, $data);
 
         DesignPollIdea::create([
@@ -135,6 +140,8 @@ class DesignVoteController extends Controller
             'idea' => trim($data['idea']),
             'person_id' => Auth::id(),
             'voter_name' => filled($data['voter_name'] ?? null) ? trim($data['voter_name']) : null,
+            'email' => filled($data['email'] ?? null) ? trim($data['email']) : null,
+            'ok_to_contact' => (bool) ($data['ok_to_contact'] ?? false),
             'ip_address' => $request->ip(),
         ]);
 
@@ -157,7 +164,7 @@ class DesignVoteController extends Controller
                 'results' => self::results($poll['slug']),
                 'comments' => self::reactionRows($poll['slug'])->whereNotNull('design_poll_reactions.comment')
                     ->latest('design_poll_reactions.updated_at')->get(),
-                'ideas' => DesignPollIdea::where('poll_slug', $poll['slug'])->latest()->get(['idea', 'voter_name', 'created_at']),
+                'ideas' => DesignPollIdea::where('poll_slug', $poll['slug'])->latest()->get(['idea', 'voter_name', 'email', 'ok_to_contact', 'created_at']),
             ];
         }, DesignPolls::all())]);
     }
@@ -183,7 +190,7 @@ class DesignVoteController extends Controller
 
         return response()->streamDownload(function () use ($poll, $reactions, $ideas) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Type', 'Voter', 'Sent', 'Design', 'Reaction', 'Name', 'Comment or idea']);
+            fputcsv($out, ['Type', 'Voter', 'Sent', 'Design', 'Reaction', 'Name', 'Comment or idea', 'Email', 'OK to contact']);
             foreach ($reactions as $row) {
                 fputcsv($out, [
                     'Vote',
@@ -196,7 +203,10 @@ class DesignVoteController extends Controller
                 ]);
             }
             foreach ($ideas as $idea) {
-                fputcsv($out, ['Idea', null, $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, $idea->idea]);
+                fputcsv($out, [
+                    'Idea', null, $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, $idea->idea,
+                    $idea->email, $idea->ok_to_contact ? 'Yes' : 'No',
+                ]);
             }
             fclose($out);
         }, 'design-vote-'.$slug.'.csv', ['Content-Type' => 'text/csv']);
