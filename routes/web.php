@@ -380,6 +380,7 @@ Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('thr
 // account. Same room-on-one-IP limit as /join; Turnstile keeps bots out.
 Route::get('/vote/{slug}', [DesignVoteController::class, 'show'])->name('design-vote');
 Route::post('/vote/{slug}', [DesignVoteController::class, 'store'])->middleware('throttle:80,1');
+Route::post('/vote/{slug}/idea', [DesignVoteController::class, 'storeIdea'])->middleware('throttle:80,1');
 Route::get('/setup/design-votes', function () {
     return Inertia::render('Setup/DesignVotes', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/design-votes')]);
 })->middleware(['auth', 'permission:manage-design-votes']);

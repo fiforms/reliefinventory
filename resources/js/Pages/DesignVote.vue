@@ -6,7 +6,9 @@
 	Public Design Votes page (/vote/{slug}, DesignVoteController): one card per option with its live demo
 	(resources/js/DesignPolls), then a vote for one. Options are shuffled once per visit so the first one shown
 	doesn't win just by being first. Open: vote (and change it later from the same browser). Closed: the results,
-	with the demos still there to try. Turnstile renders from its class when enabled, the same way Join.vue does.
+	with the demos still there to try. Either way a "Have another idea?" box at the bottom takes any idea, about
+	this question or not, as often as someone has one. Turnstile renders from its class when enabled, the same way
+	Join.vue does — one widget per form, so each form reads and resets its own.
 -->
 
 <script setup>
@@ -51,11 +53,52 @@ const errors = ref({});
 const message = ref(null);
 const submitting = ref(false);
 
+const voteWidget = ref(null);
+const ideaWidget = ref(null);
+
+function turnstileToken(widget) {
+	return widget?.querySelector("[name='cf-turnstile-response']")?.value || '';
+}
+function resetTurnstile(widget) {
+	if (props.turnstile_enabled && window.turnstile && widget) window.turnstile.reset(widget);
+}
+
+const idea = reactive({ text: '', voter_name: '' });
+const ideaErrors = ref({});
+const ideaMessage = ref(null);
+const ideaSending = ref(false);
+const ideasSent = ref(0);
+
+async function sendIdea() {
+	ideaErrors.value = {};
+	ideaMessage.value = null;
+	if (!idea.text.trim()) {
+		ideaMessage.value = 'Type your idea first.';
+		return;
+	}
+	ideaSending.value = true;
+	const payload = { idea: idea.text.trim(), voter_name: (idea.voter_name || form.voter_name).trim() || null };
+	if (props.turnstile_enabled) payload['cf-turnstile-response'] = turnstileToken(ideaWidget.value);
+	try {
+		await axios.post(`/vote/${props.poll.slug}/idea`, payload);
+		idea.text = '';
+		ideasSent.value++;
+	} catch (e) {
+		ideaErrors.value = e.response?.data?.errors || {};
+		ideaMessage.value = e.response?.status === 422
+			? (ideaErrors.value.idea?.[0] || 'Please check your idea and try again.')
+			: (e.response?.data?.message || 'Something went wrong — please try again.');
+	} finally {
+		resetTurnstile(ideaWidget.value);
+		ideaSending.value = false;
+	}
+}
+
 const resultFor = computed(() => Object.fromEntries((props.results?.options || []).map((r) => [r.key, r])));
 const ranked = computed(() => props.results?.options || []);
 
 onMounted(() => {
-	if (!props.open || !props.turnstile_enabled) return;
+	if (!props.turnstile_enabled) return;
 	const script = document.createElement('script');
 	script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js';
 	script.async = true;
@@ -84,7 +127,7 @@ async function submit() {
 		comment: form.comment.trim() || null,
 	};
 	if (props.turnstile_enabled) {
-		payload['cf-turnstile-response'] = document.querySelector("[name='cf-turnstile-response']")?.value || '';
+		payload['cf-turnstile-response'] = turnstileToken(voteWidget.value);
 	}
 	try {
 		await axios.post(`/vote/${props.poll.slug}`, payload);
@@ -96,7 +139,7 @@ async function submit() {
 		message.value = e.response?.status === 422
 			? 'Please check the highlighted fields.'
 			: (e.response?.data?.message || 'Something went wrong — please try again.');
-		if (props.turnstile_enabled && window.turnstile) window.turnstile.reset();
+		resetTurnstile(voteWidget.value);
 	} finally {
 		submitting.value = false;
 	}
@@ -104,7 +147,7 @@ async function submit() {
 
 function changeVote() {
 	changing.value = true;
-	if (props.turnstile_enabled && window.turnstile) window.turnstile.reset();
+	resetTurnstile(voteWidget.value);
 }
 </script>
 
@@ -188,12 +231,12 @@ function changeVote() {
 					</label>
 				</div>
 				<label class="block">
-					<span class="text-sm text-gray-700">Why, or any other idea?</span>
+					<span class="text-sm text-gray-700">Why did you pick this one?</span>
 					<textarea v-model="form.comment" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base"></textarea>
 					<span v-if="errors.comment" class="text-xs text-red-600">{{ errors.comment[0] }}</span>
 				</label>
 
-				<div v-if="turnstile_enabled" class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
+				<div v-if="turnstile_enabled" ref="voteWidget" class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
 				<p v-if="turnstile_unavailable" class="text-sm text-amber-900 bg-amber-50 border border-amber-300 rounded p-3">
 					Voting can't accept entries right now because its spam protection isn't set up on this server.
 				</p>
@@ -202,6 +245,27 @@ function changeVote() {
 				<button type="submit" :disabled="submitting || turnstile_unavailable"
 					class="w-full py-3 bg-blue-600 text-white rounded-md font-semibold text-lg hover:bg-blue-700 disabled:opacity-50">
 					{{ submitting ? 'Sending…' : (votedFor ? 'Change My Vote' : 'Vote') }}
+				</button>
+			</form>
+
+			<!-- ======================= ANOTHER IDEA ======================= -->
+			<form class="bg-white shadow rounded-lg p-5 space-y-3" @submit.prevent="sendIdea">
+				<h2 class="text-lg font-semibold text-gray-800">Have another idea?</h2>
+				<p class="text-sm text-gray-600">
+					A different way to do this, or something else entirely — anything that would make the system better.
+					You don't have to vote to send one, and you can send as many as you like.
+				</p>
+				<textarea v-model="idea.text" rows="3" class="block w-full border-gray-300 rounded-md shadow-sm text-base"></textarea>
+				<label v-if="!open || !changing" class="block">
+					<span class="text-sm text-gray-700">Your name (optional)</span>
+					<input v-model="idea.voter_name" autocomplete="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base" />
+				</label>
+				<div v-if="turnstile_enabled" ref="ideaWidget" class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
+				<p v-if="ideasSent" class="text-sm text-green-700">Thank you — got it.{{ ideasSent > 1 ? ` (${ideasSent} sent)` : '' }} Send another any time.</p>
+				<p v-if="ideaMessage" class="text-sm text-red-600">{{ ideaMessage }}</p>
+				<button type="submit" :disabled="ideaSending || turnstile_unavailable"
+					class="px-4 py-2 bg-gray-700 text-white rounded-md font-semibold hover:bg-gray-800 disabled:opacity-50">
+					{{ ideaSending ? 'Sending…' : 'Send Idea' }}
 				</button>
 			</form>
 		</div>

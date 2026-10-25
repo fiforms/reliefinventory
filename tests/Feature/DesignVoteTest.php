@@ -3,7 +3,9 @@
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
+use App\Http\Controllers\DesignVoteController;
 use App\Models\DesignPoll;
+use App\Models\DesignPollIdea;
 use App\Models\DesignPollVote;
 use App\Support\DesignPolls;
 use Illuminate\Support\Facades\Http;
@@ -46,11 +48,11 @@ test('a signed-in person keeps one vote across devices', function () {
     openPoll();
     $person = userWithPermissions('general-access');
 
-    $this->actingAs($person)->postJson('/vote/delivery-days', ['option_key' => 'pick'])->assertCreated();
+    $this->actingAs($person)->postJson('/vote/delivery-days', ['option_key' => 'cycle'])->assertCreated();
     $this->actingAs($person)->withCookie('design_vote_token', str_repeat('x', 40))->withCredentials()
-        ->postJson('/vote/delivery-days', ['option_key' => 'rows'])->assertCreated();
+        ->postJson('/vote/delivery-days', ['option_key' => 'star'])->assertCreated();
 
-    expect(DesignPollVote::sole()->only(['option_key', 'person_id']))->toBe(['option_key' => 'rows', 'person_id' => $person->id]);
+    expect(DesignPollVote::sole()->only(['option_key', 'person_id']))->toBe(['option_key' => 'star', 'person_id' => $person->id]);
 });
 
 test('an unknown option, role or poll is refused', function () {
@@ -78,7 +80,7 @@ test('the vote page hides results while open and shows them once closed', functi
     $this->postJson('/vote/delivery-days', ['option_key' => 'grid']);
 
     $this->get('/vote/delivery-days')->assertOk()
-        ->assertInertia(fn ($page) => $page->component('DesignVote')->where('open', true)->where('results', null)->has('poll.options', 5));
+        ->assertInertia(fn ($page) => $page->component('DesignVote')->where('open', true)->where('results', null)->has('poll.options', 3));
 
     DesignPoll::forSlug('delivery-days')->update(['is_open' => false]);
     $this->get('/vote/delivery-days')->assertInertia(fn ($page) => $page
@@ -101,17 +103,17 @@ test('admins open and close polls, and see live results, comments and the CSV', 
 
     $this->actingAs($admin)->putJson('/json/design-votes/delivery-days/open', ['open' => true])
         ->assertOk()->assertJsonPath('polls.0.open', true);
-    $this->postJson('/vote/delivery-days', ['option_key' => 'rows', 'voter_name' => 'Bo', 'voter_role' => 'partner', 'comment' => 'Two rows read well']);
+    $this->postJson('/vote/delivery-days', ['option_key' => 'grid', 'voter_name' => 'Bo', 'voter_role' => 'partner', 'comment' => 'The grid reads well']);
 
     $this->actingAs($admin)->getJson('/json/design-votes')->assertOk()
         ->assertJsonPath('polls.0.results.total', 1)
-        ->assertJsonPath('polls.0.results.by_role.partner.rows', 1)
-        ->assertJsonPath('polls.0.comments.0.comment', 'Two rows read well')
+        ->assertJsonPath('polls.0.results.by_role.partner.grid', 1)
+        ->assertJsonPath('polls.0.comments.0.comment', 'The grid reads well')
         ->assertJsonPath('polls.0.url', route('design-vote', 'delivery-days'))
         ->assertJsonMissingPath('polls.0.comments.0.voter_token_hash');
 
     $csv = $this->actingAs($admin)->get('/json/design-votes/delivery-days/csv')->assertOk()->streamedContent();
-    expect($csv)->toContain('Two rows')->toContain('Partner organization')->toContain('Bo');
+    expect($csv)->toContain('The grid reads well')->toContain('Partner organization')->toContain('Bo');
 
     $this->actingAs($admin)->putJson('/json/design-votes/delivery-days/open', ['open' => false])->assertJsonPath('polls.0.open', false);
     expect(DesignPoll::forSlug('delivery-days')->closed_at)->not->toBeNull();
@@ -135,4 +137,49 @@ test('every poll option has a demo component registered', function () {
         preg_match_all('/(\w+)\s*:/', $m[1], $keys);
         expect($keys[1])->toEqualCanonicalizing(array_keys($poll['options']));
     }
+});
+
+test('anyone can send other ideas, as many as they like, with or without voting, even once voting has closed', function () {
+    $this->postJson('/vote/delivery-days/idea', ['idea' => '  Let partners set their own days online  ', 'voter_name' => 'Cy'])->assertCreated();
+    openPoll();
+    $this->postJson('/vote/delivery-days', ['option_key' => 'grid'])->assertCreated();
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'A big print button on pick sheets'])->assertCreated();
+
+    expect(DesignPollIdea::orderBy('id')->pluck('idea')->all())->toBe(['Let partners set their own days online', 'A big print button on pick sheets'])
+        ->and(DesignPollVote::sole()->option_key)->toBe('grid');
+
+    $this->postJson('/vote/delivery-days/idea', ['idea' => ''])->assertJsonValidationErrors('idea');
+    $this->postJson('/vote/no-such-poll/idea', ['idea' => 'x'])->assertNotFound();
+});
+
+test('ideas need Turnstile when it is switched on', function () {
+    config(['services.turnstile.enabled' => true, 'services.turnstile.site_key' => 'site', 'services.turnstile.secret_key' => 'secret']);
+    Http::fake(['challenges.cloudflare.com/*' => Http::response(['success' => true])]);
+
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'x'])->assertJsonValidationErrors('cf-turnstile-response');
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'x', 'cf-turnstile-response' => 'tok'])->assertCreated();
+});
+
+test('admins see the ideas and get them in the CSV', function () {
+    $admin = userWithPermissions('manage-design-votes');
+    $this->postJson('/vote/delivery-days/idea', ['idea' => 'Show the truck schedule', 'voter_name' => 'Di']);
+
+    $this->actingAs($admin)->getJson('/json/design-votes')
+        ->assertJsonPath('polls.0.ideas.0.idea', 'Show the truck schedule')
+        ->assertJsonPath('polls.0.ideas.0.voter_name', 'Di')
+        ->assertJsonMissingPath('polls.0.ideas.0.ip_address');
+
+    $csv = $this->actingAs($admin)->get('/json/design-votes/delivery-days/csv')->streamedContent();
+    expect($csv)->toContain('Idea')->toContain('Show the truck schedule');
+});
+
+test('votes for a design dropped from the poll stop counting', function () {
+    openPoll();
+    $this->postJson('/vote/delivery-days', ['option_key' => 'grid']);
+    DesignPollVote::create(['poll_slug' => 'delivery-days', 'option_key' => 'pick', 'voter_token_hash' => hash('sha256', 'old'), 'voter_role' => 'partner']);
+
+    $results = DesignVoteController::results('delivery-days');
+    expect($results['total'])->toBe(1)
+        ->and(collect($results['options'])->pluck('key')->all())->not->toContain('pick')
+        ->and($results['by_role'])->not->toHaveKey('partner');
 });

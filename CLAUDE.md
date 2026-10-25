@@ -404,9 +404,12 @@ People try live demos of a few UX designs and vote for one; the majority choice 
 (`resources/js/DesignPolls/index.js`, slug → option key → component; `DesignVoteTest` fails if the keys don't match).
 Only open/closed state (`design_polls`) and votes (`design_poll_votes`) are in the database. One vote per browser
 (HttpOnly cookie token, stored hashed; a signed-in person's vote also follows them), voting again replaces it, and
-results stay hidden on the vote page until the poll is closed. Same protection as `/join` (Turnstile, 80/min per IP).
+results stay hidden on the vote page until the poll is closed. A **"Have another idea?"** box on the same page
+(`POST /vote/{slug}/idea`, `design_poll_ideas`) takes free text about that question or anything else — several per
+person, no vote needed, even after closing; shown on the admin page and in the CSV. Same protection as `/join`
+(Turnstile, one widget per form; 80/min per IP).
 Adding a poll: a registry entry, its demo components, and a migration inserting its `design_polls` row (closed). First
-poll: `delivery-days` (Order Entry's "Can Accept Delivery" picker, five designs, from the 2026-10-24 class). Run polls
+poll: `delivery-days` (Order Entry's "Can Accept Delivery" picker, three designs: tap to cycle, pick then star, day grid; from the 2026-10-24 class). Run polls
 on demo, not cs26 (cs26's training reset would erase the votes).
 
 ### Email Settings (`/setup/email`, `admin-system`) — 2026-10-22
