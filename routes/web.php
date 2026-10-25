@@ -514,6 +514,12 @@ Route::get('/reports/flow', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/flow')]);
 })->middleware(['auth', 'permission:view-reports']);
 
+// Mailing labels (MailingLabelController): names and addresses, so manage-people, not view-reports.
+Route::get('/reports/mailing-labels', function () {
+    return Inertia::render('MailingLabels',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/mailing-labels')]);
+})->middleware(['auth', 'permission:manage-people']);
+
 Route::get('/reports/partners', function () {
     return Inertia::render('PartnerReport',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/partners')]);
@@ -625,6 +631,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pe
     Route::post('/people', [PeopleController::class, 'store']);
     Route::put('/people/{id}', [PeopleController::class, 'update']);
     Route::post('/people/{id}/partner-status', [PeopleController::class, 'partnerStatus']);
+    Route::get('/mailing-labels', [MailingLabelController::class, 'index']);
     // Read-only listing so the People edit form can offer per-person
     // permission overrides.
     Route::get('/permissions', [PermissionController::class, 'index']);
@@ -844,6 +851,10 @@ Route::get('/report/flow.pdf', [FlowReportController::class, 'pdf'])
 Route::get('/report/flow.csv', [FlowReportController::class, 'csv'])
     ->name('report.flow.csv')
     ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/mailing-labels.pdf', [MailingLabelController::class, 'pdf'])
+    ->name('report.mailing-labels')
+    ->middleware(['auth', 'permission:manage-people']);
 
 Route::get('/report/partners.pdf', [PartnerReportController::class, 'pdf'])
     ->name('report.partners')

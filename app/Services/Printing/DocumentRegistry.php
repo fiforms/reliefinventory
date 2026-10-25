@@ -10,6 +10,7 @@ use App\Http\Controllers\FlowReportController;
 use App\Http\Controllers\HelpReportController;
 use App\Http\Controllers\InventoryLabelController;
 use App\Http\Controllers\InventoryReportController;
+use App\Http\Controllers\MailingLabelController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\OrderFillingController;
 use App\Http\Controllers\OutstandingOrdersReportController;
@@ -80,6 +81,12 @@ class DocumentRegistry
                 'rules' => DonorReportController::FILTER_RULES,
                 'title' => fn () => 'Donor Report',
                 'build' => fn (array $p) => app(DonorReportController::class)->pdfBuilder(array_filter($p)),
+            ],
+            'mailing-labels' => [
+                'media' => 'report', 'permission' => 'manage-people',
+                'rules' => MailingLabelController::PRINT_RULES,
+                'title' => fn (array $p) => 'Mailing labels ('.(MailingLabelController::AUDIENCES[$p['audience']] ?? $p['audience']).')',
+                'build' => fn (array $p) => app(MailingLabelController::class)->labelsBuilder($p),
             ],
             'sitrep' => [
                 'media' => 'report', 'permission' => 'view-sitrep', 'rules' => [],
