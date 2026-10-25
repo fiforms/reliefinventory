@@ -51,6 +51,7 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 const state = computed(() => summary.value?.state)
 const lan = computed(() => summary.value?.mode === 'lan')
+const mac = computed(() => summary.value?.os === 'macos')
 const installing = computed(() => install.value?.running)
 const needsReboot = computed(() => install.value?.needs_reboot && !install.value?.running)
 const installError = computed(() => (!install.value?.running ? install.value?.error : null))
@@ -179,7 +180,11 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             </template>
             <template v-else>
                 <h2>Install Relief Inventory</h2>
-                <p class="muted">
+                <p class="muted" v-if="mac">
+                    This sets up everything on this Mac: a small Linux virtual machine, Docker Engine and Relief Inventory itself. It
+                    downloads roughly 1 GB and takes 10–20 minutes. It doesn't need an administrator password or a restart.
+                </p>
+                <p class="muted" v-else>
                     This sets up everything on this computer: a small Linux layer, Docker Engine and Relief Inventory itself. It
                     downloads roughly 1 GB, takes 10–20 minutes, and asks for administrator permission. Windows may need to restart once.
                 </p>
@@ -246,7 +251,11 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                         <button type="button" v-if="summary.hostname" @click="resetName" :disabled="!!busy">Use computer name</button>
                     </div>
                 </form>
-                <p class="muted small">
+                <p class="muted small" v-if="mac">
+                    If macOS asks whether RI Launcher may accept incoming network connections, choose <strong>Allow</strong>.
+                    The launcher has to stay running (it lives in the menu bar) for others to connect, and this Mac must be awake.
+                </p>
+                <p class="muted small" v-else>
                     The first time, Windows may ask whether to allow RI Launcher through the firewall. Choose <strong>Allow</strong>, on private networks.
                     The launcher has to stay running (it lives in the tray) for others to connect.
                 </p>
