@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -37,6 +38,12 @@ class FeedbackIngestController extends Controller
      */
     public function store(Request $request)
     {
+        // A remote's "Test Connection" (FeedbackPushService::testConnection):
+        // reaching here means the address and shared secret are right.
+        if ($request->boolean('ping')) {
+            return response()->json(['ok' => true, 'instance_role' => FeedbackAggregationSetting::current()->instance_role]);
+        }
+
         $data = $request->validate([
             'instance_identifier' => ['required', 'string', 'max:255'],
             'reports' => ['required', 'array', 'min:1'],
