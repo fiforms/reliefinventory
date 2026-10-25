@@ -26,7 +26,7 @@ test('anyone can vote without signing in, and voting again from the same browser
     openPoll();
 
     $first = $this->postJson('/vote/delivery-days', [
-        'option_key' => 'cycle', 'voter_name' => ' Ann ', 'voter_role' => 'volunteer', 'comment' => 'Fast to tap',
+        'option_key' => 'cycle', 'voter_name' => ' Ann ', 'comment' => 'Fast to tap',
     ])->assertCreated()->assertCookie('design_vote_token');
     $token = $first->getCookie('design_vote_token')->getValue();
 
@@ -55,11 +55,10 @@ test('a signed-in person keeps one vote across devices', function () {
     expect(DesignPollVote::sole()->only(['option_key', 'person_id']))->toBe(['option_key' => 'star', 'person_id' => $person->id]);
 });
 
-test('an unknown option, role or poll is refused', function () {
+test('an unknown option or poll is refused', function () {
     openPoll();
 
     $this->postJson('/vote/delivery-days', ['option_key' => 'nope'])->assertJsonValidationErrors('option_key');
-    $this->postJson('/vote/delivery-days', ['option_key' => 'grid', 'voter_role' => 'boss'])->assertJsonValidationErrors('voter_role');
     $this->postJson('/vote/no-such-poll', ['option_key' => 'grid'])->assertNotFound();
     $this->get('/vote/no-such-poll')->assertNotFound();
 });
@@ -103,17 +102,16 @@ test('admins open and close polls, and see live results, comments and the CSV', 
 
     $this->actingAs($admin)->putJson('/json/design-votes/delivery-days/open', ['open' => true])
         ->assertOk()->assertJsonPath('polls.0.open', true);
-    $this->postJson('/vote/delivery-days', ['option_key' => 'grid', 'voter_name' => 'Bo', 'voter_role' => 'partner', 'comment' => 'The grid reads well']);
+    $this->postJson('/vote/delivery-days', ['option_key' => 'grid', 'voter_name' => 'Bo', 'comment' => 'The grid reads well']);
 
     $this->actingAs($admin)->getJson('/json/design-votes')->assertOk()
         ->assertJsonPath('polls.0.results.total', 1)
-        ->assertJsonPath('polls.0.results.by_role.partner.grid', 1)
         ->assertJsonPath('polls.0.comments.0.comment', 'The grid reads well')
         ->assertJsonPath('polls.0.url', route('design-vote', 'delivery-days'))
         ->assertJsonMissingPath('polls.0.comments.0.voter_token_hash');
 
     $csv = $this->actingAs($admin)->get('/json/design-votes/delivery-days/csv')->assertOk()->streamedContent();
-    expect($csv)->toContain('The grid reads well')->toContain('Partner organization')->toContain('Bo');
+    expect($csv)->toContain('The grid reads well')->toContain('Bo');
 
     $this->actingAs($admin)->putJson('/json/design-votes/delivery-days/open', ['open' => false])->assertJsonPath('polls.0.open', false);
     expect(DesignPoll::forSlug('delivery-days')->closed_at)->not->toBeNull();
@@ -176,10 +174,9 @@ test('admins see the ideas and get them in the CSV', function () {
 test('votes for a design dropped from the poll stop counting', function () {
     openPoll();
     $this->postJson('/vote/delivery-days', ['option_key' => 'grid']);
-    DesignPollVote::create(['poll_slug' => 'delivery-days', 'option_key' => 'pick', 'voter_token_hash' => hash('sha256', 'old'), 'voter_role' => 'partner']);
+    DesignPollVote::create(['poll_slug' => 'delivery-days', 'option_key' => 'pick', 'voter_token_hash' => hash('sha256', 'old')]);
 
     $results = DesignVoteController::results('delivery-days');
     expect($results['total'])->toBe(1)
-        ->and(collect($results['options'])->pluck('key')->all())->not->toContain('pick')
-        ->and($results['by_role'])->not->toHaveKey('partner');
+        ->and(collect($results['options'])->pluck('key')->all())->not->toContain('pick');
 });

@@ -15,14 +15,6 @@ namespace App\Support;
  */
 class DesignPolls
 {
-    /** "I am a…" choices on the vote form (optional). */
-    public const VOTER_ROLES = [
-        'warehouse' => 'Warehouse staff',
-        'volunteer' => 'Volunteer',
-        'partner' => 'Partner organization',
-        'other' => 'Other',
-    ];
-
     public const POLLS = [
         'delivery-days' => [
             'title' => 'Delivery days on a request',
