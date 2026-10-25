@@ -376,6 +376,19 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 Route::get('/join', [TraineeSignupController::class, 'show'])->name('join');
 Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:80,1');
 
+// Design Votes (DesignVoteController, App\Support\DesignPolls): public, so trainees and partners can vote without an
+// account. Same room-on-one-IP limit as /join; Turnstile keeps bots out.
+Route::get('/vote/{slug}', [DesignVoteController::class, 'show'])->name('design-vote');
+Route::post('/vote/{slug}', [DesignVoteController::class, 'store'])->middleware('throttle:80,1');
+Route::get('/setup/design-votes', function () {
+    return Inertia::render('Setup/DesignVotes', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/design-votes')]);
+})->middleware(['auth', 'permission:manage-design-votes']);
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-design-votes']], function () {
+    Route::get('/design-votes', [DesignVoteController::class, 'status']);
+    Route::put('/design-votes/{slug}/open', [DesignVoteController::class, 'setOpen']);
+    Route::get('/design-votes/{slug}/csv', [DesignVoteController::class, 'csv']);
+});
+
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
