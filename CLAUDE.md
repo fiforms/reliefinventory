@@ -753,6 +753,24 @@ roll-call/closeout process an operator starts, not a per-sign-in gate a settings
 meaningfully check. A per-person custom message shown at sign-in confirmation (e.g. "please check in
 with the office") was also raised and is unbuilt — idea-stage only, no design done yet.
 
+## Working together: bugs, suggestions, ideas, proposals (read before planning anything)
+
+Two developers (Mark Kent and Daniel McFeeters) build this, each with Claude Code. Agree on direction before building;
+the full process is `proposals/README.md`. Classify every request first:
+- **Bug** (clearly not working: an error, a wrong result, UI that blocks or covers other things): fix it, no discussion.
+- **Suggestion** (a change to something already built, including preference-level UI such as button placement, wording or
+  field order): don't build it until it's agreed. Draft a GitHub Issue labeled `suggestion` (what, where, why) instead.
+- **Idea** (something new) or anything needing a proposal (a schema/migration change, a warehouse operational flow or
+  status lifecycle, the permission model, big infrastructure or shared components): build only from an **Accepted**
+  proposal in `proposals/`, and link it in the PR. If none exists, add the idea to `ROADMAP.md` and draft the proposal
+  instead of building.
+
+**Design lanes:** database schema and data model are Daniel's; warehouse operational flows are Mark's; UX is shared once the
+direction is agreed. Check `git config user.name`: a session working for Mark must not design schemas or migrations (write the
+operational requirement and leave the storage question to Daniel), and a session working for Daniel must not design
+warehouse flows (state the data model and leave the flow to Mark). Once a proposal is accepted, either may build any of it.
+Keep it lean: the smallest thing that works, with no new table, dependency or service without a stated reason.
+
 ## Conventions to follow
 
 - Set audit/actor fields (`person_id_user`, etc.) from `Auth::id()` server-side in controllers — never

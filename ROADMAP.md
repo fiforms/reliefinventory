@@ -5,6 +5,9 @@ aren't lost; it is not a commitment or a schedule. For the audit of what exists 
 backlog, see `PROJECT_ANALYSIS.md` (especially Part 5, the facility network, and Part 11, sequencing) and
 `TODO.md`. When an idea ships, move its description into `CLAUDE.md` and delete or mark it here.
 
+Anyone may add or edit an idea here freely. Before anyone builds one, it becomes a proposal in `proposals/` that
+both developers agree on; see `proposals/README.md` (bugs, suggestions, ideas, and who owns which design lane).
+
 Added 2026-10-23.
 
 ---

@@ -1,0 +1,3 @@
+# Database schema changes are Daniel's lane (see proposals/README.md): any PR touching a migration
+# automatically requests his review.
+/database/migrations/ @fiforms
