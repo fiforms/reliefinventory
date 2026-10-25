@@ -4,8 +4,7 @@
 <!-- DesignVotes.vue
 
 	Design Votes admin (/setup/design-votes, manage-design-votes; DesignVoteController::status). One card per poll in
-	App\Support\DesignPolls: open or close it, the voting link + QR code to share, live results (also split by
-	"I am a…"), every comment, the free-form "other ideas", and a CSV of both. Voters only see results once a poll is closed.
+	App\Support\DesignPolls: open or close it, the voting link + QR code to share, live results, every comment, the free-form "other ideas", and a CSV of both. Voters only see results once a poll is closed.
 -->
 
 <script setup>
@@ -57,7 +56,6 @@ async function copyLink(poll) {
 }
 
 const labelFor = (poll, key) => poll.options.find((o) => o.key === key)?.label || key;
-const roleLabel = (key) => status.value?.voter_roles?.[key] || 'Not given';
 const when = (iso) => (iso ? new Date(iso).toLocaleString() : null);
 
 onMounted(load);
@@ -126,25 +124,6 @@ onMounted(load);
 					</div>
 				</div>
 
-				<div v-if="Object.keys(poll.results.by_role).length" class="text-sm">
-					<h3 class="font-medium mb-1">By who voted</h3>
-					<div class="overflow-x-auto">
-						<table class="min-w-full text-left">
-							<thead>
-								<tr class="text-gray-600 border-b">
-									<th class="py-1 pr-3 font-normal"></th>
-									<th v-for="option in poll.options" :key="option.key" class="py-1 pr-3 font-normal">{{ option.label }}</th>
-								</tr>
-							</thead>
-							<tbody>
-								<tr v-for="(counts, role) in poll.results.by_role" :key="role" class="border-b last:border-0">
-									<td class="py-1 pr-3">{{ roleLabel(role) }}</td>
-									<td v-for="option in poll.options" :key="option.key" class="py-1 pr-3">{{ counts[option.key] || 0 }}</td>
-								</tr>
-							</tbody>
-						</table>
-					</div>
-				</div>
 
 				<div class="text-sm space-y-2">
 					<h3 class="font-medium">Comments</h3>
@@ -152,7 +131,7 @@ onMounted(load);
 					<div v-for="(c, i) in poll.comments" :key="i" class="border-l-4 border-gray-200 pl-3">
 						<p class="whitespace-pre-line">{{ c.comment }}</p>
 						<p class="text-xs text-gray-500">
-							{{ c.voter_name || 'Anonymous' }}<template v-if="c.voter_role"> · {{ roleLabel(c.voter_role) }}</template>
+							{{ c.voter_name || 'Anonymous' }}
 							· voted {{ labelFor(poll, c.option_key) }}
 						</p>
 					</div>

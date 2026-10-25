@@ -22,7 +22,6 @@ const props = defineProps({
 	open: { type: Boolean, default: false },
 	my_vote: { type: Object, default: null },
 	results: { type: Object, default: null },
-	voter_roles: { type: Object, default: () => ({}) },
 	turnstile_enabled: { type: Boolean, default: false },
 	turnstile_site_key: { type: String, default: null },
 	turnstile_unavailable: { type: Boolean, default: false },
@@ -44,7 +43,6 @@ const labelFor = (key) => props.poll.options.find((o) => o.key === key)?.label |
 const form = reactive({
 	option_key: props.my_vote?.option_key || null,
 	voter_name: props.my_vote?.voter_name || '',
-	voter_role: props.my_vote?.voter_role || '',
 	comment: props.my_vote?.comment || '',
 });
 const votedFor = ref(props.my_vote?.option_key || null);
@@ -123,7 +121,6 @@ async function submit() {
 	const payload = {
 		option_key: form.option_key,
 		voter_name: form.voter_name.trim() || null,
-		voter_role: form.voter_role || null,
 		comment: form.comment.trim() || null,
 	};
 	if (props.turnstile_enabled) {
@@ -217,19 +214,10 @@ function changeVote() {
 				<span v-if="errors.option_key" class="text-xs text-red-600">{{ errors.option_key[0] }}</span>
 
 				<p class="text-xs text-gray-500 uppercase font-semibold">Optional</p>
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-					<label class="block">
-						<span class="text-sm text-gray-700">Your name</span>
-						<input v-model="form.voter_name" autocomplete="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base" />
-					</label>
-					<label class="block">
-						<span class="text-sm text-gray-700">I am a…</span>
-						<select v-model="form.voter_role" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base">
-							<option value="">—</option>
-							<option v-for="(text, key) in voter_roles" :key="key" :value="key">{{ text }}</option>
-						</select>
-					</label>
-				</div>
+				<label class="block">
+					<span class="text-sm text-gray-700">Your name</span>
+					<input v-model="form.voter_name" autocomplete="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base" />
+				</label>
 				<label class="block">
 					<span class="text-sm text-gray-700">Why did you pick this one?</span>
 					<textarea v-model="form.comment" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base"></textarea>

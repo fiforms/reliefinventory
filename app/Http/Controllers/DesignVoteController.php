@@ -47,9 +47,8 @@ class DesignVoteController extends Controller
         return Inertia::render('DesignVote', [
             'poll' => $this->pollPayload($poll),
             'open' => $state->is_open,
-            'my_vote' => $vote?->only(['option_key', 'voter_name', 'voter_role', 'comment']),
+            'my_vote' => $vote?->only(['option_key', 'voter_name', 'comment']),
             'results' => $state->is_open ? null : self::results($slug),
-            'voter_roles' => DesignPolls::VOTER_ROLES,
             'turnstile_enabled' => $turnstileEnabled && ! $unavailable,
             'turnstile_site_key' => $turnstileEnabled && ! $unavailable ? $this->turnstile->siteKey() : null,
             'turnstile_unavailable' => $unavailable,
@@ -69,7 +68,6 @@ class DesignVoteController extends Controller
         $data = $request->validate([
             'option_key' => ['required', Rule::in(array_keys($poll['options']))],
             'voter_name' => 'nullable|string|max:100',
-            'voter_role' => ['nullable', Rule::in(array_keys(DesignPolls::VOTER_ROLES))],
             'comment' => 'nullable|string|max:2000',
         ] + $this->turnstileRule());
         $this->verifyTurnstile($request, $data);
@@ -78,7 +76,6 @@ class DesignVoteController extends Controller
         $values = [
             'option_key' => $data['option_key'],
             'voter_name' => filled($data['voter_name'] ?? null) ? trim($data['voter_name']) : null,
-            'voter_role' => $data['voter_role'] ?? null,
             'comment' => filled($data['comment'] ?? null) ? trim($data['comment']) : null,
             'ip_address' => $request->ip(),
         ];
@@ -140,10 +137,10 @@ class DesignVoteController extends Controller
                 'qr_svg' => (new DNS2D)->getBarcodeSVG($url, 'QRCODE', 5, 5),
                 'results' => self::results($poll['slug']),
                 'comments' => DesignPollVote::where('poll_slug', $poll['slug'])->whereNotNull('comment')->latest('updated_at')
-                    ->get(['option_key', 'voter_name', 'voter_role', 'comment', 'updated_at']),
+                    ->get(['option_key', 'voter_name', 'comment', 'updated_at']),
                 'ideas' => DesignPollIdea::where('poll_slug', $poll['slug'])->latest()->get(['idea', 'voter_name', 'created_at']),
             ];
-        }, DesignPolls::all()), 'voter_roles' => DesignPolls::VOTER_ROLES]);
+        }, DesignPolls::all())]);
     }
 
     public function setOpen(Request $request, string $slug)
@@ -167,7 +164,7 @@ class DesignVoteController extends Controller
 
         return response()->streamDownload(function () use ($poll, $votes, $ideas) {
             $out = fopen('php://output', 'w');
-            fputcsv($out, ['Type', 'Sent', 'Updated', 'Choice', 'Name', 'I am a', 'Comment or idea']);
+            fputcsv($out, ['Type', 'Sent', 'Updated', 'Choice', 'Name', 'Comment or idea']);
             foreach ($votes as $vote) {
                 fputcsv($out, [
                     'Vote',
@@ -175,21 +172,20 @@ class DesignVoteController extends Controller
                     $vote->updated_at?->toDateTimeString(),
                     $poll['options'][$vote->option_key]['label'] ?? $vote->option_key,
                     $vote->voter_name,
-                    DesignPolls::VOTER_ROLES[$vote->voter_role] ?? $vote->voter_role,
                     $vote->comment,
                 ]);
             }
             foreach ($ideas as $idea) {
-                fputcsv($out, ['Idea', $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, null, $idea->idea]);
+                fputcsv($out, ['Idea', $idea->created_at?->toDateTimeString(), null, null, $idea->voter_name, $idea->idea]);
             }
             fclose($out);
         }, 'design-vote-'.$slug.'.csv', ['Content-Type' => 'text/csv']);
     }
 
     /**
-     * Votes per option (every option listed, most votes first) and the same split by "I am a…".
+     * Votes per option (every option listed, most votes first).
      *
-     * @return array{total: int, options: array<int, array{key: string, votes: int, percent: int}>, by_role: array}
+     * @return array{total: int, options: array<int, array{key: string, votes: int, percent: int}>}
      */
     public static function results(string $slug): array
     {
@@ -208,13 +204,7 @@ class DesignVoteController extends Controller
             ])
             ->sortByDesc('votes')->values()->all();
 
-        $byRole = DesignPollVote::where('poll_slug', $slug)->whereIn('option_key', $keys)
-            ->groupBy('voter_role', 'option_key')->selectRaw('voter_role, option_key, count(*) as n')->get()
-            ->groupBy(fn ($row) => $row->voter_role ?? 'unspecified')
-            ->map(fn ($rows) => $rows->pluck('n', 'option_key')->map(fn ($n) => (int) $n))
-            ->all();
-
-        return ['total' => $total, 'options' => $options, 'by_role' => $byRole];
+        return ['total' => $total, 'options' => $options];
     }
 
     private function pollPayload(array $poll): array

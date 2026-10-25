@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 class DesignPollVote extends Model
 {
     protected $fillable = [
-        'poll_slug', 'option_key', 'voter_token_hash', 'person_id', 'voter_name', 'voter_role', 'comment', 'ip_address',
+        'poll_slug', 'option_key', 'voter_token_hash', 'person_id', 'voter_name', 'comment', 'ip_address',
     ];
 
     protected $hidden = ['voter_token_hash', 'ip_address'];
