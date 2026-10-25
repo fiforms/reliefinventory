@@ -76,6 +76,29 @@ pub trait Platform: Send + Sync {
     async fn exec(&self, args: &[&str]) -> Result<String>;
     /// Where a path inside the Linux layer can be read/written from the host (only while it is running).
     fn host_path(&self, remote: &str) -> PathBuf;
+    /// Copy a file out of the Linux layer. The default reads it through `host_path`; a backend whose files
+    /// belong to another user (Docker on a Linux host) overrides it.
+    async fn pull(&self, remote: &str, local: &std::path::Path) -> Result<()> {
+        let src = self.host_path(remote);
+        copy_file(src, local.to_path_buf(), "could not copy the backup out").await
+    }
+    /// Copy a file into the Linux layer (see `pull`).
+    async fn push(&self, local: &std::path::Path, remote: &str) -> Result<()> {
+        let dest = self.host_path(remote);
+        copy_file(local.to_path_buf(), dest, "could not copy the file in").await
+    }
+    /// How this backend's compose file differs from the shared one (see `StackOptions`).
+    fn stack_options(&self) -> crate::compose::StackOptions {
+        crate::compose::StackOptions::default()
+    }
+}
+
+async fn copy_file(src: PathBuf, dest: PathBuf, what: &'static str) -> Result<()> {
+    tokio::task::spawn_blocking(move || std::fs::copy(src, dest))
+        .await
+        .map_err(|e| PlatformError::Failed(e.to_string()))?
+        .map(|_| ())
+        .map_err(|e| PlatformError::Failed(format!("{what}: {e}")))
 }
 
 /// Stand-in on operating systems with no backend yet (macOS/Lima is not built): everything that needs the

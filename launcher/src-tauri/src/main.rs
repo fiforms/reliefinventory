@@ -56,8 +56,9 @@ fn get_install_status(state: State<'_, AppState>) -> Option<InstallStatus> {
     status::read(state.launcher.dir())
 }
 
-/// Install needs administrator rights, so it runs in an elevated copy of this program (`--install`),
-/// which reports through the status file that `get_install_status` reads.
+/// On Windows, install needs administrator rights, so it runs in an elevated copy of this program
+/// (`--install`), which reports through the status file that `get_install_status` reads.
+#[cfg(windows)]
 #[tauri::command]
 async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
     let dir = state.launcher.dir().to_path_buf();
@@ -69,6 +70,31 @@ async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
             std::io::ErrorKind::PermissionDenied => "Installing needs permission from an administrator. Try again and choose Yes.".to_string(),
             _ => e.to_string(),
         }
+    })
+}
+
+/// Elsewhere nothing needs elevation: install in this process, reporting through the same status file.
+#[cfg(not(windows))]
+#[tauri::command]
+async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
+    let launcher = state.launcher.clone();
+    status::write(launcher.dir(), &InstallStatus { running: true, step: "Starting".into(), ..Default::default() });
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = launcher.install().await {
+            tracing::error!("install failed: {e}"); // the status file already carries the message
+        }
+    });
+    Ok(())
+}
+
+/// Why this computer can't be installed on yet (Docker missing, not running, …) in plain words, or nothing if
+/// it is ready.
+#[tauri::command]
+async fn get_preflight(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    use ri_launcher_core::platform::Preflight;
+    Ok(match state.launcher.platform().preflight().await.map_err(err)? {
+        Preflight::Ok => None,
+        Preflight::Blocked(why) => Some(why),
     })
 }
 
@@ -154,7 +180,7 @@ async fn backup_create(state: State<'_, AppState>, scope: String) -> Result<(), 
     backups::create_now(state.launcher.platform().as_ref(), &scope).await.map_err(err)
 }
 
-/// Copies one backup to Documents\Relief Inventory Backups as a read-only file and shows it in the file manager.
+/// Copies one backup to Documents/Relief Inventory Backups as a read-only file and shows it in the file manager.
 #[tauri::command]
 async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<String, String> {
     let p = state.launcher.platform();
@@ -163,6 +189,7 @@ async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String)
     let dest = app
         .path()
         .document_dir()
+        .or_else(|_| app.path().home_dir()) // some Linux desktops have no Documents folder
         .map_err(err)?
         .join("Relief Inventory Backups");
     let saved = backups::export(p.as_ref(), b, &dest).await.map_err(err)?;
@@ -177,6 +204,9 @@ async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), S
 
 #[tauri::command]
 fn restart_computer() -> Result<(), String> {
+    if !cfg!(windows) {
+        return Err("Restarting is only needed on Windows.".into());
+    }
     std::process::Command::new("shutdown")
         .args(["/r", "/t", "20", "/c", "Restarting to finish setting up Relief Inventory"])
         .spawn()
@@ -254,7 +284,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .invoke_handler(tauri::generate_handler![
-            get_summary, get_install_status, start_install, dismiss_install_status, start, stop, update, uninstall,
+            get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, backups_list, backup_create, backup_export,
             backup_import, restart_computer, get_autostart, set_autostart, app_version
         ])

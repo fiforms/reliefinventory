@@ -14,6 +14,8 @@ use tokio::task::JoinHandle;
 /// Everything the window shows, in one call.
 #[derive(Debug, Clone, Serialize)]
 pub struct Summary {
+    /// `std::env::consts::OS` ("windows", "linux", "macos"): the window words a few notes per platform.
+    pub platform: &'static str,
     pub state: State,
     pub proxy_running: bool,
     pub mode: Mode,
@@ -61,7 +63,7 @@ impl<P: Platform + 'static> Launcher<P> {
     }
 
     pub fn compose_for(&self, settings: &Settings, machine: &Machine) -> Result<String> {
-        compose::render(compose::TEMPLATE, settings, machine).map_err(|e| PlatformError::Failed(e.to_string()))
+        compose::render_for(compose::TEMPLATE, settings, machine, &self.platform.stack_options()).map_err(|e| PlatformError::Failed(e.to_string()))
     }
 
     async fn proxy_running(&self) -> bool {
@@ -71,6 +73,7 @@ impl<P: Platform + 'static> Launcher<P> {
     pub async fn summary(&self) -> Summary {
         let (s, m) = (self.settings(), Machine::detect());
         Summary {
+            platform: std::env::consts::OS,
             state: self.platform.state().await.unwrap_or(State::Stopped),
             proxy_running: self.proxy_running().await,
             mode: s.mode,

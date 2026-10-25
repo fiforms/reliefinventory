@@ -41,7 +41,7 @@ impl Machine {
 /// Hyper-V/WSL/Docker/VM adapters carry addresses no other device can reach.
 fn is_virtual_adapter(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    ["vethernet", "wsl", "docker", "virtualbox", "vmware", "vmnet", "hyper-v", "loopback", "vboxnet", "br-", "veth"]
+    ["vethernet", "wsl", "docker", "virtualbox", "vmware", "vmnet", "hyper-v", "loopback", "vboxnet", "br-", "veth", "virbr", "lxdbr", "lxcbr", "podman"]
         .iter()
         .any(|p| n.contains(p))
 }

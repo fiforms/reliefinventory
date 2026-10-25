@@ -1,0 +1,41 @@
+name: RI Launcher (Linux)
+
+# Manual only — run from the Actions tab. Tests the core, then builds the .deb and AppImage (no Docker needed to build; running it needs Docker on the user's machine).
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libwebkit2gtk-4.1-dev libxdo-dev libssl-dev \
+            libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            launcher
+            launcher/src-tauri
+      - name: Test core
+        run: cargo test -p ri-launcher-core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      - name: Build installers
+        run: npm run tauri build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ri-launcher-linux
+          path: |
+            launcher/src-tauri/target/release/bundle/deb/*.deb
+            launcher/src-tauri/target/release/bundle/appimage/*.AppImage

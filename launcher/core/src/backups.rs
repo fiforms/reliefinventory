@@ -71,16 +71,16 @@ pub async fn export<P: Platform>(p: &P, backup: &BackupFile, dest_dir: &Path) ->
     }
     std::fs::create_dir_all(dest_dir).map_err(|e| crate::platform::PlatformError::Failed(e.to_string()))?;
     let dest = unique(dest_dir, &backup.name);
-    let (src, to) = (p.host_path(&backup.path), dest.clone());
+    p.pull(&backup.path, &dest).await?;
+    let to = dest.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::copy(&src, &to)?;
         let mut perm = std::fs::metadata(&to)?.permissions();
         perm.set_readonly(true);
         std::fs::set_permissions(&to, perm)
     })
     .await
     .map_err(|e| crate::platform::PlatformError::Failed(e.to_string()))?
-    .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the backup out: {e}")))?;
+    .map_err(|e| crate::platform::PlatformError::Failed(format!("could not protect the copy: {e}")))?;
     Ok(dest)
 }
 
@@ -97,13 +97,10 @@ pub async fn import<P: Platform>(p: &P, file: &Path) -> Result<()> {
         crate::platform::PlatformError::Failed(format!("Could not take a safety backup first, so nothing was changed: {e}"))
     })?;
     let remote = format!("{REMOTE_DIR}/backups/imported.zip");
-    let (src, to) = (file.to_path_buf(), p.host_path(&remote));
-    tokio::task::spawn_blocking(move || std::fs::copy(src, to))
-        .await
-        .map_err(|e| crate::platform::PlatformError::Failed(e.to_string()))?
-        .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the file in: {e}")))?;
+    p.push(file, &remote).await?;
     let result = p.exec(&["sh", "-c", &app("php artisan backup:restore /backups/imported.zip --force --no-interaction")]).await;
-    let _ = p.exec(&["rm", "-f", &remote]).await;
+    // removed from inside the app's container: on a Linux host the folder belongs to the app's user
+    let _ = p.exec(&["sh", "-c", &app("rm -f /backups/imported.zip")]).await;
     result.map(|_| ())
 }
 
@@ -197,7 +194,7 @@ mod tests {
         let cmds = p.cmds.lock().unwrap().clone();
         let at = |n: &str| cmds.iter().position(|c| c.contains(n)).unwrap();
         assert!(at("backup:create --scope=database") < at("backup:restore /backups/imported.zip --force --no-interaction"));
-        assert!(cmds.last().unwrap().contains("rm -f /opt/ri/backups/imported.zip"));
+        assert!(cmds.last().unwrap().contains("rm -f /backups/imported.zip"));
     }
 
     #[tokio::test]
