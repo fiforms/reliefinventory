@@ -1,0 +1,40 @@
+name: RI Launcher (macOS)
+
+# Manual only — run from the Actions tab. Tests the core (on macOS, where the Lima backend is the default),
+# then builds an UNSIGNED universal (Apple silicon + Intel) .dmg. Until we have an Apple Developer ID,
+# Gatekeeper blocks the first open: open it once, then System Settings > Privacy & Security > "Open Anyway".
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: launcher
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            launcher
+            launcher/src-tauri
+      - name: Test core
+        run: cargo test -p ri-launcher-core
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: launcher/package-lock.json
+      - run: npm ci
+      # CI=true (set by Actions) makes Tauri skip the Finder-scripted .dmg window layout, which needs an
+      # Automation permission a runner doesn't have.
+      - name: Build the .dmg
+        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ri-launcher-macos
+          path: launcher/src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg

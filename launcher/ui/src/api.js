@@ -1,6 +1,7 @@
 // Thin wrapper over the Tauri commands in src-tauri/src/main.rs. Outside Tauri (plain `npm run dev` in a
 // browser) it serves mock data so the UI can be developed without the native shell:
-// add ?mock=notinstalled | installing | reboot | stopped | running | local | failed to the URL.
+// add ?mock=notinstalled | installing | reboot | stopped | running | local | failed to the URL, and &os=macos
+// to see the Mac wording.
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
@@ -14,6 +15,7 @@ function mockSummary() {
         state: 'running', proxy_running: true, mode: 'lan', hostname: null, default_hostname: 'hpwin11.local',
         port: 8080, timezone: null, url: 'http://hpwin11.local:8080',
         share_urls: ['http://hpwin11.local:8080', 'http://10.53.105.130:8080'],
+        os: new URLSearchParams(location.search).get('os') || 'windows',
     }
     if (k === 'notinstalled' || k === 'installing' || k === 'reboot' || k === 'failed') return { ...base, state: 'not_installed', proxy_running: false }
     if (k === 'stopped') return { ...base, state: 'stopped', proxy_running: false }

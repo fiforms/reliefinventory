@@ -3,14 +3,15 @@
 //! Windows 11 machine (see launcher/README.md); notably `wsl --install --no-distribution` does NOT work
 //! on a machine with no WSL, so the features are enabled with DISM and WSL comes from its own MSI.
 use crate::download::Downloader;
+use crate::layer::{self, tail};
 use crate::platform::*;
 use crate::runner::{Output, Runner};
 use async_trait::async_trait;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 pub const DISTRO: &str = "ReliefInventory";
-pub const REMOTE_DIR: &str = "/opt/ri";
+pub use crate::layer::REMOTE_DIR;
 const FIREWALL_RULE: &str = "RI Launcher";
 const RUN_KEY: &str = r"HKCU\Software\Microsoft\Windows\CurrentVersion\RunOnce";
 const MIN_BUILD: u32 = 19041; // Windows 10 2004, the first with WSL 2
@@ -165,9 +166,8 @@ impl<R: Runner, D: Downloader> WslBackend<R, D> {
     }
 
     async fn write_compose(&self, compose: &str) -> Result<()> {
-        self.inside_ok("creating the app folder", &format!("mkdir -p {REMOTE_DIR}/backups")).await?;
-        let path = format!("{REMOTE_DIR}/compose.yaml");
-        let script = format!("cat > {path}.new && mv {path}.new {path}");
+        self.inside_ok("creating the app folder", &layer::make_dirs()).await?;
+        let script = layer::write_stdin_to(&layer::compose_path());
         let out = self
             .runner
             .run_stdin("wsl.exe", &["-d", DISTRO, "--exec", "sh", "-c", &script], compose.as_bytes())
@@ -178,10 +178,6 @@ impl<R: Runner, D: Downloader> WslBackend<R, D> {
         } else {
             fail(format!("could not write the compose file: {}", tail(&out)))
         }
-    }
-
-    fn compose(&self, sub: &str) -> String {
-        format!("cd {REMOTE_DIR} && docker compose {sub} 2>&1")
     }
 
     async fn download(&self, label: &str, url: &str, name: &str, sha: &str, progress: &ProgressFn) -> Result<PathBuf> {
@@ -196,13 +192,6 @@ impl<R: Runner, D: Downloader> WslBackend<R, D> {
             let _ = self.run("reg.exe", &["add", RUN_KEY, "/v", "RILauncherResume", "/t", "REG_SZ", "/d", cmd, "/f"]).await;
         }
     }
-}
-
-fn tail(out: &Output) -> String {
-    let text = if out.stderr.trim().is_empty() { &out.stdout } else { &out.stderr };
-    let lines: Vec<&str> = text.lines().filter(|l| !l.trim().is_empty()).collect();
-    let start = lines.len().saturating_sub(6);
-    format!("{} (exit {})", lines[start..].join(" / "), out.code)
 }
 
 fn windows_build(ver_output: &str) -> Option<u32> {
@@ -291,14 +280,10 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
             }
         }
 
-        let have_docker = self.inside(&["sh", "-c", "command -v dockerd"]).await.map(|o| o.ok()).unwrap_or(false);
+        let have_docker = self.inside(&["sh", "-c", layer::HAS_DOCKER]).await.map(|o| o.ok()).unwrap_or(false);
         if !have_docker {
             progress(Progress::step("Installing Docker", "Downloading Docker Engine into the Linux layer"));
-            self.inside_ok(
-                "installing Docker",
-                "apk add --no-cache docker docker-cli-compose iptables ip6tables 2>&1",
-            )
-            .await?;
+            self.inside_ok("installing Docker", layer::INSTALL_DOCKER).await?;
         }
 
         progress(Progress::step("Firewall", "Allowing the launcher to accept connections from your network"));
@@ -318,7 +303,7 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
         progress(Progress::step("Downloading Relief Inventory", "Pulling the application images (several minutes the first time)"));
         self.ensure_daemon().await?;
         self.write_compose(compose).await?;
-        self.inside_ok("downloading the application", &self.compose("pull")).await?;
+        self.inside_ok("downloading the application", &layer::compose("pull")).await?;
         let _ = self.run("reg.exe", &["delete", RUN_KEY, "/v", "RILauncherResume", "/f"]).await;
         Ok(InstallOutcome::Done)
     }
@@ -340,7 +325,7 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
         }
         self.ensure_daemon().await?;
         self.write_compose(compose).await?;
-        self.inside_ok("starting the application", &self.compose("up -d")).await?;
+        self.inside_ok("starting the application", &layer::compose("up -d")).await?;
         Ok(())
     }
 
@@ -350,7 +335,7 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
         }
         if self.distro_running().await {
             // graceful first so MariaDB flushes; the terminate below also ends the keep-alive process
-            let _ = self.inside(&["sh", "-c", &self.compose("stop")]).await;
+            let _ = self.inside(&["sh", "-c", &layer::compose("stop")]).await;
         }
         let out = self.wsl(&["--terminate", DISTRO]).await?;
         if out.ok() {
@@ -363,8 +348,8 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
     async fn update(&self, compose: &str) -> Result<()> {
         self.ensure_daemon().await?;
         self.write_compose(compose).await?;
-        self.inside_ok("downloading the update", &self.compose("pull")).await?;
-        self.inside_ok("restarting with the update", &self.compose("up -d")).await?;
+        self.inside_ok("downloading the update", &layer::compose("pull")).await?;
+        self.inside_ok("restarting with the update", &layer::compose("up -d")).await?;
         Ok(())
     }
 
@@ -396,14 +381,31 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
         }
     }
 
-    fn host_path(&self, remote: &str) -> PathBuf {
-        let mut p = format!(r"\\wsl.localhost\{DISTRO}");
-        for part in remote.split('/').filter(|s| !s.is_empty()) {
-            p.push('\\');
-            p.push_str(part);
-        }
-        PathBuf::from(p)
+    async fn pull(&self, remote: &str, local: &Path) -> Result<()> {
+        copy_file(host_path(remote), local.to_path_buf()).await
     }
+
+    async fn push(&self, local: &Path, remote: &str) -> Result<()> {
+        copy_file(local.to_path_buf(), host_path(remote)).await
+    }
+}
+
+/// Where a path inside the distro can be read/written from Windows (only while the distro is running).
+fn host_path(remote: &str) -> PathBuf {
+    let mut p = format!(r"\\wsl.localhost\{DISTRO}");
+    for part in remote.split('/').filter(|s| !s.is_empty()) {
+        p.push('\\');
+        p.push_str(part);
+    }
+    PathBuf::from(p)
+}
+
+async fn copy_file(from: PathBuf, to: PathBuf) -> Result<()> {
+    tokio::task::spawn_blocking(move || std::fs::copy(&from, &to))
+        .await
+        .map_err(|e| PlatformError::Failed(e.to_string()))?
+        .map(|_| ())
+        .map_err(|e| PlatformError::Failed(format!("could not copy the file: {e}")))
 }
 
 #[cfg(test)]
@@ -484,8 +486,7 @@ mod tests {
 
     #[test]
     fn host_path_is_a_wsl_unc_path() {
-        let (b, _) = backend(Box::new(|_| None));
-        assert_eq!(b.host_path("/opt/ri/backups/x.zip").to_string_lossy(), r"\\wsl.localhost\ReliefInventory\opt\ri\backups\x.zip");
+        assert_eq!(host_path("/opt/ri/backups/x.zip").to_string_lossy(), r"\\wsl.localhost\ReliefInventory\opt\ri\backups\x.zip");
     }
 
     #[tokio::test]

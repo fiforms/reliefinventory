@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 
 /// Port the app is published on *inside* the Linux layer. WSL and Lima forward it to the host's
@@ -57,7 +57,8 @@ impl Progress {
 
 pub type ProgressFn = Arc<dyn Fn(Progress) + Send + Sync>;
 
-/// What the Linux layer must provide. `wsl::WslBackend` implements it for Windows; tests use a fake.
+/// What the Linux layer must provide. `wsl::WslBackend` implements it for Windows and `lima::LimaBackend`
+/// for macOS; tests use a fake.
 /// Every method is safe to call again after a failure or a reboot.
 #[async_trait]
 pub trait Platform: Send + Sync {
@@ -74,11 +75,13 @@ pub trait Platform: Send + Sync {
     async fn uninstall(&self, keep_data: bool) -> Result<()>;
     /// Run a command inside the Linux layer; an error if it exits non-zero. Returns stdout.
     async fn exec(&self, args: &[&str]) -> Result<String>;
-    /// Where a path inside the Linux layer can be read/written from the host (only while it is running).
-    fn host_path(&self, remote: &str) -> PathBuf;
+    /// Copy a file out of the Linux layer to `local` (only while it is running). Any file, whoever owns it.
+    async fn pull(&self, remote: &str, local: &Path) -> Result<()>;
+    /// Copy `local` into the Linux layer at `remote` (only while it is running), replacing what is there.
+    async fn push(&self, local: &Path, remote: &str) -> Result<()>;
 }
 
-/// Stand-in on operating systems with no backend yet (macOS/Lima is not built): everything that needs the
+/// Stand-in on operating systems with no backend (Linux): everything that needs the
 /// Linux layer says so plainly, while settings and links still work.
 pub struct Unsupported;
 
@@ -108,7 +111,10 @@ impl Platform for Unsupported {
     async fn exec(&self, _a: &[&str]) -> Result<String> {
         fail("RI Launcher does not support this operating system yet.")
     }
-    fn host_path(&self, remote: &str) -> PathBuf {
-        PathBuf::from(remote)
+    async fn pull(&self, _r: &str, _l: &Path) -> Result<()> {
+        fail("RI Launcher does not support this operating system yet.")
+    }
+    async fn push(&self, _l: &Path, _r: &str) -> Result<()> {
+        fail("RI Launcher does not support this operating system yet.")
     }
 }

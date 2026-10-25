@@ -2,7 +2,7 @@
 //! see docker/README.md); this module lists them, makes one on demand, copies one out to a normal folder
 //! as a read-only snapshot, and restores one from a file.
 use crate::platform::{fail, Platform, Result};
-use crate::wsl::REMOTE_DIR;
+use crate::layer::REMOTE_DIR;
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -71,16 +71,18 @@ pub async fn export<P: Platform>(p: &P, backup: &BackupFile, dest_dir: &Path) ->
     }
     std::fs::create_dir_all(dest_dir).map_err(|e| crate::platform::PlatformError::Failed(e.to_string()))?;
     let dest = unique(dest_dir, &backup.name);
-    let (src, to) = (p.host_path(&backup.path), dest.clone());
+    p.pull(&backup.path, &dest)
+        .await
+        .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the backup out: {e}")))?;
+    let to = dest.clone();
     tokio::task::spawn_blocking(move || -> std::io::Result<()> {
-        std::fs::copy(&src, &to)?;
         let mut perm = std::fs::metadata(&to)?.permissions();
         perm.set_readonly(true);
         std::fs::set_permissions(&to, perm)
     })
     .await
     .map_err(|e| crate::platform::PlatformError::Failed(e.to_string()))?
-    .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the backup out: {e}")))?;
+    .map_err(|e| crate::platform::PlatformError::Failed(format!("could not mark the copy read-only: {e}")))?;
     Ok(dest)
 }
 
@@ -97,10 +99,8 @@ pub async fn import<P: Platform>(p: &P, file: &Path) -> Result<()> {
         crate::platform::PlatformError::Failed(format!("Could not take a safety backup first, so nothing was changed: {e}"))
     })?;
     let remote = format!("{REMOTE_DIR}/backups/imported.zip");
-    let (src, to) = (file.to_path_buf(), p.host_path(&remote));
-    tokio::task::spawn_blocking(move || std::fs::copy(src, to))
+    p.push(file, &remote)
         .await
-        .map_err(|e| crate::platform::PlatformError::Failed(e.to_string()))?
         .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the file in: {e}")))?;
     let result = p.exec(&["sh", "-c", &app("php artisan backup:restore /backups/imported.zip --force --no-interaction")]).await;
     let _ = p.exec(&["rm", "-f", &remote]).await;
@@ -152,7 +152,16 @@ mod tests {
             }
             Ok(if line.contains("find ") { self.list_output.clone() } else { String::new() })
         }
-        fn host_path(&self, remote: &str) -> PathBuf {
+        async fn pull(&self, remote: &str, local: &Path) -> Result<()> {
+            std::fs::copy(self.at(remote), local).map(|_| ()).map_err(|e| PlatformError::Failed(e.to_string()))
+        }
+        async fn push(&self, local: &Path, remote: &str) -> Result<()> {
+            std::fs::copy(local, self.at(remote)).map(|_| ()).map_err(|e| PlatformError::Failed(e.to_string()))
+        }
+    }
+
+    impl Fake {
+        fn at(&self, remote: &str) -> PathBuf {
             self.root.join(remote.trim_start_matches('/'))
         }
     }
@@ -173,7 +182,7 @@ mod tests {
     #[tokio::test]
     async fn export_copies_read_only_and_never_overwrites() {
         let (p, _d) = fake("", false);
-        std::fs::write(p.host_path("/opt/ri/backups/x.zip"), b"PK\x03\x04data").unwrap();
+        std::fs::write(p.at("/opt/ri/backups/x.zip"), b"PK\x03\x04data").unwrap();
         let b = BackupFile { path: "/opt/ri/backups/x.zip".into(), name: "x.zip".into(), size: 8, modified: 1 };
         let out = tempfile::tempdir().unwrap();
         let first = export(&p, &b, out.path()).await.unwrap();
