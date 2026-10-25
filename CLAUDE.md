@@ -673,14 +673,15 @@ comparing the `RI_VERSION` each image carries so neither the pull nor a newer OS
 
 ### RI Launcher (`launcher/`, read its README) — 2026-10-25
 
-Installs and runs this app on Windows and macOS without Docker Desktop (Docker Engine inside a private Alpine WSL 2 distro, `ReliefInventory`, on
-Windows; a private Alpine Lima VM, `vmType: vz`, on macOS — `launcher/MAC_VERSION.md`). Rust core (`launcher/core`: `Platform` trait, `wsl.rs`, `service.rs` `Launcher`, settings, compose editing, a LAN TCP proxy,
+Installs and runs this app on Windows, macOS and Linux without Docker Desktop (Docker Engine inside a private Alpine WSL 2 distro, `ReliefInventory`, on
+Windows; a private Alpine Lima VM, `vmType: vz`, on macOS — `launcher/MAC_VERSION.md`; on Linux `core/src/linux.rs` uses the host's own Docker, under its own
+compose project `ri-launcher` — never the shipped `name:`, which another checkout may own — with the app port bound to 127.0.0.1). Rust core (`launcher/core`: `Platform` trait, `wsl.rs`, `service.rs` `Launcher`, settings, compose editing, a LAN TCP proxy,
 backup tools) + CLI (`ri-launcher`) + a Tauri v2/Vue window (`launcher/src-tauri`, `launcher/ui`), a separate program from `print-client/`. Non-obvious:
 `wsl --install --no-distribution` fails on a machine with no WSL, so install = DISM features → restart → WSL's own MSI (pinned, SHA-256) → `wsl --import`
 → `apk add docker`; `docker/compose.yaml` is **embedded and regenerated from `settings.json` on every start** (only `APP_URL`, the `8080:8080` mapping →
 `18080:8080`, an optional timezone), and a launcher-process proxy owns the public port — "Run as a LAN service" = listen on every interface, "local only" =
 127.0.0.1; the share link is `<name>.local:<port>`. A launcher test fails if `docker/compose.yaml`'s `APP_URL` / `"8080:8080"` lines change shape, so
-keep those lines patchable. Run on real Windows 11 via the CLI (clean install, reboot resume, LAN, backups); the window has not been run yet.
+keep those lines patchable. Run on real Windows 11 and on Ubuntu/Docker via the CLI (clean install, LAN, backups); the window has not been run yet.
 macOS (2026-10-25, `lima.rs`): no admin rights or restart, so the install runs in the window's process; every `limactl` call is `env LIMA_HOME=~/.ri-lima`
 (our own Lima, never the user's — and in the home folder because Lima socket paths must be < 104 bytes); `layer.rs` holds the in-VM steps both backends
 share, and `Platform::pull`/`push` (not a host path) move backup files. Proven via the CLI on an Apple-silicon Mac; the Mac window is not run yet.

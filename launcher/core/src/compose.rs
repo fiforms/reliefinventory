@@ -15,17 +15,38 @@ pub enum ComposeError {
 /// Produce the compose file for these settings: `APP_URL` becomes the address people type, the app is
 /// published on the internal port (the proxy owns the public one), and an optional timezone is switched on.
 pub fn render(template: &str, settings: &Settings, machine: &Machine) -> Result<String, ComposeError> {
+    render_for(template, settings, machine, &StackOptions::default())
+}
+
+/// Differences for a backend that runs Docker on the host itself instead of in a private Linux layer.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct StackOptions {
+    /// Publish the internal port on 127.0.0.1 only: a bare port mapping would be reachable from the whole
+    /// network and bypass the Local-only setting.
+    pub loopback_only: bool,
+    /// Compose project name written into the file's `name:` line. The shipped name is the folder-style
+    /// default, which another stack on the same Docker (a developer's own checkout) can already own — and then
+    /// a plain `docker compose exec` from our folder would act on *their* containers.
+    pub project_name: Option<String>,
+}
+
+pub fn render_for(template: &str, settings: &Settings, machine: &Machine, opts: &StackOptions) -> Result<String, ComposeError> {
+    let bind = if opts.loopback_only { "127.0.0.1:" } else { "" };
+    let mut saw_name = false;
     let url = app_url(settings, machine);
     let (mut saw_url, mut saw_port) = (false, false);
     let mut out = String::with_capacity(template.len() + 64);
     for line in template.lines() {
         let trimmed = line.trim_start();
         let indent = &line[..line.len() - trimmed.len()];
-        if trimmed.starts_with("APP_URL:") {
+        if let (Some(name), true) = (&opts.project_name, line.starts_with("name:")) {
+            out.push_str(&format!("name: {name}\n"));
+            saw_name = true;
+        } else if trimmed.starts_with("APP_URL:") {
             out.push_str(&format!("{indent}APP_URL: {url}\n"));
             saw_url = true;
         } else if trimmed == "- \"8080:8080\"" {
-            out.push_str(&format!("{indent}- \"{INTERNAL_PORT}:8080\"\n"));
+            out.push_str(&format!("{indent}- \"{bind}{INTERNAL_PORT}:8080\"\n"));
             saw_port = true;
         } else if let (Some(tz), true) = (&settings.timezone, trimmed.starts_with("# APP_TIMEZONE:")) {
             out.push_str(&format!("{indent}APP_TIMEZONE: {tz}\n"));
@@ -39,6 +60,9 @@ pub fn render(template: &str, settings: &Settings, machine: &Machine) -> Result<
     }
     if !saw_port {
         return Err(ComposeError::LineMissing("\"8080:8080\" port"));
+    }
+    if opts.project_name.is_some() && !saw_name {
+        return Err(ComposeError::LineMissing("top-level name:"));
     }
     Ok(out)
 }
@@ -60,6 +84,25 @@ mod tests {
         assert!(out.contains("- \"18080:8080\""));
         assert!(!out.contains("- \"8080:8080\""));
         assert!(out.contains("- \"8081:8080\"")); // Reverb's mapping is left alone
+    }
+
+    #[test]
+    fn loopback_only_binds_the_internal_port_to_127_0_0_1() {
+        let opts = StackOptions { loopback_only: true, project_name: None };
+        let out = render_for(TEMPLATE, &Settings::default(), &machine(), &opts).unwrap();
+        assert!(out.contains("- \"127.0.0.1:18080:8080\""));
+        assert!(out.contains("- \"8081:8080\""));
+        assert!(out.contains("\nname: reliefinventory\n")); // untouched unless asked
+    }
+
+    #[test]
+    fn a_project_name_replaces_the_shipped_one() {
+        let opts = StackOptions { loopback_only: false, project_name: Some("ri-launcher".into()) };
+        let out = render_for(TEMPLATE, &Settings::default(), &machine(), &opts).unwrap();
+        assert!(out.contains("\nname: ri-launcher\n"));
+        assert!(!out.contains("name: reliefinventory"));
+        let no_name = TEMPLATE.replace("\nname: reliefinventory\n", "\n");
+        assert!(render_for(&no_name, &Settings::default(), &machine(), &opts).is_err());
     }
 
     #[test]

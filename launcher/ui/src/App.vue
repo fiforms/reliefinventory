@@ -13,6 +13,7 @@ const busy = ref('') // what is running right now ('' = nothing); disables the b
 const msg = ref(null) // { kind: 'ok' | 'bad', text }
 const confirming = ref('') // 'uninstall' | 'restore' | ''
 const keepData = ref(true)
+const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
 const restoreFile = ref('')
 const form = reactive({ hostname: '', port: 8080, timezone: '' })
 let formLoaded = false
@@ -42,7 +43,12 @@ function schedule() {
     timer = setTimeout(refresh, install.value?.running ? 1500 : 5000)
 }
 
+const checkAgain = async () => {
+    try { blocked.value = await api.getPreflight() } catch (e) { blocked.value = String(e) }
+}
+
 onMounted(async () => {
+    checkAgain()
     version.value = await api.appVersion()
     api.getAutostart().then((v) => (autostart.value = v)).catch(() => {})
     refresh()
@@ -54,6 +60,7 @@ const lan = computed(() => summary.value?.mode === 'lan')
 const mac = computed(() => summary.value?.os === 'macos')
 const installing = computed(() => install.value?.running)
 const needsReboot = computed(() => install.value?.needs_reboot && !install.value?.running)
+const linux = computed(() => summary.value?.os === 'linux')
 const installError = computed(() => (!install.value?.running ? install.value?.error : null))
 const pill = computed(() => {
     if (installing.value) return { cls: 'busy', text: 'Installing…' }
@@ -180,7 +187,11 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             </template>
             <template v-else>
                 <h2>Install Relief Inventory</h2>
-                <p class="muted" v-if="mac">
+                <p class="muted" v-if="linux">
+                    This uses Docker on this computer. It downloads Relief Inventory (roughly 1 GB) and takes a few minutes. It does not
+                    need administrator permission, but Docker has to be installed and running.
+                </p>
+                <p class="muted" v-else-if="mac">
                     This sets up everything on this Mac: a small Linux virtual machine, Docker Engine and Relief Inventory itself. It
                     downloads roughly 1 GB and takes 10–20 minutes. It doesn't need an administrator password or a restart.
                 </p>
@@ -188,9 +199,13 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     This sets up everything on this computer: a small Linux layer, Docker Engine and Relief Inventory itself. It
                     downloads roughly 1 GB, takes 10–20 minutes, and asks for administrator permission. Windows may need to restart once.
                 </p>
+                <div v-if="blocked" class="banner bad" role="alert">
+                    <p class="pre">{{ blocked }}</p>
+                    <button type="button" @click="checkAgain" :disabled="!!busy">Check again</button>
+                </div>
                 <p v-if="installError" class="banner bad" role="alert">{{ installError }}</p>
                 <div class="actions">
-                    <button class="primary" @click="doInstall" :disabled="!!busy">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
+                    <button class="primary" @click="doInstall" :disabled="!!busy || !!blocked">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
                 </div>
             </template>
         </section>
@@ -251,7 +266,12 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                         <button type="button" v-if="summary.hostname" @click="resetName" :disabled="!!busy">Use computer name</button>
                     </div>
                 </form>
-                <p class="muted small" v-if="mac">
+                <p class="muted small" v-if="linux">
+                    If this computer has a firewall (such as <code>ufw</code> or <code>firewalld</code>), allow port {{ summary.port }} for the other computers.
+                    Names ending in <code>.local</code> also need the Avahi service, which most desktop distributions run already; if a link doesn't
+                    open, use one of the IP addresses. The launcher has to stay running (it lives in the tray) for others to connect.
+                </p>
+                <p class="muted small" v-else-if="mac">
                     If macOS asks whether RI Launcher may accept incoming network connections, choose <strong>Allow</strong>.
                     The launcher has to stay running (it lives in the menu bar) for others to connect, and this Mac must be awake.
                 </p>
@@ -345,6 +365,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 .top { display: flex; align-items: center; gap: 10px; }
 .top h1 { font-size: 20px; margin: 0; flex: 1; }
 .mark { width: 32px; height: 32px; }
+.pre { white-space: pre-wrap; margin: 0 0 8px; }
 .splash { width: 100%; border-radius: 10px; display: block; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 h2 { font-size: 15px; margin: 0 0 10px; }

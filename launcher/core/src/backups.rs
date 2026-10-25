@@ -103,7 +103,8 @@ pub async fn import<P: Platform>(p: &P, file: &Path) -> Result<()> {
         .await
         .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the file in: {e}")))?;
     let result = p.exec(&["sh", "-c", &app("php artisan backup:restore /backups/imported.zip --force --no-interaction")]).await;
-    let _ = p.exec(&["rm", "-f", &remote]).await;
+    // removed from inside the app's container: on a Linux host the folder belongs to the app's user
+    let _ = p.exec(&["sh", "-c", &app("rm -f /backups/imported.zip")]).await;
     result.map(|_| ())
 }
 
@@ -206,7 +207,7 @@ mod tests {
         let cmds = p.cmds.lock().unwrap().clone();
         let at = |n: &str| cmds.iter().position(|c| c.contains(n)).unwrap();
         assert!(at("backup:create --scope=database") < at("backup:restore /backups/imported.zip --force --no-interaction"));
-        assert!(cmds.last().unwrap().contains("rm -f /opt/ri/backups/imported.zip"));
+        assert!(cmds.last().unwrap().contains("rm -f /backups/imported.zip"));
     }
 
     #[tokio::test]

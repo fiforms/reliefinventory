@@ -1,8 +1,8 @@
 # RI Launcher
 
-Installs and runs Relief Inventory on Windows and macOS **without Docker Desktop** — Docker Engine runs
+Installs and runs Relief Inventory on Windows, macOS and Linux **without Docker Desktop** — Docker Engine runs
 inside a small Linux layer the launcher creates (a private Alpine WSL 2 distro on Windows; a private Alpine Lima VM on
-macOS). A window with buttons to install / start / stop / update, a **Run as a LAN service** switch, a **Copy
+macOS), or, on Linux, is simply the Docker the person already has. A window with buttons to install / start / stop / update, a **Run as a LAN service** switch, a **Copy
 shareable link** button, an editable computer name, and backup tools. A separate program from `print-client/`, same
 repo and the same Rust + Tauri v2 + Vue approach.
 
@@ -17,12 +17,16 @@ keeping data (see "Proven on macOS"). A universal (arm64 + x86_64) unsigned `.dm
 `.github/workflows/launcher-macos.yml` (manual) builds the same in CI but has not been run yet. **The Mac window has not been run yet**, and nothing has run on an Intel Mac.
 Plan, decisions and open questions: [`MAC_VERSION.md`](MAC_VERSION.md).
 
+**Linux** (2026-10-25, `core/src/linux.rs`) is built and was run for real against Docker 29 on Ubuntu through the CLI (install, start,
+LAN/local switch, backups create/export/restore, stop, update, uninstall keep/remove data); the window compiles there but has
+not been run (`.github/workflows/launcher-linux.yml`, manual, builds the `.deb` and AppImage). See "Linux" below.
+
 ## Layout
 - `core/` (`ri-launcher-core`, plain crate, `cargo test` runs everywhere) — `platform.rs` (the `Platform` trait: what a
   Linux layer must do), `wsl.rs` (Windows backend), `lima.rs` (macOS backend), `layer.rs` (what runs *inside* the Linux
   layer, shared by both: the Docker install, `/opt/ri`, compose commands), `service.rs` (`Launcher`: settings + compose + proxy + backend),
   `settings.rs`, `compose.rs`, `network.rs`, `proxy.rs`, `backups.rs`, `status.rs`, `download.rs`, `runner.rs`,
-  `elevate.rs`. `bin/ri-launcher.rs` is a full command-line front end (`ri-launcher --help`) — useful for testing and
+  `elevate.rs`, `linux.rs` (Linux backend). `bin/ri-launcher.rs` is a full command-line front end (`ri-launcher --help`) — useful for testing and
   for driving a remote machine.
 - `src-tauri/` (Tauri shell: commands, tray, start-at-login, single instance, the elevated `--install` pass) and
   `ui/` (Vue). Not a workspace member (own `Cargo.lock`), like print-client.
@@ -60,6 +64,29 @@ Plan, decisions and open questions: [`MAC_VERSION.md`](MAC_VERSION.md).
   **read-only**), and **Restore from file** (refuses non-zips,
   takes a safety backup first and stops if that fails, then `backup:restore … --force --no-interaction`; the window's own
   confirmation replaces the command's prompt). The encryption key (`APP_KEY`) is not in a backup — see docker/README.md.
+
+## Linux (`linux.rs`)
+No VM and no admin step: `LinuxBackend` drives the host's own Docker with `docker compose`, the same stack, proxy, share link and
+backup tools. The launcher **never runs `sudo`**: if Docker is missing, not running, or the user isn't in the `docker` group, the
+install card shows what to run for their distribution (`install_hint`, from `/etc/os-release`) and a **Check again** button
+(`get_preflight`). Things that aren't obvious:
+- **Its own compose project, `ri-launcher`** (written into the generated file's `name:` line and passed as `--project-name`). The shipped
+  file says `name: reliefinventory`, which a developer's own checkout on the same Docker may already own; without this, a plain
+  `docker compose exec` from our folder acted on *their* containers, and a full uninstall (`down --volumes`) would have deleted
+  their data. Found the hard way in the first real run — don't remove it. `compose::StackOptions` carries it (Windows leaves the name alone, because
+  changing it there would orphan existing installs' volumes).
+- **The internal port is bound to `127.0.0.1`** (`127.0.0.1:18080:8080`): on a Linux host a bare `18080:8080` listens on every interface and would
+  let anyone on the network bypass the proxy and the Local-only switch. Docker's published ports also bypass `ufw`.
+- Files: `~/.local/share/ReliefInventory/stack/` holds `compose.yaml`, an `.installed` marker (written after the images are pulled) and
+  `backups/`. That folder belongs to the app's container user, so backups are copied with `docker compose cp` (`Platform::pull`/`push`), never
+  read from disk; after a restore upload the file is made readable from inside. The shared backup code speaks in `/opt/ri` paths, which
+  `LinuxBackend::exec` translates both ways.
+- Uninstall: *keep data* removes the containers (volumes stay; reinstall finds them); *remove everything* also deletes the volumes, the backups and
+  the folder. It **never removes images** — Docker is shared, and another stack may use the same tag.
+- Sharing: Linux needs the **Avahi** service for `<name>.local` to resolve from other machines (most desktop distributions run it; Arch
+  doesn't by default), and a firewall (`ufw`/`firewalld`) may need the port opened — the window says both, and lists IP addresses as fallbacks.
+- Start-at-login uses a `~/.config/autostart` entry; the tray needs an app-indicator on GNOME (same as the Print Client).
+- CI: `.github/workflows/launcher-linux.yml` (manual) builds the `.deb` and AppImage.
 
 ## How it works on macOS
 - **Install**, no administrator rights and no restart, so it runs in the window's own process (still reporting through
@@ -107,6 +134,8 @@ elevates as a *different* admin (the Linux layer is per Windows user, so that wo
 ## Not built / possible future work
 - **macOS:** code signing + notarization (needs an Apple Developer ID); keeping the Mac awake while sharing; VM size as
   a setting.
+- **Linux:** the window has not been run (only compiled); rootless Docker, Podman and Docker Desktop for Linux are untried; no check
+  that the port is free before install.
 - **Run as a Windows service** (LocalSystem, starts at boot, survives logout; the tray app becomes a controller). The
   distro is per-user, so it would be its own import under `C:\ProgramData\ReliefInventory`. Unproven: needs a test of WSL under
   SYSTEM with nobody logged in. Today's design is a per-user tray app with start-at-login.

@@ -56,8 +56,8 @@ fn get_install_status(state: State<'_, AppState>) -> Option<InstallStatus> {
     status::read(state.launcher.dir())
 }
 
-/// Install needs administrator rights, so it runs in an elevated copy of this program (`--install`),
-/// which reports through the status file that `get_install_status` reads.
+/// On Windows, install needs administrator rights, so it runs in an elevated copy of this program
+/// (`--install`), which reports through the status file that `get_install_status` reads.
 #[cfg(windows)]
 #[tauri::command]
 async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
@@ -73,8 +73,8 @@ async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
     })
 }
 
-/// A Mac needs no administrator rights, so the install runs in this process — still reporting through the
-/// status file, so the window shows progress exactly as it does on Windows.
+/// Off Windows nothing needs administrator rights (a Mac, or Docker on Linux), so the install runs in this process — still
+/// reporting through the status file, so the window shows progress exactly as it does on Windows.
 #[cfg(not(windows))]
 #[tauri::command]
 async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
@@ -86,6 +86,17 @@ async fn start_install(state: State<'_, AppState>) -> Result<(), String> {
         }
     });
     Ok(())
+}
+
+/// Why this computer can't be installed on yet (Docker missing, not running, …) in plain words, or nothing if
+/// it is ready.
+#[tauri::command]
+async fn get_preflight(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    use ri_launcher_core::platform::Preflight;
+    Ok(match state.launcher.platform().preflight().await.map_err(err)? {
+        Preflight::Ok => None,
+        Preflight::Blocked(why) => Some(why),
+    })
 }
 
 /// An install that ran in this process can't still be running when the program starts, so a status file
@@ -183,7 +194,7 @@ async fn backup_create(state: State<'_, AppState>, scope: String) -> Result<(), 
     backups::create_now(state.launcher.platform().as_ref(), &scope).await.map_err(err)
 }
 
-/// Copies one backup to Documents\Relief Inventory Backups as a read-only file and shows it in the file manager.
+/// Copies one backup to Documents/Relief Inventory Backups as a read-only file and shows it in the file manager.
 #[tauri::command]
 async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String) -> Result<String, String> {
     let p = state.launcher.platform();
@@ -192,6 +203,7 @@ async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String)
     let dest = app
         .path()
         .document_dir()
+        .or_else(|_| app.path().home_dir()) // some Linux desktops have no Documents folder
         .map_err(err)?
         .join("Relief Inventory Backups");
     let saved = backups::export(p.as_ref(), b, &dest).await.map_err(err)?;
@@ -207,6 +219,9 @@ async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), S
 #[cfg(windows)]
 #[tauri::command]
 fn restart_computer() -> Result<(), String> {
+    if !cfg!(windows) {
+        return Err("Restarting is only needed on Windows.".into());
+    }
     std::process::Command::new("shutdown")
         .args(["/r", "/t", "20", "/c", "Restarting to finish setting up Relief Inventory"])
         .spawn()
@@ -303,7 +318,7 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .invoke_handler(tauri::generate_handler![
-            get_summary, get_install_status, start_install, dismiss_install_status, start, stop, update, uninstall,
+            get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, backups_list, backup_create, backup_export,
             backup_import, restart_computer, get_autostart, set_autostart, app_version
         ])

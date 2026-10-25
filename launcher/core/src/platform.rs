@@ -79,6 +79,10 @@ pub trait Platform: Send + Sync {
     async fn pull(&self, remote: &str, local: &Path) -> Result<()>;
     /// Copy `local` into the Linux layer at `remote` (only while it is running), replacing what is there.
     async fn push(&self, local: &Path, remote: &str) -> Result<()>;
+    /// How this backend's compose file differs from the shared one (see `StackOptions`).
+    fn stack_options(&self) -> crate::compose::StackOptions {
+        crate::compose::StackOptions::default()
+    }
 }
 
 /// Stand-in on operating systems with no backend (Linux): everything that needs the

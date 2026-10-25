@@ -63,7 +63,7 @@ impl<P: Platform + 'static> Launcher<P> {
     }
 
     pub fn compose_for(&self, settings: &Settings, machine: &Machine) -> Result<String> {
-        compose::render(compose::TEMPLATE, settings, machine).map_err(|e| PlatformError::Failed(e.to_string()))
+        compose::render_for(compose::TEMPLATE, settings, machine, &self.platform.stack_options()).map_err(|e| PlatformError::Failed(e.to_string()))
     }
 
     async fn proxy_running(&self) -> bool {

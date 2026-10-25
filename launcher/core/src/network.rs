@@ -57,7 +57,7 @@ fn local_host_name() -> Option<String> {
 /// Hyper-V/WSL/Docker/VM adapters carry addresses no other device can reach.
 fn is_virtual_adapter(name: &str) -> bool {
     let n = name.to_ascii_lowercase();
-    let windows = ["vethernet", "wsl", "docker", "virtualbox", "vmware", "vmnet", "hyper-v", "loopback", "vboxnet", "br-", "veth"]
+    let windows = ["vethernet", "wsl", "docker", "virtualbox", "vmware", "vmnet", "hyper-v", "loopback", "vboxnet", "br-", "veth", "virbr", "lxdbr", "lxcbr", "podman"]
         .iter()
         .any(|p| n.contains(p));
     // macOS BSD names: VPN tunnels, bridges (Lima/vz VMs sit on bridge100), AirDrop/low-latency WLAN, the

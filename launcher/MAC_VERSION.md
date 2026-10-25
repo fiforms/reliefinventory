@@ -128,7 +128,8 @@ Every `Platform` method must stay **idempotent** — safe to call again after a 
 These are the places Windows assumptions leaked into code Mac will also run. Fix them in the Windows PR's style: small,
 with tests, and **don't break Windows**.
 
-1. **`Platform::host_path` is a Windows-ism.** `backups.rs` reads/writes backups through
+1. **`Platform::host_path` is a Windows-ism.** *(Done 2026-10-25 for the Linux backend: the trait now has `pull`/`push`, defaulting to the
+   `host_path` copy so Windows is unchanged, and `backups.rs` uses them. `core/src/linux.rs` is a working example of overriding them.)* `backups.rs` reads/writes backups through
    `\\wsl.localhost\ReliefInventory\…`. Lima has no such path (and we're setting `mounts: []`). Replace it with two
    trait methods — `pull(remote, local)` and `push(local, remote)` — implemented on Windows by the existing UNC copy and on
    Mac by `limactl copy` (or streaming through `limactl shell cat`). Update `backups::export`/`import`/`list` and the
@@ -163,6 +164,11 @@ with tests, and **don't break Windows**.
 - Icons are already generated for macOS (`icons/icon.icns`). The tray icons in `icons/tray/` are colour PNGs; macOS menu-bar
   icons are usually monochrome "template" images. Decide whether the coloured status dots read well in the menu bar
   (they should, but check light/dark menu bars) — if not, switch to a template icon plus a coloured badge.
+
+> **Since this was written** the Linux backend landed (`core/src/linux.rs`, README "Linux"). It is the simplest worked example of a
+> `Platform` implementation and of the shared-code changes above: `pull`/`push`, `compose::StackOptions` (a loopback-only port bind and a
+> private compose project name — **read the README note on why the project name matters**; a Lima VM is isolated, but check
+> the same collision can't happen), no elevation, and an in-process install in `src-tauri`.
 
 ## Mac-specific things that will bite (verify each)
 

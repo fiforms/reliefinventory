@@ -1,7 +1,7 @@
 // Thin wrapper over the Tauri commands in src-tauri/src/main.rs. Outside Tauri (plain `npm run dev` in a
 // browser) it serves mock data so the UI can be developed without the native shell:
-// add ?mock=notinstalled | installing | reboot | stopped | running | local | failed to the URL, and &os=macos
-// to see the Mac wording.
+// add ?mock=notinstalled | installing | reboot | stopped | running | local | failed | nodocker to the URL, and
+// &os=macos or &os=linux to see that platform's wording.
 import { invoke } from '@tauri-apps/api/core'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
@@ -17,7 +17,7 @@ function mockSummary() {
         share_urls: ['http://hpwin11.local:8080', 'http://10.53.105.130:8080'],
         os: new URLSearchParams(location.search).get('os') || 'windows',
     }
-    if (k === 'notinstalled' || k === 'installing' || k === 'reboot' || k === 'failed') return { ...base, state: 'not_installed', proxy_running: false }
+    if (k === 'notinstalled' || k === 'nodocker' || k === 'installing' || k === 'reboot' || k === 'failed') return { ...base, state: 'not_installed', proxy_running: false }
     if (k === 'stopped') return { ...base, state: 'stopped', proxy_running: false }
     if (k === 'local') return { ...base, mode: 'local', url: 'http://localhost:8080', share_urls: [] }
     return base
@@ -45,6 +45,11 @@ const unavailable = (what) => Promise.reject(`${what} only works in the desktop 
 export const getSummary = () => call('get_summary', {}, mockSummary)
 export const getInstallStatus = () => call('get_install_status', {}, mockInstall)
 export const startInstall = () => (inTauri ? invoke('start_install') : unavailable('Installing'))
+export const getPreflight = () =>
+    call('get_preflight', {}, () =>
+        kind() === 'nodocker'
+            ? 'Docker is not installed on this computer.\nIn a terminal, run:  sudo apt install docker.io docker-compose-v2\nthen:  sudo systemctl enable --now docker  and  sudo usermod -aG docker $USER\nand log out and back in. Then press Check again.'
+            : null)
 export const dismissInstallStatus = () => call('dismiss_install_status', {}, null)
 export const start = () => (inTauri ? invoke('start') : unavailable('Starting'))
 export const stop = () => (inTauri ? invoke('stop') : unavailable('Stopping'))

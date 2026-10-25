@@ -1,5 +1,6 @@
 //! RI Launcher core: everything except the window. `platform::Platform` is the seam to the Linux layer
-//! that runs Docker (`wsl::WslBackend` on Windows, `lima::LimaBackend` on macOS), `service::Launcher`
+//! that runs Docker (`wsl::WslBackend` on Windows, `lima::LimaBackend` on macOS, `linux::LinuxBackend` — the host's own
+//! Docker — on Linux), `service::Launcher`
 //! ties settings, compose editing, the LAN proxy and a backend together, and `backups` is the file side.
 pub mod backups;
 pub mod compose;
@@ -7,6 +8,7 @@ pub mod download;
 pub mod elevate;
 pub mod layer;
 pub mod lima;
+pub mod linux;
 pub mod network;
 pub mod platform;
 pub mod proxy;
@@ -28,7 +30,9 @@ pub fn default_data_dir() -> PathBuf {
 pub type DefaultBackend = wsl::WslBackend<runner::SystemRunner, download::HttpDownloader>;
 #[cfg(target_os = "macos")]
 pub type DefaultBackend = lima::LimaBackend<runner::SystemRunner, download::HttpDownloader>;
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+pub type DefaultBackend = linux::LinuxBackend<runner::SystemRunner>;
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub type DefaultBackend = platform::Unsupported;
 
 /// The backend for this operating system. `exe` is the program the firewall rule allows (the one running
@@ -44,7 +48,12 @@ pub fn default_backend(dir: &Path, _exe: PathBuf, _resume: Option<String>) -> De
     lima::LimaBackend::new(runner::SystemRunner, download::HttpDownloader, dir.to_path_buf())
 }
 
-#[cfg(not(any(windows, target_os = "macos")))]
+#[cfg(target_os = "linux")]
+pub fn default_backend(dir: &Path, _exe: PathBuf, _resume: Option<String>) -> DefaultBackend {
+    linux::LinuxBackend::new(runner::SystemRunner, dir.to_path_buf())
+}
+
+#[cfg(not(any(windows, target_os = "macos", target_os = "linux")))]
 pub fn default_backend(_dir: &Path, _exe: PathBuf, _resume: Option<String>) -> DefaultBackend {
     platform::Unsupported
 }
