@@ -4,9 +4,10 @@
 <!-- DesignVote.vue
 
 	Public Design Votes page (/vote/{slug}, DesignVoteController): one card per option with its live demo
-	(resources/js/DesignPolls), then a vote for one. Options are shuffled once per visit so the first one shown
-	doesn't win just by being first. Open: vote (and change it later from the same browser). Closed: the results,
-	with the demos still there to try. Either way a "Have another idea?" box at the bottom takes any idea, about
+	(resources/js/DesignPolls) and two buttons, "I like this" / "Not for me", each opening an optional "why" box.
+	Options left alone stay neutral; at least one reaction is needed, and disliking all of them is fine. Options are
+	shuffled once per visit so the first one shown doesn't get an edge. Open: vote (and change it later from the
+	same browser). Closed: likes and dislikes per option, with the demos still there to try. Either way a "Have another idea?" box at the bottom takes any idea, about
 	this question or not, as often as someone has one. Turnstile renders from its class when enabled, the same way
 	Join.vue does — one widget per form, so each form reads and resets its own.
 -->
@@ -40,13 +41,17 @@ const options = ref(shuffled(props.poll.options));
 const demoFor = (key) => demos[props.poll.slug]?.[key];
 const labelFor = (key) => props.poll.options.find((o) => o.key === key)?.label || key;
 
-const form = reactive({
-	option_key: props.my_vote?.option_key || null,
-	voter_name: props.my_vote?.voter_name || '',
-	comment: props.my_vote?.comment || '',
-});
-const votedFor = ref(props.my_vote?.option_key || null);
+// option key => { reaction: null | 'like' | 'dislike', comment }; null is neutral and isn't sent.
+const reactions = reactive(Object.fromEntries(props.poll.options.map((o) => {
+	const mine = props.my_vote?.reactions?.find((r) => r.option_key === o.key);
+	return [o.key, { reaction: mine?.reaction || null, comment: mine?.comment || '' }];
+})));
+const form = reactive({ voter_name: props.my_vote?.voter_name || '' });
+const voted = ref(!!props.my_vote);
 const changing = ref(!props.my_vote);
+const chosen = computed(() => props.poll.options.filter((o) => reactions[o.key].reaction));
+const liked = computed(() => chosen.value.filter((o) => reactions[o.key].reaction === 'like').map((o) => o.label));
+const disliked = computed(() => chosen.value.filter((o) => reactions[o.key].reaction === 'dislike').map((o) => o.label));
 const errors = ref({});
 const message = ref(null);
 const submitting = ref(false);
@@ -103,9 +108,10 @@ onMounted(() => {
 	document.head.appendChild(script);
 });
 
-function choose(key) {
+// Tapping the selected button again goes back to neutral.
+function react(key, reaction) {
 	if (!props.open || !changing.value) return;
-	form.option_key = key;
+	reactions[key].reaction = reactions[key].reaction === reaction ? null : reaction;
 	errors.value = {};
 	message.value = null;
 }
@@ -113,28 +119,31 @@ function choose(key) {
 async function submit() {
 	errors.value = {};
 	message.value = null;
-	if (!form.option_key) {
-		message.value = 'Pick the design you like best first.';
+	if (!chosen.value.length) {
+		message.value = 'Tap "I like this" or "Not for me" on at least one design first.';
 		return;
 	}
 	submitting.value = true;
 	const payload = {
-		option_key: form.option_key,
+		reactions: chosen.value.map((o) => ({
+			option_key: o.key,
+			reaction: reactions[o.key].reaction,
+			comment: reactions[o.key].comment.trim() || null,
+		})),
 		voter_name: form.voter_name.trim() || null,
-		comment: form.comment.trim() || null,
 	};
 	if (props.turnstile_enabled) {
 		payload['cf-turnstile-response'] = turnstileToken(voteWidget.value);
 	}
 	try {
 		await axios.post(`/vote/${props.poll.slug}`, payload);
-		votedFor.value = form.option_key;
+		voted.value = true;
 		changing.value = false;
 		window.scrollTo({ top: 0, behavior: 'smooth' });
 	} catch (e) {
 		errors.value = e.response?.data?.errors || {};
 		message.value = e.response?.status === 422
-			? 'Please check the highlighted fields.'
+			? (Object.values(errors.value)[0]?.[0] || 'Please check what you entered.')
 			: (e.response?.data?.message || 'Something went wrong — please try again.');
 		resetTurnstile(voteWidget.value);
 	} finally {
@@ -157,11 +166,18 @@ function changeVote() {
 				<h1 class="text-2xl font-bold text-gray-800">{{ poll.question }}</h1>
 				<p class="text-gray-700">{{ poll.intro }}</p>
 
-				<p v-if="!open" class="rounded bg-gray-100 border border-gray-300 text-gray-700 px-4 py-3 text-sm">
-					Voting has closed. Here is how people voted ({{ results?.total || 0 }} vote{{ results?.total === 1 ? '' : 's' }}).
+				<p v-if="open && changing" class="text-sm text-gray-800 bg-blue-50 border border-blue-200 rounded px-4 py-3">
+					Try each design, then tap <strong>👍 I like this</strong> or <strong>👎 Not for me</strong> on any of them
+					and tell us why if you like. Skip the ones you have no opinion on — you only need to rate one, and it's
+					fine if you don't like any.
 				</p>
-				<div v-else-if="votedFor && !changing" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3 text-sm space-y-1">
-					<p>Thank you! Your vote for <strong>{{ labelFor(votedFor) }}</strong> is in. Results are shown once voting closes.</p>
+				<p v-if="!open" class="rounded bg-gray-100 border border-gray-300 text-gray-700 px-4 py-3 text-sm">
+					Voting has closed. Here is how people voted ({{ results?.voters || 0 }} {{ results?.voters === 1 ? 'person' : 'people' }}).
+				</p>
+				<div v-else-if="voted && !changing" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3 text-sm space-y-1">
+					<p>Thank you! Your vote is in. Results are shown once voting closes.</p>
+					<p v-if="liked.length">You like: <strong>{{ liked.join(', ') }}</strong></p>
+					<p v-if="disliked.length">Not for you: <strong>{{ disliked.join(', ') }}</strong></p>
 					<button type="button" class="underline" @click="changeVote">Change my vote</button>
 				</div>
 			</div>
@@ -170,12 +186,12 @@ function changeVote() {
 			<div v-if="!open && ranked.length" class="bg-white shadow rounded-lg p-5 space-y-3">
 				<h2 class="text-lg font-semibold">Results</h2>
 				<div v-for="row in ranked" :key="row.key" class="space-y-1">
-					<div class="flex justify-between text-sm">
+					<div class="flex justify-between text-sm gap-3">
 						<span class="font-medium">{{ labelFor(row.key) }}</span>
-						<span class="text-gray-600">{{ row.votes }} ({{ row.percent }}%)</span>
+						<span class="text-gray-600 whitespace-nowrap">👍 {{ row.likes }} · 👎 {{ row.dislikes }}</span>
 					</div>
-					<div class="h-3 rounded bg-gray-200 overflow-hidden">
-						<div class="h-full bg-blue-600" :style="{ width: row.percent + '%' }"></div>
+					<div class="h-3 rounded bg-gray-200 overflow-hidden" :title="`${row.percent}% liked it`">
+						<div class="h-full bg-green-600" :style="{ width: row.percent + '%' }"></div>
 					</div>
 				</div>
 			</div>
@@ -184,7 +200,7 @@ function changeVote() {
 			<div
 				v-for="(option, index) in options" :key="option.key"
 				class="bg-white shadow rounded-lg p-5 space-y-3 border-2"
-				:class="open && form.option_key === option.key && changing ? 'border-blue-600' : (votedFor === option.key ? 'border-green-500' : 'border-transparent')"
+				:class="{ like: 'border-green-500', dislike: 'border-red-400' }[reactions[option.key].reaction] || 'border-transparent'"
 			>
 				<div class="flex items-start justify-between gap-3">
 					<div>
@@ -192,36 +208,48 @@ function changeVote() {
 						<p class="text-sm text-gray-600">{{ option.description }}</p>
 					</div>
 					<span v-if="!open && resultFor[option.key]" class="text-sm text-gray-600 whitespace-nowrap">
-						{{ resultFor[option.key].votes }} vote{{ resultFor[option.key].votes === 1 ? '' : 's' }}
+						👍 {{ resultFor[option.key].likes }} · 👎 {{ resultFor[option.key].dislikes }}
+					</span>
+					<span v-else-if="voted && !changing && reactions[option.key].reaction" class="text-sm whitespace-nowrap"
+						:class="reactions[option.key].reaction === 'like' ? 'text-green-700' : 'text-red-700'">
+						{{ reactions[option.key].reaction === 'like' ? '👍 You like this' : '👎 Not for you' }}
 					</span>
 				</div>
 				<p class="text-xs text-gray-500">Try it:</p>
 				<component :is="demoFor(option.key)" v-if="demoFor(option.key)" />
-				<label v-if="open && changing" class="flex items-center gap-3 py-2 px-3 rounded-md bg-gray-50 border border-gray-200 cursor-pointer">
-					<input type="radio" name="option" :value="option.key" :checked="form.option_key === option.key" class="h-5 w-5" @change="choose(option.key)" />
-					<span class="font-medium text-gray-800">This one</span>
-				</label>
+				<div v-if="open && changing" class="space-y-2">
+					<div class="grid grid-cols-2 gap-2">
+						<button type="button" :aria-pressed="reactions[option.key].reaction === 'like'"
+							class="py-2 px-3 rounded-md border font-medium"
+							:class="reactions[option.key].reaction === 'like' ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-gray-300 text-gray-800 hover:bg-green-50'"
+							@click="react(option.key, 'like')">👍 I like this</button>
+						<button type="button" :aria-pressed="reactions[option.key].reaction === 'dislike'"
+							class="py-2 px-3 rounded-md border font-medium"
+							:class="reactions[option.key].reaction === 'dislike' ? 'bg-red-600 border-red-600 text-white' : 'bg-white border-gray-300 text-gray-800 hover:bg-red-50'"
+							@click="react(option.key, 'dislike')">👎 Not for me</button>
+					</div>
+					<label v-if="reactions[option.key].reaction" class="block">
+						<span class="text-sm text-gray-700">
+							{{ reactions[option.key].reaction === 'like' ? 'What do you like about it? Any ideas to make it better?' : 'What don\'t you like? How would you change it?' }}
+							<span class="text-gray-400">(optional)</span>
+						</span>
+						<textarea v-model="reactions[option.key].comment" rows="2" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base"></textarea>
+					</label>
+				</div>
 			</div>
 
 			<!-- ======================= VOTE FORM ======================= -->
 			<!-- v-show, not v-if: Turnstile only draws into elements present when its script loads -->
 			<form v-if="open" v-show="changing" class="bg-white shadow rounded-lg p-5 space-y-4" @submit.prevent="submit">
-				<p class="text-sm text-gray-800">
-					Your choice:
-					<strong v-if="form.option_key">{{ labelFor(form.option_key) }}</strong>
-					<span v-else class="text-gray-500">none yet — tap "This one" under the design you like best</span>
-				</p>
-				<span v-if="errors.option_key" class="text-xs text-red-600">{{ errors.option_key[0] }}</span>
+				<div class="text-sm text-gray-800 space-y-1">
+					<p v-if="!chosen.length" class="text-gray-500">Nothing rated yet — tap 👍 or 👎 on at least one design above.</p>
+					<p v-if="liked.length">👍 You like: <strong>{{ liked.join(', ') }}</strong></p>
+					<p v-if="disliked.length">👎 Not for you: <strong>{{ disliked.join(', ') }}</strong></p>
+				</div>
 
-				<p class="text-xs text-gray-500 uppercase font-semibold">Optional</p>
 				<label class="block">
-					<span class="text-sm text-gray-700">Your name</span>
+					<span class="text-sm text-gray-700">Your name <span class="text-gray-400">(optional)</span></span>
 					<input v-model="form.voter_name" autocomplete="name" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base" />
-				</label>
-				<label class="block">
-					<span class="text-sm text-gray-700">Why did you pick this one?</span>
-					<textarea v-model="form.comment" rows="3" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm text-base"></textarea>
-					<span v-if="errors.comment" class="text-xs text-red-600">{{ errors.comment[0] }}</span>
 				</label>
 
 				<div v-if="turnstile_enabled" ref="voteWidget" class="cf-turnstile" :data-sitekey="turnstile_site_key"></div>
@@ -232,7 +260,7 @@ function changeVote() {
 
 				<button type="submit" :disabled="submitting || turnstile_unavailable"
 					class="w-full py-3 bg-blue-600 text-white rounded-md font-semibold text-lg hover:bg-blue-700 disabled:opacity-50">
-					{{ submitting ? 'Sending…' : (votedFor ? 'Change My Vote' : 'Vote') }}
+					{{ submitting ? 'Sending…' : (voted ? 'Save My Changes' : 'Send My Vote') }}
 				</button>
 			</form>
 

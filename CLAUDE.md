@@ -399,11 +399,14 @@ printed team sheets). **Only the login changes; the system otherwise works norma
 
 ### Design Votes (`/vote/{slug}` public, `/setup/design-votes` `manage-design-votes`) — 2026-10-25
 
-People try live demos of a few UX designs and vote for one; the majority choice gets built. Polls are **code**
+People try live demos of a few UX designs and react to each: 👍 "I like this" or 👎 "Not for me", each with an
+optional why (`design_poll_reactions`, one per option per ballot). An option left alone is neutral; at least one
+reaction is required (disliking all is fine). Results rank by likes, then fewest dislikes; the best-liked gets built. Polls are **code**
 (`App\Support\DesignPolls`: title, question, options) because each option is a Vue demo
 (`resources/js/DesignPolls/index.js`, slug → option key → component; `DesignVoteTest` fails if the keys don't match).
-Only open/closed state (`design_polls`) and votes (`design_poll_votes`) are in the database. One vote per browser
-(HttpOnly cookie token, stored hashed; a signed-in person's vote also follows them), voting again replaces it, and
+Only open/closed state (`design_polls`) and ballots (`design_poll_votes` + their reactions) are in the database. One
+ballot per browser (HttpOnly cookie token, stored hashed; a signed-in person's also follows them), voting again
+replaces all its reactions, and
 results stay hidden on the vote page until the poll is closed. A **"Have another idea?"** box on the same page
 (`POST /vote/{slug}/idea`, `design_poll_ideas`) takes free text about that question or anything else — several per
 person, no vote needed, even after closing; shown on the admin page and in the CSV. Same protection as `/join`
