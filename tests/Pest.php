@@ -3,7 +3,6 @@
 use App\Http\Controllers\FederationController;
 use App\Models\Category;
 use App\Models\County;
-use App\Models\DevicePairingCode;
 use App\Models\Item;
 use App\Models\ItemType;
 use App\Models\KioskLocation;
@@ -122,22 +121,35 @@ function makePrinter(ManagedDevice $device, string $queue, string $media = 'labe
     return $printer;
 }
 
-/** A device paired through the real API; returns [device, bearer token]. Its Function is left unset unless given. */
+/**
+ * A client app paired through the real API (a `client` code, as the Devices page makes). Returns
+ * [ManagedDevice, session token, pair response, peer] — the session token is what a signed client holds
+ * after its first call, so `->withToken($token)` stands in for "an authenticated device".
+ */
+function pairClient(string $uuid = 'ps-1', string $name = 'Pi One', ?string $code = null, string $kind = 'print_client', array $body = []): array
+{
+    $peer = fedPeer($kind);
+    $peer['uuid'] = $uuid;
+    $peer['name'] = $name;
+    if ($code === null) {
+        $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
+        [$code] = TrustService::createPairingCode('client', ['print.share'], null, $location->id, null);
+    }
+    $response = test()->postJson('/api/federation/v1/pair', $body + fedPairBody($peer, $code))->assertCreated();
+    $trust = Trust::where('peer_uuid', $uuid)->first();
+
+    return [ManagedDevice::where('device_uuid', $uuid)->first(), TrustService::issueSession($trust)[0], $response, $peer];
+}
+
+/** A print server paired through the real API; returns [device, session token]. Its Function is left unset unless given. */
 function pairPrintServer(string $uuid = 'ps-1', ?string $function = null): array
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::create([
-        'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
-    ]);
-    $response = test()->postJson('/api/devices/pair', [
-        'code' => $code->code, 'device_name' => "Server {$uuid}", 'device_uuid' => $uuid,
-    ])->assertCreated();
-    $device = ManagedDevice::where('device_uuid', $uuid)->first();
+    [$device, $token] = pairClient($uuid, "Server {$uuid}");
     if ($function) {
         $device->forceFill(['kiosk_function' => $function])->save();
     }
 
-    return [$device, $response->json('token')];
+    return [$device, $token];
 }
 
 // PDF inspection needs poppler-utils (pdfinfo/pdftotext); skip rather than fail where it's absent.

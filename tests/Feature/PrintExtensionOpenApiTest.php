@@ -122,7 +122,7 @@ test('every documented operation is a real device-authenticated route, and no pr
     foreach ($documented as [$method, $path]) {
         $route = $routes->first(fn ($r) => $r[0] === $method && $r[1] === $path);
         expect($route !== null)->toBeTrue("{$method} {$path} is documented but not routed");
-        expect(in_array('device-auth', $route[2]->gatherMiddleware(), true))->toBeTrue("{$method} {$path} is not device-authenticated");
+        expect(collect($route[2]->gatherMiddleware())->contains(fn ($m) => str_starts_with($m, 'device-auth')))->toBeTrue("{$method} {$path} is not device-authenticated");
     }
 
     $routed = $routes->filter(fn ($r) => str_starts_with($r[1], '/print-jobs') || $r[1] === '/heartbeat');

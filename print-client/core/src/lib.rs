@@ -8,6 +8,7 @@ pub mod api;
 pub mod backend;
 pub mod config;
 pub mod engine;
+pub mod identity;
 pub mod ledger;
 pub mod realtime;
 pub mod types;

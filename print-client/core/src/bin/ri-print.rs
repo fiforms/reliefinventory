@@ -23,7 +23,7 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Cmd {
-    /// Pair with the server using the 6-digit code from Setup → Devices.
+    /// Pair with the server using the 10-character code from Setup → Devices.
     Pair {
         #[arg(long)]
         server: String,
@@ -84,7 +84,7 @@ async fn main() {
         Cmd::Run => {
             let engine = engine(dir, backend);
             if !engine.is_paired() {
-                eprintln!("Not paired yet. Run: ri-print pair --server https://… --code 123456");
+                eprintln!("Not paired yet. Run: ri-print pair --server https://… --code ABCDE-FGHJK");
                 std::process::exit(2);
             }
             let mut status = engine.subscribe();

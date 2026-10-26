@@ -1,25 +1,23 @@
 <?php
 
-use App\Models\DevicePairingCode;
 use App\Models\DeviceRelease;
+use App\Models\FirmwareSetting;
 use App\Models\KioskLocation;
 use App\Models\ManagedDevice;
+use App\Models\TrustPairingCode;
 use App\Services\DeviceReleaseResolver;
+use App\Services\Federation\InstanceIdentity;
+use App\Services\Federation\TrustService;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
 
 function pairedDevice(array $overrides = []): array
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::firstOrCreate(
-        ['code' => $overrides['code'] ?? '123456'],
-        ['kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5)]
+    [$device, $token, $response, $peer] = pairClient(
+        $overrides['device_uuid'] ?? 'uuid-1', $overrides['device_name'] ?? 'Pi One', $overrides['code'] ?? null,
     );
-    $response = test()->postJson('/api/devices/pair', array_merge([
-        'code' => $code->code, 'device_name' => 'Pi One', 'device_uuid' => 'uuid-1',
-    ], $overrides))->assertCreated();
 
-    return [ManagedDevice::where('device_uuid', $overrides['device_uuid'] ?? 'uuid-1')->first(), $response->json('token'), $response];
+    return [$device, $token, $response, $peer];
 }
 
 function release(array $attrs): DeviceRelease
@@ -31,40 +29,63 @@ function release(array $attrs): DeviceRelease
     ], $attrs));
 }
 
-test('pairing exchanges a single-use code for a token', function () {
-    [$device, $token, $response] = pairedDevice();
+test('pairing exchanges a single-use code and the device key for a trust', function () {
+    [$device, $token, $response, $peer] = pairedDevice();
 
-    expect($token)->not->toBeEmpty()
-        ->and($device->token_hash)->toBe(ManagedDevice::hashToken($token))
-        ->and($response->json('entity_name'))->not->toBeNull();
+    $trust = $device->trust;
+    expect($trust->public_key)->toBe($peer['public_key'])
+        ->and($trust->kind)->toBe('print_client')
+        ->and($device->token_hash)->toBeNull()
+        ->and($response->json('entity_name'))->not->toBeNull()
+        ->and($response->json('server.public_key'))->toBe(InstanceIdentity::current()->public_key)
+        ->and($response->json('token'))->toBeNull();
 
     // The code is spent.
-    $this->postJson('/api/devices/pair', ['code' => '123456', 'device_name' => 'Pi Two', 'device_uuid' => 'uuid-2'])
-        ->assertStatus(422);
+    $code = TrustPairingCode::first();
+    expect($code->used_at)->not->toBeNull();
+    $again = fedPeer('print_client');
+    $this->postJson('/api/federation/v1/pair', fedPairBody($again, 'ABCDE-FGHJK'))->assertStatus(422);
 });
 
 test('expired and unknown pairing codes are rejected with one generic error', function () {
     $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    DevicePairingCode::create(['code' => '111111', 'kiosk_location_id' => $location->id, 'expires_at' => now()->subMinute()]);
+    [$code] = TrustService::createPairingCode('client', [], null, $location->id, null);
+    $this->travel(20)->minutes();
 
-    $this->postJson('/api/devices/pair', ['code' => '111111', 'device_name' => 'X'])->assertStatus(422);
-    $this->postJson('/api/devices/pair', ['code' => '999999', 'device_name' => 'X'])->assertStatus(422);
+    $peer = fedPeer('print_client');
+    $this->postJson('/api/federation/v1/pair', fedPairBody($peer, $code))->assertStatus(422);
+    $this->postJson('/api/federation/v1/pair', fedPairBody($peer, 'ZZZZZ-ZZZZZ'))->assertStatus(422);
 });
 
-test('re-pairing the same device_uuid reuses the record, replaces the token, and clears revocation', function () {
+test('the old bearer pairing is retired', function () {
+    $this->postJson('/api/devices/pair', ['code' => '123456', 'device_name' => 'Old Pi'])->assertStatus(410);
+});
+
+test('re-pairing the same device_uuid reuses the record, replaces the session, and clears revocation', function () {
     [$device, $oldToken] = pairedDevice();
+    $device->trust->update(['status' => 'revoked']);
     $device->update(['revoked_at' => now()]);
 
-    DevicePairingCode::create(['code' => '222222', 'kiosk_location_id' => $device->kiosk_location_id, 'expires_at' => now()->addMinutes(5)]);
-    $new = $this->postJson('/api/devices/pair', ['code' => '222222', 'device_name' => 'Renamed', 'device_uuid' => 'uuid-1'])
-        ->assertCreated()->json('token');
+    [$again, $new] = pairedDevice(['device_name' => 'Renamed']);
 
     expect(ManagedDevice::count())->toBe(1)
+        ->and($again->id)->toBe($device->id)
         ->and($device->fresh()->revoked_at)->toBeNull()
         ->and($device->fresh()->name)->toBe('Renamed');
 
     $this->withToken($oldToken)->postJson('/api/devices/heartbeat', [])->assertStatus(401);
     $this->withToken($new)->postJson('/api/devices/heartbeat', [])->assertOk();
+});
+
+test('a device still holding an old bearer token works only while the legacy flag is on', function () {
+    [$device] = pairedDevice();
+    $device->forceFill(['token_hash' => ManagedDevice::hashToken('legacy-token')])->save();
+
+    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertStatus(401);
+    config(['federation.legacy_device_tokens' => true]);
+    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertOk();
+    $device->update(['revoked_at' => now()]);
+    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertStatus(401);
 });
 
 test('heartbeat requires a device token and rejects revoked ones with 401', function () {
@@ -196,7 +217,7 @@ test('admins can generate pairing codes, configure and revoke devices', function
 
     $code = $this->actingAs($admin)->postJson('/json/device-pairing-codes', ['kiosk_location_id' => $location->id])
         ->assertCreated()->json('record.code');
-    expect($code)->toMatch('/^\d{6}$/');
+    expect($code)->toMatch('/^[A-Z2-9]{5}-[A-Z2-9]{5}$/');
 
     [$device, $token] = pairedDevice(['code' => $code]);
 
@@ -294,7 +315,7 @@ test('an upload id that is not a plain token is refused, and app releases must b
 
 test('print servers are told apart from R Stations and are never offered firmware', function () {
     [$piDevice, $piToken] = pairedDevice(['device_uuid' => 'pi']);
-    [$pcDevice, $pcToken] = pairedDevice(['device_uuid' => 'pc', 'code' => '654321']);
+    [$pcDevice, $pcToken] = pairedDevice(['device_uuid' => 'pc']);
     app(DeviceReleaseResolver::class)->tag(release(['version' => '9.0.0']), 'stable');
 
     $this->withToken($piToken)->postJson('/api/devices/heartbeat', ['architecture' => 'aarch64', 'app_version' => '1.0.0'])
@@ -334,7 +355,7 @@ test('the firmware source must be an http(s) URL and not this server', function 
 test('another instance\'s device can ask this catalogue directly, without a token', function () {
     app(DeviceReleaseResolver::class)->tag(release(['version' => '3.0.0', 'sha256' => str_repeat('b', 64)]), 'testing');
     // Even when this instance is itself pointed elsewhere, it answers from its own releases only.
-    \App\Models\FirmwareSetting::current()->update(['source_url' => 'https://elsewhere.example.org']);
+    FirmwareSetting::current()->update(['source_url' => 'https://elsewhere.example.org']);
 
     $this->postJson('/api/devices/update-check', ['architecture' => 'aarch64', 'app_version' => '1.0.0', 'channel' => 'testing'])
         ->assertOk()->assertJsonPath('app_update_available', true)->assertJsonPath('latest_app_version', '3.0.0')

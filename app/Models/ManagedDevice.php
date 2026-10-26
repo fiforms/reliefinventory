@@ -76,19 +76,6 @@ class ManagedDevice extends Model
         return $this->wake_channel;
     }
 
-    /** Issues a fresh token, replacing any earlier one; returns the plaintext (shown once, never stored). */
-    public function issueToken(): string
-    {
-        $token = Str::random(60);
-        $this->token_hash = self::hashToken($token);
-        // A re-pair also rotates the wake-up channel, so a previous holder can't keep listening.
-        $this->wake_channel = null;
-        // ...and ends any browser session the previous pairing had.
-        $this->session_token_hash = null;
-
-        return $token;
-    }
-
     /**
      * Starts the device's browser session (the cookie that opens its allow-listed pages with nobody
      * logged in); returns the plaintext cookie value. One live session per device: issuing a new one

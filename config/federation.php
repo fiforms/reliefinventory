@@ -19,6 +19,11 @@ return [
     // a remote that has not been moved to a trust keeps reporting. Set false once every remote has moved.
     'legacy_feedback_secret' => (bool) env('RI_FEDERATION_LEGACY_FEEDBACK', true),
 
+    // Devices paired before federation hold a bearer token. With this on, such a token is still accepted by
+    // `device-auth` so a fleet can be updated gradually; new pairing is always by key. Remove once every device has
+    // re-paired.
+    'legacy_device_tokens' => (bool) env('RI_FEDERATION_LEGACY_DEVICES', false),
+
     // Outbound calls to another instance's address. https only and no private/loopback hosts, unless an
     // operator turns these on for a LAN or development setup (two local instances).
     'allow_insecure_http' => (bool) env('RI_FEDERATION_ALLOW_HTTP', false),

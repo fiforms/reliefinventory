@@ -1,9 +1,10 @@
 # RI Print — desktop print server (Windows · macOS · Linux)
 
 Connects the printers of an ordinary PC/Mac/Linux machine to a Relief Inventory server: pair once with a
-6-digit code, and staff can then pick that machine's printers from the web app's **Print ▾** menu. It is the
+10-character code, and staff can then pick that machine's printers from the web app's **Print ▾** menu. It is the
 desktop sibling of the R Station Pi print server and speaks the same wire protocol
-(`rstation/PRINT_SERVER.md`, `rstation/PRINT_CLIENT_SPEC.md`, `rstation/print-extension.openapi.yaml`).
+(`rstation/PRINT_SERVER.md`, `rstation/PRINT_CLIENT_SPEC.md`, `rstation/print-extension.openapi.yaml`) and
+authenticates with its own Ed25519 key, not a password or token (`rstation/FEDERATION_AUTH.md`).
 
 ```
 print-client/
@@ -32,7 +33,7 @@ Behaviour implemented from `PRINT_CLIENT_SPEC.md`: heartbeat every ~45 s **and i
 change**; one job at a time per queue, oldest first; claim keep-alive while a job prints; an on-disk **ledger**
 (`ledger.json`) so a crash/restart never prints a job twice and never loses a result; a printer that goes
 offline mid-job is given up on after 60 s, the OS job is **cancelled** (or it would print later as a duplicate)
-and the printer is held "offline" for 2 minutes; `401` wipes the token and returns to pairing; optional realtime
+and the printer is held "offline" for 2 minutes; `401` forgets the pairing (the key stays) and returns to pairing; optional realtime
 wake-up over a Pusher-protocol WebSocket (falls back to polling every 4 s on its own).
 
 ### Known limitations
@@ -43,7 +44,7 @@ wake-up over a Pusher-protocol WebSocket (falls back to polling every 4 s on its
   `PrintBackend` is the seam for it.
 - **Windows and macOS are tested on real hardware** (2026-10-24) and work fully.
 - **Not built yet:** auto-update (needs signing-key decisions), code signing/notarization, a log file (stderr
-  only), the token in the OS keychain (it lives in `config.json`, mode 0600, in the per-user data dir),
+  only), the private key in the OS keychain (it lives in `config.json`, mode 0600, in the per-user data dir),
   staff notification when a printer goes offline (server side, `TODO.md` item 11).
 
 ## Using it

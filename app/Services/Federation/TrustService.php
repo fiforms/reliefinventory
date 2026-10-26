@@ -58,7 +58,7 @@ class TrustService
     {
         return DB::transaction(function () use ($code, $peer, $ip) {
             $row = TrustPairingCode::usable()->where('code_hash', TrustPairingCode::hash($code))->lockForUpdate()->first();
-            if (! $row || $row->kind !== $peer['kind']) {
+            if (! $row || ! self::codeFits($row->kind, $peer['kind'])) {
                 return null;
             }
 
@@ -150,6 +150,12 @@ class TrustService
         return $permissions;
     }
 
+    /** A `client` code (made on the Devices page) pairs any client app; other codes are for one kind. */
+    private static function codeFits(string $codeKind, string $peerKind): bool
+    {
+        return $codeKind === $peerKind || ($codeKind === 'client' && in_array($peerKind, Trust::CLIENT_KINDS, true));
+    }
+
     public static function setInboundGrants(Trust $trust, array $permissions, ?int $actor): void
     {
         $before = $trust->inboundPermissions();
@@ -231,6 +237,9 @@ class TrustService
         $device->revoked_at = null;
         $device->paired_at = now();
         $device->token_hash = null; // a trust-paired device has no bearer token
+        // A re-pair rotates the wake-up channel and ends the browser session the previous pairing had.
+        $device->wake_channel = null;
+        $device->session_token_hash = null;
         $device->save();
     }
 

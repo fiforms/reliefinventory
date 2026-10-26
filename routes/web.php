@@ -1248,10 +1248,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ki
     Route::post('/sign-in-categories', [SignInCategoryController::class, 'store']);
 });
 
-// R Station device fleet (DEVICE_CONTRACT.md): the admin page and
-// its JSON. The device-facing endpoints are in routes/api.php.
 // Federation: the public half of this instance's identity (peers pin and domain-verify against it).
-Route::get('/.well-known/ri-instance.json', [\App\Http\Controllers\FederationController::class, 'identity'])->middleware('throttle:60,1');
+Route::get('/.well-known/ri-instance.json', [FederationController::class, 'identity'])->middleware('throttle:60,1');
 
 Route::get('/setup/trust', function () {
     return Inertia::render('TrustConsole', [
@@ -1260,18 +1258,20 @@ Route::get('/setup/trust', function () {
 })->middleware(['auth', 'permission:manage-trusts']);
 
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trusts']], function () {
-    Route::get('/trusts', [\App\Http\Controllers\TrustConsoleController::class, 'index']);
-    Route::post('/trusts/pairing-codes', [\App\Http\Controllers\TrustConsoleController::class, 'createPairingCode']);
-    Route::put('/trusts/identity', [\App\Http\Controllers\TrustConsoleController::class, 'updateIdentity']);
-    Route::post('/trusts/identity/regenerate', [\App\Http\Controllers\TrustConsoleController::class, 'regenerateIdentity']);
-    Route::post('/trusts/invitations', [\App\Http\Controllers\TrustConsoleController::class, 'createInvitation']);
-    Route::post('/trusts/accept-invitation', [\App\Http\Controllers\TrustConsoleController::class, 'acceptInvitation']);
-    Route::post('/trusts/{trust}/verify-domain', [\App\Http\Controllers\TrustConsoleController::class, 'verifyDomain']);
-    Route::post('/trusts/{trust}/refresh-grants', [\App\Http\Controllers\TrustConsoleController::class, 'refreshGrants']);
-    Route::put('/trusts/{trust}/grants', [\App\Http\Controllers\TrustConsoleController::class, 'setGrants']);
-    Route::post('/trusts/{trust}/revoke', [\App\Http\Controllers\TrustConsoleController::class, 'revoke']);
+    Route::get('/trusts', [TrustConsoleController::class, 'index']);
+    Route::post('/trusts/pairing-codes', [TrustConsoleController::class, 'createPairingCode']);
+    Route::put('/trusts/identity', [TrustConsoleController::class, 'updateIdentity']);
+    Route::post('/trusts/identity/regenerate', [TrustConsoleController::class, 'regenerateIdentity']);
+    Route::post('/trusts/invitations', [TrustConsoleController::class, 'createInvitation']);
+    Route::post('/trusts/accept-invitation', [TrustConsoleController::class, 'acceptInvitation']);
+    Route::post('/trusts/{trust}/verify-domain', [TrustConsoleController::class, 'verifyDomain']);
+    Route::post('/trusts/{trust}/refresh-grants', [TrustConsoleController::class, 'refreshGrants']);
+    Route::put('/trusts/{trust}/grants', [TrustConsoleController::class, 'setGrants']);
+    Route::post('/trusts/{trust}/revoke', [TrustConsoleController::class, 'revoke']);
 });
 
+// R Station device fleet (DEVICE_CONTRACT.md): the admin page and
+// its JSON. The device-facing endpoints are in routes/api.php.
 Route::get('/setup/devices', function () {
     return Inertia::render('RStationDevices', [
         'breadcrumb' => MenuItem::getBreadcrumb('/setup/devices'),
