@@ -103,7 +103,7 @@ connections, and it needs its own one-time provisioning per server — it is **n
   `print-user.{id}` need `print-documents`). Print servers listen on a **public channel whose
   random name is the only secret** — each device gets its own, delivered in its authenticated
   heartbeat response, rotated on re-pair and cleared on revoke. The message carries no data
-  (it only means "poll now"); claiming and downloading still need the device's bearer token.
+  (it only means "poll now"); claiming and downloading still need the device's own authentication (`rstation/FEDERATION_AUTH.md`).
   Keep the Reverb app *secret* server-side; the app *key* is public by design.
 - **Dev:** `composer run dev` starts `reverb:start` alongside the other processes; with
   `BROADCAST_CONNECTION=log` (the default in `.env.example`) it's simply unused.

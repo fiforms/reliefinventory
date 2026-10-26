@@ -88,6 +88,12 @@ x-settings: &settings
   # ./backups) and won't migrate if the dump fails. Set to "false" to opt out.
   # RI_PREMIGRATE_BACKUP: "true"
 
+  # Federation (Setup > Trust Console). Only for unusual setups:
+  # RI_FEDERATION_ALLOW_HTTP: "true"        # let this site reach another over plain http:// (a private network)
+  # RI_FEDERATION_ALLOW_PRIVATE: "true"     # ...and at private/loopback addresses (LAN-only sites, local testing)
+  # RI_FEDERATION_LEGACY_DEVICES: "true"    # keep honouring old bearer-token devices while a fleet upgrades
+  # RI_FEDERATION_LEGACY_FEEDBACK: "false"  # stop accepting the old shared-secret feedback push
+
   # Passwords are generated for you. Only set these to pick your own, and only
   # BEFORE the first `docker compose up` (afterwards they're already in the
   # database and changing them here would lock the app out).

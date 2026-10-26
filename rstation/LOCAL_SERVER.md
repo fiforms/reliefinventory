@@ -114,7 +114,7 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
 - **Home site.** "Use the local server as this device's site" writes `http://localhost:8080` as the device's confirmed
   server (`/data/status/server-url`), remembering the previous value in `/data/status/server-url-before-local` so
   "Go back" restores it. This deliberately bypasses the platform's lock on that address (SERVER_URL.md), because the
-  alternative is a factory reset, and is refused while the device is **paired** (the pairing token belongs to the old
+  alternative is a factory reset, and is refused while the device is **paired** (the pairing — its key trust and credential — belongs to the old
   site). The same panel takes an **external site's address** (checked with `GET {url}/up` like the wizard does, with "use anyway" for a site that is merely down) for a device that skipped the wizard's Server step or wants to move. Both are the same rule: changeable from Settings only while the device is **not paired**; once paired, the address is locked until the device is unpaired (Settings > Pairing; unpairing keeps the address) or factory reset. Changes take effect the next time the launcher runs (reboot, or "Open Relief Inventory"). Entering
   `http://localhost:8080` in the first-run wizard's Server step does the same thing, and leaving that step empty
   shows "Skip — set up later" (pairing is skippable too), so an offline device can finish the wizard with no site

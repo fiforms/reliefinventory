@@ -265,3 +265,22 @@ Issues identified October 8, 2026
    - Payoff to test: whether `frankenphp php-cli` works there. If so, delete the separate `/usr/local/bin/php` (a second PHP engine, ~22 MB,
      ~8 MB compressed) and make `php` a wrapper. Its availability on the current 8.4 image was not confirmed to be absent for good — re-test
      it on the FrankenPHP version in use (1.13.3 at the time of writing).
+
+18. Federation trust system — built 2026-10-26 (branch `federation-trust`), see `CLAUDE.md` "Federation" and `rstation/FEDERATION_AUTH.md`; follow-ups
+   - **Before shipping the Pi change:** build the image and try it on a real Pi (pair with a code; then the in-place upgrade of an already-paired Pi
+     with `RI_FEDERATION_LEGACY_DEVICES=true`; then boot with the clock far behind and check it recovers). The Python was run only against a
+     live server on a dev machine, with the clock faked. Also not run: the Tauri window and the Windows/macOS builds of the print client.
+   - **Remove the legacy pieces once nothing needs them** (each is one release after every remote/device has moved): `RI_FEDERATION_LEGACY_FEEDBACK`
+     and the shared-secret ingest, `feedback_aggregation_settings.shared_secret`/`central_ingest_url` and their `encrypted_columns` entry;
+     `RI_FEDERATION_LEGACY_DEVICES`; the unused `DevicePairingCode` model/table and `managed_devices.token_hash`; the `/api/devices/pair` 410 stub.
+   - **Endpoints for the permissions that exist but do nothing yet:** `offers.send`/`receive` (needs an origin uuid on `DonationOffer` and a
+     remote-donor `Person`), `supplies.request`/`query_available` (an approved Partner `Person` per site, orders left at `New Order`; first extract
+     the three duplicated on-hand calculations into one `InventoryAvailability` service), `inventory.query_exact`, `operator.full_read`, remote
+     print submission (`printer_shares`, a `peer` on `PrintJob`), and `feedback.receive`.
+   - **Self-service pairing by account** (planned): a free account on a central instance (Turnstile + email verification), then the user confirms a
+     pairing from their own instance; `auth_method = account_verified`, restricted default grants, approver recorded in `approved_by_label`.
+   - Key rotation (a key change on a pinned trust currently fails closed and needs re-approval), trust expiry, pruning used pairing codes and old
+     `trust_audit_log` rows, and a per-trust rate limit beyond the route throttles.
+   - Ask the slideannouncer maintainers for a `Product.pair` hook and a bearer-provider hook, so the Pi product can drop the `pairing.pair` module-attribute
+     swap and the credential file (`rstation/FEDERATION_AUTH.md`, "The Raspberry Pi", lists what it depends on today).
+   - The Docker image now names `sodium` explicitly and `composer.json` requires `ext-sodium`; not rebuilt here, so confirm the image builds.

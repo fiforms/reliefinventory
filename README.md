@@ -54,7 +54,7 @@ Two optional pieces extend the web app to the warehouse floor. Downloads are on 
 - **R Station** is a Raspberry Pi device image: a warehouse kiosk and print server that can also run a whole
   offline site with no Internet. Pair it from **Setup > Devices**. See [rstation/](rstation/).
 - **RI Print** is a desktop print server for Windows, macOS and Linux. Install it on a computer with a printer, pair
-  it once with a 6-digit code, and its printers appear in the web app's **Print** menu. See
+  it once with a 10-character code, and its printers appear in the web app's **Print** menu. See
   [print-client/README.md](print-client/README.md).
 
 ## Building from source

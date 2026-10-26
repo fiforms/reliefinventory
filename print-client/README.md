@@ -49,8 +49,8 @@ wake-up over a Pusher-protocol WebSocket (falls back to polling every 4 s on its
 
 ## Using it
 
-**Desktop app:** open it, enter the server address and the pairing code from the web app
-(*Setup → Devices → Pair a New Device or Print Server*), done. The tray menu's **Relief Inventory Portal** opens the server's `/dashboard` in your default browser. Closing the window leaves printing running in
+**Desktop app:** open it, enter the server address and the 10-character pairing code from the web app
+(*Setup → Devices → Pair a New Device or Print Server*, or the Trust Console), done. The app makes its own key the first time it runs and keeps it across un-pairing. The tray menu's **Relief Inventory Portal** opens the server's `/dashboard` in your default browser. Closing the window leaves printing running in
 the tray (on Linux the window always opens at login — stock GNOME has no tray). Name each printer and choose its
 paper type on the web app's Devices page before it can receive jobs.
 

@@ -14,7 +14,8 @@ ARG NODE_IMAGE=node:22-trixie-slim
 
 # ------------------------------------------------------------ PHP + extensions
 FROM ${PHP_IMAGE} AS php-base
-RUN install-php-extensions gd intl zip pdo_mysql pcntl sockets bcmath exif opcache
+# sodium: Ed25519 for federation (App\Services\Federation). Usually already built in; naming it makes sure.
+RUN install-php-extensions gd intl zip pdo_mysql pcntl sockets bcmath exif opcache sodium
 
 # ------------------------------------------------------------ composer vendor
 FROM php-base AS vendor
