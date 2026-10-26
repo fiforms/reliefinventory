@@ -1,0 +1,17 @@
+{
+    "seed_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    "public_key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+    "vectors": [
+        {
+            "method": "POST",
+            "path_and_query": "/federation/v1/session?a=1",
+            "host": "Example.com",
+            "timestamp": 1790000000,
+            "nonce": "nonce-1",
+            "body": "{\"x\":1}",
+            "canonical": "POST\n/federation/v1/session?a=1\nexample.com\n1790000000\nnonce-1\n5041bf1f713df204784353e82f6a4a535931cb64f1f4b4a5aeaffcb720918b22",
+            "signature": "aY2PkZOrr95CJiCtGKO5XgzSYNUlvD72e3jbfUMbKRf3g0sQLa6fXBqoEiMm7npWle5S6gsiRFRGy0s58b1oBA"
+        }
+    ],
+    "fingerprint": "3475-0F98-BD59-FCFC"
+}

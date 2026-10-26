@@ -53,5 +53,6 @@ return [
         'feedback_aggregation_settings.shared_secret' => 'Centralized feedback shared secret',
         'mail_settings.resend_key' => 'Resend API key (Email Settings)',
         'mail_settings.smtp_password' => 'SMTP password (Email Settings)',
+        'federation_identities.private_key' => 'Federation identity key (peers must re-approve a new one)',
     ],
 ];
