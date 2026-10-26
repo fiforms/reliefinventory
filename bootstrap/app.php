@@ -44,6 +44,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => CheckPermission::class,
             'kiosk-access' => EnsureKioskAccess::class,
             'device-auth' => AuthenticateManagedDevice::class,
+            'trust-auth' => \App\Http\Middleware\TrustAuth::class,
             'display-access' => EnsureDeviceAccess::class,
             'feedback-ingest-secret' => VerifyFeedbackIngestSecret::class,
         ]);

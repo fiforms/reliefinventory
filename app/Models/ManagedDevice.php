@@ -39,6 +39,11 @@ class ManagedDevice extends Model
     // The wake-up channel name is a capability: never serialize it to the admin UI.
     protected $hidden = ['wake_channel', 'session_token_hash'];
 
+    public function trust()
+    {
+        return $this->belongsTo(Trust::class);
+    }
+
     public function location()
     {
         return $this->belongsTo(KioskLocation::class, 'kiosk_location_id');

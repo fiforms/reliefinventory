@@ -1250,6 +1250,24 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ki
 
 // R Station device fleet (DEVICE_CONTRACT.md): the admin page and
 // its JSON. The device-facing endpoints are in routes/api.php.
+// Federation: the public half of this instance's identity (peers pin and domain-verify against it).
+Route::get('/.well-known/ri-instance.json', [\App\Http\Controllers\FederationController::class, 'identity'])->middleware('throttle:60,1');
+
+Route::get('/setup/trust', function () {
+    return Inertia::render('TrustConsole', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/trust'),
+    ]);
+})->middleware(['auth', 'permission:manage-trusts']);
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trusts']], function () {
+    Route::get('/trusts', [\App\Http\Controllers\TrustConsoleController::class, 'index']);
+    Route::post('/trusts/pairing-codes', [\App\Http\Controllers\TrustConsoleController::class, 'createPairingCode']);
+    Route::put('/trusts/identity', [\App\Http\Controllers\TrustConsoleController::class, 'updateIdentity']);
+    Route::post('/trusts/identity/regenerate', [\App\Http\Controllers\TrustConsoleController::class, 'regenerateIdentity']);
+    Route::put('/trusts/{trust}/grants', [\App\Http\Controllers\TrustConsoleController::class, 'setGrants']);
+    Route::post('/trusts/{trust}/revoke', [\App\Http\Controllers\TrustConsoleController::class, 'revoke']);
+});
+
 Route::get('/setup/devices', function () {
     return Inertia::render('RStationDevices', [
         'breadcrumb' => MenuItem::getBreadcrumb('/setup/devices'),

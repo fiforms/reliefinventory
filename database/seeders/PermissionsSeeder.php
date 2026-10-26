@@ -104,6 +104,9 @@ class PermissionsSeeder extends Seeder
         // releases (and choosing where devices look for them) is its own key, separate from
         // manage-devices (pairing/configuring individual devices). Administrator-only by default.
         'manage-firmware' => 'Upload and tag R Station firmware/software releases, and set the firmware source',
+        // Federation: which other instances and client apps are trusted, and what each may do. A trust with
+        // the wrong grants can expose data to another site, so Administrator-only by default.
+        'manage-trusts' => 'Manage the Trust Console: pair client apps and other instances, and set what each trust may do',
         // Full backup zips (database + uploads): they hold every person's data, so Administrator-only by default.
         'manage-backups' => 'Create, download, and delete full backup files (database and uploads)',
         // The application key is the one secret a backup never contains; only this key reveals it.

@@ -9,6 +9,7 @@ use App\Http\Controllers\DevicePairController;
 use App\Http\Controllers\DevicePrintJobController;
 use App\Http\Controllers\DeviceSessionController;
 use App\Http\Controllers\DeviceUpdateCheckController;
+use App\Http\Controllers\FederationController;
 use Illuminate\Support\Facades\Route;
 
 // Server half of rstation/platform/docs/DEVICE_CONTRACT.md. The device's
@@ -34,4 +35,12 @@ Route::prefix('devices')->group(function () {
     // Unauthenticated by contract (devices fetch with plain GETs); the
     // per-release random token in the path is the access control.
     Route::get('/artifacts/{token}/{filename}', [DeviceArtifactController::class, 'download']);
+});
+
+// Federation (App\Services\Federation): pairing is unsigned (the code is the credential, plus proof of
+// key possession); everything else is a signed request or a session token earned by one.
+Route::prefix('federation/v1')->group(function () {
+    Route::post('/pair', [FederationController::class, 'pair'])->middleware('throttle:10,1');
+    Route::post('/session', [FederationController::class, 'session'])->middleware(['trust-auth:,signed', 'throttle:60,1']);
+    Route::get('/grants', [FederationController::class, 'grants'])->middleware(['trust-auth', 'throttle:120,1']);
 });
