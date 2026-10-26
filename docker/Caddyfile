@@ -17,5 +17,8 @@
 	request_body {
 		max_size 64MB
 	}
+	# The emoji font is ~10 MB and never changes between releases of an image: let browsers keep it.
+	@emojifont path /fonts/NotoColorEmoji.ttf
+	header @emojifont Cache-Control "public, max-age=604800"
 	php_server
 }

@@ -20,6 +20,9 @@ import {
 Chart.register(BarController, LineController, BarElement, LineElement, PointElement,
 	CategoryScale, LinearScale, Tooltip, Legend);
 
+// Same face as the page (tailwind.config.js `sans`), so an emoji in a label comes from the shared emoji font.
+Chart.defaults.font.family = "Figtree, 'RI Emoji', ui-sans-serif, system-ui, sans-serif";
+
 export default {
 	props: {
 		config: { type: Object, required: true },

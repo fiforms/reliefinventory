@@ -33,8 +33,8 @@ printer-driver-ptouch
 # into debs/ — SATO's own driver is x86-only). cups-filters pulls it in too; named here because that package needs it.
 ghostscript
 
-# Colour emoji. The website uses emoji as icons; without a font, Chromium draws blank boxes.
-fonts-noto-color-emoji
+# No colour emoji font here: the website serves its own to the browser (@font-face in resources/css/app.css).
+# Only the on-device Settings pages (the platform's local app) lack one, and they draw a single emoji (the Wi-Fi lock).
 
 # The offline local server (Settings > Local server; ../../LOCAL_SERVER.md): the container engine and
 # Compose to run the stack baked in by build-offline-bundle.sh, and curl for the supervisor's health

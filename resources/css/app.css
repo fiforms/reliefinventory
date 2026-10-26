@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* One emoji font for every browser, so the UI's emoji icons look the same everywhere (and the
+   R Station's Chromium needs no emoji font of its own). The Docker image links the font it already
+   carries for PDFs to /fonts/NotoColorEmoji.ttf; outside Docker the file is absent, the request
+   404s and the browser quietly uses its own emoji font. unicode-range keeps the ~10 MB download
+   from starting until a page actually shows an emoji. */
+@font-face {
+  font-family: 'RI Emoji';
+  src: url('/fonts/NotoColorEmoji.ttf') format('truetype');
+  font-display: swap;
+  unicode-range: U+1F000-1FAFF, U+2600-27BF, U+2B50, U+2B55, U+FE0F, U+200D, U+20E3;
+}
+
 /* Single source of truth for spacing between action buttons/links, wherever
    they appear — RIForm's list-actions bar, its form-actions bar, its
    title-actions slot, and the standalone adjacent-sibling fallback below all
