@@ -12,7 +12,7 @@ use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RedirectToSetup;
 use App\Http\Middleware\TrackSessionActivity;
-use App\Http\Middleware\VerifyFeedbackIngestSecret;
+use App\Http\Middleware\TrustAuth;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -44,16 +44,10 @@ return Application::configure(basePath: dirname(__DIR__))
             'permission' => CheckPermission::class,
             'kiosk-access' => EnsureKioskAccess::class,
             'device-auth' => AuthenticateManagedDevice::class,
+            'trust-auth' => TrustAuth::class,
             'display-access' => EnsureDeviceAccess::class,
-            'feedback-ingest-secret' => VerifyFeedbackIngestSecret::class,
         ]);
 
-        // Instance-to-instance feedback ingest has no session/cookie to carry
-        // a CSRF token — it's authenticated by shared secret instead (see
-        // VerifyFeedbackIngestSecret).
-        $middleware->validateCsrfTokens(except: [
-            'json/feedback/ingest',
-        ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
         // Someone re-opening an old email-verification link from Mail hours

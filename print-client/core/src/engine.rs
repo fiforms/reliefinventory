@@ -192,22 +192,26 @@ impl Engine {
         self.generation.send_modify(|g| *g += 1);
     }
 
-    /// Exchange a 6-digit code (from `/setup/devices` → "Pair a New Device or Print Server") for a
-    /// token. Errors are worded for the person typing the code.
+    /// Pair with a code (from the server's Devices page → "Pair a New Device or Print Server"): send this
+    /// machine's public key with the code, and remember the server. Errors are worded for the person typing it.
     pub async fn pair(&self, server_url: &str, code: &str, device_name: Option<&str>) -> Result<(), String> {
         let url = normalize_server_url(server_url)?;
         let code = code.trim();
-        if code.len() != 6 || !code.chars().all(|c| c.is_ascii_digit()) {
-            return Err("The pairing code is 6 digits.".into());
+        if code.chars().filter(char::is_ascii_alphanumeric).count() != 10 {
+            return Err("The pairing code is 10 letters and numbers, like ABCDE-FGHJK.".into());
         }
         let name = device_name.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(hostname);
-        let uuid = self.config.lock().unwrap().device_uuid.clone();
+        let (uuid, identity) = {
+            let c = self.config.lock().unwrap();
+            (c.device_uuid.clone(), c.identity())
+        };
+        let identity = identity.ok_or("This computer's key could not be read. Remove the RI Print settings file and start again.")?;
         let api = ApiClient::new(&url, None);
         // /up is optional on a contract server, so only a network failure counts against it.
         if let Err(ApiError::Network(e)) = api.up().await {
             return Err(format!("Can't reach {url}: {e}"));
         }
-        let resp = api.pair(code, &name, &uuid).await.map_err(|e| match e {
+        let resp = api.pair(code, &name, &uuid, &identity).await.map_err(|e| match e {
             ApiError::Validation(_) => "That pairing code is invalid or has expired. Generate a new one on the Devices page.".to_string(),
             ApiError::RateLimited => "Too many attempts. Wait a minute and try again.".to_string(),
             other => other.to_string(),
@@ -215,7 +219,8 @@ impl Engine {
         {
             let mut c = self.config.lock().unwrap();
             c.server_url = Some(url.clone());
-            c.token = Some(resp.token);
+            c.server_public_key = Some(resp.server.public_key.clone());
+            c.paired = true;
             c.device_name = Some(name.clone());
             c.save(&self.data_dir).map_err(|e| format!("Paired, but couldn't save the settings: {e}"))?;
         }
@@ -233,13 +238,15 @@ impl Engine {
 
     /// Forget the pairing on this computer (the server's record stays until an admin removes it).
     pub fn unpair(&self) {
-        self.wipe_token("Un-paired on this computer.");
+        self.forget_pairing("Un-paired on this computer.");
     }
 
-    fn wipe_token(&self, notice: &str) {
+    /// Forget the server's side of the pairing. The key and `device_uuid` stay: they identify this machine.
+    fn forget_pairing(&self, notice: &str) {
         {
             let mut c = self.config.lock().unwrap();
-            c.token = None;
+            c.paired = false;
+            c.server_public_key = None;
             if let Err(e) = c.save(&self.data_dir) {
                 tracing::error!("could not save settings after un-pairing: {e}");
             }
@@ -259,21 +266,21 @@ impl Engine {
         loop {
             // Subscribe *before* reading the config, so a pairing that lands in between still wakes us.
             let mut gen = self.generation.subscribe();
-            let creds = {
+            let url = {
                 let c = self.config.lock().unwrap();
-                c.token.clone().zip(c.server_url.clone())
+                if c.is_paired() { c.server_url.clone() } else { None }
             };
-            let Some((token, url)) = creds else {
+            let Some(url) = url else {
                 if gen.changed().await.is_err() {
                     return;
                 }
                 continue;
             };
             tokio::select! {
-                end = self.clone().session(url, token) => {
+                end = self.clone().session(url) => {
                     if end == SessionEnd::Revoked {
                         tracing::warn!("device was revoked on the server; returning to pairing");
-                        self.wipe_token("This computer was un-paired from the server. Pair it again with a new code.");
+                        self.forget_pairing("This computer was un-paired from the server. Pair it again with a new code.");
                     }
                 }
                 _ = gen.changed() => {} // re-paired or un-paired: restart with the current settings
@@ -281,11 +288,18 @@ impl Engine {
         }
     }
 
-    async fn session(self: Arc<Self>, url: String, token: String) -> SessionEnd {
+    async fn session(self: Arc<Self>, url: String) -> SessionEnd {
+        let auth = {
+            let c = self.config.lock().unwrap();
+            c.identity().map(|id| (id, c.device_uuid.clone()))
+        };
+        let Some(auth) = auth else {
+            return SessionEnd::Revoked; // no usable key: fall back to pairing
+        };
         let (rt_tx, rt_rx) = watch::channel(None);
         let ctx = Arc::new(Session {
             engine: self.clone(),
-            api: ApiClient::new(&url, Some(token)),
+            api: ApiClient::new(&url, Some(auth)),
             printers: Mutex::new(Vec::new()),
             held_offline: Mutex::new(HashMap::new()),
             busy_queues: Mutex::new(HashSet::new()),

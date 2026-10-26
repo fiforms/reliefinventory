@@ -184,18 +184,21 @@ database.
 
 - Every instance is **standalone**. The R Station local server is explicitly "not a sync target." Backups and
   restore (`backup:create`, `backup:restore`) move a whole instance, not records between instances.
-- There is no instance identity, no cross-instance authentication and no record-level sync. Primary keys are local
-  auto-increment ids.
-- Building blocks that do exist: the device-pairing and bearer-token pattern (`ManagedDevice`, `/api/devices`,
-  `issueToken()`), a documented wire protocol with an OpenAPI file and a drift test (`rstation/PRINT_SERVER.md`,
+- **Update 2026-10-26 — the trust layer is built** (branch `federation-trust`; `CLAUDE.md`, "Federation"): every instance has an Ed25519
+  identity, an admin pairs two instances with an invitation (each side approves its own side), the pairing is a **trust** with explicit
+  permissions (`print.share`, `feedback.send`/`receive`, `offers.send`/`receive`, `inventory.query_exact`, `supplies.request`/
+  `query_available`, `operator.full_read`), site-to-site trusts can be domain-verified, and feedback aggregation and device pairing already
+  run on it. What is **still not built** is everything on top of it: no endpoint yet shares offers, supplies, inventory or reports, and
+  there is still no record-level sync. Primary keys are local auto-increment ids.
+- Building blocks that do exist: the federation trust layer above and the key-based device pairing built on it
+  (`ManagedDevice`, `/api/devices`, `trust-auth`), a documented wire protocol with an OpenAPI file and a drift test (`rstation/PRINT_SERVER.md`,
   `print-extension.openapi.yaml`), an immutable-log pattern for state changes (`donation_offer_status_log`,
   `print_job_status_log`), and Cloudflare Turnstile/`TurnstileService` for public endpoints.
 
 ### Design directions
 
-- **Trust record**: a pairing between two instances, created by an administrator on each side, with a shared secret
-  or key pair, a scope (what may be shared), an expiry and an audit trail, and instant revocation. Follow the
-  device-pairing precedent.
+- **Trust record** *(built 2026-10-26)*: a pairing between two instances, created by an administrator on each side, with a
+  key pair, a scope (the permission grants), an audit trail, and instant revocation. Still open: an expiry, and key rotation.
 - **Share the least that works.** Start with read-only, aggregated data (stock by item type, availability, capacity)
   and with partner/agency identity, before anything that moves records. Never replicate people, notes, photos or
   anything the donor/partner didn't expect to leave the site.

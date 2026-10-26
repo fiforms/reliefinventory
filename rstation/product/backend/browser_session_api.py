@@ -1,6 +1,6 @@
 """Local API behind the launcher's hand-off to the website (frontend/Main.vue).
 
-The browser must never hold this device's bearer token, so the launcher asks *this backend* for a
+The browser must never hold this device's credential (the key-signed value the platform sends as its bearer), so the launcher asks *this backend* for a
 single-use ticket and sends the browser to /device-session/{ticket}; the server turns that into a
 cookie that opens only the pages for the device's configured Function — no user login. Anything that
 goes wrong answers {"ticket": null} and the launcher falls back to the ordinary sign-in page, so a

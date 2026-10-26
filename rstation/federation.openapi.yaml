@@ -1,0 +1,161 @@
+openapi: 3.0.3
+info:
+  title: Federation trust API
+  version: "1"
+  description: |
+    Machine-readable form of how a client app or another instance pairs with a Relief Inventory server and
+    authenticates afterwards. The prose is `rstation/FEDERATION_AUTH.md` (key formats, the canonical string
+    that is signed, session tokens, error handling) and is normative; if this file and the prose disagree,
+    fix both. `tests/Feature/FederationOpenApiTest.php` fails if the routes and this file drift apart.
+
+    Public identity of a server (not under this prefix): `GET /.well-known/ri-instance.json` returns
+    `{protocol, uuid, name, url, public_key, fingerprint}`.
+servers:
+  - url: https://example.org/api/federation/v1
+paths:
+  /pair:
+    post:
+      summary: Pair with a one-time code and submit this client's public key
+      description: |
+        Unauthenticated: the code (from the Trust Console or the Devices page) is the credential, and
+        `signature` proves the caller holds the private key for `public_key` (an Ed25519 signature over
+        `"ri-pair-v1\n" + CODE + "\n" + public_key + "\n" + uuid`, CODE upper-cased without dashes). An
+        `instance` peer must also send its public `base_url`. One generic `422` covers an unknown, used,
+        expired or wrong-kind code.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PairRequest" }
+      responses:
+        "201":
+          description: Paired. The trust starts with the grants the code carried.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PairResponse" }
+        "422": { description: "Invalid or expired code, bad proof of key possession, or a malformed field" }
+        "429": { description: Too many attempts }
+        "503": { description: This server has no usable federation key }
+  /session:
+    post:
+      summary: Trade one signed request for a session token
+      description: Always requires a signature (a session token cannot renew itself). Body may be `{}`.
+      security:
+        - signature: []
+      responses:
+        "200":
+          description: A session token, valid for `expires_in` seconds.
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SessionResponse" }
+        "400": { $ref: "#/components/responses/ClockSkew" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+  /grants:
+    get:
+      summary: What the server currently lets the caller do to it
+      security:
+        - session: []
+        - credential: []
+        - signature: []
+      responses:
+        "200":
+          description: The caller's inbound permissions.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  permissions: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/ClockSkew" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "419": { $ref: "#/components/responses/CredentialExpired" }
+  /feedback:
+    post:
+      summary: Send feedback reports to a central instance (needs the feedback.send grant)
+      security:
+        - session: []
+        - signature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reports]
+              properties:
+                reports: { type: array, minItems: 1, items: { type: object } }
+      responses:
+        "200":
+          description: The uuids that were stored; anything missing was malformed and skipped.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  received: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/ClockSkew" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { description: The trust does not include feedback.send }
+components:
+  securitySchemes:
+    session:
+      type: http
+      scheme: bearer
+      description: Session token (`RIS-…`) from `POST /session`.
+    signature:
+      type: apiKey
+      in: header
+      name: X-RI-Signature
+      description: Ed25519 signature, sent with `X-RI-Trust`, `X-RI-Timestamp` and `X-RI-Nonce`.
+    credential:
+      type: http
+      scheme: bearer
+      description: "A key-signed `RIK-…` credential, for clients that can only send one fixed Authorization value (FEDERATION_AUTH.md). Client-kind trusts only; an expired one is a 419."
+  responses:
+    Unauthenticated:
+      description: Unknown, revoked or badly signed. Clients forget the pairing; a session token that merely expired is replaced by signing once.
+    CredentialExpired:
+      description: A genuine `RIK-` credential that is expired or was issued by a wrong clock. Mint a new one; never treated as a revocation.
+    ClockSkew:
+      description: The request's timestamp is more than 5 minutes from the server's clock. `X-RI-Server-Time` carries the server's time; adjust and repeat once. Never a revocation.
+  schemas:
+    PairRequest:
+      type: object
+      required: [code, kind, uuid, name, public_key, signature]
+      properties:
+        code: { type: string }
+        kind: { type: string, enum: [instance, print_client, rstation] }
+        uuid: { type: string, maxLength: 64 }
+        name: { type: string, maxLength: 255 }
+        public_key: { type: string, minLength: 43, maxLength: 43, description: "base64url Ed25519 public key" }
+        signature: { type: string }
+        base_url: { type: string, nullable: true, description: Required when kind is instance }
+        mac_address: { type: string, nullable: true }
+        language: { type: string, nullable: true }
+    PairResponse:
+      type: object
+      properties:
+        server:
+          type: object
+          properties:
+            protocol: { type: integer }
+            uuid: { type: string }
+            name: { type: string }
+            url: { type: string, nullable: true }
+            public_key: { type: string }
+            fingerprint: { type: string }
+        trust_id: { type: integer }
+        permissions: { type: array, items: { type: string } }
+        device_id: { type: integer, nullable: true }
+        entity_id: { type: integer, nullable: true }
+        entity_name: { type: string, nullable: true }
+        sibling_hostnames: { type: array, items: { type: string } }
+        language: { type: string, nullable: true }
+        language_revision: { type: integer, nullable: true }
+    SessionResponse:
+      type: object
+      required: [session_token, expires_in]
+      properties:
+        session_token: { type: string }
+        expires_in: { type: integer }

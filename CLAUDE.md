@@ -16,7 +16,7 @@ be traced back to a specific donor or pallet (no recall-style item tracing; don'
 (source traceability, stock-on-hand, the permission model, DB transactions, RIForm error/delete UX, a real
 test suite, order filling/picking as of 2026-08-27); what's still genuinely open is BOL upload, the
 order fulfillment lifecycle past Filled (Ready to Ship/Shipped), the facility-network expansion
-(Part 5), and several report pages (`/reports/flow`, `/reports/donors` and `/reports/partners` were built 2026-10-22 — see "Flow, Donor and Partner reports" below —
+(Part 5), the endpoints that would actually share data between federated instances (the trust layer itself — identity, pairing, permissions — is built: see "Federation"), and several report pages (`/reports/flow`, `/reports/donors` and `/reports/partners` were built 2026-10-22 — see "Flow, Donor and Partner reports" below —
 so no report is a placeholder any more; `/reports/orders`, the Outstanding Orders Report, is built as of
 2026-08-22, and `/reports/unfulfilled`, the Unfulfilled Requests Report — requested vs. filled per item, by the
 partner's county and zip, finished requests only — as of 2026-10-20) — check the doc's own inline "Update" notes for the current state of any given item before
@@ -46,7 +46,8 @@ vendor/bin/pest                     # run full test suite (Pest, Feature + Unit)
                                      # script exists — see TODO.md item 7).
 vendor/bin/pest tests/Feature/ProfileTest.php   # run a single test file
 vendor/bin/pest --filter="test name"            # run a single test by name
-vendor/bin/pint                     # PHP code style (Laravel Pint)
+vendor/bin/pint <files>             # PHP code style (Laravel Pint). Always pass the files you changed: the repo isn't Pint-clean,
+                                     # so running it on a directory reformats unrelated files (and it can't read docker/backups).
 ```
 
 There is effectively no frontend test suite (no JS unit tests configured); rely on manual verification
@@ -428,6 +429,84 @@ time it overrides it (the page shows that as each blank field's fallback) and ne
 from another APP_KEY, just leaves `.env` in charge. The page's Send Test button returns the mail service's own error.
 Don't read `config('feedback.notify_emails')` directly any more; use `MailSettings::feedbackRecipients()`.
 
+### Federation: instance identity, trusts and signed requests (2026-10-26, branch `federation-trust`)
+
+One PKI-style system replaced three unrelated trust mechanisms (the feedback shared secret, bearer-token device pairing, and — for
+machines — nothing). Every instance and every client app has an **Ed25519** key pair; parties **pair once** (an admin-made one-time
+code, or an invitation between instances); each pairing is a **trust** with explicit **permissions**; everything is managed in the
+**Trust Console** (`/setup/trust`, `manage-trusts`, Administrator by default). Client-facing spec: `rstation/FEDERATION_AUTH.md` +
+`rstation/federation.openapi.yaml` (drift test: `FederationOpenApiTest`). Server code: `app/Services/Federation/`. Browser PIN trust
+(`TrustedDevice`) is a different problem and is untouched.
+- **Identity:** `federation_identities` (one row; `tenant_id` reserved so multi-tenant can hold one identity per tenant),
+  `InstanceIdentity::current()` generates the key on first use. `private_key` is APP_KEY-`encrypted` and listed in
+  `config/backup.php` `encrypted_columns`; a restore onto a different APP_KEY nulls it → `InstanceIdentity::isLost()` — `trust-auth`
+  answers 503, invitations/pairing refuse, the console shows a red banner, and **Generate a new key** (typed `REGENERATE`) makes a new
+  public key that every peer must re-approve. Public half at `GET /.well-known/ri-instance.json` (`{protocol, uuid, name, url,
+  public_key, fingerprint}`; the fingerprint is the SHA-256 of the key, 16 hex digits grouped `AAAA-BBBB-CCCC-DDDD`).
+- **Trusts:** `trusts` (`kind` instance|print_client|rstation, `peer_uuid`, the pinned `public_key`, `status`
+  approved|revoked, `auth_method` pairing_code|domain_verified, `approved_by_person_id` **or** `approved_by_label` so a
+  future self-service method can name an approver with no local person, `domain_verified_at`, `session_epoch`), `trust_grants`
+  (`direction` inbound = what the peer may do to us, enforced here; outbound = what we may do to it, mirrored from the peer's signed
+  `GET /grants`), `trust_pairing_codes` (hash only; 10 chars `ABCDE-FGHJK`, 15 min, single use, `lockForUpdate` redemption; a `client`
+  code pairs either client kind), `trust_audit_log`. **Everything that changes a trust goes through `TrustService`** (audited; enroll
+  and revoke bump `session_epoch`, which is what kills old session tokens). Permissions are the `TrustPermission` enum, worded from the
+  peer acting on us: `print.share`, `feedback.send`, `feedback.receive`, `offers.send`, `offers.receive`, `inventory.query_exact`,
+  `supplies.request`, `supplies.query_available`, `operator.full_read` — each with a risk tier; `built()` says whether an endpoint
+  enforces it yet (only `print.share` and `feedback.send` do). `operator.full_read` is effectively full compromise (a database backup
+  holds credentials); it must never expose `APP_KEY`.
+- **Authenticating a request** — `trust-auth[:permission][,signed]` (`TrustAuth`, alias in `bootstrap/app.php`) accepts, in order: a
+  `Bearer RIK-…` **credential**, a `Bearer RIS-…` **session token**, or a per-request **signature** (`X-RI-Trust`, `X-RI-Timestamp`,
+  `X-RI-Nonce`, `X-RI-Signature` over `METHOD\nPATH?QUERY\nHOST\nTS\nNONCE\nsha256(body)`, `RequestSigner::canonical()`). Status and
+  grants are read from the database on **every** request, so revoking or editing a trust is immediate. Status codes are a contract:
+  **401** = unknown/revoked/badly signed (clients forget the pairing); **400 + `X-RI-Server-Time`** = clock more than 5 min off
+  (adopt the offset and retry — never a revocation); **419** = a *genuine* credential that is expired or from a wrong clock; **403** =
+  the grant is missing. Nonces are remembered 10 min (only a correctly signed request may burn one). Sessions (`POST /session`, which
+  always needs a signature) are **cache entries**, so a cache flush just makes clients sign again — fine for the Rust client and
+  `FederationClient`, which re-sign on a 401. `RIK-` credentials (`RequestSigner::mintBearer`, `rstation/FEDERATION_AUTH.md`) exist for a
+  client that can only send one fixed `Authorization` value — the Pi's platform code. They are stateless (nothing to lose in a cache
+  flush or restore), bound to the server's Host, at most 31 days, client-kind trusts only, and an expired one is a **419, not a 401**,
+  because the platform wipes its pairing on any 401.
+- **Devices:** `device-auth` (`AuthenticateManagedDevice`) delegates to `TrustAuth` and sets `managed_device`; `device-auth:print.share`
+  guards the print-job routes. Devices pair at `POST /api/federation/v1/pair` with a code, their public key and a proof of possession (a
+  signature over `ri-pair-v1\nCODE\nPUBLIC_KEY\nUUID`). The Devices page's "Generate Code" makes a `client` trust code carrying `print.share`;
+  revoking or deleting a device revokes its trust; re-pairing the same uuid re-attaches the record (a different key is allowed only with a fresh
+  code and is audited as `key_changed`) and clears the browser session and wake channel. **There is no legacy path** (removed 2026-10-26):
+  `POST /api/devices/pair`, bearer tokens, `device_pairing_codes` and `managed_devices.token_hash` are gone, so a device paired before
+  federation gets a 401, forgets its pairing and must be paired again with a code (the Pi shows its pairing screen; the desktop print client
+  re-pairs from its window).
+- **Site-to-site:** one admin makes an **invitation** (`RIFED1-` + base64url JSON of address, one-time code and the key **fingerprint**);
+  the other pastes it. The accepting side fetches the inviter's `/.well-known/ri-instance.json`, checks the fingerprint (this is what
+  tells it it reached the right instance), pairs with a proof of possession, and records a **mirrored** trust (the inviter's grants for us
+  become our outbound grants; the accepting admin chooses what the inviter may do to *us*, default nothing) and refreshes outbound grants
+  with a signed `GET /grants`. The inviting side learns the other's grants only when its admin presses **Refresh** (it can't call the
+  other side during pairing). **Domain verification** (`DomainVerifier`) re-fetches the published identity over TLS and checks it is the
+  pinned key; on success `auth_method` becomes `domain_verified` ("Approved by Admin, domain verified"), on a mismatch it is cleared.
+  Anything we are about to fetch from a peer-supplied address goes through `PeerUrl::assertSafe()`: https only and no private/loopback/
+  link-local hosts (`RI_FEDERATION_ALLOW_HTTP` / `RI_FEDERATION_ALLOW_PRIVATE` turn that off for two local dev instances). Outbound calls
+  are `FederationClient::for($trust)` — signs, trades up to a session, never follows redirects.
+- **Clients:** the desktop print client (`print-client/core/src/identity.rs`, `api.rs`) keeps its seed in `config.json` (kept across
+  un-pairing), signs once for a session, re-signs when it is refused and corrects a wrong clock from `X-RI-Server-Time`. The **R Station
+  (Pi)** is done entirely in the product layer — `rstation/product/backend/federation.py` — and the platform submodule is untouched: the
+  platform sends the contents of `/data/device-token` as its bearer, so the product keeps a key-signed `RIK-` credential there (refreshed
+  every 6 h by `federation.maintain`) and `install()` replaces the module attribute `pairing.pair` with a key-based pairing (falling back to
+  the platform's for a pre-federation server). **A Pi has no RTC and can boot weeks behind**, so credentials are stamped with the
+  *server's* time (the `Date` header of `GET /up`), and nothing is re-minted when the server can't be reached. Ed25519 there is a
+  dependency-free RFC 8032 implementation (the image's venv declares no crypto library; `cryptography` is used if present). The list of
+  platform internals this relies on is in `rstation/FEDERATION_AUTH.md` ("The Raspberry Pi") — keep it true when the platform changes.
+- **Shared vectors:** `tests/Fixtures/federation-signing-vectors.json` holds signing, pairing and credential vectors that the PHP
+  tests, the Rust client (`identity.rs`) and the Pi product (`test_federation.py`) all reproduce byte for byte. Change a message format
+  only together with that file and all three. Test helpers (`tests/Pest.php`): `fedPeer`, `fedEnroll`, `fedPairBody`, `fedCall` (sends the
+  exact bytes it signed — `getJson` adds a `[]` body), `fakeRemote`/`serveRemote` (a fake peer instance over `Http::fake`), `pairClient`/
+  `pairPrintServer` (a real pairing; the returned "token" is a session token, so `->withToken($token)` means "an authenticated device").
+  End-to-end against the real app: `print-client/e2e/run.sh` (Rust client + CUPS); the Pi code was run the same way against a live server.
+- **Not built:** the endpoints for offers, supplies, exact inventory and `operator.full_read` (the grants exist; sharing a remote request
+  would mean an approved Partner `Person` per site and an order left at `New Order` for staff, and the ledger arithmetic that three places
+  duplicate should become one `InventoryAvailability` service first); remote print submission; **self-service pairing by account**
+  (planned: a free account on a central instance, Turnstile + email verification, then the user confirms a pairing from their own instance —
+  `auth_method = account_verified`, restricted default grants, `approved_by_label`; the schema and `PairingService`-style method name are
+  ready for it); key rotation (a key change on a pinned trust fails closed and needs re-approval); pruning of used pairing codes and old
+  audit rows; a per-trust rate limit beyond the route throttles; multi-tenant (`tenant_id` and `trusts.identity_id` are the hooks).
+
 ### In-app feedback reporting & the site banner
 
 Any logged-in user can report a bug or feature idea from the profile menu ("Report an Issue" —
@@ -452,12 +531,18 @@ every log entry, always visible, not behind a click — distinguishing "moved to
 at X" purely by comparing each entry's status to the one before it, no extra column needed.
 
 **Centralized aggregation** (remote instances push their reports to one central instance, settings on `/setup/feedback`,
-`FeedbackAggregationSetting`): the central address may be typed as a bare domain — `normalizeCentralUrl()` adds https:// and
-`/json/feedback/ingest` (also applied when reading an older stored value). The easy path is a **connection code**
-(`RIFEED1-` + base64url JSON of URL + secret): central's **Show/Create Connection Code** (`POST
-/json/feedback-aggregation-settings/connection-code`, central only, creates a 40-char secret if none) and the remote's paste
-box (`connection_code` on the PUT). **Test Connection** posts a `ping` to ingest; push failures now come back as a message
-(`pushUnsent()['error']`) instead of only a log line.
+`FeedbackAggregationSetting`) runs over the **federation trust system** (see "Federation" below, 2026-10-26): a remote picks
+the paired instance to **Send reports to** (`feedback_trust_id`; the dropdown lists approved `instance` trusts and flags one that
+hasn't granted "Sending feedback"), `FeedbackPushService` sends through `FederationClient` (signed, session-token), and central ingests at
+`POST /api/federation/v1/feedback` behind `trust-auth:feedback.send` (`FeedbackIngestController::storeFromTrust`). Central tags each
+report with the trust it arrived over (`feedback_reports.trust_id`) and shows the trust's address host as `instance_identifier` — the
+body's own claim about who sent it is ignored. Idempotent on `(instance_identifier, uuid)` as before. **Test Connection** asks the peer
+what it grants us (signed `GET /grants`) and says so when "Sending feedback" isn't among them; failures come back as readable messages
+(`pushUnsent()['error']`: revoked/key changed, not granted, clock off, maintenance).
+
+The pre-federation shared-secret path (`X-Feedback-Shared-Secret`, `RIFEED1-` connection codes, `central_ingest_url`/`shared_secret`/`instance_identifier`
+on `feedback_aggregation_settings`) was removed on 2026-10-26 (migration `remove_legacy_shared_secrets_and_device_tokens`): a remote that
+hadn't been moved to a trust stops reporting until an admin pairs it in the Trust Console and picks the instance to send through.
 
 A local-only `feedback-triage` Claude Code skill (`.claude/skills/feedback-triage/` — gitignored,
 never committed, see that directory's own README.md if present on this machine) reviews New and
@@ -490,7 +575,7 @@ is unrecorded, never expires and works with the database down. A dump is only ar
 `-- Dump completed` marker (also re-checked before a restore wipes anything). **The zip never contains `APP_KEY`/`.env`/
 `.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and logged, to `view-app-key` holders on the
 admin page, and a red notice above every backup section tells the admin they NEED to write it down (it is required to restore
-the encrypted parts). Only the feedback `shared_secret` (an `encrypted` cast) and cookies depend on it; `config/backup.php`'s
+the encrypted parts). Only the encrypted columns — the mail secrets and the **federation private key** (`federation_identities.private_key`: a restore onto a different key blanks it, which the Trust Console reports as "identity lost"; peers must re-approve a regenerated key) — and cookies depend on it; `config/backup.php`'s
 `encrypted_columns` registry (test-enforced against model casts) lists what a restore blanks.
 
 - **Who calls it:** the admin page (detached `setsid` process, `backup:run <id>`, one at a time via row check + `flock`);
@@ -587,7 +672,7 @@ of documents a client implementer needs), `rstation/print-extension.openapi.yaml
 drift test fails if it stops matching the server) and `scripts/REVERB.md` (provisioning).
 
 - **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
-  software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
+  software server — reusing the federation pairing (a `client` pairing code, the device's own Ed25519 key, `device-auth:print.share`; see "Federation") and the heartbeat. The heartbeat's
   `print_printers` reports its OS print queues (a device with no Function set that reports any is made a
   `print_station` automatically; the platform goes in `print_platform`, namespaced per the device contract); each becomes a `printers` row (inactive, untyped) that staff
   name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
@@ -808,6 +893,9 @@ with the office") was also raised and is unbuilt — idea-stage only, no design 
 - Set audit/actor fields (`person_id_user`, etc.) from `Auth::id()` server-side in controllers — never
   accept them from the request body.
 - Wrap multi-row writes (a transaction header plus its ledger/order lines) in `DB::transaction()`.
+- A new machine-to-machine endpoint (another instance, a client app) goes under `/api/federation/v1` (or `/api/devices` for a
+  device) behind `trust-auth:<permission>`, never a shared secret: add the `TrustPermission` case, document it in
+  `rstation/federation.openapi.yaml` (a drift test fails otherwise), and gate on the *inbound grant*, not on who the peer is.
 - Don't use `env()` outside `config/*.php` files — read from `config()` instead, since `env()` returns
   null once config is cached in production.
 - Cloudflare Turnstile goes through `App\Services\TurnstileService` (registration, password reset, public
@@ -857,7 +945,8 @@ Renamed 2026-10-14 from `kiosk/` / `kiosk/reliefkiosk` to avoid colliding with t
 kiosk above. `rstation/platform` is the `slideannouncer` submodule (consumed unmodified),
 `rstation/product` is our local product layer; planning docs are `rstation/IMPLEMENTATION.md` and
 `rstation/PRINT_SERVER.md`. Server side: `ManagedDevice` & friends, `/api/devices`, `/setup/devices`
-(`RStationDevices.vue`, permission `manage-devices`). Deliberately **not** renamed: the wire-contract keys
+(`RStationDevices.vue`, permission `manage-devices`). A device is a client-kind **trust** (`managed_devices.trust_id`): it pairs with
+its own key, not a token — see "Federation"; the Pi side is `rstation/product/backend/federation.py`. Deliberately **not** renamed: the wire-contract keys
 `kiosk_function`/`kiosk_path` (and the `managed_devices.kiosk_function` column) — they're part of the
 device protocol shared with the Pi product, so changing them needs a coordinated device-side release;
 and `kiosk_location_id`, which genuinely refers to `KioskLocation` (the sign-in kiosk's sites).
@@ -880,14 +969,14 @@ Home for 3 s, redirecting via `slide-announcer-kiosk-navigate` (DevTools) and fa
 plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Confirmed working on a real Pi (2026-10-18).
 
 **Device sessions — pages with nobody logged in** (2026-10-21, `DeviceSessionController`, `EnsureDeviceAccess`, `DeviceSessionTicket`):
-a paired R Station's *browser* has no credential of its own (only the Pi's local backend holds the bearer token, and it must never
+a paired R Station's *browser* has no credential of its own (only the Pi's local backend holds the device's credential, and it must never
 reach the browser). The launcher (`Main.vue`) has the backend mint a single-use, 60 s ticket (`POST /api/devices/session-ticket`,
 `device-auth`) and opens `/device-session/{ticket}`, which sets an HttpOnly `device_session` cookie (hash in
 `managed_devices.session_token_hash`; one live session per device, re-minted each launch) and redirects to the page for the device's
 **Function** (`config/devices.php` `path`) — never a client-supplied path; no page / bad ticket → `/login`. The cookie is **not a login**
 (`Auth::user()` stays null; never set actor fields from it): the `display-access:<permission>,<function>…` middleware admits a logged-in
 user with that permission OR a device whose current Function is listed, and `EnsureKioskAccess` admits a `volunteer_checkin` device (the
-sign-in kiosk works from the pairing alone — no Trusted Device/PIN kiosk lock). Revoke, re-pair (`issueToken()`) or changing the
+sign-in kiosk works from the pairing alone — no Trusted Device/PIN kiosk lock). Revoke, re-pair (`TrustService::enroll()` clears `session_token_hash`) or changing the
 Function ends access immediately. Pages: chrome-free `/display/sitrep` and `/display/dashboard` (`Pages/Display/Stats.vue`,
 `DisplayLayout.vue` with a small bottom-left "Log in" link — the Pi's on-screen Settings button is bottom-right; self-refreshing from
 `/json/display/*`; the dashboard variant drops `donor_quality`). To add a page for devices: add a Function in `config/devices.php`, a

@@ -1,8 +1,8 @@
 <?php
-// Creates a site (if none) and a 6-digit pairing code in the test DB; prints the code.
+// Creates a site (if none) and a client pairing code (as the Devices page makes) in the test DB; prints the code.
 require __DIR__.'/bootstrap.php';
-use App\Models\DevicePairingCode;
 use App\Models\KioskLocation;
+use App\Services\Federation\TrustService;
 use Illuminate\Support\Facades\Cache;
 
 // The pairing endpoint throttles per IP (and keeps a 10-minute attempt counter) in the cache, so repeated
@@ -10,7 +10,5 @@ use Illuminate\Support\Facades\Cache;
 Cache::flush();
 
 $loc = KioskLocation::first() ?? KioskLocation::create(['name' => 'E2E Site']);
-$code = DevicePairingCode::create([
-    'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $loc->id, 'expires_at' => now()->addMinutes(10),
-]);
-echo $code->code;
+[$code] = TrustService::createPairingCode('client', ['print.share'], null, $loc->id, null);
+echo $code;

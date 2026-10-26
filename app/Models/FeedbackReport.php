@@ -29,6 +29,7 @@ class FeedbackReport extends Model
         'reporter_name',
         'reporter_email',
         'submitted_at',
+        'trust_id',
     ];
 
     protected $casts = [

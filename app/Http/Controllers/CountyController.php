@@ -2,9 +2,9 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use App\Models\County;
+use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 
 class CountyController extends Controller
 {
@@ -16,7 +16,7 @@ class CountyController extends Controller
     /**
      * Retrieve all counties.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index()
     {
@@ -28,30 +28,29 @@ class CountyController extends Controller
                 '_default' => [
                     'county' => '',
                     'state' => '',
-                ]
-            ]
+                ],
+            ],
         ]);
     }
-    
+
     /**
      * Get a list of unique state abbreviations from the counties table.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function states()
     {
         $states = County::getDistinctStates();
-        
+
         return response()->json([
-            'records' => $states
+            'records' => $states,
         ]);
     }
 
     /**
      * Store a new county.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -68,9 +67,8 @@ class CountyController extends Controller
     /**
      * Update an existing county.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
@@ -88,8 +86,8 @@ class CountyController extends Controller
     /**
      * Delete a county.
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {
@@ -102,7 +100,7 @@ class CountyController extends Controller
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
-                'message' => 'Error deleting county: ' . $e->getMessage(),
+                'message' => 'Error deleting county: '.$e->getMessage(),
             ], 500);
         }
     }

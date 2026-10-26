@@ -8,22 +8,25 @@ namespace App\Services;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\OfflineModeSetting;
+use App\Models\Trust;
+use App\Services\Federation\FederationClient;
+use App\Services\Federation\TrustService;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Pushes this ("remote") instance's own feedback reports to a central
- * instance's ingest endpoint (see docs/centralized-feedback-design-brief.md
- * and FeedbackIngestController on the central side). Deliberately has no
+ * instance's ingest endpoint (FeedbackIngestController::storeFromTrust on the
+ * central side). Deliberately has no
  * background retry: a push is attempted once, right when a report is
  * created (see FeedbackReportController::store), or in a single explicit
  * batch via the "Send Unsent Reports" action. This is never a hard
  * dependency for an instance's own feedback flow to work — every call here
  * fails soft (logs and returns) rather than throwing, and a freshly-cloned
- * instance with no central_ingest_url/shared_secret configured simply never
- * attempts anything.
+ * instance that hasn't chosen a paired central instance simply never
+ * attempts anything. Reports travel signed, through the trust the admin
+ * chose (see App\Services\Federation).
  */
 class FeedbackPushService
 {
@@ -98,23 +101,12 @@ class FeedbackPushService
      */
     public function testConnection(): array
     {
-        if (! $this->configured()) {
-            return ['ok' => false, 'message' => 'Enter the central instance\'s address and shared secret (or paste a connection code) and save first.'];
-        }
-
         $settings = FeedbackAggregationSetting::current();
-        $response = $this->send(['instance_identifier' => $this->instanceIdentifier(), 'ping' => true], $error);
-        if ($error !== null) {
-            return ['ok' => false, 'message' => $error];
-        }
-        if ($response->json('ok') !== true) {
-            return ['ok' => false, 'message' => $settings->ingestUrl().' answered, but not as a Relief Inventory central instance. Check the address, or update the central instance.'];
-        }
-        if ($response->json('instance_role') !== 'central') {
-            return ['ok' => false, 'message' => 'Connected, but that instance is set to Remote, not Central. Change its role to Central so reports sent there are triaged.'];
+        if ($settings->feedback_trust_id === null) {
+            return ['ok' => false, 'message' => 'Choose the instance to send reports to, and save first.'];
         }
 
-        return ['ok' => true, 'message' => 'Connected to '.parse_url($settings->ingestUrl(), PHP_URL_HOST).' — the shared secret matches.'];
+        return $this->testTrust($settings->feedbackTrust);
     }
 
     /**
@@ -128,7 +120,6 @@ class FeedbackPushService
     private function push(Collection $reports): array
     {
         $response = $this->send([
-            'instance_identifier' => $this->instanceIdentifier(),
             'reports' => $reports->map(fn (FeedbackReport $r) => $this->serialize($r))->all(),
         ], $error);
         if ($error !== null) {
@@ -152,16 +143,24 @@ class FeedbackPushService
     private function send(array $payload, ?string &$error): ?Response
     {
         $error = null;
-        $settings = FeedbackAggregationSetting::current();
-        $url = $settings->ingestUrl();
+
+        return $this->sendViaTrust(FeedbackAggregationSetting::current()->feedbackTrust, $payload, $error);
+    }
+
+    /** Signed send to a trusted central instance; never throws, `$error` carries a message an admin can act on. */
+    private function sendViaTrust(?Trust $trust, array $payload, ?string &$error): ?Response
+    {
+        if (! $trust?->isApproved()) {
+            $error = 'The trust this instance sends feedback through is no longer approved. Pair again in the Trust Console.';
+
+            return null;
+        }
 
         try {
-            $response = Http::timeout(10)
-                ->withHeaders(['X-Feedback-Shared-Secret' => $settings->shared_secret])
-                ->post($url, $payload);
+            $response = FederationClient::for($trust)->post('/feedback', $payload);
         } catch (\Throwable $e) {
             Log::warning('Feedback push to central failed: '.$e->getMessage());
-            $error = 'Could not reach '.parse_url($url, PHP_URL_HOST).': '.$e->getMessage();
+            $error = 'Could not reach '.$trust->name.': '.$e->getMessage();
 
             return null;
         }
@@ -172,13 +171,31 @@ class FeedbackPushService
 
         Log::warning('Feedback push to central failed with status '.$response->status());
         $error = match ($response->status()) {
-            403 => 'Central refused the shared secret. Both instances need the same one — copy a fresh connection code from the central instance.',
-            404, 405 => $url.' isn\'t a Relief Inventory central instance (HTTP '.$response->status().'). Check the address.',
-            503 => 'Central is down for maintenance (HTTP 503). Try again later.',
-            default => 'Central answered with HTTP '.$response->status().'.',
+            401 => $trust->name.' no longer trusts this instance (revoked, or its key changed). Pair again in the Trust Console.',
+            403 => $trust->name.' has not allowed this instance to send feedback. Ask its administrator to grant "Sending feedback".',
+            400 => $trust->name.' says this server\'s clock is too far off. Check the date and time.',
+            503 => $trust->name.' is down for maintenance (HTTP 503). Try again later.',
+            default => $trust->name.' answered with HTTP '.$response->status().'.',
         };
 
         return null;
+    }
+
+    /** @return array{ok: bool, message: string} */
+    private function testTrust(?Trust $trust): array
+    {
+        if (! $trust?->isApproved()) {
+            return ['ok' => false, 'message' => 'That trust is not approved. Pair again in the Trust Console.'];
+        }
+        $granted = TrustService::refreshOutbound($trust);
+        if ($granted === null) {
+            return ['ok' => false, 'message' => 'Could not get an answer from '.$trust->name.'. Check its address, that it still trusts this instance, and this server\'s clock.'];
+        }
+        if (! in_array('feedback.send', $granted, true)) {
+            return ['ok' => false, 'message' => 'Connected to '.$trust->name.', but it has not allowed this instance to send feedback. Ask its administrator to grant "Sending feedback".'];
+        }
+
+        return ['ok' => true, 'message' => 'Connected to '.$trust->name.' — it accepts feedback from this instance.'];
     }
 
     private function serialize(FeedbackReport $report): array
@@ -199,17 +216,5 @@ class FeedbackPushService
             'reporter_name' => $report->reporterFullName(),
             'reporter_email' => $report->reporterEmail(),
         ];
-    }
-
-    /**
-     * Defaults to this instance's own APP_URL host — matches how page_url
-     * already captures instance identity per CLAUDE.md's feedback section.
-     * Override via the Instance identifier field on /setup/feedback's
-     * aggregation settings when APP_URL isn't a stable/meaningful
-     * identifier for this instance.
-     */
-    public function instanceIdentifier(): string
-    {
-        return FeedbackAggregationSetting::current()->resolvedIdentifier();
     }
 }

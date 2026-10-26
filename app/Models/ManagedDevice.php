@@ -10,10 +10,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 /**
- * A paired R Station Raspberry Pi — see DEVICE_CONTRACT.md. The bearer
- * token is only ever stored as a sha256 hash; revocation (revoked_at, or a
- * nulled hash) makes every authenticated call 401, which tells the device
- * to wipe itself and return to setup.
+ * A paired R Station Raspberry Pi or desktop print server — see DEVICE_CONTRACT.md. It authenticates as a client-kind
+ * Trust (`trust_id`; App\Services\Federation), not with a token of its own; revocation (revoked_at, which revoking the
+ * trust sets) makes every authenticated call 401, which tells the device to wipe its pairing and return to setup.
  */
 class ManagedDevice extends Model
 {
@@ -38,6 +37,11 @@ class ManagedDevice extends Model
 
     // The wake-up channel name is a capability: never serialize it to the admin UI.
     protected $hidden = ['wake_channel', 'session_token_hash'];
+
+    public function trust()
+    {
+        return $this->belongsTo(Trust::class);
+    }
 
     public function location()
     {
@@ -69,19 +73,6 @@ class ManagedDevice extends Model
         }
 
         return $this->wake_channel;
-    }
-
-    /** Issues a fresh token, replacing any earlier one; returns the plaintext (shown once, never stored). */
-    public function issueToken(): string
-    {
-        $token = Str::random(60);
-        $this->token_hash = self::hashToken($token);
-        // A re-pair also rotates the wake-up channel, so a previous holder can't keep listening.
-        $this->wake_channel = null;
-        // ...and ends any browser session the previous pairing had.
-        $this->session_token_hash = null;
-
-        return $token;
     }
 
     /**

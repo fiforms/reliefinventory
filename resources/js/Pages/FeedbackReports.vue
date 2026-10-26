@@ -34,15 +34,12 @@
 	badge and falls back to a denormalized reporter name/email, since central
 	has no Person record for it.
 
-	Aggregation settings (2026-09-07): instance role/identifier, central
-	ingest URL, and shared secret used to be env-only (FEEDBACK_INSTANCE_ROLE
-	etc.) — now admin-editable here via /json/feedback-aggregation-settings
-	(FeedbackAggregationSettingsController), stored in
-	feedback_aggregation_settings (FeedbackAggregationSetting), same
-	singleton-row pattern as PinLoginSetting/BannerSetting. The shared secret
-	is never round-tripped back to the client after save — the panel only
-	ever shows whether one is currently set, and a blank field on save
-	leaves it unchanged.
+	Aggregation settings: instance role and, for a remote, which paired instance to send through — admin-editable here
+	via /json/feedback-aggregation-settings (FeedbackAggregationSettingsController), stored in
+	feedback_aggregation_settings (FeedbackAggregationSetting), same singleton-row pattern as
+	PinLoginSetting/BannerSetting. Pairing with the central instance is done in the Trust Console (/setup/trust);
+	reports travel signed through that trust (see CLAUDE.md, "Federation"). The old shared-secret fields and
+	connection codes are gone.
 -->
 
 <script setup>
@@ -62,25 +59,28 @@ const props = defineProps({
 // Unsent Reports" button's visibility) actually follows.
 const currentInstanceRole = ref(props.instanceRole);
 
-const aggregationSettings = ref(null); // { instance_role, instance_identifier, central_ingest_url, shared_secret_set }
-const aggregationForm = ref({ instance_role: 'remote', instance_identifier: '', central_ingest_url: '', shared_secret: '' });
+const aggregationSettings = ref(null); // { instance_role, feedback_trust_id }
+const aggregationForm = ref({ instance_role: 'remote', feedback_trust_id: '' });
+const peerTrusts = ref([]); // instances this one is paired with (Trust Console)
 const aggregationLoading = ref(true);
 const aggregationSaving = ref(false);
 const aggregationError = ref(null);
 const aggregationSaved = ref(false);
 
+function applySettings(data) {
+	aggregationSettings.value = data.settings;
+	aggregationForm.value = {
+		instance_role: data.settings.instance_role,
+		feedback_trust_id: data.settings.feedback_trust_id || '',
+	};
+	peerTrusts.value = data.trusts || [];
+	currentInstanceRole.value = data.settings.instance_role;
+}
+
 async function fetchAggregationSettings() {
 	aggregationLoading.value = true;
 	try {
-		const response = await axios.get('/json/feedback-aggregation-settings');
-		aggregationSettings.value = response.data.settings;
-		aggregationForm.value = {
-			instance_role: response.data.settings.instance_role,
-			instance_identifier: response.data.settings.instance_identifier || '',
-			central_ingest_url: response.data.settings.central_ingest_url || '',
-			shared_secret: '',
-		};
-		currentInstanceRole.value = response.data.settings.instance_role;
+		applySettings((await axios.get('/json/feedback-aggregation-settings')).data);
 	} finally {
 		aggregationLoading.value = false;
 	}
@@ -93,50 +93,15 @@ async function saveAggregationSettings() {
 	try {
 		const response = await axios.put('/json/feedback-aggregation-settings', {
 			instance_role: aggregationForm.value.instance_role,
-			instance_identifier: aggregationForm.value.instance_identifier.trim() || null,
-			central_ingest_url: aggregationForm.value.central_ingest_url.trim() || null,
-			shared_secret: aggregationForm.value.shared_secret.trim() || null,
+			feedback_trust_id: aggregationForm.value.feedback_trust_id || null,
 		});
-		applySavedSettings(response.data.settings);
+		applySettings(response.data);
 		aggregationSaved.value = true;
-		if (response.data.settings.instance_role === 'remote') await testConnection();
+		if (response.data.settings.instance_role === 'remote' && response.data.settings.feedback_trust_id) await testConnection();
 	} catch (e) {
 		aggregationError.value = e.response?.data?.message || 'Could not save these settings.';
 	} finally {
 		aggregationSaving.value = false;
-	}
-}
-
-function applySavedSettings(settings) {
-	aggregationSettings.value = settings;
-	aggregationForm.value.instance_role = settings.instance_role;
-	aggregationForm.value.central_ingest_url = settings.central_ingest_url || '';
-	aggregationForm.value.shared_secret = '';
-	currentInstanceRole.value = settings.instance_role;
-}
-
-// Remote: paste the code copied from the central instance — sets the
-// address and secret in one step, then checks them.
-const pastedCode = ref('');
-const connecting = ref(false);
-const connectError = ref(null);
-
-async function connectWithCode() {
-	connecting.value = true;
-	connectError.value = null;
-	connectionTest.value = null;
-	try {
-		const response = await axios.put('/json/feedback-aggregation-settings', {
-			connection_code: pastedCode.value.trim(),
-			instance_identifier: aggregationForm.value.instance_identifier.trim() || null,
-		});
-		applySavedSettings(response.data.settings);
-		pastedCode.value = '';
-		await testConnection();
-	} catch (e) {
-		connectError.value = e.response?.data?.message || 'Could not save the connection code.';
-	} finally {
-		connecting.value = false;
 	}
 }
 
@@ -153,39 +118,6 @@ async function testConnection() {
 		connectionTest.value = { ok: false, message: e.response?.data?.message || 'Could not run the test.' };
 	} finally {
 		testingConnection.value = false;
-	}
-}
-
-// Central: the code remote instances paste. Fetched only on request, since
-// it carries the shared secret.
-const centralCode = ref(null);
-const loadingCode = ref(false);
-const codeError = ref(null);
-const codeCopied = ref(false);
-const confirmingNewSecret = ref(false);
-
-async function fetchConnectionCode(newSecret = false) {
-	loadingCode.value = true;
-	codeError.value = null;
-	codeCopied.value = false;
-	confirmingNewSecret.value = false;
-	try {
-		const response = await axios.post('/json/feedback-aggregation-settings/connection-code', { new_secret: newSecret });
-		centralCode.value = response.data.code;
-		aggregationSettings.value = response.data.settings;
-	} catch (e) {
-		codeError.value = e.response?.data?.message || 'Could not make a connection code.';
-	} finally {
-		loadingCode.value = false;
-	}
-}
-
-async function copyConnectionCode() {
-	try {
-		await navigator.clipboard.writeText(centralCode.value);
-		codeCopied.value = true;
-	} catch {
-		codeError.value = 'Copying isn\'t allowed here — select the code and copy it by hand.';
 	}
 }
 
@@ -374,7 +306,7 @@ async function confirmCompose() {
 				<div class="mt-4 space-y-4">
 					<p class="text-sm text-gray-500">
 						Every instance's own feedback flow works standalone regardless of these — only set
-						these up if this instance should push its own reports to a central triage instance,
+						these up if this instance should send its own reports to a central triage instance,
 						or should <em>be</em> that central instance.
 					</p>
 
@@ -384,99 +316,29 @@ async function confirmCompose() {
 						<label class="block text-sm">
 							<span class="text-gray-700">Role</span>
 							<select v-model="aggregationForm.instance_role" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-								<option value="remote">Remote — pushes its reports to a central instance</option>
-								<option value="central">Central — receives pushes from remote instances</option>
+								<option value="remote">Remote — sends its reports to a central instance</option>
+								<option value="central">Central — receives reports from remote instances</option>
 							</select>
 						</label>
 
-						<div v-if="aggregationForm.instance_role === 'central' && aggregationSettings?.instance_role === 'central'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
-							<p class="font-medium text-gray-700">Connection code</p>
-							<p class="text-gray-500">
-								Paste this code on each remote instance's Feedback page to connect it here. It contains
-								the shared secret, so share it like a password.
-							</p>
-							<div v-if="centralCode" class="space-y-2">
-								<textarea readonly rows="3" :value="centralCode" class="block w-full border-gray-300 rounded-md shadow-sm font-mono text-xs" @focus="$event.target.select()"></textarea>
-								<div class="flex items-center gap-3 flex-wrap">
-									<button type="button" class="px-3 py-1.5 bg-blue-600 text-white rounded-md" @click="copyConnectionCode">Copy</button>
-									<span v-if="codeCopied" class="text-green-600">Copied.</span>
-									<template v-if="!confirmingNewSecret">
-										<button type="button" class="text-xs text-gray-500 underline" @click="confirmingNewSecret = true">Make a new code…</button>
-									</template>
-									<template v-else>
-										<span class="text-xs text-red-700">A new code disconnects every remote using the old one until it's pasted there.</span>
-										<button type="button" class="text-xs text-red-700 font-medium underline" :disabled="loadingCode" @click="fetchConnectionCode(true)">Make new code</button>
-										<button type="button" class="text-xs text-gray-500 underline" @click="confirmingNewSecret = false">Cancel</button>
-									</template>
-								</div>
-							</div>
-							<button v-else type="button" class="px-3 py-1.5 bg-blue-600 text-white rounded-md disabled:bg-gray-400" :disabled="loadingCode" @click="fetchConnectionCode()">
-								{{ loadingCode ? 'Loading…' : (aggregationSettings?.shared_secret_set ? 'Show Connection Code' : 'Create Connection Code') }}
-							</button>
-							<p v-if="codeError" class="text-red-600">{{ codeError }}</p>
-						</div>
-						<p v-else-if="aggregationForm.instance_role === 'central'" class="text-sm text-gray-500">
-							Save to make this instance Central; its connection code for remote instances appears here after.
+						<p v-if="aggregationForm.instance_role === 'central'" class="text-sm text-gray-600">
+							Remote instances connect to this one from the <a href="/setup/trust" class="underline text-blue-700">Trust Console</a>:
+							create a connection code there that allows "Sending feedback", and give it to the remote's administrator.
 						</p>
 
 						<div v-if="aggregationForm.instance_role === 'remote'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
 							<label class="block">
-								<span class="font-medium text-gray-700">Connection code</span>
-								<span class="block text-gray-500">Copy it from the central instance's Feedback page and paste it here.</span>
-								<textarea v-model="pastedCode" rows="2" placeholder="RIFEED1-…" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm font-mono text-xs"></textarea>
+								<span class="font-medium text-gray-700">Send reports to</span>
+								<select v-model="aggregationForm.feedback_trust_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+									<option value="">Choose an instance…</option>
+									<option v-for="t in peerTrusts" :key="t.id" :value="t.id">{{ t.name }} ({{ t.base_url }}){{ t.may_send_feedback ? '' : ' — has not allowed feedback yet' }}</option>
+								</select>
 							</label>
-							<div class="flex items-center gap-3">
-								<button type="button" class="px-3 py-1.5 bg-blue-600 text-white rounded-md disabled:bg-gray-400" :disabled="connecting || !pastedCode.trim()" @click="connectWithCode">
-									{{ connecting ? 'Connecting…' : 'Connect' }}
-								</button>
-								<span v-if="connectError" class="text-red-600">{{ connectError }}</span>
-							</div>
+							<p class="text-gray-500">
+								Only instances this one is paired with appear here. Pair with the central instance in the
+								<a href="/setup/trust" class="underline text-blue-700">Trust Console</a> by pasting the connection code its administrator gives you.
+							</p>
 						</div>
-
-						<label class="block text-sm">
-							<span class="text-gray-700">Instance identifier (optional)</span>
-							<input
-								type="text"
-								v-model="aggregationForm.instance_identifier"
-								placeholder="Defaults to this instance's own URL host"
-								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-							/>
-						</label>
-
-						<p v-if="aggregationForm.instance_role === 'remote'" class="text-sm text-gray-500">Or enter the details yourself:</p>
-
-						<label v-if="aggregationForm.instance_role === 'remote'" class="block text-sm">
-							<span class="text-gray-700">Central instance address</span>
-							<input
-								type="text"
-								v-model="aggregationForm.central_ingest_url"
-								placeholder="demo.reliefinventory.app"
-								autocapitalize="off"
-								spellcheck="false"
-								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-							/>
-							<span class="text-xs text-gray-400">
-								The address you'd type to open it. https:// and /json/feedback/ingest are added for you.
-							</span>
-						</label>
-
-						<label class="block text-sm">
-							<span class="text-gray-700">
-								Shared secret
-								<span v-if="aggregationSettings?.shared_secret_set" class="text-green-600">(currently set)</span>
-								<span v-else class="text-gray-400">(not set)</span>
-							</span>
-							<input
-								type="password"
-								v-model="aggregationForm.shared_secret"
-								placeholder="Leave blank to keep the current secret"
-								autocomplete="new-password"
-								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-							/>
-							<span class="text-xs text-gray-400">
-								Both instances in a remote/central pair must be configured with the same secret.
-							</span>
-						</label>
 
 						<div class="flex items-center gap-3 flex-wrap">
 							<button
@@ -487,7 +349,7 @@ async function confirmCompose() {
 								{{ aggregationSaving ? 'Saving…' : 'Save Settings' }}
 							</button>
 							<button
-								v-if="aggregationSettings?.instance_role === 'remote'"
+								v-if="aggregationSettings?.instance_role === 'remote' && aggregationSettings?.feedback_trust_id"
 								type="button"
 								class="px-4 py-2 border border-gray-300 text-sm rounded-md disabled:text-gray-400"
 								:disabled="testingConnection"

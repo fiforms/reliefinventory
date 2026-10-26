@@ -1,8 +1,10 @@
 <?php
 
+use App\Http\Controllers\FederationController;
 use App\Models\Category;
 use App\Models\County;
-use App\Models\DevicePairingCode;
+use App\Models\FeedbackAggregationSetting;
+use App\Models\FeedbackReport;
 use App\Models\Item;
 use App\Models\ItemType;
 use App\Models\KioskLocation;
@@ -14,8 +16,16 @@ use App\Models\Printer;
 use App\Models\SetupState;
 use App\Models\TrainingProduct;
 use App\Models\Transaction;
+use App\Models\Trust;
+use App\Models\TrustPairingCode;
 use App\Models\User;
+use App\Services\Federation\InstanceIdentity;
+use App\Services\Federation\RequestSigner;
+use App\Services\Federation\TrustService;
+use Illuminate\Http\Client\Request as HttpRequest;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Str;
 use Tests\RefreshDatabaseFromSnapshot;
 use Tests\TestCase;
 
@@ -113,22 +123,35 @@ function makePrinter(ManagedDevice $device, string $queue, string $media = 'labe
     return $printer;
 }
 
-/** A device paired through the real API; returns [device, bearer token]. Its Function is left unset unless given. */
+/**
+ * A client app paired through the real API (a `client` code, as the Devices page makes). Returns
+ * [ManagedDevice, session token, pair response, peer] — the session token is what a signed client holds
+ * after its first call, so `->withToken($token)` stands in for "an authenticated device".
+ */
+function pairClient(string $uuid = 'ps-1', string $name = 'Pi One', ?string $code = null, string $kind = 'print_client', array $body = []): array
+{
+    $peer = fedPeer($kind);
+    $peer['uuid'] = $uuid;
+    $peer['name'] = $name;
+    if ($code === null) {
+        $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
+        [$code] = TrustService::createPairingCode('client', ['print.share'], null, $location->id, null);
+    }
+    $response = test()->postJson('/api/federation/v1/pair', $body + fedPairBody($peer, $code))->assertCreated();
+    $trust = Trust::where('peer_uuid', $uuid)->first();
+
+    return [ManagedDevice::where('device_uuid', $uuid)->first(), TrustService::issueSession($trust)[0], $response, $peer];
+}
+
+/** A print server paired through the real API; returns [device, session token]. Its Function is left unset unless given. */
 function pairPrintServer(string $uuid = 'ps-1', ?string $function = null): array
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $code = DevicePairingCode::create([
-        'code' => (string) random_int(100000, 999999), 'kiosk_location_id' => $location->id, 'expires_at' => now()->addMinutes(5),
-    ]);
-    $response = test()->postJson('/api/devices/pair', [
-        'code' => $code->code, 'device_name' => "Server {$uuid}", 'device_uuid' => $uuid,
-    ])->assertCreated();
-    $device = ManagedDevice::where('device_uuid', $uuid)->first();
+    [$device, $token] = pairClient($uuid, "Server {$uuid}");
     if ($function) {
         $device->forceFill(['kiosk_function' => $function])->save();
     }
 
-    return [$device, $response->json('token')];
+    return [$device, $token];
 }
 
 // PDF inspection needs poppler-utils (pdfinfo/pdftotext); skip rather than fail where it's absent.
@@ -219,4 +242,155 @@ function scannedProducts(int $products = 15, int $each = 8): array
     }
 
     return $items;
+}
+
+// ---- federation: shared by the Federation*Test files -------------------------------------------
+
+/** A fake peer: its own key pair and uuid. */
+function fedPeer(string $kind = 'instance'): array
+{
+    $pair = sodium_crypto_sign_keypair();
+
+    return [
+        'kind' => $kind,
+        'uuid' => (string) Str::uuid(),
+        'name' => 'Peer '.substr((string) Str::uuid(), 0, 4),
+        'public_key' => RequestSigner::b64(sodium_crypto_sign_publickey($pair)),
+        'secret' => RequestSigner::b64(sodium_crypto_sign_secretkey($pair)),
+    ];
+}
+
+function fedPairBody(array $peer, string $code, ?string $signAs = null): array
+{
+    $message = FederationController::pairingMessage($code, $peer['public_key'], $peer['uuid']);
+
+    return [
+        'code' => $code, 'kind' => $peer['kind'], 'uuid' => $peer['uuid'], 'name' => $peer['name'],
+        'public_key' => $peer['public_key'],
+        'base_url' => $peer['kind'] === 'instance' ? 'https://peer.example.test' : null,
+        'signature' => RequestSigner::sign($message, $signAs ?? $peer['secret']),
+    ];
+}
+
+/** An approved trust for $peer holding $grants, made through the real enrollment path. */
+function fedEnroll(array $peer, array $grants = [], ?int $locationId = null): Trust
+{
+    [$code] = TrustService::createPairingCode($peer['kind'], $grants, null, $locationId, null);
+
+    return TrustService::enroll($code, $peer);
+}
+
+function fedHeaders(array $peer, string $method, string $uri, string $body = '', ?int $ts = null, ?string $nonce = null): array
+{
+    $ts ??= time();
+    $nonce ??= bin2hex(random_bytes(8));
+    $host = parse_url(config('app.url'), PHP_URL_HOST).(($p = parse_url(config('app.url'), PHP_URL_PORT)) ? ':'.$p : '');
+    $canonical = RequestSigner::canonical($method, $uri, $host, $ts, $nonce, $body);
+
+    return [
+        'X-RI-Trust' => $peer['uuid'], 'X-RI-Timestamp' => (string) $ts, 'X-RI-Nonce' => $nonce,
+        'X-RI-Signature' => RequestSigner::sign($canonical, $peer['secret']),
+    ];
+}
+
+/** Sends exactly the bytes that were signed (getJson would add a "[]" body to a GET). */
+function fedCall($test, array $peer, string $method, string $uri, string $body = '', ?int $ts = null, ?string $nonce = null, ?string $signedUri = null)
+{
+    $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+    foreach (fedHeaders($peer, $method, $signedUri ?? $uri, $body, $ts, $nonce) as $k => $v) {
+        $server['HTTP_'.strtoupper(str_replace('-', '_', $k))] = $v;
+    }
+
+    return $test->call($method, $uri, [], [], [], $server, $body);
+}
+
+/** A fake remote instance "A" reachable over Http::fake, holding its own key. */
+function fakeRemote(array $over = []): array
+{
+    $pair = sodium_crypto_sign_keypair();
+    $remote = [
+        'uuid' => (string) Str::uuid(), 'name' => 'Site A', 'origin' => 'https://a.example.test',
+        'public_key' => RequestSigner::b64(sodium_crypto_sign_publickey($pair)),
+        'secret' => RequestSigner::b64(sodium_crypto_sign_secretkey($pair)),
+        'grants_for_us' => ['feedback.send'], 'pair_status' => 201, 'seen' => [],
+    ];
+    $remote = array_merge($remote, $over);
+    $remote['doc'] = ['protocol' => 1, 'uuid' => $remote['uuid'], 'name' => $remote['name'], 'url' => $remote['origin'], 'public_key' => $remote['public_key']];
+
+    return $remote;
+}
+
+function serveRemote(array &$remote): void
+{
+    Http::fake(['a.example.test/*' => function (HttpRequest $request) use (&$remote) {
+        $path = parse_url($request->url(), PHP_URL_PATH);
+        $remote['seen'][] = [$request->method(), $path, $request->headers()];
+        if ($path === '/.well-known/ri-instance.json') {
+            return Http::response($remote['doc']);
+        }
+        if ($path === '/api/federation/v1/pair') {
+            $body = $request->data();
+            $okProof = RequestSigner::verify(
+                "ri-pair-v1\n".TrustPairingCode::normalize($body['code'])."\n".$body['public_key']."\n".$body['uuid'], $body['signature'], $body['public_key'],
+            );
+            $remote['pair_body'] = $body + ['proof_ok' => $okProof];
+
+            return $remote['pair_status'] === 201
+                ? Http::response(['server' => $remote['pair_identity'] ?? $remote['doc'], 'permissions' => $remote['grants_for_us']], 201)
+                : Http::response(['message' => 'Invalid or expired code.'], $remote['pair_status']);
+        }
+        // session + grants: they must be signed by *our* key for this host
+        $signed = $request->hasHeader('X-RI-Signature');
+        if ($signed) {
+            $canonical = RequestSigner::canonical(
+                $request->method(), $path, 'a.example.test', (int) $request->header('X-RI-Timestamp')[0], $request->header('X-RI-Nonce')[0], $request->body(),
+            );
+            if (! RequestSigner::verify($canonical, $request->header('X-RI-Signature')[0], InstanceIdentity::current()->public_key)) {
+                return Http::response(['message' => 'Unauthenticated.'], 401);
+            }
+        } elseif (($request->header('Authorization')[0] ?? '') !== 'Bearer RIS-fake') {
+            return Http::response(['message' => 'Unauthenticated.'], 401);
+        }
+        if ($path === '/api/federation/v1/session') {
+            return Http::response(['session_token' => 'RIS-fake', 'expires_in' => 3600]);
+        }
+        if ($path === '/api/federation/v1/feedback') {
+            $remote['feedback_body'] = $request->data();
+            if (($remote['feedback_status'] ?? 200) !== 200) {
+                return Http::response(['message' => 'refused'], $remote['feedback_status']);
+            }
+
+            $uuids = collect($request->data()['reports'] ?? [])->pluck('uuid');
+            if (isset($remote['feedback_ack_only'])) {
+                $uuids = $uuids->intersect($remote['feedback_ack_only']);
+            }
+
+            return Http::response(['received' => $uuids->values()->all()]);
+        }
+
+        return Http::response(['permissions' => $remote['grants_for_us']]);
+    }]);
+}
+
+/** A report as a remote sends it to central. */
+function incomingReport(array $over = []): array
+{
+    return $over + ['uuid' => (string) Str::uuid(), 'type' => 'bug', 'message' => 'It broke.', 'page_url' => '/items', 'created_at' => '2026-10-01T12:00:00Z'];
+}
+
+/** A feedback report created here, not yet sent anywhere. */
+function localReport(string $message = 'Local report', array $over = []): FeedbackReport
+{
+    return FeedbackReport::create($over + ['type' => 'bug', 'message' => $message, 'page_url' => '/x']);
+}
+
+/** This instance as a remote that trusts a fake central. $remote is filled in by reference; returns the trust. */
+function remoteWithCentral(&$remote, array $over = []): Trust
+{
+    $remote = fakeRemote(array_merge(['name' => 'Central', 'grants_for_us' => ['feedback.send']], $over));
+    serveRemote($remote);
+    $trust = TrustService::enrollInvited($remote['doc'], $remote['origin'], [], ['feedback.send'], null);
+    FeedbackAggregationSetting::current()->update(['instance_role' => 'remote', 'feedback_trust_id' => $trust->id]);
+
+    return $trust;
 }

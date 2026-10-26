@@ -17,7 +17,7 @@ Status (2026-10-18, branch `print-queue`):
   real app and Reverb on Linux; Windows and macOS not yet run on real machines. See `print-client/README.md`.
 - **Not built:** the Pi's on-device Printers settings page, and getting the CUPS
   admin UI reachable from the settings shell. Originally planned 2026-10-08; depends on the R
-  Station fleet pairing/heartbeat in `app/Http/Controllers/DevicePairController.php` /
+  Station fleet pairing/heartbeat in `app/Http/Controllers/FederationController.php` /
   `DeviceHeartbeatController.php`, `routes/api.php`, `/setup/devices`, and
   `rstation/platform/docs/DEVICE_CONTRACT.md`.
 
@@ -26,7 +26,7 @@ document a client implementer needs and the client-side behaviour rules.
 
 A print server is any paired device (`kiosk_function = print_station`) — an R Station Pi **or** a
 PC/Mac running a software print server; the protocol below is client-agnostic. Both pair with a
-normal pairing code and report `print_platform` (`rstation|windows|macos|linux`) in the heartbeat. A paired
+pairing code (by key — see `FEDERATION_AUTH.md`) and report `print_platform` (`rstation|windows|macos|linux`) in the heartbeat. A paired
 device whose Function is still unset becomes `print_station` automatically the first time it reports
 print queues (an admin-chosen Function is never overridden).
 
@@ -73,7 +73,7 @@ off. See "Realtime wake-ups".
   cancel. Gate with its own permission key (add to `PermissionsSeeder`), separate from
   `manage-devices`.
 
-### Device API (extends the contract; namespaced under `/api/devices`, same bearer token)
+### Device API (extends the contract; namespaced under `/api/devices`, authenticated as in `FEDERATION_AUTH.md`)
 
 - Heartbeat gains namespaced extension keys: the request reports the CUPS printers it can see
   (`print_printers`: name, state); the response can carry per-device print settings.
@@ -182,8 +182,8 @@ audio, and we don't reimplement driver/PPD selection.
 Machine-readable form: [print-extension.openapi.yaml](print-extension.openapi.yaml) (checked against the
 server by `tests/Feature/PrintExtensionOpenApiTest.php`); the prose below is normative for behaviour.
 
-All under `/api/devices`, `Authorization: Bearer <device token>` (the same token as the
-heartbeat), throttled to 240 requests/minute per IP. Anything about another device's job is a
+All under `/api/devices`, authenticated by a signed request or the session token it earns
+(`FEDERATION_AUTH.md`; the same as the heartbeat), and needing the `print.share` grant, throttled to 240 requests/minute per IP. Anything about another device's job is a
 `404`, never `403`.
 
 **Heartbeat** — `POST /heartbeat`. Print servers additionally send these keys (namespaced `print_*`, per
@@ -240,8 +240,8 @@ Connect a WebSocket speaking the Pusher protocol to
 `{"event":"pusher:subscribe","data":{"channel":"<channel>"}}`. The channel is **public** (no
 signing handshake): its unguessable name is the only secret, unique to this device, rotated on
 re-pair and cleared on revoke. When the `print-job.available` event arrives (empty payload), run
-the polling loop immediately. It means only "poll now" — claiming and downloading still need the
-bearer token. Handle `pusher:ping` with `pusher:pong`, reconnect with backoff, and re-read
+the polling loop immediately. It means only "poll now" — claiming and downloading still need
+the device's authentication. Handle `pusher:ping` with `pusher:pong`, reconnect with backoff, and re-read
 `print_realtime` from each heartbeat response (the channel can change). Any Pusher client library
 works; so does a few lines of raw WebSocket (verified against a live Reverb with plain Node).
 
@@ -251,7 +251,7 @@ works; so does a few lines of raw WebSocket (verified against a live Reverb with
    untyped `printers` rows; staff name, site, type and switch them on at `/setup/devices`; a
    vanished queue keeps its row and reads as unavailable.
 2. ~~**Workspace model**~~ — *decided:* `KioskLocation` is the site; no finer "workspace".
-3. ~~**Trust**~~ — *decided:* payloads need the claiming device's bearer token (no public URLs);
+3. ~~**Trust**~~ — *decided:* payloads need the claiming device's authentication (no public URLs);
    the realtime wake channel carries no data.
 4. **Failure UX:** *partly built:* reported failures stay visible (not auto-retried) in
    `/print-queue`, the requester gets a "failed: …" notice when realtime is on, and staff can

@@ -6,6 +6,7 @@ use App\Models\SetupState;
 use App\Models\User;
 use App\Services\BackupCompatibility;
 use App\Services\BackupService;
+use App\Services\Federation\InstanceIdentity;
 use App\Services\FirstRunService;
 use App\Services\RestoreService;
 use Illuminate\Database\Eloquent\Model;
@@ -303,13 +304,14 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     $GLOBALS['restore_test_dirtied_db'] = true;
     Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
 
-    // The "old instance": an administrator, a photo, a secret encrypted under some other key.
+    // The "old instance": an administrator, a photo, a federation key encrypted under some other key.
     $admin = User::factory()->create(['email' => 'old-admin@example.com']);
     DB::table('people_roles')->insert(['person_id' => $admin->id, 'role_id' => 15, 'created_at' => now(), 'updated_at' => now()]);
-    // (the migration already created the singleton row)
-    DB::table('feedback_aggregation_settings')->where('id', 1)->update([
-        'instance_identifier' => 'old-box',
-        'shared_secret' => (new Encrypter(random_bytes(32), 'aes-256-cbc'))->encryptString('s3cret'),
+    // This instance's federation identity, its private key encrypted under some other APP_KEY.
+    DB::table('federation_identities')->insert([
+        'uuid' => '11111111-2222-4333-8444-555555555555', 'name' => 'old-box', 'public_key' => str_repeat('A', 43),
+        'private_key' => (new Encrypter(random_bytes(32), 'aes-256-cbc'))->encryptString('not-a-real-key'),
+        'created_at' => now(), 'updated_at' => now(),
     ]);
     mkdir($this->tmp.'/private/receiving-photos', 0777, true);
     file_put_contents($this->tmp.'/private/receiving-photos/p.jpg', 'photo-bytes');
@@ -332,12 +334,13 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
 
     $status = app(RestoreService::class)->status();
     expect($status['state'])->toBe('complete', $status['error'] ?? '')
-        ->and($status['blanked'])->toBe(['Centralized feedback shared secret'])
+        ->and($status['blanked'])->toBe(['Federation identity key (peers must re-approve a new one)'])
         ->and($status['admin_missing'])->toBeFalse()
         ->and(User::where('email', 'old-admin@example.com')->exists())->toBeTrue()
         ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('photo-bytes')
-        ->and(DB::table('feedback_aggregation_settings')->value('instance_identifier'))->toBe('old-box')
-        ->and(DB::table('feedback_aggregation_settings')->value('shared_secret'))->toBeNull()
+        ->and(DB::table('federation_identities')->value('name'))->toBe('old-box')
+        ->and(DB::table('federation_identities')->value('private_key'))->toBeNull()
+        ->and(InstanceIdentity::isLost())->toBeTrue()
         ->and(DB::table('backups')->count())->toBe(0)
         ->and(SetupState::current()->completed_at)->not->toBeNull();
 

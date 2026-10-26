@@ -2,18 +2,20 @@
 //! printing backend. Mirrors the conformance checklist in `rstation/PRINT_CLIENT_SPEC.md` §5.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, AtomicU16, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU16, AtomicU32, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use axum::body::Bytes;
 use axum::extract::{Path, State};
-use axum::http::{HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use ri_print_core::backend::*;
 use ri_print_core::config::Config;
+use ri_print_core::identity;
 use ri_print_core::ledger::{JobState, Ledger};
 use ri_print_core::types::{PrinterInfo, PrinterState};
 use ri_print_core::{Engine, Options};
@@ -39,12 +41,20 @@ struct Mock {
     revoked: AtomicBool,
     result_status: AtomicU16, // 0 = normal (200)
     payload_calls: AtomicUsize,
+    /// The public key the paired client submitted; signed session requests are checked against it.
+    public_key: Mutex<Option<String>>,
+    /// Bumping this invalidates the session token handed out so far (the server restarted, or it expired).
+    session_gen: AtomicU32,
+    sessions: AtomicUsize,
+    /// How far this "server's" clock is from the client's, in seconds.
+    server_clock_offset: AtomicI64,
 }
 
 type S = Arc<Mock>;
 
 fn authed(m: &Mock, h: &HeaderMap) -> Result<(), StatusCode> {
-    let ok = h.get("authorization").and_then(|v| v.to_str().ok()) == Some("Bearer tok-123");
+    let expected = format!("Bearer RIS-{}", m.session_gen.load(Ordering::Relaxed));
+    let ok = h.get("authorization").and_then(|v| v.to_str().ok()) == Some(expected.as_str());
     if ok && !m.revoked.load(Ordering::Relaxed) {
         Ok(())
     } else {
@@ -52,12 +62,49 @@ fn authed(m: &Mock, h: &HeaderMap) -> Result<(), StatusCode> {
     }
 }
 
-async fn pair(Json(b): Json<Value>) -> impl IntoResponse {
-    if b["code"] == "123456" && b["device_uuid"].is_string() && b["device_name"].is_string() {
-        (StatusCode::CREATED, Json(json!({"token":"tok-123","entity_name":"Test Org","device_id":1})))
+const PAIR_CODE: &str = "ABCDE-FGHJK";
+
+async fn pair(State(m): State<S>, Json(b): Json<Value>) -> impl IntoResponse {
+    let key = b["public_key"].as_str().unwrap_or("");
+    let uuid = b["uuid"].as_str().unwrap_or("");
+    let proof = identity::verify(
+        &identity::pairing_message(b["code"].as_str().unwrap_or(""), key, uuid),
+        b["signature"].as_str().unwrap_or(""),
+        key,
+    );
+    if b["code"] == PAIR_CODE && proof && !uuid.is_empty() && b["kind"] == "print_client" && b["name"].is_string() {
+        *m.public_key.lock().unwrap() = Some(key.to_string());
+        (
+            StatusCode::CREATED,
+            Json(json!({"server":{"public_key":"SERVER-KEY","uuid":"srv-1"},"entity_name":"Test Org","device_id":1})),
+        )
     } else {
         (StatusCode::UNPROCESSABLE_ENTITY, Json(json!({"message":"Invalid code"})))
     }
+}
+
+/// `POST /api/federation/v1/session`: checks the Ed25519 signature the way the Laravel `trust-auth` middleware does.
+async fn session(State(m): State<S>, uri: Uri, h: HeaderMap, body: Bytes) -> impl IntoResponse {
+    let hv = |k: &str| h.get(k).and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
+    if m.revoked.load(Ordering::Relaxed) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({}))).into_response();
+    }
+    let now = chrono::Utc::now().timestamp() + m.server_clock_offset.load(Ordering::Relaxed);
+    let ts: i64 = hv("x-ri-timestamp").parse().unwrap_or(0);
+    if (now - ts).abs() > 300 {
+        return (StatusCode::BAD_REQUEST, [("x-ri-server-time", now.to_string())], Json(json!({"message":"clock"})))
+            .into_response();
+    }
+    let Some(key) = m.public_key.lock().unwrap().clone() else {
+        return (StatusCode::UNAUTHORIZED, Json(json!({}))).into_response();
+    };
+    let target = uri.path_and_query().map(|p| p.as_str().to_string()).unwrap_or_default();
+    let canonical = identity::canonical("POST", &target, &hv("host"), ts, &hv("x-ri-nonce"), &body);
+    if hv("x-ri-trust").is_empty() || !identity::verify(&canonical, &hv("x-ri-signature"), &key) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({}))).into_response();
+    }
+    m.sessions.fetch_add(1, Ordering::Relaxed);
+    Json(json!({"session_token": format!("RIS-{}", m.session_gen.load(Ordering::Relaxed)), "expires_in": 3600})).into_response()
 }
 
 async fn heartbeat(State(m): State<S>, h: HeaderMap, Json(b): Json<Value>) -> impl IntoResponse {
@@ -123,7 +170,8 @@ async fn result(State(m): State<S>, h: HeaderMap, Path(id): Path<i64>, Json(b): 
 async fn start_server(m: S) -> String {
     let app = Router::new()
         .route("/up", get(|| async { "ok" }))
-        .route("/api/devices/pair", post(pair))
+        .route("/api/federation/v1/pair", post(pair))
+        .route("/api/federation/v1/session", post(session))
         .route("/api/devices/heartbeat", post(heartbeat))
         .route("/api/devices/print-jobs", get(list_jobs))
         .route("/api/devices/print-jobs/:id/claim", post(claim))
@@ -265,7 +313,7 @@ async fn rig_with(opts: Options, printers: Vec<PrinterInfo>, prefill: impl FnOnc
     let dir = tempfile::tempdir().unwrap();
     prefill(&Ledger::open(dir.path()).unwrap());
     let engine = Engine::new(dir.path().to_path_buf(), fake.clone(), opts).unwrap();
-    engine.pair(&url, "123456", Some("Test PC")).await.unwrap();
+    engine.pair(&url, PAIR_CODE, Some("Test PC")).await.unwrap();
     Rig { mock, fake, engine, dir, url }
 }
 
@@ -289,12 +337,16 @@ async fn pairing_persists_and_survives_restart() {
     let r = rig(vec![printer("Q")]).await;
     assert!(r.engine.status().paired);
     let cfg = Config::load_or_create(r.dir.path()).unwrap();
-    assert_eq!(cfg.token.as_deref(), Some("tok-123"));
+    assert!(cfg.paired);
+    assert_eq!(cfg.server_public_key.as_deref(), Some("SERVER-KEY"));
+    // the key the server was given is this machine's, and the seed itself never went anywhere
+    assert_eq!(r.mock.public_key.lock().unwrap().clone(), Some(cfg.identity().unwrap().public_key()));
     assert_eq!(cfg.server_url.as_deref(), Some(r.url.as_str()));
     // a "restart": a second engine on the same directory is already paired, with the same identity
     let again = Engine::new(r.dir.path().to_path_buf(), r.fake.clone(), fast()).unwrap();
     assert!(again.is_paired());
     assert_eq!(Config::load_or_create(r.dir.path()).unwrap().device_uuid, cfg.device_uuid);
+    assert_eq!(Config::load_or_create(r.dir.path()).unwrap().private_key, cfg.private_key);
 }
 
 #[tokio::test]
@@ -303,10 +355,10 @@ async fn pairing_errors_are_readable() {
     let url = start_server(mock).await;
     let dir = tempfile::tempdir().unwrap();
     let e = Engine::new(dir.path().to_path_buf(), Fake::new(vec![]), fast()).unwrap();
-    assert!(e.pair(&url, "12345", None).await.unwrap_err().contains("6 digits"));
-    assert!(e.pair(&url, "000000", None).await.unwrap_err().contains("invalid or has expired"));
-    assert!(e.pair("http://127.0.0.1:1", "123456", None).await.unwrap_err().contains("Can't reach"));
-    assert!(!e.is_paired(), "a failed pairing must leave no token behind");
+    assert!(e.pair(&url, "12345", None).await.unwrap_err().contains("10 letters and numbers"));
+    assert!(e.pair(&url, "ZZZZZ-ZZZZZ", None).await.unwrap_err().contains("invalid or has expired"));
+    assert!(e.pair("http://127.0.0.1:1", PAIR_CODE, None).await.unwrap_err().contains("Can't reach"));
+    assert!(!e.is_paired(), "a failed pairing must leave nothing behind");
 }
 
 // ---- heartbeat ------------------------------------------------------------------------------------
@@ -518,21 +570,61 @@ async fn an_interrupted_job_whose_claim_is_gone_is_dropped_quietly() {
 // ---- revocation ---------------------------------------------------------------------------------------------
 
 #[tokio::test]
-async fn a_401_wipes_the_token_and_returns_to_pairing() {
+async fn a_401_forgets_the_pairing_but_keeps_the_key_and_returns_to_pairing() {
     let r = rig(vec![printer("Q")]).await;
     let task = r.run();
     wait_for("first heartbeat", || !r.mock.heartbeats.lock().unwrap().is_empty()).await;
     r.mock.revoked.store(true, Ordering::Relaxed);
+    let key_before = Config::load_or_create(r.dir.path()).unwrap().private_key;
     wait_for("un-paired", || !r.engine.status().paired).await;
-    assert!(Config::load_or_create(r.dir.path()).unwrap().token.is_none());
+    let after = Config::load_or_create(r.dir.path()).unwrap();
+    assert!(!after.paired && after.server_public_key.is_none());
+    assert_eq!(after.private_key, key_before, "the key identifies this machine; only the pairing is forgotten");
     assert!(r.engine.status().notice.unwrap().contains("un-paired"));
     assert!(Config::load_or_create(r.dir.path()).unwrap().server_url.is_some(), "keep the address for re-pairing");
 
     // pairing again with a fresh code resumes service on the same running engine
     r.mock.revoked.store(false, Ordering::Relaxed);
     let before = r.mock.heartbeats.lock().unwrap().len();
-    r.engine.pair(&r.url, "123456", None).await.unwrap();
+    r.engine.pair(&r.url, PAIR_CODE, None).await.unwrap();
     wait_for("serving again", || r.mock.heartbeats.lock().unwrap().len() > before).await;
+    assert!(r.engine.status().paired);
+    task.abort();
+}
+
+// ---- signed requests and sessions ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn calls_ride_one_session_instead_of_signing_each_time() {
+    let r = rig(vec![printer("Q")]).await;
+    add_job(&r.mock, 1, "Q", 1);
+    add_job(&r.mock, 2, "Q", 1);
+    let task = r.run();
+    wait_for("both printed", || r.results().len() == 2).await;
+    assert!(!r.mock.heartbeats.lock().unwrap().is_empty());
+    assert_eq!(r.mock.sessions.load(Ordering::Relaxed), 1, "one signature earned the session every call then used");
+    task.abort();
+}
+
+#[tokio::test]
+async fn a_session_the_server_dropped_is_replaced_without_un_pairing() {
+    let r = rig(vec![printer("Q")]).await;
+    let task = r.run();
+    wait_for("first heartbeat", || !r.mock.heartbeats.lock().unwrap().is_empty()).await;
+    r.mock.session_gen.fetch_add(1, Ordering::Relaxed); // the old session token stops working
+    let before = r.mock.heartbeats.lock().unwrap().len();
+    wait_for("heartbeats continue", || r.mock.heartbeats.lock().unwrap().len() > before).await;
+    assert!(r.engine.status().paired, "an expired session is not a revocation");
+    assert_eq!(r.mock.sessions.load(Ordering::Relaxed), 2);
+    task.abort();
+}
+
+#[tokio::test]
+async fn a_clock_that_is_far_off_is_corrected_not_treated_as_a_revocation() {
+    let r = rig(vec![printer("Q")]).await;
+    r.mock.server_clock_offset.store(3 * 3600, Ordering::Relaxed);
+    let task = r.run();
+    wait_for("heartbeat despite the skew", || !r.mock.heartbeats.lock().unwrap().is_empty()).await;
     assert!(r.engine.status().paired);
     task.abort();
 }

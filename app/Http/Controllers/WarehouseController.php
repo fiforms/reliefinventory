@@ -2,8 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Warehouse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 
 class WarehouseController extends Controller
@@ -14,6 +14,7 @@ class WarehouseController extends Controller
     public function index()
     {
         $warehouses = Warehouse::with(['county', 'manager'])->get();
+
         return response()->json([
             'records' => $warehouses,
             'templates' => [
@@ -25,8 +26,8 @@ class WarehouseController extends Controller
                     'zip' => '',
                     'county_id' => null,
                     'manager_id' => null,
-                ]
-            ]
+                ],
+            ],
         ]);
     }
 
@@ -62,7 +63,7 @@ class WarehouseController extends Controller
         $warehouse = Warehouse::findOrFail($id);
 
         $validator = Validator::make($request->all(), [
-            'name' => 'required|string|max:255|unique:warehouses,name,' . $id,
+            'name' => 'required|string|max:255|unique:warehouses,name,'.$id,
             'address' => 'required|string|max:255',
             'city' => 'required|string|max:255',
             'state' => 'required|string|max:2',
@@ -93,7 +94,7 @@ class WarehouseController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting warehouse: ' . $e->getMessage()
+                'message' => 'Error deleting warehouse: '.$e->getMessage(),
             ], 500);
         }
     }

@@ -37,7 +37,7 @@ def test_an_unpaired_device_never_calls_the_server():
 
 
 @pytest.mark.parametrize("status, expected", [
-    (401, Revoked), (404, NotFound), (409, Conflict), (410, Gone), (429, RateLimited),
+    (401, Revoked), (404, NotFound), (409, Conflict), (410, Gone), (419, Transient), (429, RateLimited),
     (500, Transient), (503, Transient), (422, ApiError), (400, ApiError),
 ])
 def test_http_failures_map_to_one_exception_each_with_the_servers_message(status, expected):

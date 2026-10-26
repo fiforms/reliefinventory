@@ -112,7 +112,7 @@ async function toggleAutostart() {
             <h2>Connect this computer</h2>
             <p class="muted">
                 This makes the printers on this computer available to your Relief Inventory website. On the website, open
-                <strong>Setup → Devices → Pair a New Device or Print Server</strong> and enter the 6-digit code it shows.
+                <strong>Setup → Devices → Pair a New Device or Print Server</strong> and enter the code it shows (10 letters and numbers).
             </p>
             <p v-if="status.notice" class="banner warn" role="status">{{ status.notice }}</p>
             <form @submit.prevent="doPair">
@@ -121,16 +121,16 @@ async function toggleAutostart() {
                 </label>
                 <p v-if="typedInsecure" class="banner bad small" role="status">
                     This address isn't encrypted. Only use <strong>http://</strong> for a server on your own local
-                    network: anyone on the network path could intercept this computer's access token and the documents it prints.
+                    network: anyone on the network path could read the documents this computer prints, and see its session token while it lasts.
                 </p>
                 <label>Pairing code
-                    <input v-model="code" class="code" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" placeholder="123456" autocomplete="off" required />
+                    <input v-model="code" class="code" maxlength="11" placeholder="ABCDE-FGHJK" autocomplete="off" autocapitalize="characters" spellcheck="false" required />
                 </label>
                 <label><span>Name for this computer <span class="muted">(optional)</span></span>
                     <input v-model="deviceName" placeholder="Front Desk PC" autocomplete="off" />
                 </label>
                 <p v-if="pairError" class="banner bad" role="alert">{{ pairError }}</p>
-                <button class="primary" :disabled="pairing || code.length !== 6 || !serverUrl.trim()">
+                <button class="primary" :disabled="pairing || code.replace(/[^A-Za-z0-9]/g, '').length !== 10 || !serverUrl.trim()">
                     {{ pairing ? 'Pairing…' : 'Pair' }}
                 </button>
             </form>
@@ -257,7 +257,7 @@ form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
 input:not([type=checkbox]) { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 400; }
 input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-input.code { font-size: 22px; letter-spacing: 0.3em; text-align: center; font-variant-numeric: tabular-nums; }
+input.code { font-size: 22px; letter-spacing: 0.2em; text-align: center; text-transform: uppercase; font-variant-numeric: tabular-nums; }
 
 button { padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
