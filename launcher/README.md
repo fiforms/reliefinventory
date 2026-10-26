@@ -65,6 +65,19 @@ not been run (`.github/workflows/launcher-linux.yml`, manual, builds the `.deb` 
   takes a safety backup first and stops if that fails, then `backup:restore … --force --no-interaction`; the window's own
   confirmation replaces the command's prompt). The encryption key (`APP_KEY`) is not in a backup — see docker/README.md.
 
+## R Station SD card tab (`core/src/sdimage.rs`, `ui/src/RStationImage.vue`) — 2026-10-25
+A second tab downloads the R Station Raspberry Pi image and opens **Raspberry Pi Imager** with it chosen (`rpi-imager <file>`); the
+launcher never writes to a drive itself. **Chain of trust:** the only address built in is `MANIFEST_URL`, the `rstation-image.json` asset
+of the fixed `rstation-image` GitHub release; the manifest holds the image's size, SHA-256 and https URL(s) (Nextcloud), so a new image
+needs no launcher release — publish with `npm run publish:rstation-image -- <url> --name <file>`. The manifest is untrusted until
+`Manifest::parse` passes (safe file name, https only, 64-hex hash, sane size, `schema` ≤ 1; `min_launcher_version` gates old launchers).
+The download resumes a `.part` file with a Range request (hashing the existing bytes first), falls back to a full restart if the server
+ignores Range, stops at the manifest's size, discards on a hash mismatch and writes a `.verified` marker only after a match; old images
+are deleted. Files live in `<data dir>/images`; the last manifest is cached there for offline use. CLI: `ri-launcher image info|download|verify|write`;
+`RI_IMAGE_MANIFEST_URL` overrides the manifest address to test one before publishing. Browser mock states: `?mock=image-ready|image-offline|image-old|image-noimager|image-error`.
+Run for real on Linux (real manifest, interrupted + resumed 1.15 GB download, verified); the window tab and launching Imager from it
+have not been run on any OS, and nothing here has run on Windows or macOS (Imager's install paths there are unchecked).
+
 ## Linux (`linux.rs`)
 No VM and no admin step: `LinuxBackend` drives the host's own Docker with `docker compose`, the same stack, proxy, share link and
 backup tools. The launcher **never runs `sudo`**: if Docker is missing, not running, or the user isn't in the `docker` group, the

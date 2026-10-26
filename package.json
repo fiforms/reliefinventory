@@ -8,7 +8,10 @@
         "test:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/local-app/run-tests.sh -q",
         "package:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/local-app/package.sh",
         "build:print-client": "npm --prefix print-client install && npm --prefix print-client run tauri build",
+        "build:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri build",
+        "dev:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri dev",
         "build:offline-bundle": "rstation/build-offline-bundle.sh",
+        "publish:rstation-image": "node scripts/publish-rstation-image.mjs",
         "build:rstation": "npm run test:rstation && PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/image-builder/build.sh --virt"
     },
     "devDependencies": {

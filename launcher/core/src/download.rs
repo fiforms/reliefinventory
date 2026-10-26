@@ -14,7 +14,7 @@ pub trait Downloader: Send + Sync {
 
 pub struct HttpDownloader;
 
-async fn hash_file(path: &Path) -> std::io::Result<String> {
+pub(crate) async fn hash_file(path: &Path) -> std::io::Result<String> {
     let path = path.to_path_buf();
     tokio::task::spawn_blocking(move || {
         use std::io::Read;

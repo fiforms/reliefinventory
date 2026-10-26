@@ -3,6 +3,7 @@
 // add ?mock=notinstalled | installing | reboot | stopped | running | local | failed | nodocker to the URL, and
 // &os=macos or &os=linux to see that platform's wording.
 import { invoke } from '@tauri-apps/api/core'
+import { listen } from '@tauri-apps/api/event'
 import { open as openDialog } from '@tauri-apps/plugin-dialog'
 
 export const inTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
@@ -68,6 +69,43 @@ export const restartComputer = () => (inTauri ? invoke('restart_computer') : una
 export const getAutostart = () => call('get_autostart', {}, true)
 export const setAutostart = (enabled) => call('set_autostart', { enabled }, enabled)
 export const appVersion = () => call('app_version', {}, '0.1.0')
+
+// R Station SD card image tab. ?mock=image-ready | image-offline | image-old | image-noimager | image-error select a state.
+const imageMock = () => new URLSearchParams(location.search).get('mock') || ''
+const mockImage = () => {
+    const k = imageMock()
+    return {
+        manifest: {
+            schema: 1, version: '0.4.6_0.1.5', released: '2026-10-26T02:23:10Z', notes: 'Print server fixes and the new Settings page.',
+            filename: 'rstation-0.4.6_0.1.5.img.xz', size: 1233099372, sha256: '67391426a5cc1398386bd0607f7a7ff35eceb4baeb8ab29426a448385958d9a3',
+            urls: ['https://example.org/rstation.img.xz'], min_launcher_version: null,
+        },
+        downloaded: k === 'image-ready' || k === 'image-noimager' || (mockDl !== null && Date.now() - mockDl.t >= 6000),
+        path: '/home/me/.local/share/ReliefInventory/images/rstation-0.4.6_0.1.5.img.xz',
+        needs_newer_launcher: k === 'image-old',
+        imager_found: k !== 'image-noimager',
+        offline: k === 'image-offline',
+    }
+}
+let mockDl = null
+export const imageInfo = () => call('image_info', {}, () => (imageMock() === 'image-error' ? Promise.reject("Couldn't reach the image list: dns error") : mockImage()))
+export const imageDownloadStart = () => {
+    if (inTauri) return invoke('image_download_start')
+    mockDl = { running: true, done: 0, total: 1233099372, error: null, finished: false, t: Date.now() }
+    return Promise.resolve()
+}
+export const imageDownloadStatus = () => {
+    if (inTauri) return invoke('image_download_status')
+    if (!mockDl) return Promise.resolve({ running: false, done: 0, total: 0, error: null, finished: false })
+    const f = Math.min(1, (Date.now() - mockDl.t) / 6000)
+    return Promise.resolve({ ...mockDl, running: f < 1, done: Math.round(f * mockDl.total), finished: f >= 1 })
+}
+export const imageDownloadCancel = () => call('image_download_cancel', {}, () => { mockDl = null })
+export const imageWrite = () => (inTauri ? invoke('image_write') : unavailable('Opening Raspberry Pi Imager'))
+export const imageReveal = () => (inTauri ? invoke('image_reveal') : unavailable('Showing the file'))
+export const openToolPage = (which) => call('open_tool_page', { which }, () => window.open(which === 'etcher' ? 'https://etcher.balena.io/' : 'https://www.raspberrypi.com/software/', '_blank'))
+/** Errors raised from the tray menu (e.g. Quit couldn't shut the server down). */
+export const onTrayError = (fn) => (inTauri ? listen('tray-error', (e) => fn(String(e.payload))) : Promise.resolve(() => {}))
 export const pickBackupFile = async () => {
     if (!inTauri) return null
     const f = await openDialog({ multiple: false, filters: [{ name: 'Relief Inventory backup', extensions: ['zip'] }] })
