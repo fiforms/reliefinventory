@@ -302,5 +302,5 @@ h3 { font-weight: bold; margin: 0 0 6px 0; }
 .ml_cell.ml_start { background: #1e3a8a; border-color: #1e3a8a; color: #fff; font-weight: bold; }
 .ml_startinput { display: flex; align-items: center; gap: 6px; }
 .ml_startinput input { width: 5em; }
-.ml_preview { border: 1px dashed #999; border-radius: 4px; padding: 8px 10px; font-family: Arial, sans-serif; font-size: 0.85rem; line-height: 1.25; }
+.ml_preview { border: 1px dashed #999; border-radius: 4px; padding: 8px 10px; font-family: Arial, 'RI Emoji', sans-serif; font-size: 0.85rem; line-height: 1.25; }
 </style>
