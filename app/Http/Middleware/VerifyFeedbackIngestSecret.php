@@ -23,6 +23,10 @@ class VerifyFeedbackIngestSecret
 {
     public function handle(Request $request, Closure $next)
     {
+        if (! config('federation.legacy_feedback_secret')) {
+            return response()->json(['message' => 'This instance only accepts feedback from trusted instances (Trust Console).'], 410);
+        }
+
         $configured = (string) FeedbackAggregationSetting::current()->shared_secret;
         $provided = (string) $request->header('X-Feedback-Shared-Secret');
 

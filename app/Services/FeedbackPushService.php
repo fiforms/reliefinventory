@@ -8,6 +8,9 @@ namespace App\Services;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\OfflineModeSetting;
+use App\Models\Trust;
+use App\Services\Federation\FederationClient;
+use App\Services\Federation\TrustService;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Http;
@@ -98,11 +101,13 @@ class FeedbackPushService
      */
     public function testConnection(): array
     {
-        if (! $this->configured()) {
-            return ['ok' => false, 'message' => 'Enter the central instance\'s address and shared secret (or paste a connection code) and save first.'];
-        }
-
         $settings = FeedbackAggregationSetting::current();
+        if ($settings->feedback_trust_id !== null) {
+            return $this->testTrust($settings->feedbackTrust);
+        }
+        if (! $this->configured()) {
+            return ['ok' => false, 'message' => 'Choose the instance to send reports to, or enter the central instance\'s address and shared secret (or paste a connection code), and save first.'];
+        }
         $response = $this->send(['instance_identifier' => $this->instanceIdentifier(), 'ping' => true], $error);
         if ($error !== null) {
             return ['ok' => false, 'message' => $error];
@@ -153,6 +158,9 @@ class FeedbackPushService
     {
         $error = null;
         $settings = FeedbackAggregationSetting::current();
+        if ($settings->feedback_trust_id !== null) {
+            return $this->sendViaTrust($settings->feedbackTrust, $payload, $error);
+        }
         $url = $settings->ingestUrl();
 
         try {
@@ -179,6 +187,57 @@ class FeedbackPushService
         };
 
         return null;
+    }
+
+    /** Signed send to a trusted central instance (federation); same never-throws contract as the legacy path. */
+    private function sendViaTrust(?Trust $trust, array $payload, ?string &$error): ?Response
+    {
+        if (! $trust?->isApproved()) {
+            $error = 'The trust this instance sends feedback through is no longer approved. Pair again in the Trust Console.';
+
+            return null;
+        }
+
+        try {
+            $response = FederationClient::for($trust)->post('/feedback', $payload);
+        } catch (\Throwable $e) {
+            Log::warning('Feedback push to central failed: '.$e->getMessage());
+            $error = 'Could not reach '.$trust->name.': '.$e->getMessage();
+
+            return null;
+        }
+
+        if ($response->successful()) {
+            return $response;
+        }
+
+        Log::warning('Feedback push to central failed with status '.$response->status());
+        $error = match ($response->status()) {
+            401 => $trust->name.' no longer trusts this instance (revoked, or its key changed). Pair again in the Trust Console.',
+            403 => $trust->name.' has not allowed this instance to send feedback. Ask its administrator to grant "Sending feedback".',
+            400 => $trust->name.' says this server\'s clock is too far off. Check the date and time.',
+            503 => $trust->name.' is down for maintenance (HTTP 503). Try again later.',
+            default => $trust->name.' answered with HTTP '.$response->status().'.',
+        };
+
+        return null;
+    }
+
+    /** @return array{ok: bool, message: string} */
+    private function testTrust(?Trust $trust): array
+    {
+        if (! $trust?->isApproved()) {
+            return ['ok' => false, 'message' => 'That trust is not approved. Pair again in the Trust Console.'];
+        }
+        $granted = TrustService::refreshOutbound($trust);
+        if ($granted === null) {
+            return ['ok' => false, 'message' => 'Could not get an answer from '.$trust->name.'. Check its address, that it still trusts this instance, and this server\'s clock.'];
+        }
+        if (! in_array('feedback.send', $granted, true)) {
+            return ['ok' => false, 'message' => 'Connected to '.$trust->name.', but it has not allowed this instance to send feedback. Ask its administrator to grant "Sending feedback".'];
+        }
+
+        return ['ok' => true, 'message' => 'Connected to '.$trust->name.' — it accepts feedback from this instance.'];
     }
 
     private function serialize(FeedbackReport $report): array

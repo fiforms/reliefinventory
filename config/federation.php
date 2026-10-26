@@ -15,6 +15,10 @@ return [
     // Session token handed out after one signed call, so a client need not sign every request.
     'session_ttl_seconds' => 3600,
 
+    // The pre-federation shared-secret feedback ingest (POST /json/feedback/ingest) stays on for one release so
+    // a remote that has not been moved to a trust keeps reporting. Set false once every remote has moved.
+    'legacy_feedback_secret' => (bool) env('RI_FEDERATION_LEGACY_FEEDBACK', true),
+
     // Outbound calls to another instance's address. https only and no private/loopback hosts, unless an
     // operator turns these on for a LAN or development setup (two local instances).
     'allow_insecure_http' => (bool) env('RI_FEDERATION_ALLOW_HTTP', false),

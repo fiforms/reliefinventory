@@ -49,11 +49,28 @@ class FeedbackIngestController extends Controller
             'reports' => ['required', 'array', 'min:1'],
         ]);
 
-        $instanceIdentifier = $data['instance_identifier'];
+        return $this->ingest($data['reports'], $data['instance_identifier'], null);
+    }
+
+    /**
+     * Reports from a trusted instance (`trust-auth:feedback.send`). The source identity is the trust itself —
+     * the body's own claim about who it is plays no part — and is shown as the trust's address host.
+     */
+    public function storeFromTrust(Request $request)
+    {
+        $trust = $request->attributes->get('trust');
+        $data = $request->validate(['reports' => ['required', 'array', 'min:1']]);
+        $identifier = parse_url((string) $trust->base_url, PHP_URL_HOST) ?: $trust->name;
+
+        return $this->ingest($data['reports'], (string) $identifier, $trust->id);
+    }
+
+    private function ingest(array $reports, string $instanceIdentifier, ?int $trustId)
+    {
         $received = [];
 
-        DB::transaction(function () use ($data, $instanceIdentifier, &$received) {
-            foreach ($data['reports'] as $incoming) {
+        DB::transaction(function () use ($reports, $instanceIdentifier, $trustId, &$received) {
+            foreach ($reports as $incoming) {
                 $validator = Validator::make($incoming, [
                     'uuid' => ['required', 'uuid'],
                     'type' => ['required', Rule::in(['bug', 'feature'])],
@@ -77,7 +94,7 @@ class FeedbackIngestController extends Controller
                     continue;
                 }
 
-                $report = $this->upsert($instanceIdentifier, $validator->validated());
+                $report = $this->upsert($instanceIdentifier, $validator->validated(), $trustId);
                 $received[] = $report->uuid;
             }
         });
@@ -85,7 +102,7 @@ class FeedbackIngestController extends Controller
         return response()->json(['received' => $received]);
     }
 
-    private function upsert(string $instanceIdentifier, array $incoming): FeedbackReport
+    private function upsert(string $instanceIdentifier, array $incoming, ?int $trustId): FeedbackReport
     {
         $key = ['instance_identifier' => $instanceIdentifier, 'uuid' => $incoming['uuid']];
         $values = [
@@ -101,6 +118,7 @@ class FeedbackIngestController extends Controller
             'flagged_reason' => $incoming['flagged_reason'] ?? null,
             'reporter_name' => $incoming['reporter_name'] ?? null,
             'reporter_email' => $incoming['reporter_email'] ?? null,
+            'trust_id' => $trustId,
         ];
 
         try {

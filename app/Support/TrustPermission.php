@@ -65,7 +65,7 @@ enum TrustPermission: string
     /** Whether an endpoint enforcing this exists yet. */
     public function built(): bool
     {
-        return in_array($this, [self::PrintShare, self::FeedbackSend, self::FeedbackReceive], true);
+        return in_array($this, [self::PrintShare, self::FeedbackSend], true);
     }
 
     /** @return list<string> */

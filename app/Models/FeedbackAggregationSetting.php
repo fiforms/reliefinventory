@@ -30,6 +30,7 @@ class FeedbackAggregationSetting extends Model
         'instance_identifier',
         'central_ingest_url',
         'shared_secret',
+        'feedback_trust_id',
     ];
 
     protected $casts = [
@@ -47,9 +48,20 @@ class FeedbackAggregationSetting extends Model
      */
     public function pushConfigured(): bool
     {
-        return $this->instance_role === 'remote'
-            && $this->ingestUrl() !== null
-            && filled($this->shared_secret);
+        if ($this->instance_role !== 'remote') {
+            return false;
+        }
+        if ($this->feedback_trust_id !== null) {
+            return $this->feedbackTrust?->isApproved() === true;
+        }
+
+        return $this->ingestUrl() !== null && filled($this->shared_secret);
+    }
+
+    /** The instance trust reports are sent through; when set it replaces the legacy shared secret. */
+    public function feedbackTrust()
+    {
+        return $this->belongsTo(Trust::class, 'feedback_trust_id');
     }
 
     /**

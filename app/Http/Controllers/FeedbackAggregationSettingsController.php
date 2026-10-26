@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\FeedbackAggregationSetting;
+use App\Models\Trust;
 use App\Services\FeedbackPushService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -33,7 +34,18 @@ class FeedbackAggregationSettingsController extends Controller
                 // Never sent to the client — only whether one is set, so
                 // the UI can show "configured" without exposing the value.
                 'shared_secret_set' => filled($settings->shared_secret),
+                'feedback_trust_id' => $settings->feedback_trust_id,
+                // The shared-secret way is kept for one release; false once an operator has turned it off.
+                'legacy_enabled' => (bool) config('federation.legacy_feedback_secret'),
             ],
+            // Instances this one is paired with, for the "send reports to" choice.
+            'trusts' => Trust::where('kind', 'instance')->where('status', 'approved')->with('grants')->orderBy('name')->get()
+                ->map(fn (Trust $t) => [
+                    'id' => $t->id,
+                    'name' => $t->name,
+                    'base_url' => $t->base_url,
+                    'may_send_feedback' => $t->grants->where('direction', 'outbound')->where('permission', 'feedback.send')->isNotEmpty(),
+                ])->values(),
         ]);
     }
 
@@ -54,10 +66,14 @@ class FeedbackAggregationSettingsController extends Controller
             // there's nothing to "leave unchanged" by re-submitting it.
             'shared_secret' => 'nullable|string|max:255',
             'connection_code' => 'nullable|string|max:4096',
+            'feedback_trust_id' => ['nullable', Rule::exists('trusts', 'id')->where('kind', 'instance')->where('status', 'approved')],
         ]);
 
         $settings = FeedbackAggregationSetting::current();
         $settings->instance_identifier = $data['instance_identifier'] ?? null;
+        if (array_key_exists('feedback_trust_id', $data)) {
+            $settings->feedback_trust_id = $data['feedback_trust_id'];
+        }
 
         if (filled($data['connection_code'] ?? null)) {
             $parsed = FeedbackAggregationSetting::parseConnectionCode($data['connection_code']);
@@ -85,6 +101,7 @@ class FeedbackAggregationSettingsController extends Controller
         }
 
         $settings->instance_role = $data['instance_role'];
+        // Choosing a trust makes the address field moot; it stays untouched so the old setup can be returned to.
         $settings->central_ingest_url = $url;
         if (filled($data['shared_secret'] ?? null)) {
             $settings->shared_secret = $data['shared_secret'];
@@ -103,6 +120,9 @@ class FeedbackAggregationSettingsController extends Controller
     public function connectionCode(Request $request)
     {
         $request->validate(['new_secret' => 'nullable|boolean']);
+        if (! config('federation.legacy_feedback_secret')) {
+            return response()->json(['message' => 'Connection codes are retired. Connect remote instances from the Trust Console.'], 410);
+        }
 
         $settings = FeedbackAggregationSetting::current();
         if ($settings->instance_role !== 'central') {

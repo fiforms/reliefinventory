@@ -2,7 +2,6 @@
 
 use App\Models\KioskLocation;
 use App\Models\Trust;
-use App\Models\TrustPairingCode;
 use App\Services\Federation\DomainVerifier;
 use App\Services\Federation\InstanceIdentity;
 use App\Services\Federation\Invitation;
@@ -16,61 +15,6 @@ beforeEach(function () {
     config(['federation.allow_private_hosts' => true]);
     InstanceIdentity::current()->update(['base_url' => 'https://b.example.test', 'name' => 'Site B']);
 });
-
-/** A fake remote instance "A" reachable over Http::fake, holding its own key. */
-function fakeRemote(array $over = []): array
-{
-    $pair = sodium_crypto_sign_keypair();
-    $remote = [
-        'uuid' => (string) Str::uuid(), 'name' => 'Site A', 'origin' => 'https://a.example.test',
-        'public_key' => RequestSigner::b64(sodium_crypto_sign_publickey($pair)),
-        'secret' => RequestSigner::b64(sodium_crypto_sign_secretkey($pair)),
-        'grants_for_us' => ['feedback.send'], 'pair_status' => 201, 'seen' => [],
-    ];
-    $remote = array_merge($remote, $over);
-    $remote['doc'] = ['protocol' => 1, 'uuid' => $remote['uuid'], 'name' => $remote['name'], 'url' => $remote['origin'], 'public_key' => $remote['public_key']];
-
-    return $remote;
-}
-
-function serveRemote(array &$remote): void
-{
-    Http::fake(['a.example.test/*' => function (HttpRequest $request) use (&$remote) {
-        $path = parse_url($request->url(), PHP_URL_PATH);
-        $remote['seen'][] = [$request->method(), $path, $request->headers()];
-        if ($path === '/.well-known/ri-instance.json') {
-            return Http::response($remote['doc']);
-        }
-        if ($path === '/api/federation/v1/pair') {
-            $body = $request->data();
-            $okProof = RequestSigner::verify(
-                "ri-pair-v1\n".TrustPairingCode::normalize($body['code'])."\n".$body['public_key']."\n".$body['uuid'], $body['signature'], $body['public_key'],
-            );
-            $remote['pair_body'] = $body + ['proof_ok' => $okProof];
-
-            return $remote['pair_status'] === 201
-                ? Http::response(['server' => $remote['pair_identity'] ?? $remote['doc'], 'permissions' => $remote['grants_for_us']], 201)
-                : Http::response(['message' => 'Invalid or expired code.'], $remote['pair_status']);
-        }
-        // session + grants: they must be signed by *our* key for this host
-        $signed = $request->hasHeader('X-RI-Signature');
-        if ($signed) {
-            $canonical = RequestSigner::canonical(
-                $request->method(), $path, 'a.example.test', (int) $request->header('X-RI-Timestamp')[0], $request->header('X-RI-Nonce')[0], $request->body(),
-            );
-            if (! RequestSigner::verify($canonical, $request->header('X-RI-Signature')[0], InstanceIdentity::current()->public_key)) {
-                return Http::response(['message' => 'Unauthenticated.'], 401);
-            }
-        } elseif (($request->header('Authorization')[0] ?? '') !== 'Bearer RIS-fake') {
-            return Http::response(['message' => 'Unauthenticated.'], 401);
-        }
-        if ($path === '/api/federation/v1/session') {
-            return Http::response(['session_token' => 'RIS-fake', 'expires_in' => 3600]);
-        }
-
-        return Http::response(['permissions' => $remote['grants_for_us']]);
-    }]);
-}
 
 test('an invitation carries this address, a working code and the key fingerprint', function () {
     $admin = userWithPermissions('manage-trusts');

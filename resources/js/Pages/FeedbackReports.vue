@@ -63,7 +63,8 @@ const props = defineProps({
 const currentInstanceRole = ref(props.instanceRole);
 
 const aggregationSettings = ref(null); // { instance_role, instance_identifier, central_ingest_url, shared_secret_set }
-const aggregationForm = ref({ instance_role: 'remote', instance_identifier: '', central_ingest_url: '', shared_secret: '' });
+const aggregationForm = ref({ instance_role: 'remote', instance_identifier: '', central_ingest_url: '', shared_secret: '', feedback_trust_id: '' });
+const peerTrusts = ref([]); // instances this one is paired with (Trust Console)
 const aggregationLoading = ref(true);
 const aggregationSaving = ref(false);
 const aggregationError = ref(null);
@@ -79,7 +80,9 @@ async function fetchAggregationSettings() {
 			instance_identifier: response.data.settings.instance_identifier || '',
 			central_ingest_url: response.data.settings.central_ingest_url || '',
 			shared_secret: '',
+			feedback_trust_id: response.data.settings.feedback_trust_id || '',
 		};
+		peerTrusts.value = response.data.trusts || [];
 		currentInstanceRole.value = response.data.settings.instance_role;
 	} finally {
 		aggregationLoading.value = false;
@@ -96,7 +99,9 @@ async function saveAggregationSettings() {
 			instance_identifier: aggregationForm.value.instance_identifier.trim() || null,
 			central_ingest_url: aggregationForm.value.central_ingest_url.trim() || null,
 			shared_secret: aggregationForm.value.shared_secret.trim() || null,
+			feedback_trust_id: aggregationForm.value.feedback_trust_id || null,
 		});
+		peerTrusts.value = response.data.trusts || peerTrusts.value;
 		applySavedSettings(response.data.settings);
 		aggregationSaved.value = true;
 		if (response.data.settings.instance_role === 'remote') await testConnection();
@@ -112,6 +117,7 @@ function applySavedSettings(settings) {
 	aggregationForm.value.instance_role = settings.instance_role;
 	aggregationForm.value.central_ingest_url = settings.central_ingest_url || '';
 	aggregationForm.value.shared_secret = '';
+	aggregationForm.value.feedback_trust_id = settings.feedback_trust_id || '';
 	currentInstanceRole.value = settings.instance_role;
 }
 
@@ -389,7 +395,12 @@ async function confirmCompose() {
 							</select>
 						</label>
 
-						<div v-if="aggregationForm.instance_role === 'central' && aggregationSettings?.instance_role === 'central'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
+						<p v-if="aggregationForm.instance_role === 'central'" class="text-sm text-gray-600">
+							Remote instances connect to this one from the <a href="/setup/trust" class="underline text-blue-700">Trust Console</a>:
+							create a connection code there that allows "Sending feedback", and give it to the remote's administrator.
+						</p>
+
+						<div v-if="aggregationForm.instance_role === 'central' && aggregationSettings?.instance_role === 'central' && aggregationSettings?.legacy_enabled" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
 							<p class="font-medium text-gray-700">Connection code</p>
 							<p class="text-gray-500">
 								Paste this code on each remote instance's Feedback page to connect it here. It contains
@@ -415,13 +426,27 @@ async function confirmCompose() {
 							</button>
 							<p v-if="codeError" class="text-red-600">{{ codeError }}</p>
 						</div>
-						<p v-else-if="aggregationForm.instance_role === 'central'" class="text-sm text-gray-500">
-							Save to make this instance Central; its connection code for remote instances appears here after.
+						<p v-else-if="aggregationForm.instance_role === 'central' && aggregationSettings?.legacy_enabled" class="text-sm text-gray-500">
+							Save to make this instance Central; its (older) shared-secret connection code appears here after.
 						</p>
 
 						<div v-if="aggregationForm.instance_role === 'remote'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
 							<label class="block">
-								<span class="font-medium text-gray-700">Connection code</span>
+								<span class="font-medium text-gray-700">Send reports to</span>
+								<select v-model="aggregationForm.feedback_trust_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+									<option value="">{{ aggregationSettings?.legacy_enabled ? 'Not chosen (use the older shared-secret setup below)' : 'Choose an instance…' }}</option>
+									<option v-for="t in peerTrusts" :key="t.id" :value="t.id">{{ t.name }} ({{ t.base_url }}){{ t.may_send_feedback ? '' : ' — has not allowed feedback yet' }}</option>
+								</select>
+							</label>
+							<p class="text-gray-500">
+								Only instances this one is paired with appear here. Pair with the central instance in the
+								<a href="/setup/trust" class="underline text-blue-700">Trust Console</a> by pasting the connection code its administrator gives you.
+							</p>
+						</div>
+
+						<div v-if="aggregationForm.instance_role === 'remote' && aggregationSettings?.legacy_enabled && !aggregationForm.feedback_trust_id" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
+							<label class="block">
+								<span class="font-medium text-gray-700">Connection code (older shared-secret setup)</span>
 								<span class="block text-gray-500">Copy it from the central instance's Feedback page and paste it here.</span>
 								<textarea v-model="pastedCode" rows="2" placeholder="RIFEED1-…" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm font-mono text-xs"></textarea>
 							</label>
@@ -443,9 +468,9 @@ async function confirmCompose() {
 							/>
 						</label>
 
-						<p v-if="aggregationForm.instance_role === 'remote'" class="text-sm text-gray-500">Or enter the details yourself:</p>
+						<p v-if="aggregationForm.instance_role === 'remote' && aggregationSettings?.legacy_enabled && !aggregationForm.feedback_trust_id" class="text-sm text-gray-500">Or enter the older details yourself:</p>
 
-						<label v-if="aggregationForm.instance_role === 'remote'" class="block text-sm">
+						<label v-if="aggregationForm.instance_role === 'remote' && aggregationSettings?.legacy_enabled && !aggregationForm.feedback_trust_id" class="block text-sm">
 							<span class="text-gray-700">Central instance address</span>
 							<input
 								type="text"
@@ -460,7 +485,7 @@ async function confirmCompose() {
 							</span>
 						</label>
 
-						<label class="block text-sm">
+						<label v-if="aggregationSettings?.legacy_enabled && !aggregationForm.feedback_trust_id" class="block text-sm">
 							<span class="text-gray-700">
 								Shared secret
 								<span v-if="aggregationSettings?.shared_secret_set" class="text-green-600">(currently set)</span>
