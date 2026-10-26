@@ -41,7 +41,7 @@ class FederationController extends Controller
             'name' => 'required|string|max:255',
             'public_key' => 'required|string|size:43',
             'signature' => 'required|string|max:100',
-            'base_url' => 'nullable|url|max:255',
+            'base_url' => 'required_if:kind,instance|nullable|url|max:255',
             'mac_address' => 'nullable|string|max:255',
             'language' => 'nullable|string|max:10',
         ]);

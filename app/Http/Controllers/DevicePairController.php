@@ -36,7 +36,7 @@ class DevicePairController extends Controller
         Cache::add($attemptsKey, 0, now()->addMinutes(10));
         Cache::increment($attemptsKey);
 
-        return DB::transaction(function () use ($data, $request) {
+        return DB::transaction(function () use ($data) {
             $code = DevicePairingCode::usable()->where('code', $data['code'])->lockForUpdate()->first();
             if (! $code) {
                 // One generic message so existing codes aren't leaked.

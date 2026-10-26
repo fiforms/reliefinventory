@@ -33,6 +33,10 @@ const riskClass = { low: 'bg-green-100 text-green-800', medium: 'bg-amber-100 te
 const identityForm = reactive({ name: '', base_url: '' });
 const codeForm = reactive({ kind: 'print_client', name: '', kiosk_location_id: '', grants: ['print.share'] });
 const newCode = ref(null);
+const inviteForm = reactive({ grants: [] });
+const newInvite = ref(null);
+const acceptForm = reactive({ connection_code: '', grants: [] });
+const copied = ref(false);
 const editing = reactive({}); // trust id -> array of inbound keys being edited
 const confirmRevoke = ref(null);
 const confirmRegenerate = ref(false);
@@ -102,6 +106,41 @@ const createCode = () => run(async () => {
 	newCode.value = (await axios.post('/json/trusts/pairing-codes', body)).data;
 	await load();
 }, 'Could not create a pairing code.');
+
+const createInvite = () => run(async () => {
+	newInvite.value = (await axios.post('/json/trusts/invitations', { grants: inviteForm.grants })).data;
+	copied.value = false;
+	await load();
+}, 'Could not create an invitation.');
+
+async function copyInvite() {
+	try {
+		await navigator.clipboard.writeText(newInvite.value.connection_code);
+		copied.value = true;
+	} catch {
+		copied.value = false; // the code is selectable on screen as a fallback
+	}
+}
+
+const acceptInvite = () => run(async () => {
+	const res = (await axios.post('/json/trusts/accept-invitation', { ...acceptForm })).data;
+	acceptForm.connection_code = '';
+	acceptForm.grants = [];
+	await load();
+	notice.value = `Paired with ${res.record.name}.${res.warning ? ' ' + res.warning : ''}`;
+}, 'Could not use that connection code.');
+
+const verifyDomain = (trust) => run(async () => {
+	const res = (await axios.post(`/json/trusts/${trust.id}/verify-domain`)).data;
+	await load();
+	res.ok ? (notice.value = `${trust.name}: ${res.message}`) : (error.value = `${trust.name}: ${res.message}`);
+}, 'Could not check the address.');
+
+const refreshGrants = (trust) => run(async () => {
+	await axios.post(`/json/trusts/${trust.id}/refresh-grants`);
+	await load();
+	notice.value = `${trust.name}: asked what we may do there.`;
+}, 'Could not refresh.');
 
 function startEdit(trust) {
 	editing[trust.id] = [...trust.inbound];
@@ -224,6 +263,45 @@ onMounted(load);
 				</section>
 
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
+					<h2 class="text-lg font-semibold">Connect to another instance</h2>
+					<p class="text-sm text-gray-600">Each side's administrator approves their own side. One creates a connection code; the other pastes it here or on their own Trust Console.</p>
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-6">
+						<div class="space-y-3">
+							<h3 class="font-medium text-sm">Invite one</h3>
+							<fieldset class="text-sm space-y-1">
+								<legend class="text-gray-700">It may do this to us</legend>
+								<label v-for="p in data.permissions" :key="p.key" class="flex items-start gap-2">
+									<input type="checkbox" class="mt-1 rounded border-gray-300" :checked="inviteForm.grants.includes(p.key)" @change="toggle(inviteForm.grants, p.key)" />
+									<span>{{ p.label }} <span class="ml-1 text-xs rounded px-1.5 py-0.5" :class="riskClass[p.risk]">{{ p.risk }}</span></span>
+								</label>
+							</fieldset>
+							<PrimaryButton :disabled="busy" @click="createInvite">{{ busy ? 'Working…' : 'Create connection code' }}</PrimaryButton>
+							<div v-if="newInvite" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm space-y-2">
+								<div>Give this to the other administrator. It works once, for {{ Math.round((new Date(newInvite.expires_at) - Date.now()) / 60000) }} more minutes.</div>
+								<textarea readonly rows="3" class="w-full font-mono text-xs border-gray-300 rounded" :value="newInvite.connection_code" @focus="$event.target.select()"></textarea>
+								<button class="text-sm underline" @click="copyInvite">{{ copied ? 'Copied' : 'Copy' }}</button>
+							</div>
+						</div>
+						<div class="space-y-3">
+							<h3 class="font-medium text-sm">Use a code you were given</h3>
+							<label class="block text-sm">
+								<span class="text-gray-700">Connection code</span>
+								<textarea v-model="acceptForm.connection_code" rows="3" placeholder="RIFED1-…" class="mt-1 block w-full font-mono text-xs border-gray-300 rounded-md shadow-sm"></textarea>
+							</label>
+							<fieldset class="text-sm space-y-1">
+								<legend class="text-gray-700">It may do this to us</legend>
+								<label v-for="p in data.permissions" :key="p.key" class="flex items-start gap-2">
+									<input type="checkbox" class="mt-1 rounded border-gray-300" :checked="acceptForm.grants.includes(p.key)" @change="toggle(acceptForm.grants, p.key)" />
+									<span>{{ p.label }} <span class="ml-1 text-xs rounded px-1.5 py-0.5" :class="riskClass[p.risk]">{{ p.risk }}</span></span>
+								</label>
+							</fieldset>
+							<PrimaryButton :disabled="busy || !acceptForm.connection_code" @click="acceptInvite">{{ busy ? 'Connecting…' : 'Connect' }}</PrimaryButton>
+						</div>
+					</div>
+					<p class="text-xs text-gray-500">The code carries the inviting instance's address and key fingerprint, so you can tell you reached the right one. This instance's public address must be set above. Nothing is shared until each side grants it.</p>
+				</section>
+
+				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Trusts</h2>
 					<p v-if="!data.trusts.length" class="text-gray-400 text-sm">none yet</p>
 					<div v-for="t in data.trusts" :key="t.id" class="border rounded p-3 space-y-2 text-sm" :class="t.status !== 'approved' ? 'opacity-60' : ''">
@@ -265,6 +343,15 @@ onMounted(load);
 							<span v-for="k in t.inbound" :key="k" class="text-xs rounded px-1.5 py-0.5" :class="riskClass[describe(k)?.risk ?? 'low']">{{ describe(k)?.label ?? k }}</span>
 							<span v-if="!t.inbound.length" class="text-xs text-gray-400">nothing</span>
 							<button v-if="t.status === 'approved'" class="text-xs underline text-gray-600" @click="startEdit(t)">Edit</button>
+						</div>
+						<div v-if="t.kind === 'instance'" class="flex items-center gap-2 flex-wrap">
+							<span class="text-xs text-gray-500">We may do to it:</span>
+							<span v-for="k in t.outbound" :key="k" class="text-xs rounded px-1.5 py-0.5" :class="riskClass[describe(k)?.risk ?? 'low']">{{ describe(k)?.label ?? k }}</span>
+							<span v-if="!t.outbound.length" class="text-xs text-gray-400">nothing known</span>
+							<template v-if="t.status === 'approved'">
+								<button class="text-xs underline text-gray-600" :disabled="busy" @click="refreshGrants(t)">Refresh</button>
+								<button class="text-xs underline text-gray-600" :disabled="busy" @click="verifyDomain(t)">Verify domain</button>
+							</template>
 						</div>
 					</div>
 					<p class="text-xs text-gray-500">Permission changes and revoking take effect on the peer's very next request.</p>

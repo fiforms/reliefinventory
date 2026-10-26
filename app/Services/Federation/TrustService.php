@@ -94,6 +94,62 @@ class TrustService
         });
     }
 
+    /**
+     * The accepting side of an invitation: record the instance that invited us. `$serverDoc` is the identity it
+     * published (already checked against the invitation's fingerprint); `$outbound` is what it said we may do to
+     * it. Domain-verified when the address is https, since that fetch was TLS-checked against the same key.
+     */
+    public static function enrollInvited(array $serverDoc, string $origin, array $inbound, array $outbound, ?int $actor): Trust
+    {
+        return DB::transaction(function () use ($serverDoc, $origin, $inbound, $outbound, $actor) {
+            $identity = InstanceIdentity::current();
+            $trust = Trust::where('identity_id', $identity->id)->where('peer_uuid', $serverDoc['uuid'])->first();
+            $keyChanged = $trust && $trust->public_key !== $serverDoc['public_key'];
+            $trust ??= new Trust(['identity_id' => $identity->id, 'peer_uuid' => $serverDoc['uuid']]);
+            $verified = str_starts_with($origin, 'https://');
+            $trust->fill([
+                'kind' => 'instance',
+                'name' => $serverDoc['name'] ?? $origin,
+                'public_key' => $serverDoc['public_key'],
+                'base_url' => $origin,
+                'status' => 'approved',
+                'auth_method' => $verified ? 'domain_verified' : 'pairing_code',
+            ]);
+            $trust->approved_by_person_id = $actor;
+            $trust->approved_at = now();
+            $trust->domain_verified_at = $verified ? now() : null;
+            $trust->revoked_at = null;
+            $trust->session_epoch = (int) $trust->session_epoch + 1;
+            $trust->save();
+
+            self::replaceGrants($trust, 'inbound', $inbound);
+            self::replaceGrants($trust, 'outbound', $outbound);
+            self::audit($trust, $keyChanged ? 'key_changed' : 'enrolled', $actor, [
+                'method' => 'invitation', 'inbound' => self::cleanPermissions($inbound), 'outbound' => self::cleanPermissions($outbound),
+            ]);
+
+            return $trust;
+        });
+    }
+
+    /** Ask the peer what we may do to it and mirror that as our outbound grants. @return list<string>|null null if unreachable */
+    public static function refreshOutbound(Trust $trust, ?int $actor = null): ?array
+    {
+        try {
+            $response = FederationClient::for($trust)->get('/grants');
+        } catch (\Throwable) {
+            return null;
+        }
+        if (! $response->successful() || ! is_array($response->json('permissions'))) {
+            return null;
+        }
+        $permissions = self::cleanPermissions($response->json('permissions'));
+        self::replaceGrants($trust, 'outbound', $permissions);
+        self::audit($trust, 'outbound_refreshed', $actor, ['outbound' => $permissions]);
+
+        return $permissions;
+    }
+
     public static function setInboundGrants(Trust $trust, array $permissions, ?int $actor): void
     {
         $before = $trust->inboundPermissions();

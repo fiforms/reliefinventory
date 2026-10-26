@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\FederationController;
 use App\Models\Category;
 use App\Models\County;
 use App\Models\DevicePairingCode;
@@ -14,8 +15,12 @@ use App\Models\Printer;
 use App\Models\SetupState;
 use App\Models\TrainingProduct;
 use App\Models\Transaction;
+use App\Models\Trust;
 use App\Models\User;
+use App\Services\Federation\RequestSigner;
+use App\Services\Federation\TrustService;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use Tests\RefreshDatabaseFromSnapshot;
 use Tests\TestCase;
 
@@ -219,4 +224,64 @@ function scannedProducts(int $products = 15, int $each = 8): array
     }
 
     return $items;
+}
+
+// ---- federation: shared by the Federation*Test files -------------------------------------------
+
+/** A fake peer: its own key pair and uuid. */
+function fedPeer(string $kind = 'instance'): array
+{
+    $pair = sodium_crypto_sign_keypair();
+
+    return [
+        'kind' => $kind,
+        'uuid' => (string) Str::uuid(),
+        'name' => 'Peer '.substr((string) Str::uuid(), 0, 4),
+        'public_key' => RequestSigner::b64(sodium_crypto_sign_publickey($pair)),
+        'secret' => RequestSigner::b64(sodium_crypto_sign_secretkey($pair)),
+    ];
+}
+
+function fedPairBody(array $peer, string $code, ?string $signAs = null): array
+{
+    $message = FederationController::pairingMessage($code, $peer['public_key'], $peer['uuid']);
+
+    return [
+        'code' => $code, 'kind' => $peer['kind'], 'uuid' => $peer['uuid'], 'name' => $peer['name'],
+        'public_key' => $peer['public_key'],
+        'base_url' => $peer['kind'] === 'instance' ? 'https://peer.example.test' : null,
+        'signature' => RequestSigner::sign($message, $signAs ?? $peer['secret']),
+    ];
+}
+
+/** An approved trust for $peer holding $grants, made through the real enrollment path. */
+function fedEnroll(array $peer, array $grants = [], ?int $locationId = null): Trust
+{
+    [$code] = TrustService::createPairingCode($peer['kind'], $grants, null, $locationId, null);
+
+    return TrustService::enroll($code, $peer);
+}
+
+function fedHeaders(array $peer, string $method, string $uri, string $body = '', ?int $ts = null, ?string $nonce = null): array
+{
+    $ts ??= time();
+    $nonce ??= bin2hex(random_bytes(8));
+    $host = parse_url(config('app.url'), PHP_URL_HOST).(($p = parse_url(config('app.url'), PHP_URL_PORT)) ? ':'.$p : '');
+    $canonical = RequestSigner::canonical($method, $uri, $host, $ts, $nonce, $body);
+
+    return [
+        'X-RI-Trust' => $peer['uuid'], 'X-RI-Timestamp' => (string) $ts, 'X-RI-Nonce' => $nonce,
+        'X-RI-Signature' => RequestSigner::sign($canonical, $peer['secret']),
+    ];
+}
+
+/** Sends exactly the bytes that were signed (getJson would add a "[]" body to a GET). */
+function fedCall($test, array $peer, string $method, string $uri, string $body = '', ?int $ts = null, ?string $nonce = null, ?string $signedUri = null)
+{
+    $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
+    foreach (fedHeaders($peer, $method, $signedUri ?? $uri, $body, $ts, $nonce) as $k => $v) {
+        $server['HTTP_'.strtoupper(str_replace('-', '_', $k))] = $v;
+    }
+
+    return $test->call($method, $uri, [], [], [], $server, $body);
 }

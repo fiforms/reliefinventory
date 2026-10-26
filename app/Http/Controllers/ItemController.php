@@ -1,19 +1,19 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
 use App\Models\Item;
 use App\Models\ItemLedger;
 use App\Models\ItemType;
 use App\Models\PackageType;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
 class ItemController extends Controller
 {
-
     /**
      * Compose the display name used by search/combo controls:
      * item type number + item description.
@@ -21,7 +21,8 @@ class ItemController extends Controller
     public static function displayName(Item $item): string
     {
         $number = $item->itemtype->display_number ?? '';
-        return trim($number . ' ' . ($item->description ?? ''));
+
+        return trim($number.' '.($item->description ?? ''));
     }
 
     // Display a listing of items
@@ -29,13 +30,14 @@ class ItemController extends Controller
     {
         $items = Item::with('itemtype')->get()->map(function ($item) {
             $item->name = self::displayName($item);
+
             return $item;
         });
         $templates = ['_default' => []];
 
         return response()->json([
             'records' => $items,
-            'templates' => $templates
+            'templates' => $templates,
         ]);
     }
 
@@ -80,7 +82,7 @@ class ItemController extends Controller
         $data = $request->validate([
             'itemtype_id' => 'required|exists:itemtypes,id',
             'description' => 'required|string|max:255',
-            'upc' => 'nullable|string|max:50|unique:items,upc,' . $id,
+            'upc' => 'nullable|string|max:50|unique:items,upc,'.$id,
             'packagetypes_id' => 'nullable|exists:packagetypes,id',
             'pluscode' => 'nullable|string|max:4',
             'size' => 'nullable|numeric',
@@ -139,7 +141,7 @@ class ItemController extends Controller
         $to = ItemType::findOrFail($data['itemtype_id']);
 
         if ((int) $item->itemtype_id === (int) $to->id) {
-            return response()->json(['message' => 'That item is already under ' . $to->display_number . '.'], 422);
+            return response()->json(['message' => 'That item is already under '.$to->display_number.'.'], 422);
         }
 
         DB::transaction(fn () => $item->update(['itemtype_id' => $to->id]));

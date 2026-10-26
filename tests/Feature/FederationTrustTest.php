@@ -1,6 +1,5 @@
 <?php
 
-use App\Http\Controllers\FederationController;
 use App\Models\KioskLocation;
 use App\Models\Trust;
 use App\Models\TrustAuditLog;
@@ -8,63 +7,6 @@ use App\Services\Federation\InstanceIdentity;
 use App\Services\Federation\RequestSigner;
 use App\Services\Federation\TrustService;
 use Illuminate\Support\Facades\Route;
-
-/** A fake peer: its own key pair and uuid. */
-function fedPeer(string $kind = 'instance'): array
-{
-    $pair = sodium_crypto_sign_keypair();
-
-    return [
-        'kind' => $kind,
-        'uuid' => (string) Str::uuid(),
-        'name' => 'Peer '.substr((string) Str::uuid(), 0, 4),
-        'public_key' => RequestSigner::b64(sodium_crypto_sign_publickey($pair)),
-        'secret' => RequestSigner::b64(sodium_crypto_sign_secretkey($pair)),
-    ];
-}
-
-function fedPairBody(array $peer, string $code, ?string $signAs = null): array
-{
-    $message = FederationController::pairingMessage($code, $peer['public_key'], $peer['uuid']);
-
-    return [
-        'code' => $code, 'kind' => $peer['kind'], 'uuid' => $peer['uuid'], 'name' => $peer['name'],
-        'public_key' => $peer['public_key'],
-        'signature' => RequestSigner::sign($message, $signAs ?? $peer['secret']),
-    ];
-}
-
-/** An approved trust for $peer holding $grants, made through the real enrollment path. */
-function fedEnroll(array $peer, array $grants = [], ?int $locationId = null): Trust
-{
-    [$code] = TrustService::createPairingCode($peer['kind'], $grants, null, $locationId, null);
-
-    return TrustService::enroll($code, $peer);
-}
-
-function fedHeaders(array $peer, string $method, string $uri, string $body = '', ?int $ts = null, ?string $nonce = null): array
-{
-    $ts ??= time();
-    $nonce ??= bin2hex(random_bytes(8));
-    $host = parse_url(config('app.url'), PHP_URL_HOST).(($p = parse_url(config('app.url'), PHP_URL_PORT)) ? ':'.$p : '');
-    $canonical = RequestSigner::canonical($method, $uri, $host, $ts, $nonce, $body);
-
-    return [
-        'X-RI-Trust' => $peer['uuid'], 'X-RI-Timestamp' => (string) $ts, 'X-RI-Nonce' => $nonce,
-        'X-RI-Signature' => RequestSigner::sign($canonical, $peer['secret']),
-    ];
-}
-
-/** Sends exactly the bytes that were signed (getJson would add a "[]" body to a GET). */
-function fedCall($test, array $peer, string $method, string $uri, string $body = '', ?int $ts = null, ?string $nonce = null, ?string $signedUri = null)
-{
-    $server = ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'];
-    foreach (fedHeaders($peer, $method, $signedUri ?? $uri, $body, $ts, $nonce) as $k => $v) {
-        $server['HTTP_'.strtoupper(str_replace('-', '_', $k))] = $v;
-    }
-
-    return $test->call($method, $uri, [], [], [], $server, $body);
-}
 
 test('the public identity document carries the key and fingerprint but never the private key', function () {
     $doc = $this->getJson('/.well-known/ri-instance.json')->assertOk()->json();
@@ -234,6 +176,6 @@ test('a lost identity refuses federation calls until it is regenerated', functio
     InstanceIdentity::current();
     DB::table('federation_identities')->update(['private_key' => null]);
     $this->getJson('/api/federation/v1/grants')->assertStatus(503);
-    $this->postJson('/api/federation/v1/pair', ['code' => 'x', 'kind' => 'instance', 'uuid' => 'u', 'name' => 'n', 'public_key' => str_repeat('a', 43), 'signature' => 's'])
+    $this->postJson('/api/federation/v1/pair', ['code' => 'x', 'kind' => 'instance', 'uuid' => 'u', 'name' => 'n', 'base_url' => 'https://x.example.test', 'public_key' => str_repeat('a', 43), 'signature' => 's'])
         ->assertStatus(503);
 });

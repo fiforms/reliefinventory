@@ -1,10 +1,12 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
 
 use App\Models\Category;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
@@ -16,7 +18,7 @@ class CategoryController extends Controller
     /**
      * Retrieve all categories.
      *
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function index()
     {
@@ -27,16 +29,15 @@ class CategoryController extends Controller
             'templates' => [
                 '_default' => [
                     'name' => '',
-                ]
-            ]
+                ],
+            ],
         ]);
     }
 
     /**
      * Store a new category.
      *
-     * @param \Illuminate\Http\Request $request
-     * @return \Illuminate\Http\JsonResponse
+     * @return JsonResponse
      */
     public function store(Request $request)
     {
@@ -52,9 +53,8 @@ class CategoryController extends Controller
     /**
      * Update an existing category.
      *
-     * @param \Illuminate\Http\Request $request
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function update(Request $request, $id)
     {
@@ -72,8 +72,8 @@ class CategoryController extends Controller
     /**
      * Delete a category.
      *
-     * @param int $id
-     * @return \Illuminate\Http\JsonResponse
+     * @param  int  $id
+     * @return JsonResponse
      */
     public function destroy($id)
     {
@@ -88,7 +88,7 @@ class CategoryController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Error deleting category: ' . $e->getMessage()
+                'message' => 'Error deleting category: '.$e->getMessage(),
             ], 500);
         }
     }

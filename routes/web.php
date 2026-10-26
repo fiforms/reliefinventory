@@ -1264,6 +1264,10 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-tr
     Route::post('/trusts/pairing-codes', [\App\Http\Controllers\TrustConsoleController::class, 'createPairingCode']);
     Route::put('/trusts/identity', [\App\Http\Controllers\TrustConsoleController::class, 'updateIdentity']);
     Route::post('/trusts/identity/regenerate', [\App\Http\Controllers\TrustConsoleController::class, 'regenerateIdentity']);
+    Route::post('/trusts/invitations', [\App\Http\Controllers\TrustConsoleController::class, 'createInvitation']);
+    Route::post('/trusts/accept-invitation', [\App\Http\Controllers\TrustConsoleController::class, 'acceptInvitation']);
+    Route::post('/trusts/{trust}/verify-domain', [\App\Http\Controllers\TrustConsoleController::class, 'verifyDomain']);
+    Route::post('/trusts/{trust}/refresh-grants', [\App\Http\Controllers\TrustConsoleController::class, 'refreshGrants']);
     Route::put('/trusts/{trust}/grants', [\App\Http\Controllers\TrustConsoleController::class, 'setGrants']);
     Route::post('/trusts/{trust}/revoke', [\App\Http\Controllers\TrustConsoleController::class, 'revoke']);
 });
