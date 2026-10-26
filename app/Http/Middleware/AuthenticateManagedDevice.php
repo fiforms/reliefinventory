@@ -25,7 +25,7 @@ class AuthenticateManagedDevice
 
     public function handle(Request $request, Closure $next, string ...$options)
     {
-        if (config('federation.legacy_device_tokens') && ($token = $request->bearerToken()) && ! str_starts_with($token, 'RIS-')) {
+        if (config('federation.legacy_device_tokens') && ($token = $request->bearerToken()) && ! str_starts_with($token, 'RIS-') && ! str_starts_with($token, 'RIK-')) {
             $device = ManagedDevice::where('token_hash', ManagedDevice::hashToken($token))->first();
             if (! $device || $device->revoked_at) {
                 return response()->json(['message' => 'Unauthenticated.'], 401);

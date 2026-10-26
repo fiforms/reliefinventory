@@ -45,6 +45,37 @@ class RequestSigner
         return sodium_crypto_sign_verify_detached($sig, $canonical, $pub);
     }
 
+    public const BEARER_PREFIX = 'RIK-';
+
+    /** What a key-signed bearer credential signs: who, for which server (audience), and when. */
+    public static function bearerMessage(string $uuid, string $host, int $issuedAt, int $expiresAt): string
+    {
+        return implode("\n", ['ri-bearer-v1', $uuid, strtolower($host), (string) $issuedAt, (string) $expiresAt]);
+    }
+
+    /** `RIK-<b64url uuid>.<iat>.<exp>.<signature>` — minted by the client; the server only ever verifies it. */
+    public static function mintBearer(string $uuid, string $host, int $issuedAt, int $expiresAt, string $secretKey): string
+    {
+        $signature = self::sign(self::bearerMessage($uuid, $host, $issuedAt, $expiresAt), $secretKey);
+
+        return self::BEARER_PREFIX.self::b64($uuid).".{$issuedAt}.{$expiresAt}.{$signature}";
+    }
+
+    /** @return array{uuid: string, iat: int, exp: int, sig: string}|null null if it is not shaped like a credential */
+    public static function parseBearer(string $token): ?array
+    {
+        if (! str_starts_with($token, self::BEARER_PREFIX)) {
+            return null;
+        }
+        $parts = explode('.', substr($token, strlen(self::BEARER_PREFIX)));
+        if (count($parts) !== 4 || ! ctype_digit($parts[1]) || ! ctype_digit($parts[2])) {
+            return null;
+        }
+        $uuid = self::unb64($parts[0]);
+
+        return $uuid === '' ? null : ['uuid' => $uuid, 'iat' => (int) $parts[1], 'exp' => (int) $parts[2], 'sig' => $parts[3]];
+    }
+
     /** Short, human-comparable digest of a public key for display ("ABCD-EFGH-IJKL-MNOP"). */
     public static function fingerprint(string $publicKey): string
     {

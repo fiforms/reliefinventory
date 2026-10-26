@@ -36,7 +36,15 @@ class TrustAuth
 
         $bearer = $request->bearerToken();
         if ($bearer && ! $signedOnly) {
-            $trust = TrustService::trustForSession($bearer);
+            if (str_starts_with($bearer, RequestSigner::BEARER_PREFIX)) {
+                $result = $this->verifyCredential($request, $bearer);
+                if ($result instanceof JsonResponse) {
+                    return $result;
+                }
+                $trust = $result;
+            } else {
+                $trust = TrustService::trustForSession($bearer);
+            }
         } else {
             $result = $this->verifySignature($request);
             if ($result instanceof JsonResponse) {
@@ -61,6 +69,38 @@ class TrustAuth
         }
 
         return $next($request);
+    }
+
+    /**
+     * A key-signed bearer credential (RequestSigner::mintBearer) for a client app that can only send one fixed
+     * Authorization value. Valid for one server (the Host it names), within its signed lifetime. A forged or unknown
+     * one is a 401; a genuine one that is expired, or issued by a clock that is wrong, is a 419 — never a 401, because
+     * the Pi's platform code wipes its pairing on any 401 and a stale credential is cured by minting a new one.
+     *
+     * @return Trust|JsonResponse|null
+     */
+    private function verifyCredential(Request $request, string $token)
+    {
+        $parts = RequestSigner::parseBearer($token);
+        if (! $parts) {
+            return null;
+        }
+        $trust = Trust::where('identity_id', InstanceIdentity::current()->id)->where('peer_uuid', $parts['uuid'])->first();
+        if (! $trust || ! $trust->isClient()) {
+            return null;
+        }
+        $message = RequestSigner::bearerMessage($parts['uuid'], $request->getHttpHost(), $parts['iat'], $parts['exp']);
+        if (! RequestSigner::verify($message, $parts['sig'], $trust->public_key)
+            || (int) config('federation.max_bearer_seconds') < $parts['exp'] - $parts['iat']) {
+            return null;
+        }
+        $now = time();
+        if ($now >= $parts['exp'] || $parts['iat'] > $now + (int) config('federation.max_skew_seconds')) {
+            return response()->json(['message' => 'Credential expired or not yet valid.', 'code' => 'credential_expired'], 419)
+                ->header('X-RI-Server-Time', (string) $now);
+        }
+
+        return $trust;
     }
 
     /** @return Trust|JsonResponse|null */

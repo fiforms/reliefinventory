@@ -55,12 +55,12 @@ of several sites, chosen at setup time on the device itself.
   always starts on the local app (which runs the wizard on a fresh device and then hands the
   browser to the site — `product/frontend/Main.vue`); the build seeds the default only into the
   boot partition's yaml, not the rootfs.
-- **Pairing is per site:** the 6-digit code comes from that site's `/setup/devices` page, so the
+- **Pairing is per site:** the 10-character code comes from that site's `/setup/devices` page or Trust Console; pairing is by key (`FEDERATION_AUTH.md`, `product/backend/federation.py`), so the
   URL has to be set first; the device's `device_uuid` stays the same across sites (a different
   site just sees a new device).
 - **Kiosk URL follows the site** (built 2026-10-21, branch `device-session`): `Main.vue` asks the local backend
   for a browser ticket (`POST /api/local/browser-ticket`, which calls the site's `POST /api/devices/session-ticket`
-  with the bearer token) and opens `{server}/device-session/{ticket}`; the server sets a device-session cookie and
+  with the device's key-signed credential) and opens `{server}/device-session/{ticket}`; the server sets a device-session cookie and
   redirects to the page for the device's Function (`config/devices.php`: Sitrep display, Warehouse stats display,
   Volunteer check-in). No Function page, unpaired, or any failure → `{server}/login` as before. The page is chosen
   at launch, so a Function change shows after the next launcher run (reboot or escape-hatch return). Falling back to

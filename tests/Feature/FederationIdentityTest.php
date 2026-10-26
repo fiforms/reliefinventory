@@ -58,3 +58,23 @@ test('a blanked private key reads as a lost identity until it is regenerated', f
         ->and($new->public_key)->not->toBe($old)
         ->and($new->uuid)->toBe($identity->uuid);
 });
+
+test('the shared pairing, upgrade and bearer-credential vectors reproduce', function () {
+    $fixture = signingVectors();
+    $secret = RequestSigner::b64(sodium_crypto_sign_secretkey(sodium_crypto_sign_seed_keypair(RequestSigner::unb64($fixture['seed_b64']))));
+
+    foreach ($fixture['pairing_vectors'] as $v) {
+        expect(\App\Http\Controllers\FederationController::pairingMessage($v['code'], $fixture['public_key'], $v['uuid']))->toBe($v['message'])
+            ->and(RequestSigner::sign($v['message'], $secret))->toBe($v['signature']);
+    }
+    foreach ($fixture['upgrade_vectors'] as $v) {
+        expect(\App\Http\Controllers\FederationController::upgradeMessage($v['uuid'], $fixture['public_key']))->toBe($v['message'])
+            ->and(RequestSigner::sign($v['message'], $secret))->toBe($v['signature']);
+    }
+    foreach ($fixture['bearer_vectors'] as $v) {
+        expect(RequestSigner::bearerMessage($v['uuid'], $v['host'], $v['iat'], $v['exp']))->toBe($v['message'])
+            ->and(RequestSigner::mintBearer($v['uuid'], $v['host'], $v['iat'], $v['exp'], $secret))->toBe($v['token'])
+            ->and(RequestSigner::parseBearer($v['token']))->toMatchArray(['uuid' => $v['uuid'], 'iat' => $v['iat'], 'exp' => $v['exp']]);
+    }
+    expect(RequestSigner::parseBearer('RIK-nonsense'))->toBeNull()->and(RequestSigner::parseBearer('Bearer x'))->toBeNull();
+});

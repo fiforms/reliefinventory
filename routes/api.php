@@ -42,6 +42,7 @@ Route::prefix('devices')->group(function () {
 // key possession); everything else is a signed request or a session token earned by one.
 Route::prefix('federation/v1')->group(function () {
     Route::post('/pair', [FederationController::class, 'pair'])->middleware('throttle:10,1');
+    Route::post('/upgrade-device', [FederationController::class, 'upgradeDevice'])->middleware(['device-auth', 'throttle:10,1']);
     Route::post('/session', [FederationController::class, 'session'])->middleware(['trust-auth:,signed', 'throttle:60,1']);
     Route::post('/feedback', [FeedbackIngestController::class, 'storeFromTrust'])->middleware(['trust-auth:feedback.send', 'throttle:120,1']);
     Route::get('/grants', [FederationController::class, 'grants'])->middleware(['trust-auth', 'throttle:120,1']);

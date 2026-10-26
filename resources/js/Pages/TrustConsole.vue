@@ -27,7 +27,7 @@ const notice = ref('');
 const busy = ref(false);
 
 const kindLabels = { instance: 'Another instance', print_client: 'Print client', rstation: 'R Station' };
-const methodLabels = { pairing_code: 'Approved by Admin via shared code', domain_verified: 'Approved by Admin, domain verified' };
+const methodLabels = { pairing_code: 'Approved by Admin via shared code', domain_verified: 'Approved by Admin, domain verified', device_upgrade: 'Carried over from an earlier pairing' };
 const riskClass = { low: 'bg-green-100 text-green-800', medium: 'bg-amber-100 text-amber-800', high: 'bg-red-100 text-red-800' };
 
 const identityForm = reactive({ name: '', base_url: '' });

@@ -19,6 +19,11 @@ return [
     // a remote that has not been moved to a trust keeps reporting. Set false once every remote has moved.
     'legacy_feedback_secret' => (bool) env('RI_FEDERATION_LEGACY_FEEDBACK', true),
 
+    // A client whose HTTP stack cannot sign every request (the Pi's platform code sends one fixed bearer value)
+    // keeps a short-lived credential signed by its own key in that place: `RIK-…`, see RequestSigner::mintBearer().
+    // The longest lifetime (exp - iat) the server honours.
+    'max_bearer_seconds' => 31 * 86400,
+
     // Devices paired before federation hold a bearer token. With this on, such a token is still accepted by
     // `device-auth` so a fleet can be updated gradually; new pairing is always by key. Remove once every device has
     // re-paired.

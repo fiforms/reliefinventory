@@ -28,7 +28,8 @@ info:
     (`rstation/FEDERATION_AUTH.md`, which also covers pairing; `rstation/federation.openapi.yaml` is its wire
     format). A `401` means the device is unknown or was revoked — forget the pairing (keep the key) and
     return to pairing; a `401` on a *session token* alone means it expired: sign once for a new one before
-    concluding anything. A `400` with `X-RI-Server-Time` is a clock problem, never a revocation. The job
+    concluding anything. A `400` with `X-RI-Server-Time` is a clock problem, never a revocation, and a `419` means a
+    key-signed `RIK-…` credential has expired: mint a new one. The job
     endpoints also need the `print.share` grant (`403` without it).
     Print endpoints are throttled to 240 requests per minute per IP (`429`). A job that belongs to
     another device is always `404`, never `403`.

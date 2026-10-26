@@ -58,12 +58,65 @@ The session endpoint itself always needs a signature. Refresh the session shortl
 whenever a request with one gets `401`: sign once for a new one before concluding anything. The server
 re-reads the trust's status and grants on every request, so revocation and permission changes are immediate.
 
+## Key-signed bearer credential (for a client that can only send one fixed `Authorization` value)
+
+The Pi's platform code (`rstation/platform`, an unmodified submodule) sends the contents of one file as its
+bearer token and cannot sign per request. Such a client keeps a **credential signed by its own key** in that
+place and refreshes it in the background:
+
+    RIK-<base64url uuid>.<issued-at>.<expires-at>.<signature>
+
+`signature` is Ed25519 over (lines joined with `\n`)
+
+    ri-bearer-v1
+    <uuid>
+    <server host, lower-case, port only if not the scheme's default>
+    <issued-at>
+    <expires-at>
+
+The server accepts it only for its own host, only for a `rstation` or `print_client` trust, only if
+`expires-at − issued-at` is at most 31 days, and only within `[issued-at − 5 min, expires-at)`. It carries no
+server-side state, so a cache flush or a database restore cannot invalidate it. Stealing one lets the thief act as
+that device until it expires or the trust is revoked — which is why a client that *can* sign per request should.
+It cannot be used on `/session`, which always needs a signature.
+
+A genuine credential that is **expired or issued by a wrong clock** gets **`419`**, not `401`: the Pi platform wipes
+its pairing on any `401`, and a stale credential is cured by minting a new one. Mint a fresh one whenever the clock
+jumps or the old one is a few hours old (the R Station does so every 6 h, with a 14-day lifetime).
+
+## Upgrading an already-paired device (legacy bearer token → key)
+
+While the server still honours pre-federation bearer tokens (`RI_FEDERATION_LEGACY_DEVICES=true`), a device that
+holds one can trade it for a trust without anyone re-pairing it: `POST /api/federation/v1/upgrade-device` with
+`Authorization: Bearer <old token>` and `{public_key, signature}` where `signature` is over
+
+    ri-upgrade-v1
+    <uuid>
+    <public_key>
+
+`201` creates the trust (kind `rstation`, or `print_client` for a desktop print server; grant `print.share`;
+shown in the Trust Console as "Carried over from an earlier pairing") and **retires the old token in the same
+step**. After that the device authenticates with the credential above.
+
+## The Raspberry Pi (R Station)
+
+Everything lives in `rstation/product/backend/federation.py`; the platform is untouched. It depends on these
+platform internals, which a platform update must keep (a test fails if the first changes shape):
+`pairing.pair(code, device_name)` is called by `main.py` through the module (the product replaces that attribute);
+`pairing.DEVICE_TOKEN_FILE` is read for the bearer by `heartbeat.py`, `system/scripts/rauc-update.py` and
+`print_api.py`; `pairing.read_server_url()`, `write_device_name`, `write_entity_name`, `apply_server_language`,
+`slugify_hostname`, `write_hostname`, `identity.get_device_uuid()` / `get_mac_address()`. A small `Product.pair`
+hook and a bearer-provider hook in the platform would replace the module-attribute swap and the credential file.
+The key is `/data/federation-key` (0600), outside the platform's wipe list. The Ed25519 signer is dependency-free
+(RFC 8032) because the OS image's virtualenv declares no crypto library; `cryptography` is used if installed.
+
 ## Errors
 
 | Status | Meaning | Client does |
 |---|---|---|
 | `401` | unknown, revoked or badly signed (after a fresh signature) | forget the pairing, keep the key, return to pairing |
 | `400` + `X-RI-Server-Time` | clock more than 5 minutes off | adopt `server_time - local_time` as an offset, repeat once; **never** treat as revocation |
+| `419` | a genuine credential that is expired / from a wrong clock (credential auth only) | mint a new credential; never wipe |
 | `403` | the trust lacks the needed grant (e.g. `print.share`) | stop that activity, surface the message |
 | `429` | rate limited | back off |
 

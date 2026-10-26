@@ -20,8 +20,14 @@ test('every documented federation operation is routed, and no federation route i
     foreach ($documented as [$method, $path]) {
         $route = $routes->first(fn ($r) => $r[0] === $method && $r[1] === $path);
         expect($route !== null)->toBeTrue("{$method} {$path} is documented but not routed");
-        $authed = collect($route[2]->gatherMiddleware())->contains(fn ($m) => str_starts_with($m, 'trust-auth'));
-        expect($authed)->toBe($path !== '/pair', "{$method} {$path}: trust-auth presence disagrees with the spec");
+        $middleware = collect($route[2]->gatherMiddleware());
+        $expected = match ($path) {
+            '/pair' => null,
+            '/upgrade-device' => 'device-auth',
+            default => 'trust-auth',
+        };
+        $actual = $middleware->first(fn ($m) => str_starts_with($m, 'trust-auth') || str_starts_with($m, 'device-auth'));
+        expect($actual === null ? null : explode(':', $actual)[0])->toBe($expected, "{$method} {$path}: authentication disagrees with the spec");
     }
     foreach ($routes as [$method, $path]) {
         expect($documented->contains(fn ($d) => $d === [$method, $path]))->toBeTrue("{$method} {$path} is routed but not documented");
