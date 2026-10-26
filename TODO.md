@@ -254,3 +254,14 @@ Issues identified October 8, 2026
 16. "Empty pallets" report (idea, 2026-10-21) — Inventory Movement > Locations no longer lists or counts pallets whose status is `empty`
    (they are finished, not stock). A separate report of empty pallets (which, where last seen, when emptied) would let staff find and
    reuse/recycle them.
+
+17. Move the Docker image to PHP 8.6 (revisit ~February 2027; 8.6.0 GA is scheduled for 2026-11-19, noted 2026-10-26)
+   - Wait for a few 8.6.x releases and for `dunglas/frankenphp` to publish a `php8.6-trixie` tag; confirm Laravel, our Composer
+     packages and the extensions (`gd`, `intl`, `opcache`, `sodium`, …) support it. Not automatic: the image is pinned to `1-php8.4-trixie`.
+   - Change together: `PHP_IMAGE` and the hard-coded `PHP_VERSION=8.4` in the flattened runtime `ENV` (Dockerfile), `php-version` in
+     `.github/workflows/ci.yml`. `composer.json`'s `^8.4` already allows 8.6.
+   - Then: full Pest suite, extension check, PDF render comparison, and re-check the purge list in the Dockerfile `system` stage (Debian-versioned
+     names like `perl-modules-5.40` are skipped if absent, but something could be left behind).
+   - Payoff to test: whether `frankenphp php-cli` works there. If so, delete the separate `/usr/local/bin/php` (a second PHP engine, ~22 MB,
+     ~8 MB compressed) and make `php` a wrapper. Its availability on the current 8.4 image was not confirmed to be absent for good — re-test
+     it on the FrankenPHP version in use (1.13.3 at the time of writing).
