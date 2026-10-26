@@ -7,18 +7,20 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use ri_launcher_core::backups::{self, BackupFile};
 use ri_launcher_core::platform::{InstallOutcome, Platform, State as RunState};
+use ri_launcher_core::sdimage::{self, ImageInfo};
 use ri_launcher_core::service::{Launcher, Summary};
 use ri_launcher_core::settings::{Mode, Settings};
 use ri_launcher_core::status::{self, InstallStatus};
 use ri_launcher_core::DefaultBackend;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Emitter, Manager, State, WindowEvent};
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_opener::OpenerExt;
 
@@ -28,6 +30,19 @@ type L = Launcher<DefaultBackend>;
 
 struct AppState {
     launcher: Arc<L>,
+    image: Arc<Mutex<ImageDownload>>,
+    image_cancel: Arc<AtomicBool>,
+}
+
+/// Progress of the R Station image download, polled by the window (the download itself runs in a task here, so it
+/// carries on if the tab is changed).
+#[derive(Default, Clone, serde::Serialize)]
+struct ImageDownload {
+    running: bool,
+    done: u64,
+    total: u64,
+    error: Option<String>,
+    finished: bool,
 }
 
 fn data_dir() -> PathBuf {
@@ -216,6 +231,89 @@ async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), S
     backups::import(state.launcher.platform().as_ref(), std::path::Path::new(&path)).await.map_err(err)
 }
 
+#[tauri::command]
+async fn image_info(app: AppHandle, state: State<'_, AppState>) -> Result<ImageInfo, String> {
+    sdimage::info(state.launcher.dir(), &app.package_info().version.to_string()).await.map_err(err)
+}
+
+#[tauri::command]
+fn image_download_status(state: State<'_, AppState>) -> ImageDownload {
+    state.image.lock().map(|s| s.clone()).unwrap_or_default()
+}
+
+/// Starts (or resumes) the download in the background; the window follows `image_download_status`.
+#[tauri::command]
+async fn image_download_start(state: State<'_, AppState>) -> Result<(), String> {
+    {
+        let mut s = state.image.lock().map_err(err)?;
+        if s.running {
+            return Ok(());
+        }
+        *s = ImageDownload { running: true, ..Default::default() };
+    }
+    state.image_cancel.store(false, Ordering::Relaxed);
+    let (shared, cancel, dir) = (state.image.clone(), state.image_cancel.clone(), state.launcher.dir().to_path_buf());
+    tauri::async_runtime::spawn(async move {
+        let set = |f: &dyn Fn(&mut ImageDownload)| {
+            if let Ok(mut s) = shared.lock() {
+                f(&mut s)
+            }
+        };
+        let result = match sdimage::fetch_manifest(&sdimage::manifest_url()).await {
+            Ok(m) => {
+                set(&|s| s.total = m.size);
+                let progress = |done: u64, total: u64| set(&|s| {
+                    s.done = done;
+                    s.total = total;
+                });
+                sdimage::download(&m, &dir, &cancel, &progress).await.map(|_| ())
+            }
+            Err(e) => Err(e),
+        };
+        set(&|s| {
+            s.running = false;
+            match &result {
+                Ok(()) => s.finished = true,
+                Err(e) => s.error = Some(e.to_string()),
+            }
+        });
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn image_download_cancel(state: State<'_, AppState>) {
+    state.image_cancel.store(true, Ordering::Relaxed);
+}
+
+/// Opens Raspberry Pi Imager with the downloaded image chosen. Re-reads the (cached) manifest rather than trusting a
+/// path from the window.
+#[tauri::command]
+async fn image_write(state: State<'_, AppState>) -> Result<(), String> {
+    let m = sdimage::fetch_manifest(&sdimage::manifest_url()).await.map_err(err)?;
+    if !sdimage::is_downloaded(state.launcher.dir(), &m) {
+        return Err("The image hasn't been downloaded and checked yet.".into());
+    }
+    sdimage::open_in_imager(&sdimage::image_path(state.launcher.dir(), &m)).map_err(err)
+}
+
+#[tauri::command]
+async fn image_reveal(app: AppHandle, state: State<'_, AppState>) -> Result<(), String> {
+    let m = sdimage::fetch_manifest(&sdimage::manifest_url()).await.map_err(err)?;
+    app.opener().reveal_item_in_dir(sdimage::image_path(state.launcher.dir(), &m)).map_err(|e| e.to_string())
+}
+
+/// The two download pages the window may open (a fixed list, never an address from the page).
+#[tauri::command]
+fn open_tool_page(app: AppHandle, which: String) -> Result<(), String> {
+    let url = match which.as_str() {
+        "imager" => sdimage::IMAGER_URL,
+        "etcher" => sdimage::ETCHER_URL,
+        _ => return Err("Unknown page".into()),
+    };
+    app.opener().open_url(url, None::<&str>).map_err(|e| format!("Couldn't open the browser: {e}"))
+}
+
 #[cfg(windows)]
 #[tauri::command]
 fn restart_computer() -> Result<(), String> {
@@ -279,6 +377,40 @@ fn tray_icon(running: bool) -> tauri::image::Image<'static> {
     tauri::image::Image::from_bytes(bytes).expect("embedded tray icon is a valid PNG")
 }
 
+const QUIT_LABEL: &str = "Quit";
+const QUIT_AND_STOP_LABEL: &str = "Shut Down Server and Quit";
+
+/// "Quit" when no server is running; one combined item when it is, so quitting can't silently leave Docker (or the LAN
+/// proxy's absence) behind.
+fn quit_label(state: RunState) -> &'static str {
+    if state == RunState::Running {
+        QUIT_AND_STOP_LABEL
+    } else {
+        QUIT_LABEL
+    }
+}
+
+/// The tray's Quit: shuts the server down first if it is running (whatever the label last said), and only exits once
+/// that worked. If it fails the app stays open and the window says why.
+fn quit_app(app: &AppHandle, launcher: Arc<L>, item: MenuItem<tauri::Wry>) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if launcher.platform().state().await.ok() == Some(RunState::Running) {
+            let _ = item.set_enabled(false);
+            let _ = item.set_text("Shutting down…");
+            if let Err(e) = launcher.stop().await {
+                tracing::warn!("could not shut down on quit: {e}");
+                let _ = item.set_enabled(true);
+                let _ = item.set_text(QUIT_AND_STOP_LABEL);
+                show_main(&app);
+                let _ = app.emit("tray-error", format!("Couldn't shut the server down, so RI Launcher stayed open: {e}"));
+                return;
+            }
+        }
+        app.exit(0);
+    });
+}
+
 fn tooltip(s: &Summary) -> String {
     match s.state {
         RunState::NotInstalled => "RI Launcher — not installed".into(),
@@ -320,7 +452,8 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, backups_list, backup_create, backup_export,
-            backup_import, restart_computer, get_autostart, set_autostart, app_version
+            backup_import, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
+            image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page
         ])
         .on_window_event(|window, event| {
             // The window is just a view; closing it leaves Relief Inventory (and its LAN proxy) running in the tray.
@@ -334,13 +467,13 @@ fn main() {
             let launcher = make_launcher();
             #[cfg(not(windows))]
             recover_interrupted_install(launcher.dir());
-            app.manage(AppState { launcher: launcher.clone() });
+            app.manage(AppState { launcher: launcher.clone(), image: Arc::default(), image_cancel: Arc::default() });
 
             let open = MenuItem::with_id(app, "open_app", "Open Relief Inventory", true, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "Show RI Launcher", true, None::<&str>)?;
-            let quit = MenuItem::with_id(app, "quit", "Quit (others can't connect until it's reopened)", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", QUIT_LABEL, true, None::<&str>)?;
             let menu = Menu::with_items(app, &[&open, &show, &quit])?;
-            let l2 = launcher.clone();
+            let (l2, quit2) = (launcher.clone(), quit.clone());
             TrayIconBuilder::<tauri::Wry>::with_id(TRAY_ID)
                 .tooltip("RI Launcher")
                 .icon(tray_icon(false))
@@ -352,7 +485,7 @@ fn main() {
                         let _ = open_local(app, &l2);
                     }
                     "show" => show_main(app),
-                    "quit" => app.exit(0),
+                    "quit" => quit_app(app, l2.clone(), quit2.clone()),
                     _ => {}
                 })
                 .on_tray_icon_event(|tray, event| {
@@ -384,13 +517,14 @@ fn main() {
             });
 
             // Keep the tray tooltip/icon in step with reality.
-            let (handle, l4) = (app.handle().clone(), launcher.clone());
+            let (handle, l4, quit3) = (app.handle().clone(), launcher.clone(), quit.clone());
             tauri::async_runtime::spawn(async move {
                 loop {
                     let s = l4.summary().await;
                     if let Some(tray) = handle.tray_by_id(TRAY_ID) {
                         let _ = tray.set_tooltip(Some(tooltip(&s)));
                         let _ = tray.set_icon(Some(tray_icon(s.state == RunState::Running)));
+                        let _ = quit3.set_text(quit_label(s.state));
                     }
                     tokio::time::sleep(Duration::from_secs(10)).await;
                 }
@@ -399,11 +533,38 @@ fn main() {
         })
         .build(tauri::generate_context!())
         .expect("error while running RI Launcher")
-        .run(|_app, _event| {
+        .run(|app, event| {
             // clicking the Dock icon while the window is hidden brings it back
             #[cfg(target_os = "macos")]
-            if let tauri::RunEvent::Reopen { .. } = _event {
-                show_main(_app);
+            if let tauri::RunEvent::Reopen { .. } = event {
+                show_main(app);
+            }
+            if let tauri::RunEvent::ExitRequested { api, code: None, .. } = event {
+                keep_running_while_serving(app, api);
             }
         });
+}
+
+/// macOS Cmd-Q and the Dock's Quit ask the app to exit without going through the tray menu, which would stop the
+/// LAN proxy while Docker keeps running. Treat them like closing the window while the server is running (stay in the
+/// menu bar; the tray's "Shut Down Server and Quit" is the way out) and quit normally when it isn't. Only a request
+/// from outside is held back: our own `app.exit(0)` carries an exit code, so the tray's Quit still works. Other
+/// platforms have no such path (closing the window already hides it), and holding back a logoff would be wrong.
+fn keep_running_while_serving(app: &AppHandle, api: tauri::ExitRequestApi) {
+    if !cfg!(target_os = "macos") {
+        return;
+    }
+    api.prevent_exit();
+    let app = app.clone();
+    let launcher = app.state::<AppState>().launcher.clone();
+    tauri::async_runtime::spawn(async move {
+        if launcher.platform().state().await.ok() == Some(RunState::Running) {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.hide();
+            }
+            set_dock_icon(&app, false);
+        } else {
+            app.exit(0);
+        }
+    });
 }

@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import * as api from './api'
 import iconUrl from './assets/icon.png'
 import splashUrl from './assets/splash.webp'
+import RStationImage from './RStationImage.vue'
 
 const summary = ref(null)
 const install = ref(null)
@@ -15,6 +16,7 @@ const confirming = ref('') // 'uninstall' | 'restore' | ''
 const keepData = ref(true)
 const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
 const restoreFile = ref('')
+const tab = ref(new URLSearchParams(location.search).get('mock')?.startsWith('image') ? 'image' : 'app') // 'app' | 'backups' | 'image'
 const form = reactive({ hostname: '', port: 8080, timezone: '' })
 let formLoaded = false
 let timer
@@ -49,6 +51,7 @@ const checkAgain = async () => {
 
 onMounted(async () => {
     checkAgain()
+    api.onTrayError(fail)
     version.value = await api.appVersion()
     api.getAutostart().then((v) => (autostart.value = v)).catch(() => {})
     refresh()
@@ -167,6 +170,58 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             {{ msg.text }} <button class="quiet" @click="msg = null">Dismiss</button>
         </p>
 
+        <nav class="tabs" role="tablist">
+            <button role="tab" :aria-selected="tab === 'app'" :class="{ on: tab === 'app' }" @click="tab = 'app'">Local RI Server</button>
+            <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Backups</button>
+            <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image' }" @click="tab = 'image'">R Station SD card</button>
+        </nav>
+
+        <RStationImage v-if="tab === 'image'" @note="note" />
+
+        <!-- Backups tab -->
+        <section v-if="tab === 'backups'" class="card">
+            <div class="who">
+                <h2>Backups</h2>
+                <div class="btns">
+                    <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Back up now</button>
+                    <button class="quiet" @click="chooseRestore" :disabled="!!busy || state !== 'running'">Restore from file…</button>
+                </div>
+            </div>
+            <div class="statusline">
+                <span class="pill" :class="state === 'not_installed' ? 'off' : 'ok'">{{ state === 'not_installed' ? 'Not installed' : 'Installed' }}</span>
+                <span v-if="state !== 'not_installed'" class="pill" :class="state === 'running' ? 'ok' : 'off'">{{ state === 'running' ? 'Running' : 'Stopped' }}</span>
+            </div>
+            <template v-if="state === 'not_installed'">
+                <p class="muted">Relief Inventory isn't installed on this computer, so there is nothing to back up here. You can still restore a backup after installing it.</p>
+                <div class="actions"><button @click="tab = 'app'">Go to Local RI Server</button></div>
+            </template>
+            <p v-else-if="state !== 'running'" class="muted">Start Relief Inventory (on the Local RI Server tab) to see and make backups.</p>
+            <ul v-else-if="backups.length" class="rows">
+                <li v-for="b in backups.slice(0, 8)" :key="b.path">
+                    <div class="grow">
+                        <div class="name small">{{ b.name }}</div>
+                        <div class="muted small">{{ when(b.modified) }} · {{ size(b.size) }}</div>
+                    </div>
+                    <button class="quiet" @click="saveCopy(b)" :disabled="!!busy" title="Copy this backup to your Documents folder as a read-only file">Save a copy</button>
+                </li>
+            </ul>
+            <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Back up now</strong> makes one immediately.</p>
+            <p v-if="state !== 'not_installed'" class="muted small foot">
+                "Save a copy" puts a read-only file in Documents\Relief Inventory Backups. Keep copies somewhere other than this computer too.
+                Restoring replaces everything currently in Relief Inventory.
+            </p>
+            <div v-if="confirming === 'restore'" class="banner bad" role="alertdialog">
+                <p><strong>Replace everything with this backup?</strong><br />{{ restoreFile }}</p>
+                <p class="small">A safety backup of the current data is made first. Relief Inventory is unavailable for a few minutes while it restores.</p>
+                <div class="actions">
+                    <button class="danger" @click="doRestore">Yes, restore</button>
+                    <button @click="confirming = ''">Cancel</button>
+                </div>
+            </div>
+        </section>
+
+
+        <template v-if="tab === 'app'">
         <img v-if="state === 'not_installed'" class="splash" :src="splashUrl" alt="Relief Inventory" />
 
         <!-- Not installed: install / progress / restart / error -->
@@ -282,40 +337,6 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             </template>
         </section>
 
-        <!-- Backups -->
-        <section v-if="state !== 'not_installed'" class="card">
-            <div class="who">
-                <h2>Backups</h2>
-                <div class="btns">
-                    <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Back up now</button>
-                    <button class="quiet" @click="chooseRestore" :disabled="!!busy || state !== 'running'">Restore from file…</button>
-                </div>
-            </div>
-            <p v-if="state !== 'running'" class="muted">Start Relief Inventory to see and make backups.</p>
-            <ul v-else-if="backups.length" class="rows">
-                <li v-for="b in backups.slice(0, 8)" :key="b.path">
-                    <div class="grow">
-                        <div class="name small">{{ b.name }}</div>
-                        <div class="muted small">{{ when(b.modified) }} · {{ size(b.size) }}</div>
-                    </div>
-                    <button class="quiet" @click="saveCopy(b)" :disabled="!!busy" title="Copy this backup to your Documents folder as a read-only file">Save a copy</button>
-                </li>
-            </ul>
-            <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Back up now</strong> makes one immediately.</p>
-            <p class="muted small foot">
-                "Save a copy" puts a read-only file in Documents\Relief Inventory Backups. Keep copies somewhere other than this computer too.
-                Restoring replaces everything currently in Relief Inventory.
-            </p>
-            <div v-if="confirming === 'restore'" class="banner bad" role="alertdialog">
-                <p><strong>Replace everything with this backup?</strong><br />{{ restoreFile }}</p>
-                <p class="small">A safety backup of the current data is made first. Relief Inventory is unavailable for a few minutes while it restores.</p>
-                <div class="actions">
-                    <button class="danger" @click="doRestore">Yes, restore</button>
-                    <button @click="confirming = ''">Cancel</button>
-                </div>
-            </div>
-        </section>
-
         <!-- Maintenance -->
         <section v-if="state !== 'not_installed'" class="card">
             <h2>Maintenance</h2>
@@ -356,6 +377,8 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             </details>
         </section>
 
+        </template>
+
         <footer class="muted small foot">RI Launcher {{ version }}</footer>
     </main>
 </template>
@@ -366,6 +389,10 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 .top h1 { font-size: 20px; margin: 0; flex: 1; }
 .mark { width: 32px; height: 32px; }
 .pre { white-space: pre-wrap; margin: 0 0 8px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; background: transparent; padding: 8px 14px; font-weight: 600; color: var(--muted); }
+.tabs button.on { color: inherit; border-bottom-color: var(--accent); }
+.statusline { display: flex; gap: 8px; margin: 0 0 10px; }
 .splash { width: 100%; border-radius: 10px; display: block; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 h2 { font-size: 15px; margin: 0 0 10px; }

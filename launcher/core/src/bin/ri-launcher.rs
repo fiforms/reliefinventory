@@ -48,6 +48,23 @@ enum Cmd {
         #[command(subcommand)]
         action: BackupCmd,
     },
+    /// The R Station Raspberry Pi SD card image
+    Image {
+        #[command(subcommand)]
+        action: ImageCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum ImageCmd {
+    /// Show the current image (from the published manifest) and whether it is downloaded
+    Info,
+    /// Download (or resume) the current image and verify its checksum
+    Download,
+    /// Re-check the downloaded file against the manifest's SHA-256
+    Verify,
+    /// Open Raspberry Pi Imager with the downloaded image chosen
+    Write,
 }
 
 #[derive(Subcommand)]
@@ -145,6 +162,7 @@ async fn main() {
             die(launcher.apply(s).await);
         }
         Cmd::Link => println!("{}", die(launcher.shareable_link())),
+        Cmd::Image { action } => image_command(&dir, action).await,
         Cmd::Backups { action } => {
             let p = launcher.platform();
             match action {
@@ -162,6 +180,39 @@ async fn main() {
                 }
                 BackupCmd::Import { file } => die(backups::import(p.as_ref(), &file).await),
             }
+        }
+    }
+}
+
+async fn image_command(dir: &std::path::Path, action: ImageCmd) {
+    use ri_launcher_core::sdimage;
+    let version = env!("CARGO_PKG_VERSION");
+    match action {
+        ImageCmd::Info => println!("{}", serde_json::to_string_pretty(&die(sdimage::info(dir, version).await)).unwrap()),
+        ImageCmd::Download => {
+            let m = die(sdimage::fetch_manifest(&sdimage::manifest_url()).await);
+            println!("{} ({} MB)", m.filename, m.size >> 20);
+            let cancel = std::sync::atomic::AtomicBool::new(false);
+            let p = die(sdimage::download(&m, dir, &cancel, &|done, total| eprint!("\r  {} of {} MB", done >> 20, total >> 20)).await);
+            eprintln!();
+            println!("Downloaded and verified: {}", p.display());
+        }
+        ImageCmd::Verify => {
+            let m = die(sdimage::fetch_manifest(&sdimage::manifest_url()).await);
+            if sdimage::verify(dir, &m).await {
+                println!("OK: {} matches the manifest.", m.filename);
+            } else {
+                eprintln!("error: {} is missing or does not match the manifest.", m.filename);
+                std::process::exit(1);
+            }
+        }
+        ImageCmd::Write => {
+            let m = die(sdimage::fetch_manifest(&sdimage::manifest_url()).await);
+            if !sdimage::is_downloaded(dir, &m) {
+                die::<(), _>(Err("download the image first (ri-launcher image download)"));
+            }
+            die(sdimage::open_in_imager(&sdimage::image_path(dir, &m)));
+            println!("Raspberry Pi Imager opened.");
         }
     }
 }

@@ -13,6 +13,7 @@ pub mod network;
 pub mod platform;
 pub mod proxy;
 pub mod runner;
+pub mod sdimage;
 pub mod service;
 pub mod settings;
 pub mod status;
