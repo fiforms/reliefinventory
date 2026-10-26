@@ -173,6 +173,9 @@ const filteredReports = computed(() => {
 		if (filterStatus.value && report.status !== filterStatus.value) return false;
 		if (filterReporter.value && String(report.person?.id) !== filterReporter.value) return false;
 		if (filterPage.value && (report.page_title || report.page_url) !== filterPage.value) return false;
+		// "45" or "#45" finds report #45 itself, rather than every message that happens to contain "45".
+		const number = text.match(/^#?(\d+)$/);
+		if (number) return report.id === Number(number[1]);
 		if (text) {
 			const commentText = (report.status_logs || []).map((log) => log.comment).filter(Boolean);
 			const haystack = [report.message, report.page_title, report.page_url, report.person?.full_name, report.reporter_name, report.instance_identifier, ...commentText]
@@ -420,7 +423,7 @@ async function confirmCompose() {
 						type="text"
 						v-model="searchText"
 						class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-						placeholder="Search message, comments, page, reporter..."
+						placeholder="Search message, comments, page, reporter, or #number..."
 					/>
 				</label>
 

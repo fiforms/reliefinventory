@@ -103,6 +103,7 @@ function historyEntries(report) {
 		<div class="flex items-start justify-between gap-4">
 			<div class="flex-1">
 				<div class="flex items-center gap-2 text-sm flex-wrap">
+					<span class="font-mono text-gray-500" title="Report number">#{{ report.id }}</span>
 					<span class="font-semibold">{{ report.type === 'bug' ? 'Bug' : 'Feature' }}</span>
 					<span v-if="report.urgent && report.status !== 'resolved'" class="px-2 py-0.5 rounded text-xs font-semibold bg-red-100 text-red-800">
 						URGENT
