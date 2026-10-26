@@ -3,38 +3,15 @@
 use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\KioskLocation;
-use App\Models\Trust;
 use App\Services\Federation\InstanceIdentity;
 use App\Services\Federation\TrustService;
 use App\Services\FeedbackPushService;
 use Illuminate\Support\Facades\Http;
-use Illuminate\Support\Str;
 
 beforeEach(function () {
     config(['federation.allow_private_hosts' => true]);
     InstanceIdentity::current()->update(['base_url' => 'https://b.example.test']);
 });
-
-function incomingReport(array $over = []): array
-{
-    return $over + ['uuid' => (string) Str::uuid(), 'type' => 'bug', 'message' => 'It broke.', 'page_url' => '/items', 'created_at' => '2026-10-01T12:00:00Z'];
-}
-
-function localReport(string $message = 'Local report'): FeedbackReport
-{
-    return FeedbackReport::create(['type' => 'bug', 'message' => $message, 'page_url' => '/x']);
-}
-
-/** This instance as a remote that trusts a fake central. $remote is filled in by reference; returns the trust. */
-function remoteWithCentral(&$remote, array $over = []): Trust
-{
-    $remote = fakeRemote(array_merge(['name' => 'Central', 'grants_for_us' => ['feedback.send']], $over));
-    serveRemote($remote);
-    $trust = TrustService::enrollInvited($remote['doc'], $remote['origin'], [], ['feedback.send'], null);
-    FeedbackAggregationSetting::current()->update(['instance_role' => 'remote', 'feedback_trust_id' => $trust->id]);
-
-    return $trust;
-}
 
 test('central takes reports from a trusted instance, tags them with the trust, and ignores self-asserted identity', function () {
     $peer = fedPeer('instance');
@@ -79,17 +56,6 @@ test('a remote sends unsent reports to its trusted central, signed, and marks on
     Http::assertNotSent(fn ($r) => str_contains($r->url(), '/json/feedback/ingest'));
 });
 
-test('a remote with a trust never falls back to the shared secret', function () {
-    remoteWithCentral($remote, ['feedback_status' => 403]);
-    FeedbackAggregationSetting::current()->update(['central_ingest_url' => 'https://old.example.test/json/feedback/ingest', 'shared_secret' => 's3cret']);
-    localReport();
-
-    $result = app(FeedbackPushService::class)->pushUnsent();
-
-    expect($result['sent'])->toBe(0)->and($result['error'])->toContain('has not allowed this instance to send feedback');
-    Http::assertNotSent(fn ($r) => str_contains($r->url(), 'old.example.test'));
-});
-
 test('a revoked trust turns pushing off and explains why', function () {
     $trust = remoteWithCentral($remote);
     TrustService::revoke($trust, null);
@@ -119,7 +85,7 @@ test('the Feedback settings page lists paired instances and saves the chosen one
 
     $this->actingAs($admin)->getJson('/json/feedback-aggregation-settings')->assertOk()
         ->assertJsonPath('trusts.0.id', $trust->id)->assertJsonPath('trusts.0.may_send_feedback', true)
-        ->assertJsonCount(1, 'trusts')->assertJsonPath('settings.legacy_enabled', true);
+        ->assertJsonCount(1, 'trusts');
 
     $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote', 'feedback_trust_id' => $client->id])->assertStatus(422);
     $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote', 'feedback_trust_id' => $trust->id])
@@ -128,15 +94,4 @@ test('the Feedback settings page lists paired instances and saves the chosen one
 
     $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote', 'feedback_trust_id' => null])->assertOk();
     expect(FeedbackAggregationSetting::current()->feedback_trust_id)->toBeNull();
-});
-
-test('the shared-secret ingest and its connection codes can be retired', function () {
-    FeedbackAggregationSetting::current()->update(['instance_role' => 'central', 'shared_secret' => 'abc']);
-    $payload = ['instance_identifier' => 'x', 'reports' => [incomingReport()]];
-    $this->postJson('/json/feedback/ingest', $payload, ['X-Feedback-Shared-Secret' => 'abc'])->assertOk();
-
-    config(['federation.legacy_feedback_secret' => false]);
-    $this->postJson('/json/feedback/ingest', $payload, ['X-Feedback-Shared-Secret' => 'abc'])->assertStatus(410);
-    $this->actingAs(userWithPermissions('manage-feedback'))
-        ->postJson('/json/feedback-aggregation-settings/connection-code')->assertStatus(410);
 });

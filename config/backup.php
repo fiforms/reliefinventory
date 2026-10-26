@@ -50,7 +50,6 @@ return [
     // blanks whatever it can't decrypt and lists the labels so the admin can re-enter them. A test fails if a
     // model gains an `encrypted` cast that is not registered here.
     'encrypted_columns' => [
-        'feedback_aggregation_settings.shared_secret' => 'Centralized feedback shared secret',
         'mail_settings.resend_key' => 'Resend API key (Email Settings)',
         'mail_settings.smtp_password' => 'SMTP password (Email Settings)',
         'federation_identities.private_key' => 'Federation identity key (peers must re-approve a new one)',

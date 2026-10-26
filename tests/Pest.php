@@ -3,6 +3,8 @@
 use App\Http\Controllers\FederationController;
 use App\Models\Category;
 use App\Models\County;
+use App\Models\FeedbackAggregationSetting;
+use App\Models\FeedbackReport;
 use App\Models\Item;
 use App\Models\ItemType;
 use App\Models\KioskLocation;
@@ -358,9 +360,37 @@ function serveRemote(array &$remote): void
                 return Http::response(['message' => 'refused'], $remote['feedback_status']);
             }
 
-            return Http::response(['received' => collect($request->data()['reports'] ?? [])->pluck('uuid')->all()]);
+            $uuids = collect($request->data()['reports'] ?? [])->pluck('uuid');
+            if (isset($remote['feedback_ack_only'])) {
+                $uuids = $uuids->intersect($remote['feedback_ack_only']);
+            }
+
+            return Http::response(['received' => $uuids->values()->all()]);
         }
 
         return Http::response(['permissions' => $remote['grants_for_us']]);
     }]);
+}
+
+/** A report as a remote sends it to central. */
+function incomingReport(array $over = []): array
+{
+    return $over + ['uuid' => (string) Str::uuid(), 'type' => 'bug', 'message' => 'It broke.', 'page_url' => '/items', 'created_at' => '2026-10-01T12:00:00Z'];
+}
+
+/** A feedback report created here, not yet sent anywhere. */
+function localReport(string $message = 'Local report', array $over = []): FeedbackReport
+{
+    return FeedbackReport::create($over + ['type' => 'bug', 'message' => $message, 'page_url' => '/x']);
+}
+
+/** This instance as a remote that trusts a fake central. $remote is filled in by reference; returns the trust. */
+function remoteWithCentral(&$remote, array $over = []): Trust
+{
+    $remote = fakeRemote(array_merge(['name' => 'Central', 'grants_for_us' => ['feedback.send']], $over));
+    serveRemote($remote);
+    $trust = TrustService::enrollInvited($remote['doc'], $remote['origin'], [], ['feedback.send'], null);
+    FeedbackAggregationSetting::current()->update(['instance_role' => 'remote', 'feedback_trust_id' => $trust->id]);
+
+    return $trust;
 }

@@ -51,7 +51,7 @@ test('a client pairing creates its managed device and revoking the trust revokes
 
     $device = $trust->managedDevice;
     expect($device->device_uuid)->toBe($peer['uuid'])->and($device->kiosk_location_id)->toBe($location->id)
-        ->and($device->token_hash)->toBeNull();
+        ->and($device->trust_id)->toBe($trust->id);
 
     TrustService::revoke($trust, null);
     expect($device->fresh()->revoked_at)->not->toBeNull()->and($trust->fresh()->status)->toBe('revoked');

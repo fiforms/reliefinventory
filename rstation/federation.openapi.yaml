@@ -37,33 +37,6 @@ paths:
         "422": { description: "Invalid or expired code, bad proof of key possession, or a malformed field" }
         "429": { description: Too many attempts }
         "503": { description: This server has no usable federation key }
-  /upgrade-device:
-    post:
-      summary: Trade an earlier bearer-token pairing for a key-based trust
-      description: |
-        Only while the server still honours pre-federation bearer tokens (`RI_FEDERATION_LEGACY_DEVICES`). The
-        caller authenticates with its **old** bearer token and proves it holds the new key by signing
-        `"ri-upgrade-v1\n" + uuid + "\n" + public_key`. The old token is retired by this call.
-      security:
-        - legacyBearer: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [public_key, signature]
-              properties:
-                public_key: { type: string, minLength: 43, maxLength: 43 }
-                signature: { type: string }
-      responses:
-        "201":
-          description: Upgraded. The trust has the print.share grant.
-          content:
-            application/json:
-              schema: { $ref: "#/components/schemas/PairResponse" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "422": { description: The key could not be verified }
   /session:
     post:
       summary: Trade one signed request for a session token
@@ -139,10 +112,6 @@ components:
       type: http
       scheme: bearer
       description: "A key-signed `RIK-…` credential, for clients that can only send one fixed Authorization value (FEDERATION_AUTH.md). Client-kind trusts only; an expired one is a 419."
-    legacyBearer:
-      type: http
-      scheme: bearer
-      description: A pre-federation device token, honoured only while the legacy flag is on.
   responses:
     Unauthenticated:
       description: Unknown, revoked or badly signed. Clients forget the pairing; a session token that merely expired is replaced by signing once.

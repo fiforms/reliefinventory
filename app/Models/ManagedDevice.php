@@ -10,10 +10,9 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Str;
 
 /**
- * A paired R Station Raspberry Pi — see DEVICE_CONTRACT.md. The bearer
- * token is only ever stored as a sha256 hash; revocation (revoked_at, or a
- * nulled hash) makes every authenticated call 401, which tells the device
- * to wipe itself and return to setup.
+ * A paired R Station Raspberry Pi or desktop print server — see DEVICE_CONTRACT.md. It authenticates as a client-kind
+ * Trust (`trust_id`; App\Services\Federation), not with a token of its own; revocation (revoked_at, which revoking the
+ * trust sets) makes every authenticated call 401, which tells the device to wipe its pairing and return to setup.
  */
 class ManagedDevice extends Model
 {

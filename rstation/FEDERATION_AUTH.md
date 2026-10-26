@@ -3,7 +3,7 @@
 How a client app (the desktop print client, an R Station) or another Relief Inventory instance proves who
 it is. Machine-readable form: `rstation/federation.openapi.yaml`. Server design and the Trust Console are
 described in `CLAUDE.md` ("Federation"); this file is what a **client implementer** needs. It replaces the
-older bearer-token pairing in `rstation/platform/docs/DEVICE_CONTRACT.md` for this app.
+older bearer-token pairing in `rstation/platform/docs/DEVICE_CONTRACT.md` for this app: **there are no bearer tokens any more**, and a device paired before federation is refused (401) and must pair again.
 
 ## Keys
 
@@ -89,20 +89,6 @@ time it last saved, which after a long power-off can be weeks behind, and in an 
 corrected. Read the server's time from the `Date` header of any response (the R Station uses `GET /up`) and use that
 for `issued-at` / `expires-at`; if the server cannot be reached, leave the existing credential alone rather than
 replace it with one made from a bad clock. The server tolerates 5 minutes either way.
-
-## Upgrading an already-paired device (legacy bearer token → key)
-
-While the server still honours pre-federation bearer tokens (`RI_FEDERATION_LEGACY_DEVICES=true`), a device that
-holds one can trade it for a trust without anyone re-pairing it: `POST /api/federation/v1/upgrade-device` with
-`Authorization: Bearer <old token>` and `{public_key, signature}` where `signature` is over
-
-    ri-upgrade-v1
-    <uuid>
-    <public_key>
-
-`201` creates the trust (kind `rstation`, or `print_client` for a desktop print server; grant `print.share`;
-shown in the Trust Console as "Carried over from an earlier pairing") and **retires the old token in the same
-step**. After that the device authenticates with the credential above.
 
 ## The Raspberry Pi (R Station)
 

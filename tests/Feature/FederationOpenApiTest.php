@@ -23,7 +23,6 @@ test('every documented federation operation is routed, and no federation route i
         $middleware = collect($route[2]->gatherMiddleware());
         $expected = match ($path) {
             '/pair' => null,
-            '/upgrade-device' => 'device-auth',
             default => 'trust-auth',
         };
         $actual = $middleware->first(fn ($m) => str_starts_with($m, 'trust-auth') || str_starts_with($m, 'device-auth'));

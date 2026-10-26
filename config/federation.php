@@ -15,19 +15,10 @@ return [
     // Session token handed out after one signed call, so a client need not sign every request.
     'session_ttl_seconds' => 3600,
 
-    // The pre-federation shared-secret feedback ingest (POST /json/feedback/ingest) stays on for one release so
-    // a remote that has not been moved to a trust keeps reporting. Set false once every remote has moved.
-    'legacy_feedback_secret' => (bool) env('RI_FEDERATION_LEGACY_FEEDBACK', true),
-
     // A client whose HTTP stack cannot sign every request (the Pi's platform code sends one fixed bearer value)
     // keeps a short-lived credential signed by its own key in that place: `RIK-…`, see RequestSigner::mintBearer().
     // The longest lifetime (exp - iat) the server honours.
     'max_bearer_seconds' => 31 * 86400,
-
-    // Devices paired before federation hold a bearer token. With this on, such a token is still accepted by
-    // `device-auth` so a fleet can be updated gradually; new pairing is always by key. Remove once every device has
-    // re-paired.
-    'legacy_device_tokens' => (bool) env('RI_FEDERATION_LEGACY_DEVICES', false),
 
     // Outbound calls to another instance's address. https only and no private/loopback hosts, unless an
     // operator turns these on for a LAN or development setup (two local instances).

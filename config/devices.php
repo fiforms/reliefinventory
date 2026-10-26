@@ -4,9 +4,6 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 return [
-    // Minutes a generated pairing code stays valid.
-    'pairing_code_minutes' => 15,
-
     // A device whose last heartbeat is older than this is shown as offline
     // (heartbeats are every 5 minutes; allow a few missed ones).
     'offline_after_minutes' => 15,

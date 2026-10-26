@@ -267,12 +267,11 @@ Issues identified October 8, 2026
      it on the FrankenPHP version in use (1.13.3 at the time of writing).
 
 18. Federation trust system — built 2026-10-26 (branch `federation-trust`), see `CLAUDE.md` "Federation" and `rstation/FEDERATION_AUTH.md`; follow-ups
-   - **Before shipping the Pi change:** build the image and try it on a real Pi (pair with a code; then the in-place upgrade of an already-paired Pi
-     with `RI_FEDERATION_LEGACY_DEVICES=true`; then boot with the clock far behind and check it recovers). The Python was run only against a
-     live server on a dev machine, with the clock faked. Also not run: the Tauri window and the Windows/macOS builds of the print client.
-   - **Remove the legacy pieces once nothing needs them** (each is one release after every remote/device has moved): `RI_FEDERATION_LEGACY_FEEDBACK`
-     and the shared-secret ingest, `feedback_aggregation_settings.shared_secret`/`central_ingest_url` and their `encrypted_columns` entry;
-     `RI_FEDERATION_LEGACY_DEVICES`; the unused `DevicePairingCode` model/table and `managed_devices.token_hash`; the `/api/devices/pair` 410 stub.
+   - **Before shipping:** build the image and try it on a real Pi (pair with a code; boot with the clock far behind and check it recovers).
+     The Python was run only against a live server on a dev machine, with the clock faked. Also not run: the Tauri window and the Windows/macOS
+     builds of the print client. **The legacy paths were removed 2026-10-26** (feedback shared secret, bearer-token devices, in-place upgrade,
+     `/api/devices/pair`): every already-paired Pi, print client and feedback remote must be paired again with a code, so do this when each can
+     be reached by someone. A Pi paired the old way shows its pairing screen after its first 401.
    - **Endpoints for the permissions that exist but do nothing yet:** `offers.send`/`receive` (needs an origin uuid on `DonationOffer` and a
      remote-donor `Person`), `supplies.request`/`query_available` (an approved Partner `Person` per site, orders left at `New Order`; first extract
      the three duplicated on-hand calculations into one `InventoryAvailability` service), `inventory.query_exact`, `operator.full_read`, remote

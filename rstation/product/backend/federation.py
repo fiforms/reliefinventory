@@ -22,10 +22,6 @@ reached no new credential is minted, so a credential that works is never replace
 Pairing (`federated_pair`) replaces the platform's `pairing.pair` — `install()` swaps the module attribute, which
 `main.py` calls as `pairing.pair(...)`. Against a server that predates federation it falls back to the platform's own.
 
-A device paired before federation carries a legacy bearer token; while the server still honours those
-(RI_FEDERATION_LEGACY_DEVICES) `refresh_once()` trades it for a key-based trust (`POST /upgrade-device`), so an
-over-the-air update of this product moves a headless fleet across without anyone re-pairing it.
-
 Ed25519 signing is implemented below (RFC 8032, section 6) because the image's virtualenv is built into the OS image
 and declares no crypto library; `cryptography` is used instead when it happens to be installed. It signs a handful
 of short messages per day and never on request from outside, so the pure-Python version's timing behaviour is not
@@ -52,7 +48,6 @@ CREDENTIAL_SECONDS = 14 * 86400
 # A credential older than this is replaced (and one issued "in the future" is too: the clock was wrong then).
 REFRESH_AFTER_SECONDS = 6 * 3600
 CHECK_INTERVAL_SECONDS = 300
-UPGRADE_RETRY_SECONDS = 3600
 
 try:  # preferred when present
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
@@ -194,10 +189,6 @@ def pairing_message(code: str, pub: str, uuid: str) -> str:
     return f"ri-pair-v1\n{normalized}\n{pub}\n{uuid}"
 
 
-def upgrade_message(uuid: str, pub: str) -> str:
-    return f"ri-upgrade-v1\n{uuid}\n{pub}"
-
-
 def bearer_message(uuid: str, host: str, issued_at: int, expires_at: int) -> str:
     return f"ri-bearer-v1\n{uuid}\n{host.lower()}\n{issued_at}\n{expires_at}"
 
@@ -330,7 +321,6 @@ async def federated_pair(code: str, device_name: str, transport: httpx.AsyncBase
 
 
 _platform_pair = None
-_last_upgrade_attempt = 0.0
 
 
 def install() -> None:
@@ -350,10 +340,9 @@ def install() -> None:
 # ---- keeping the credential fresh -------------------------------------------------------------------------
 
 async def refresh_once(now: float | None = None, transport: httpx.AsyncBaseTransport | None = None) -> str:
-    """One look at the credential file. Returns what happened: unpaired | fresh | refreshed | upgraded | waiting.
+    """One look at the credential file. Returns what happened: unpaired | fresh | refreshed | legacy | waiting.
 
     `now` is the *server's* time; left out, it is read from the server (and nothing is touched if that fails)."""
-    global _last_upgrade_attempt
     import identity
     import pairing
 
@@ -383,23 +372,9 @@ async def refresh_once(now: float | None = None, transport: httpx.AsyncBaseTrans
         write_credential(mint_credential(seed, uuid, server_host(server), now, now + CREDENTIAL_SECONDS), keep_mtime=mtime)
         return "refreshed"
 
-    # A token from before federation: trade it for a trust, if the server still honours it.
-    if now - _last_upgrade_attempt < UPGRADE_RETRY_SECONDS:
-        return "waiting"
-    _last_upgrade_attempt = now
-    pub = public_key(seed)
-    body = {"public_key": pub, "signature": sign(seed, upgrade_message(uuid, pub))}
-    try:
-        async with httpx.AsyncClient(timeout=10, transport=transport) as client:
-            resp = await client.post(f"{server}{API_PREFIX}/upgrade-device", json=body, headers={"Authorization": f"Bearer {token}"})
-    except httpx.RequestError as exc:
-        log.info("could not reach the server to upgrade this device's pairing: %s", exc)
-        return "waiting"
-    if resp.status_code != 201:
-        log.info("the server did not upgrade this device's pairing (HTTP %s)", resp.status_code)
-        return "waiting"
-    write_credential(mint_credential(seed, uuid, server_host(server), now, now + CREDENTIAL_SECONDS), keep_mtime=mtime)
-    return "upgraded"
+    # A token from before federation: not ours to refresh. The server no longer honours it, so the platform's next
+    # heartbeat gets a 401 and the device returns to the pairing screen, where it pairs with a code.
+    return "legacy"
 
 
 async def maintain() -> None:

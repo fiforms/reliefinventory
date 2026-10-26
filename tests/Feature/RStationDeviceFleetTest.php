@@ -35,7 +35,7 @@ test('pairing exchanges a single-use code and the device key for a trust', funct
     $trust = $device->trust;
     expect($trust->public_key)->toBe($peer['public_key'])
         ->and($trust->kind)->toBe('print_client')
-        ->and($device->token_hash)->toBeNull()
+        ->and($device->trust_id)->toBe($trust->id)
         ->and($response->json('entity_name'))->not->toBeNull()
         ->and($response->json('server.public_key'))->toBe(InstanceIdentity::current()->public_key)
         ->and($response->json('token'))->toBeNull();
@@ -57,10 +57,6 @@ test('expired and unknown pairing codes are rejected with one generic error', fu
     $this->postJson('/api/federation/v1/pair', fedPairBody($peer, 'ZZZZZ-ZZZZZ'))->assertStatus(422);
 });
 
-test('the old bearer pairing is retired', function () {
-    $this->postJson('/api/devices/pair', ['code' => '123456', 'device_name' => 'Old Pi'])->assertStatus(410);
-});
-
 test('re-pairing the same device_uuid reuses the record, replaces the session, and clears revocation', function () {
     [$device, $oldToken] = pairedDevice();
     $device->trust->update(['status' => 'revoked']);
@@ -77,15 +73,11 @@ test('re-pairing the same device_uuid reuses the record, replaces the session, a
     $this->withToken($new)->postJson('/api/devices/heartbeat', [])->assertOk();
 });
 
-test('a device still holding an old bearer token works only while the legacy flag is on', function () {
+test('a token from before federation is refused', function () {
     [$device] = pairedDevice();
-    $device->forceFill(['token_hash' => ManagedDevice::hashToken('legacy-token')])->save();
 
-    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertStatus(401);
-    config(['federation.legacy_device_tokens' => true]);
-    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertOk();
-    $device->update(['revoked_at' => now()]);
-    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertStatus(401);
+    $this->withToken('some-old-bearer-token')->postJson('/api/devices/heartbeat', [])->assertUnauthorized();
+    $this->postJson('/api/devices/pair', ['code' => '123456', 'device_name' => 'Old Pi'])->assertNotFound();
 });
 
 test('heartbeat requires a device token and rejects revoked ones with 401', function () {

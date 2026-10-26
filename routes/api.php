@@ -17,8 +17,6 @@ use Illuminate\Support\Facades\Route;
 // the liveness probe is the framework's /up, outside this prefix, as the
 // contract specifies.
 Route::prefix('devices')->group(function () {
-    // Pairing is by key now (POST /api/federation/v1/pair); this answers old clients with a reason instead of a 404.
-    Route::post('/pair', fn () => response()->json(['message' => 'Pairing has moved: update this device\'s software, then pair it with a code from the Trust Console.'], 410));
     Route::post('/heartbeat', [DeviceHeartbeatController::class, 'heartbeat'])->middleware('device-auth');
     // Browser handoff for kiosk pages with nobody logged in (DeviceSessionController).
     Route::post('/session-ticket', [DeviceSessionController::class, 'ticket'])->middleware(['device-auth', 'throttle:30,1']);
@@ -42,7 +40,6 @@ Route::prefix('devices')->group(function () {
 // key possession); everything else is a signed request or a session token earned by one.
 Route::prefix('federation/v1')->group(function () {
     Route::post('/pair', [FederationController::class, 'pair'])->middleware('throttle:10,1');
-    Route::post('/upgrade-device', [FederationController::class, 'upgradeDevice'])->middleware(['device-auth', 'throttle:10,1']);
     Route::post('/session', [FederationController::class, 'session'])->middleware(['trust-auth:,signed', 'throttle:60,1']);
     Route::post('/feedback', [FeedbackIngestController::class, 'storeFromTrust'])->middleware(['trust-auth:feedback.send', 'throttle:120,1']);
     Route::get('/grants', [FederationController::class, 'grants'])->middleware(['trust-auth', 'throttle:120,1']);

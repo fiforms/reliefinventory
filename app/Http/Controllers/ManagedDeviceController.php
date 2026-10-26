@@ -60,7 +60,6 @@ class ManagedDeviceController extends Controller
             TrustService::revoke($managedDevice->trust, Auth::id());
         }
         $managedDevice->update(['revoked_at' => now()]);
-        $managedDevice->token_hash = null;
         $managedDevice->wake_channel = null;
         $managedDevice->session_token_hash = null;
         $managedDevice->save();

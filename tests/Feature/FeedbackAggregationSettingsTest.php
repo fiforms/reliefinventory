@@ -4,163 +4,52 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\FeedbackAggregationSetting;
+use App\Models\KioskLocation;
+use App\Models\Trust;
+use App\Services\Federation\TrustService;
 
-test('show returns settings without exposing the shared secret value', function () {
-    FeedbackAggregationSetting::current()->update(['shared_secret' => 'super-secret']);
-
+test('show returns the role and the chosen trust, and nothing secret', function () {
     $admin = userWithPermissions('manage-feedback');
 
     $this->actingAs($admin)->getJson('/json/feedback-aggregation-settings')
         ->assertOk()
-        ->assertJson(['settings' => [
-            'instance_role' => 'remote',
-            'shared_secret_set' => true,
-        ]])
-        ->assertJsonMissingPath('settings.shared_secret');
+        ->assertJson(['settings' => ['instance_role' => 'remote', 'feedback_trust_id' => null], 'trusts' => []])
+        ->assertJsonMissingPath('settings.shared_secret')
+        ->assertJsonMissingPath('settings.central_ingest_url');
 });
 
-test('update saves role, identifier, and ingest url', function () {
+test('update saves the role and the instance to send through', function () {
     $admin = userWithPermissions('manage-feedback');
+    $trust = TrustService::enrollInvited(['uuid' => 'c-1', 'name' => 'Central', 'public_key' => str_repeat('A', 43)], 'https://central.example.org', [], ['feedback.send'], null);
 
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', [
-        'instance_role' => 'central',
-        'instance_identifier' => 'central.example.org',
-        'central_ingest_url' => null,
-    ])->assertOk()->assertJson(['settings' => [
-        'instance_role' => 'central',
-        'instance_identifier' => 'central.example.org',
-        'shared_secret_set' => false,
-    ]]);
+    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote', 'feedback_trust_id' => $trust->id])
+        ->assertOk()->assertJsonPath('settings.feedback_trust_id', $trust->id)->assertJsonPath('trusts.0.may_send_feedback', true);
+    expect(FeedbackAggregationSetting::current()->pushConfigured())->toBeTrue();
 
-    expect(FeedbackAggregationSetting::current()->instance_role)->toBe('central');
+    $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'central', 'feedback_trust_id' => null])->assertOk();
+    expect(FeedbackAggregationSetting::current()->instance_role)->toBe('central')
+        ->and(FeedbackAggregationSetting::current()->pushConfigured())->toBeFalse();
 });
 
-test('a blank shared secret on update leaves the existing one unchanged', function () {
-    FeedbackAggregationSetting::current()->update(['shared_secret' => 'keep-me']);
+test('update refuses a missing role, an unknown trust and a client-app trust', function () {
     $admin = userWithPermissions('manage-feedback');
+    $client = fedEnroll(fedPeer('print_client'), [], (KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']))->id);
 
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', [
-        'instance_role' => 'remote',
-        'central_ingest_url' => 'https://central.example.org/json/feedback/ingest',
-    ])->assertOk();
-
-    expect(FeedbackAggregationSetting::current()->shared_secret)->toBe('keep-me');
+    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', [])->assertStatus(422);
+    $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote', 'feedback_trust_id' => 9999])->assertStatus(422);
+    $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote', 'feedback_trust_id' => $client->id])->assertStatus(422);
+    expect(Trust::count())->toBe(1);
 });
 
-test('a non-blank shared secret on update replaces the existing one', function () {
-    FeedbackAggregationSetting::current()->update(['shared_secret' => 'old-secret']);
-    $admin = userWithPermissions('manage-feedback');
-
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', [
-        'instance_role' => 'remote',
-        'shared_secret' => 'new-secret',
-    ])->assertOk();
-
-    expect(FeedbackAggregationSetting::current()->shared_secret)->toBe('new-secret');
-});
-
-test('feedback aggregation settings require manage-feedback', function () {
+test('feedback aggregation settings and the connection test require manage-feedback', function () {
     $user = userWithPermissions('general-access');
 
     $this->actingAs($user)->getJson('/json/feedback-aggregation-settings')->assertForbidden();
-    $this->actingAs($user)->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'remote'])->assertForbidden();
+    $this->putJson('/json/feedback-aggregation-settings', ['instance_role' => 'central'])->assertForbidden();
+    $this->postJson('/json/feedback-aggregation-settings/test')->assertForbidden();
 });
 
-test('the central address is normalized from a bare domain or site address', function (string $typed, ?string $expected) {
-    expect(FeedbackAggregationSetting::normalizeCentralUrl($typed))->toBe($expected);
-})->with([
-    ['demo.reliefinventory.app', 'https://demo.reliefinventory.app/json/feedback/ingest'],
-    ['  https://Demo.ReliefInventory.app/ ', 'https://demo.reliefinventory.app/json/feedback/ingest'],
-    ['https://demo.reliefinventory.app/setup/feedback?x=1', 'https://demo.reliefinventory.app/json/feedback/ingest'],
-    ['https://demo.reliefinventory.app/json/feedback/ingest', 'https://demo.reliefinventory.app/json/feedback/ingest'],
-    ['http://localhost:8080', 'http://localhost:8080/json/feedback/ingest'],
-    ['ftp://demo.reliefinventory.app', null],
-    ['', null],
-    ['not a url at all', null],
-]);
-
-test('update saves a bare domain as the full ingest url', function () {
-    $admin = userWithPermissions('manage-feedback');
-
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', [
-        'instance_role' => 'remote',
-        'central_ingest_url' => 'demo.reliefinventory.app',
-    ])->assertOk()->assertJsonPath('settings.central_ingest_url', 'https://demo.reliefinventory.app/json/feedback/ingest');
-
-    expect(FeedbackAggregationSetting::current()->central_ingest_url)->toBe('https://demo.reliefinventory.app/json/feedback/ingest');
-});
-
-test('update refuses an address that cannot be used', function () {
-    $admin = userWithPermissions('manage-feedback');
-
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', [
-        'instance_role' => 'remote',
-        'central_ingest_url' => 'not a url at all',
-    ])->assertStatus(422)->assertJsonValidationErrors('central_ingest_url');
-});
-
-test('a stored bare site address still pushes to the ingest path', function () {
-    FeedbackAggregationSetting::current()->update([
-        'instance_role' => 'remote',
-        'central_ingest_url' => 'https://demo.reliefinventory.app',
-        'shared_secret' => 's',
-    ]);
-
-    expect(FeedbackAggregationSetting::current()->ingestUrl())->toBe('https://demo.reliefinventory.app/json/feedback/ingest')
-        ->and(FeedbackAggregationSetting::current()->pushConfigured())->toBeTrue();
-});
-
-test('central makes a connection code holding its ingest url and a new secret', function () {
-    config(['app.url' => 'https://central.example.org']);
-    FeedbackAggregationSetting::current()->update(['instance_role' => 'central', 'shared_secret' => null]);
-    $admin = userWithPermissions('manage-feedback');
-
-    $code = $this->actingAs($admin)->postJson('/json/feedback-aggregation-settings/connection-code')
-        ->assertOk()->assertJsonPath('settings.shared_secret_set', true)->json('code');
-
-    $secret = FeedbackAggregationSetting::current()->shared_secret;
-    expect($secret)->toHaveLength(40)
-        ->and(FeedbackAggregationSetting::parseConnectionCode($code))
-        ->toBe(['url' => 'https://central.example.org/json/feedback/ingest', 'secret' => $secret]);
-
-    // Asking again keeps the same secret; new_secret replaces it.
-    $this->actingAs($admin)->postJson('/json/feedback-aggregation-settings/connection-code')->assertJsonPath('code', $code);
-    $this->actingAs($admin)->postJson('/json/feedback-aggregation-settings/connection-code', ['new_secret' => true]);
-    expect(FeedbackAggregationSetting::current()->shared_secret)->not->toBe($secret);
-});
-
-test('only a central instance has a connection code', function () {
-    $admin = userWithPermissions('manage-feedback');
-
-    $this->actingAs($admin)->postJson('/json/feedback-aggregation-settings/connection-code')->assertStatus(409);
-    expect(FeedbackAggregationSetting::current()->shared_secret)->toBeNull();
-});
-
-test('pasting a connection code sets this instance up as a remote', function () {
-    $admin = userWithPermissions('manage-feedback');
-    FeedbackAggregationSetting::current()->update(['instance_role' => 'central']);
-    $code = FeedbackAggregationSetting::connectionCode('https://central.example.org/json/feedback/ingest', 'pasted-secret');
-
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', ['connection_code' => "  $code\n"])
-        ->assertOk()
-        ->assertJsonPath('settings.instance_role', 'remote')
-        ->assertJsonPath('settings.central_ingest_url', 'https://central.example.org/json/feedback/ingest')
-        ->assertJsonPath('settings.shared_secret_set', true);
-
-    expect(FeedbackAggregationSetting::current()->shared_secret)->toBe('pasted-secret');
-});
-
-test('a garbled connection code is refused and changes nothing', function () {
-    $admin = userWithPermissions('manage-feedback');
-
-    $this->actingAs($admin)->putJson('/json/feedback-aggregation-settings', ['connection_code' => 'RIFEED1-garbage'])
-        ->assertStatus(422)->assertJsonValidationErrors('connection_code');
-    expect(FeedbackAggregationSetting::current()->central_ingest_url)->toBeNull();
-});
-
-test('the new connection-code and test endpoints require manage-feedback', function () {
-    $user = userWithPermissions('general-access');
-
-    $this->actingAs($user)->postJson('/json/feedback-aggregation-settings/connection-code')->assertForbidden();
-    $this->actingAs($user)->postJson('/json/feedback-aggregation-settings/test')->assertForbidden();
+test('the shared-secret endpoints are gone', function () {
+    $this->postJson('/json/feedback/ingest', ['instance_identifier' => 'r', 'reports' => []], ['X-Feedback-Shared-Secret' => 'x'])->assertNotFound();
+    $this->actingAs(userWithPermissions('manage-feedback'))->postJson('/json/feedback-aggregation-settings/connection-code')->assertStatus(404);
 });

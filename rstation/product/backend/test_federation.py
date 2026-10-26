@@ -50,7 +50,6 @@ def device(tmp_path, monkeypatch):
     monkeypatch.setattr(pairing, "read_server_url", lambda: SERVER)
     monkeypatch.setattr(identity, "get_device_uuid", lambda: UUID)
     monkeypatch.setattr(identity, "get_mac_address", lambda: "aa:bb:cc:dd:ee:ff")
-    monkeypatch.setattr(federation, "_last_upgrade_attempt", 0.0)
     return pairing
 
 
@@ -84,9 +83,6 @@ def test_the_shared_vectors_reproduce(implementation):
         assert federation.sign(seed, canonical) == v["signature"]
     for v in fixture["pairing_vectors"]:
         assert federation.pairing_message(v["code"], fixture["public_key"], v["uuid"]) == v["message"]
-        assert federation.sign(seed, v["message"]) == v["signature"]
-    for v in fixture["upgrade_vectors"]:
-        assert federation.upgrade_message(v["uuid"], fixture["public_key"]) == v["message"]
         assert federation.sign(seed, v["message"]) == v["signature"]
     for v in fixture["bearer_vectors"]:
         assert federation.bearer_message(v["uuid"], v["host"], v["iat"], v["exp"]) == v["message"]
@@ -268,38 +264,12 @@ def test_a_credential_stamped_by_a_wrong_clock_is_replaced_once_the_clock_is_rig
     assert federation.credential_times(device.DEVICE_TOKEN_FILE.read_text())[0] == 1_790_000_000
 
 
-def test_a_legacy_token_is_traded_for_a_trust_and_the_old_one_is_gone(device):
-    device.DEVICE_TOKEN_FILE.write_text("legacy-random-token")
-    os.utime(device.DEVICE_TOKEN_FILE, (1_700_000_000, 1_700_000_000))
-    seen = []
-
-    def handler(request):
-        seen.append((str(request.url), request.headers["authorization"], json.loads(request.content)))
-        return httpx.Response(201, json={})
-
-    assert run(federation.refresh_once(now=1_790_000_000, transport=_server(handler))) == "upgraded"
-
-    url, auth, body = seen[0]
-    seed = federation.load_or_create_seed()
-    assert url == f"{SERVER}/api/federation/v1/upgrade-device" and auth == "Bearer legacy-random-token"
-    assert body["signature"] == federation.sign(seed, federation.upgrade_message(UUID, body["public_key"]))
-    assert device.DEVICE_TOKEN_FILE.read_text().startswith("RIK-")
-    assert device.DEVICE_TOKEN_FILE.stat().st_mtime == 1_700_000_000
-
-
-def test_a_refused_upgrade_leaves_the_token_alone_and_is_not_retried_every_few_minutes(device):
+def test_a_token_from_before_federation_is_left_alone(device):
     device.DEVICE_TOKEN_FILE.write_text("legacy-random-token")
     calls = []
 
-    def handler(request):
-        calls.append(request)
-        return httpx.Response(401, json={})
-
-    assert run(federation.refresh_once(now=1_790_000_000, transport=_server(handler))) == "waiting"
-    assert run(federation.refresh_once(now=1_790_000_300, transport=_server(handler))) == "waiting"
-    assert len(calls) == 1 and device.DEVICE_TOKEN_FILE.read_text() == "legacy-random-token"
-    assert run(federation.refresh_once(now=1_790_000_000 + federation.UPGRADE_RETRY_SECONDS + 1, transport=_server(handler))) == "waiting"
-    assert len(calls) == 2
+    assert run(federation.refresh_once(now=1_790_000_000, transport=_server(lambda r: calls.append(r)))) == "legacy"
+    assert device.DEVICE_TOKEN_FILE.read_text() == "legacy-random-token" and calls == []
 
 
 def test_the_background_task_survives_a_failing_refresh(device, monkeypatch):

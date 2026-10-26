@@ -1138,23 +1138,16 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-fe
     Route::patch('/feedback-reports/{feedbackReport}', [FeedbackReportController::class, 'update']);
     // The only retry mechanism for centralized feedback aggregation — see
     // FeedbackPushService::pushUnsent(). A no-op (but not an error) on a
-    // 'central' instance or one with no central_ingest_url configured.
+    // 'central' instance or one that hasn't chosen an instance to send through.
     Route::post('/feedback-reports/send-unsent', [FeedbackReportController::class, 'sendUnsent']);
     Route::put('/banner-settings', [BannerSettingController::class, 'update']);
     // Admin-editable centralized feedback aggregation settings (instance
-    // role/identifier, central ingest URL, shared secret) — see
+    // role, which paired instance to send through) — see
     // FeedbackAggregationSetting; gated the same as this whole page.
     Route::get('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'show']);
     Route::put('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'update']);
-    Route::post('/feedback-aggregation-settings/connection-code', [FeedbackAggregationSettingsController::class, 'connectionCode']);
     Route::post('/feedback-aggregation-settings/test', [FeedbackAggregationSettingsController::class, 'test']);
 });
-
-// Central-side ingest for centralized feedback aggregation — instance-to-
-// instance, gated by a shared secret rather than a logged-in person's
-// permissions. See FeedbackIngestController and VerifyFeedbackIngestSecret.
-Route::post('/json/feedback/ingest', [FeedbackIngestController::class, 'store'])
-    ->middleware('feedback-ingest-secret');
 
 // Import: upload/preview/commit are manage-import; viewing/deleting batch
 // history is split into admin-import (both Administrator-only by default,

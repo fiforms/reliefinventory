@@ -444,7 +444,7 @@ code, or an invitation between instances); each pairing is a **trust** with expl
   public key that every peer must re-approve. Public half at `GET /.well-known/ri-instance.json` (`{protocol, uuid, name, url,
   public_key, fingerprint}`; the fingerprint is the SHA-256 of the key, 16 hex digits grouped `AAAA-BBBB-CCCC-DDDD`).
 - **Trusts:** `trusts` (`kind` instance|print_client|rstation, `peer_uuid`, the pinned `public_key`, `status`
-  approved|revoked, `auth_method` pairing_code|domain_verified|device_upgrade, `approved_by_person_id` **or** `approved_by_label` so a
+  approved|revoked, `auth_method` pairing_code|domain_verified, `approved_by_person_id` **or** `approved_by_label` so a
   future self-service method can name an approver with no local person, `domain_verified_at`, `session_epoch`), `trust_grants`
   (`direction` inbound = what the peer may do to us, enforced here; outbound = what we may do to it, mirrored from the peer's signed
   `GET /grants`), `trust_pairing_codes` (hash only; 10 chars `ABCDE-FGHJK`, 15 min, single use, `lockForUpdate` redemption; a `client`
@@ -466,14 +466,14 @@ code, or an invitation between instances); each pairing is a **trust** with expl
   client that can only send one fixed `Authorization` value — the Pi's platform code. They are stateless (nothing to lose in a cache
   flush or restore), bound to the server's Host, at most 31 days, client-kind trusts only, and an expired one is a **419, not a 401**,
   because the platform wipes its pairing on any 401.
-- **Devices:** `device-auth` (`AuthenticateManagedDevice`) now delegates to `TrustAuth` and sets `managed_device`; `device-auth:print.share`
-  guards the print-job routes. `POST /api/devices/pair` is gone (410); devices pair at `POST /api/federation/v1/pair` with a code, their
-  public key and a proof of possession (a signature over `ri-pair-v1\nCODE\nPUBLIC_KEY\nUUID`). The Devices page's "Generate Code" makes a
-  `client` trust code carrying `print.share`; revoking or deleting a device revokes its trust; re-pairing the same uuid re-attaches the
-  record (a different key is allowed only with a fresh code and is audited as `key_changed`) and clears the browser session and wake channel.
-  **Old bearer tokens** are honoured only while `config('federation.legacy_device_tokens')` (`RI_FEDERATION_LEGACY_DEVICES`, default off) is
-  on, and `POST /api/federation/v1/upgrade-device` (legacy bearer + proof of the new key) trades one for a trust in place and retires the
-  token — the zero-touch way to move a headless Pi fleet. `DevicePairingCode` and `token_hash` are now unused (remove later).
+- **Devices:** `device-auth` (`AuthenticateManagedDevice`) delegates to `TrustAuth` and sets `managed_device`; `device-auth:print.share`
+  guards the print-job routes. Devices pair at `POST /api/federation/v1/pair` with a code, their public key and a proof of possession (a
+  signature over `ri-pair-v1\nCODE\nPUBLIC_KEY\nUUID`). The Devices page's "Generate Code" makes a `client` trust code carrying `print.share`;
+  revoking or deleting a device revokes its trust; re-pairing the same uuid re-attaches the record (a different key is allowed only with a fresh
+  code and is audited as `key_changed`) and clears the browser session and wake channel. **There is no legacy path** (removed 2026-10-26):
+  `POST /api/devices/pair`, bearer tokens, `device_pairing_codes` and `managed_devices.token_hash` are gone, so a device paired before
+  federation gets a 401, forgets its pairing and must be paired again with a code (the Pi shows its pairing screen; the desktop print client
+  re-pairs from its window).
 - **Site-to-site:** one admin makes an **invitation** (`RIFED1-` + base64url JSON of address, one-time code and the key **fingerprint**);
   the other pastes it. The accepting side fetches the inviter's `/.well-known/ri-instance.json`, checks the fingerprint (this is what
   tells it it reached the right instance), pairs with a proof of possession, and records a **mirrored** trust (the inviter's grants for us
@@ -493,7 +493,7 @@ code, or an invitation between instances); each pairing is a **trust** with expl
   *server's* time (the `Date` header of `GET /up`), and nothing is re-minted when the server can't be reached. Ed25519 there is a
   dependency-free RFC 8032 implementation (the image's venv declares no crypto library; `cryptography` is used if present). The list of
   platform internals this relies on is in `rstation/FEDERATION_AUTH.md` ("The Raspberry Pi") — keep it true when the platform changes.
-- **Shared vectors:** `tests/Fixtures/federation-signing-vectors.json` holds signing, pairing, upgrade and credential vectors that the PHP
+- **Shared vectors:** `tests/Fixtures/federation-signing-vectors.json` holds signing, pairing and credential vectors that the PHP
   tests, the Rust client (`identity.rs`) and the Pi product (`test_federation.py`) all reproduce byte for byte. Change a message format
   only together with that file and all three. Test helpers (`tests/Pest.php`): `fedPeer`, `fedEnroll`, `fedPairBody`, `fedCall` (sends the
   exact bytes it signed — `getJson` adds a `[]` body), `fakeRemote`/`serveRemote` (a fake peer instance over `Http::fake`), `pairClient`/
@@ -539,11 +539,10 @@ report with the trust it arrived over (`feedback_reports.trust_id`) and shows th
 body's own claim about who sent it is ignored. Idempotent on `(instance_identifier, uuid)` as before. **Test Connection** asks the peer
 what it grants us (signed `GET /grants`) and says so when "Sending feedback" isn't among them; failures come back as readable messages
 (`pushUnsent()['error']`: revoked/key changed, not granted, clock off, maintenance).
-**Legacy shared-secret path (kept one release):** the old `X-Feedback-Shared-Secret` ingest (`POST /json/feedback/ingest`), connection
-codes (`RIFEED1-…`, `/json/feedback-aggregation-settings/connection-code`) and `central_ingest_url`/`shared_secret` still work for a remote that
-hasn't been moved to a trust, while `config('federation.legacy_feedback_secret')` (`RI_FEDERATION_LEGACY_FEEDBACK`, default true) is on; set it
-false and both answer 410 and the page hides those fields. A remote with `feedback_trust_id` set never falls back to the secret. Still to do
-once every remote has moved: drop `shared_secret`/`central_ingest_url` and their `encrypted_columns` entry.
+
+The pre-federation shared-secret path (`X-Feedback-Shared-Secret`, `RIFEED1-` connection codes, `central_ingest_url`/`shared_secret`/`instance_identifier`
+on `feedback_aggregation_settings`) was removed on 2026-10-26 (migration `remove_legacy_shared_secrets_and_device_tokens`): a remote that
+hadn't been moved to a trust stops reporting until an admin pairs it in the Trust Console and picks the instance to send through.
 
 A local-only `feedback-triage` Claude Code skill (`.claude/skills/feedback-triage/` — gitignored,
 never committed, see that directory's own README.md if present on this machine) reviews New and
@@ -576,7 +575,7 @@ is unrecorded, never expires and works with the database down. A dump is only ar
 `-- Dump completed` marker (also re-checked before a restore wipes anything). **The zip never contains `APP_KEY`/`.env`/
 `.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and logged, to `view-app-key` holders on the
 admin page, and a red notice above every backup section tells the admin they NEED to write it down (it is required to restore
-the encrypted parts). Only the encrypted columns — the feedback `shared_secret` (legacy), the mail secrets and the **federation private key** (`federation_identities.private_key`: a restore onto a different key blanks it, which the Trust Console reports as "identity lost"; peers must re-approve a regenerated key) — and cookies depend on it; `config/backup.php`'s
+the encrypted parts). Only the encrypted columns — the mail secrets and the **federation private key** (`federation_identities.private_key`: a restore onto a different key blanks it, which the Trust Console reports as "identity lost"; peers must re-approve a regenerated key) — and cookies depend on it; `config/backup.php`'s
 `encrypted_columns` registry (test-enforced against model casts) lists what a restore blanks.
 
 - **Who calls it:** the admin page (detached `setsid` process, `backup:run <id>`, one at a time via row check + `flock`);

@@ -29,7 +29,7 @@ place a zip is written. Nothing else — not `update.sh`, not the Docker scripts
   manifest alone couldn't catch it.
 - **Never in a zip:** the application key (`APP_KEY`, `.env`, `storage/app/.app_key` — `BackupService` refuses those
   names even inside an included directory). What depends on `APP_KEY`: values encrypted in the database (the mail
-  passwords, the legacy feedback-aggregation shared secret, and **this instance's federation private key** — without
+  passwords and **this instance's federation private key** — without
   it the instance has no identity until a new key is generated in the Trust Console, and every peer must re-approve it)
   and login/remember cookies. Passwords and PINs are bcrypt, unaffected.
   Admins with `view-app-key` can reveal it on the admin page (password re-entry, throttled, logged) to write it down.

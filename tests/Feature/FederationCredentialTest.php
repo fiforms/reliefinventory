@@ -1,8 +1,6 @@
 <?php
 
-use App\Http\Controllers\FederationController;
 use App\Models\KioskLocation;
-use App\Models\ManagedDevice;
 use App\Models\Trust;
 use App\Services\Federation\RequestSigner;
 use App\Services\Federation\TrustService;
@@ -76,72 +74,4 @@ test('a credential cannot earn a session, and print jobs still need the print.sh
     $this->withToken(credentialFor($peer))->getJson('/api/devices/print-jobs')->assertOk();
     $noPrint = clientPeer([]);
     $this->withToken(credentialFor($noPrint))->getJson('/api/devices/print-jobs')->assertForbidden();
-});
-
-/** A device as the old pairing left it: a record with a bearer token and no trust. */
-function legacyDevice(string $token = 'legacy-token', array $attrs = []): ManagedDevice
-{
-    $device = (new ManagedDevice(array_merge(['name' => 'Old Pi', 'update_channel' => 'stable'], $attrs)))->forceFill([
-        'device_uuid' => 'legacy-'.bin2hex(random_bytes(4)),
-        'token_hash' => ManagedDevice::hashToken($token),
-        'kiosk_location_id' => (KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']))->id,
-    ]);
-    $device->save();
-
-    return $device;
-}
-
-function upgradeBody(ManagedDevice $device, array $peer): array
-{
-    return [
-        'public_key' => $peer['public_key'],
-        'signature' => RequestSigner::sign(FederationController::upgradeMessage($device->device_uuid, $peer['public_key']), $peer['secret']),
-    ];
-}
-
-test('an already-paired device upgrades in place while the legacy flag is on, and its old token dies', function () {
-    config(['federation.legacy_device_tokens' => true]);
-    $device = legacyDevice();
-    $peer = fedPeer('rstation');
-    $peer['uuid'] = $device->device_uuid;
-
-    $this->withToken('legacy-token')->postJson('/api/federation/v1/upgrade-device', upgradeBody($device, $peer))
-        ->assertCreated()->assertJsonPath('permissions', ['print.share']);
-
-    $trust = Trust::where('peer_uuid', $device->device_uuid)->first();
-    expect($trust->kind)->toBe('rstation')->and($trust->auth_method)->toBe('device_upgrade')
-        ->and($trust->approved_by_label)->toBe('Upgraded from an earlier pairing')
-        ->and($device->fresh()->trust_id)->toBe($trust->id)->and($device->fresh()->token_hash)->toBeNull();
-
-    $this->withToken('legacy-token')->postJson('/api/devices/heartbeat', [])->assertUnauthorized();
-    $this->withToken(RequestSigner::mintBearer($device->device_uuid, credentialHost(), time(), time() + 3600, $peer['secret']))
-        ->postJson('/api/devices/heartbeat', [])->assertOk();
-    // one-way: the same call cannot be repeated with the retired token
-    $this->withToken('legacy-token')->postJson('/api/federation/v1/upgrade-device', upgradeBody($device, $peer))->assertUnauthorized();
-});
-
-test('upgrading needs the legacy flag, a valid token and proof of the new key', function () {
-    $device = legacyDevice();
-    $peer = fedPeer('rstation');
-    $peer['uuid'] = $device->device_uuid;
-
-    $this->withToken('legacy-token')->postJson('/api/federation/v1/upgrade-device', upgradeBody($device, $peer))->assertUnauthorized();
-
-    config(['federation.legacy_device_tokens' => true]);
-    $this->withToken('wrong')->postJson('/api/federation/v1/upgrade-device', upgradeBody($device, $peer))->assertUnauthorized();
-    $bad = upgradeBody($device, $peer);
-    $bad['signature'] = RequestSigner::sign('something else', $peer['secret']);
-    $this->withToken('legacy-token')->postJson('/api/federation/v1/upgrade-device', $bad)->assertStatus(422);
-    expect(Trust::count())->toBe(0)->and($device->fresh()->token_hash)->not->toBeNull();
-});
-
-test('a desktop print server upgrades as a print client', function () {
-    config(['federation.legacy_device_tokens' => true]);
-    $device = legacyDevice('t2', ['kiosk_function' => 'print_station']);
-    $device->forceFill(['platform' => 'windows'])->save();
-    $peer = fedPeer('print_client');
-    $peer['uuid'] = $device->device_uuid;
-
-    $this->withToken('t2')->postJson('/api/federation/v1/upgrade-device', upgradeBody($device, $peer))->assertCreated();
-    expect(Trust::where('peer_uuid', $device->device_uuid)->value('kind'))->toBe('print_client');
 });

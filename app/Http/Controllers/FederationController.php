@@ -84,31 +84,6 @@ class FederationController extends Controller
         ], 201);
     }
 
-    /** What a device signs to prove it holds the key it submits when upgrading an earlier pairing. */
-    public static function upgradeMessage(string $uuid, string $publicKey): string
-    {
-        return "ri-upgrade-v1\n".$uuid."\n".$publicKey;
-    }
-
-    /**
-     * Zero-touch move of an already-paired device to key-based trust (route is `device-auth`, which accepts the old
-     * bearer token only while `federation.legacy_device_tokens` is on). The token is retired by this call.
-     */
-    public function upgradeDevice(Request $request)
-    {
-        $data = $request->validate(['public_key' => 'required|string|size:43', 'signature' => 'required|string|max:100']);
-        $device = $request->attributes->get('managed_device');
-        if (InstanceIdentity::isLost()) {
-            return response()->json(['message' => 'This instance has no federation key.'], 503);
-        }
-        if (! RequestSigner::verify(self::upgradeMessage($device->device_uuid, $data['public_key']), $data['signature'], $data['public_key'])) {
-            return response()->json(['message' => 'The key could not be verified.'], 422);
-        }
-        $trust = TrustService::upgradeDevice($device, $data['public_key'], $request->ip());
-
-        return response()->json(['server' => InstanceIdentity::publicDocument(), 'trust_id' => $trust->id, 'permissions' => $trust->inboundPermissions()], 201);
-    }
-
     /** Signed call → a session token, so the next requests need no signature. */
     public function session(Request $request)
     {

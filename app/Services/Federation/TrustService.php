@@ -156,40 +156,6 @@ class TrustService
         return $codeKind === $peerKind || ($codeKind === 'client' && in_array($peerKind, Trust::CLIENT_KINDS, true));
     }
 
-    /**
-     * A device paired before federation (it holds a bearer token, accepted only while the legacy flag is on) hands
-     * over its public key and becomes a trust. One-way: the bearer token is retired in the same step, so the call
-     * cannot be repeated with it and the device carries on with credentials signed by its key.
-     */
-    public static function upgradeDevice(ManagedDevice $device, string $publicKey, ?string $ip = null): Trust
-    {
-        return DB::transaction(function () use ($device, $publicKey, $ip) {
-            $identity = InstanceIdentity::current();
-            $trust = Trust::where('identity_id', $identity->id)->where('peer_uuid', $device->device_uuid)->first()
-                ?? new Trust(['identity_id' => $identity->id, 'peer_uuid' => $device->device_uuid]);
-            $trust->fill([
-                'kind' => $device->device_type === 'print_server' ? 'print_client' : 'rstation',
-                'name' => $device->name ?: $device->device_uuid,
-                'public_key' => $publicKey,
-                'status' => 'approved',
-                'auth_method' => 'device_upgrade',
-            ]);
-            $trust->approved_by_person_id = null;
-            $trust->approved_by_label = 'Upgraded from an earlier pairing';
-            $trust->approved_at = now();
-            $trust->revoked_at = null;
-            $trust->session_epoch = (int) $trust->session_epoch + 1;
-            $trust->last_seen_ip = $ip;
-            $trust->save();
-
-            self::replaceGrants($trust, 'inbound', ['print.share']);
-            $device->forceFill(['trust_id' => $trust->id, 'token_hash' => null])->save();
-            self::audit($trust, 'enrolled', null, ['method' => 'device_upgrade']);
-
-            return $trust;
-        });
-    }
-
     public static function setInboundGrants(Trust $trust, array $permissions, ?int $actor): void
     {
         $before = $trust->inboundPermissions();
@@ -270,7 +236,6 @@ class TrustService
         $device->trust_id = $trust->id;
         $device->revoked_at = null;
         $device->paired_at = now();
-        $device->token_hash = null; // a trust-paired device has no bearer token
         // A re-pair rotates the wake-up channel and ends the browser session the previous pairing had.
         $device->wake_channel = null;
         $device->session_token_hash = null;
