@@ -9,9 +9,15 @@ and this product's own print_api.py). So the device keeps a credential **signed 
 
 signature = Ed25519 over `"ri-bearer-v1\\n" uuid "\\n" server host "\\n" issued-at "\\n" expires-at`. The server holds only
 the public key, accepts a credential for its own host only, and answers an expired one with 419 (never 401 — the
-platform wipes its pairing on any 401). `maintain()` mints a fresh credential every few hours, and again if the
-clock jumps, so a Pi that boots with a wrong clock repairs itself once NTP has set it. The private key lives in
-`/data/federation-key`, outside the platform's wipe list, so un-pairing forgets the server but not the identity.
+platform wipes its pairing on any 401). `maintain()` mints a fresh credential every few hours. The private key
+lives in `/data/federation-key`, outside the platform's wipe list, so un-pairing forgets the server but not the
+identity.
+
+**This device may have the wrong time.** A Pi has no real-time clock: it boots with the time it last saved (or the
+image's build date) and only corrects itself once NTP is reachable — which an offline site may never be. So
+credentials are stamped with the **server's** time, read from the `Date` header of a plain `GET /up` (`server_clock`),
+never the Pi's own. A wrong, or later-corrected, Pi clock therefore changes nothing; and when the server cannot be
+reached no new credential is minted, so a credential that works is never replaced by one made from a bad clock.
 
 Pairing (`federated_pair`) replaces the platform's `pairing.pair` — `install()` swaps the module attribute, which
 `main.py` calls as `pairing.pair(...)`. Against a server that predates federation it falls back to the platform's own.
@@ -27,6 +33,7 @@ exposed to anyone who could measure it.
 """
 import asyncio
 import base64
+import email.utils
 import hashlib
 import logging
 import os
@@ -236,6 +243,29 @@ def write_credential(token: str, keep_mtime: float | None = None) -> None:
     os.replace(tmp, path)
 
 
+# ---- the server's clock -----------------------------------------------------------------------------------
+
+async def server_clock(server: str, transport: httpx.AsyncBaseTransport | None = None) -> int | None:
+    """The server's current time (unix seconds) from the `Date` header of its liveness page, or None if it can't be
+    reached or doesn't say. This device's own clock is not trusted for anything the server checks."""
+    try:
+        async with httpx.AsyncClient(timeout=5, transport=transport) as client:
+            resp = await client.get(f"{server}/up")
+    except httpx.RequestError:
+        return None
+    return date_header_seconds(resp)
+
+
+def date_header_seconds(resp: httpx.Response) -> int | None:
+    header = resp.headers.get("date")
+    if not header:
+        return None
+    try:
+        return int(email.utils.parsedate_to_datetime(header).timestamp())
+    except (TypeError, ValueError):
+        return None
+
+
 # ---- pairing ----------------------------------------------------------------------------------------------
 
 async def federated_pair(code: str, device_name: str, transport: httpx.AsyncBaseTransport | None = None) -> dict:
@@ -280,7 +310,7 @@ async def federated_pair(code: str, device_name: str, transport: httpx.AsyncBase
         raise pairing.PairingError(f"Pairing failed (server said HTTP {resp.status_code}).")
 
     data = resp.json()
-    now = int(time.time())
+    now = date_header_seconds(resp) or int(time.time())  # the server's time, not this device's
     write_credential(mint_credential(seed, uuid, server_host(server), now, now + CREDENTIAL_SECONDS))
 
     # The rest is what the platform's pair() does after it has a token.
@@ -320,7 +350,9 @@ def install() -> None:
 # ---- keeping the credential fresh -------------------------------------------------------------------------
 
 async def refresh_once(now: float | None = None, transport: httpx.AsyncBaseTransport | None = None) -> str:
-    """One look at the credential file. Returns what happened: unpaired | fresh | refreshed | upgraded | waiting."""
+    """One look at the credential file. Returns what happened: unpaired | fresh | refreshed | upgraded | waiting.
+
+    `now` is the *server's* time; left out, it is read from the server (and nothing is touched if that fails)."""
     global _last_upgrade_attempt
     import identity
     import pairing
@@ -335,7 +367,11 @@ async def refresh_once(now: float | None = None, transport: httpx.AsyncBaseTrans
         return "waiting"
     if not uuid:
         return "waiting"
-    now = int(now if now is not None else time.time())
+    if now is None:
+        now = await server_clock(server, transport)
+        if now is None:
+            return "waiting"  # can't tell the time the server will judge by: leave the credential alone
+    now = int(now)
     seed = load_or_create_seed()
     mtime = pairing.DEVICE_TOKEN_FILE.stat().st_mtime
 

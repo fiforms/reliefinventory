@@ -12,7 +12,7 @@ read straight off PRINT_CLIENT_SPEC.md section 3.6:
     Conflict     409  claim lost / not claimable / result not accepted: drop it
     Gone         410  the PDF was cleaned up: report the job failed
     RateLimited  429  back off
-    Transient    network errors and 5xx: retry later
+    Transient    network errors, 5xx, and 419 (our credential expired; a fresh one is on its way): retry later
 """
 from typing import Awaitable, Callable
 
@@ -96,7 +96,7 @@ class PrintApi:
             raise Gone(message, status)
         if status == 429:
             raise RateLimited(message, status)
-        if status >= 500:
+        if status >= 500 or status == 419:  # 419: our credential expired; maintain() mints a new one, so retry
             raise Transient(message, status)
         raise ApiError(message, status)
 

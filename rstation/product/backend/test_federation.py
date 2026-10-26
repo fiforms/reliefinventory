@@ -1,4 +1,5 @@
 import asyncio
+import email.utils
 import json
 import os
 from pathlib import Path
@@ -316,3 +317,71 @@ def test_the_background_task_survives_a_failing_refresh(device, monkeypatch):
     with pytest.raises(asyncio.CancelledError):
         run(federation.maintain())
     assert attempts == [1]
+
+
+# ---- a device with the wrong time -----------------------------------------------------------------------------
+
+SERVER_NOW = 1_790_000_000
+
+
+def _date(seconds):
+    return email.utils.formatdate(seconds, usegmt=True)
+
+
+def _up(seconds=SERVER_NOW):
+    return _server(lambda request: httpx.Response(200, text="ok", headers={"date": _date(seconds)}))
+
+
+def test_the_server_clock_comes_from_its_date_header():
+    assert run(federation.server_clock(SERVER, _up())) == SERVER_NOW
+    assert run(federation.server_clock(SERVER, _server(lambda r: httpx.Response(200)))) is None  # says nothing
+    assert run(federation.server_clock(SERVER, _server(lambda r: httpx.Response(200, headers={"date": "garbage"})))) is None
+
+    def refuse(request):
+        raise httpx.ConnectError("no network yet", request=request)
+
+    assert run(federation.server_clock(SERVER, _server(refuse))) is None
+
+
+def test_with_no_way_to_learn_the_servers_time_a_working_credential_is_left_alone(device, monkeypatch):
+    token = _credential(device, SERVER_NOW - 100 * 3600)  # old enough that it would normally be replaced
+    monkeypatch.setattr(federation.time, "time", lambda: 0)  # booted with no idea what year it is
+
+    def refuse(request):
+        raise httpx.ConnectError("no network yet", request=request)
+
+    assert run(federation.refresh_once(transport=_server(refuse))) == "waiting"
+    assert device.DEVICE_TOKEN_FILE.read_text() == token
+
+
+def test_a_device_whose_clock_is_a_month_behind_gets_credentials_that_work_by_the_servers_clock(device, monkeypatch):
+    behind = SERVER_NOW - 30 * 86400
+    monkeypatch.setattr(federation.time, "time", lambda: behind)
+    _credential(device, SERVER_NOW - federation.CREDENTIAL_SECONDS - 3600)  # expired by the server's clock
+
+    assert run(federation.refresh_once(transport=_up())) == "refreshed"
+
+    token = device.DEVICE_TOKEN_FILE.read_text()
+    iat, exp = federation.credential_times(token)
+    assert iat == SERVER_NOW and exp > SERVER_NOW + 13 * 86400  # server time, not the device's
+
+    # an hour later the device's clock is still wrong: nothing to do
+    monkeypatch.setattr(federation.time, "time", lambda: behind + 3600)
+    assert run(federation.refresh_once(transport=_up(SERVER_NOW + 3600))) == "fresh"
+    # NTP finally corrects the clock (a jump of a month): still nothing to do, the credential never depended on it
+    monkeypatch.setattr(federation.time, "time", lambda: SERVER_NOW + 7200)
+    assert run(federation.refresh_once(transport=_up(SERVER_NOW + 7200))) == "fresh"
+    assert device.DEVICE_TOKEN_FILE.read_text() == token
+
+
+def test_pairing_with_a_wrong_device_clock_stamps_the_credential_with_the_servers_time(device, monkeypatch):
+    monkeypatch.setattr(federation.time, "time", lambda: SERVER_NOW - 400 * 86400)
+
+    def handler(request):
+        response = _pair_ok(request)
+        response.headers["date"] = _date(SERVER_NOW)
+        return response
+
+    run(federation.federated_pair("ABCDE-FGHJK", "Dock", transport=_server(handler)))
+
+    assert federation.credential_times(device.DEVICE_TOKEN_FILE.read_text())[0] == SERVER_NOW

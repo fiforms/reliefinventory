@@ -81,8 +81,14 @@ that device until it expires or the trust is revoked — which is why a client t
 It cannot be used on `/session`, which always needs a signature.
 
 A genuine credential that is **expired or issued by a wrong clock** gets **`419`**, not `401`: the Pi platform wipes
-its pairing on any `401`, and a stale credential is cured by minting a new one. Mint a fresh one whenever the clock
-jumps or the old one is a few hours old (the R Station does so every 6 h, with a 14-day lifetime).
+its pairing on any `401`, and a stale credential is cured by minting a new one. Mint a fresh one when the old one
+is a few hours old (the R Station does so every 6 h, with a 14-day lifetime).
+
+**Stamp it with the server's time, not the device's.** A device with no real-time clock (every Pi) boots with the
+time it last saved, which after a long power-off can be weeks behind, and in an offline site may never be
+corrected. Read the server's time from the `Date` header of any response (the R Station uses `GET /up`) and use that
+for `issued-at` / `expires-at`; if the server cannot be reached, leave the existing credential alone rather than
+replace it with one made from a bad clock. The server tolerates 5 minutes either way.
 
 ## Upgrading an already-paired device (legacy bearer token → key)
 
@@ -107,7 +113,10 @@ platform internals, which a platform update must keep (a test fails if the first
 `print_api.py`; `pairing.read_server_url()`, `write_device_name`, `write_entity_name`, `apply_server_language`,
 `slugify_hostname`, `write_hostname`, `identity.get_device_uuid()` / `get_mac_address()`. A small `Product.pair`
 hook and a bearer-provider hook in the platform would replace the module-attribute swap and the credential file.
-The key is `/data/federation-key` (0600), outside the platform's wipe list. The Ed25519 signer is dependency-free
+The key is `/data/federation-key` (0600), outside the platform's wipe list. The Pi has no real-time clock, so
+credentials use the server's time (above); a wrong or later-corrected Pi clock changes nothing. HTTPS itself still
+needs the Pi's clock to be inside the server certificate's validity, which is outside this code's control: until it
+is, the Pi can't reach the server at all and simply keeps retrying. The Ed25519 signer is dependency-free
 (RFC 8032) because the OS image's virtualenv declares no crypto library; `cryptography` is used if installed.
 
 ## Errors
