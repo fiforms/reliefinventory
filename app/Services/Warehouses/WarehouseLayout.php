@@ -34,10 +34,12 @@ class WarehouseLayout
         $files = $warehouse->storagePath();
         $legacy = storage_path('app/private');
         if ($warehouse->is_default && ! $this->isEmpty($legacy) && $this->isEmpty($files)) {
-            File::ensureDirectoryExists(dirname($files));
-            @rmdir($files);
-            if (! rename($legacy, $files)) {
-                throw new \RuntimeException("Could not move {$legacy} to {$files}.");
+            File::ensureDirectoryExists($files);
+            // Entry by entry, so the checkout's own storage/app/private/.gitignore stays where git expects it.
+            foreach (array_diff(scandir($legacy), ['.', '..', '.gitignore']) as $entry) {
+                if (! rename("{$legacy}/{$entry}", "{$files}/{$entry}")) {
+                    throw new \RuntimeException("Could not move {$legacy}/{$entry} to {$files}.");
+                }
             }
             $done[] = "moved its uploads from {$legacy}";
         }
@@ -46,8 +48,9 @@ class WarehouseLayout
         return $done;
     }
 
+    /** Nothing in it but (at most) a .gitignore. */
     private function isEmpty(string $dir): bool
     {
-        return ! is_dir($dir) || (File::files($dir, true) === [] && File::directories($dir) === []);
+        return ! is_dir($dir) || array_diff(scandir($dir), ['.', '..', '.gitignore']) === [];
     }
 }
