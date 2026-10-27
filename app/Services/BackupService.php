@@ -9,6 +9,7 @@ use App\Models\Backup;
 use App\Services\Warehouses\WarehouseAccounts;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 use ZipArchive;
@@ -173,8 +174,12 @@ class BackupService
                 $progress('Dumping the database');
                 $this->dumpDatabase("{$work}/db.sql");
                 $entries[] = ['path' => 'database/db.sql', 'source' => "{$work}/db.sql"];
-                file_put_contents("{$work}/accounts.json", json_encode(app(WarehouseAccounts::class)->export(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
-                $entries[] = ['path' => 'database/accounts.json', 'source' => "{$work}/accounts.json"];
+                // A database not yet moved to central accounts (the pre-migration backup of an upgrade, taken before
+                // the accounts schema exists) still holds the logins in its own people table: nothing to add.
+                if (! Schema::hasColumn('people', 'password')) {
+                    file_put_contents("{$work}/accounts.json", json_encode(app(WarehouseAccounts::class)->export(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                    $entries[] = ['path' => 'database/accounts.json', 'source' => "{$work}/accounts.json"];
+                }
             }
             if (self::hasStorage($scope)) {
                 $progress('Listing uploaded files');

@@ -6,6 +6,7 @@ use App\Models\Accounts\Membership;
 use App\Models\Control\Warehouse;
 use App\Models\Person;
 use App\Models\User;
+use App\Services\Warehouses\WarehouseAccounts;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
@@ -192,4 +193,24 @@ test('password reset tokens live in the accounts schema', function () {
 
     expect(DB::connection('accounts')->table('password_reset_tokens')->where('email', $user->email)->exists())->toBeTrue()
         ->and(Schema::hasTable('password_reset_tokens'))->toBeFalse();
+});
+
+test('relinking after a restore ignores the account ids the restored rows carried', function () {
+    // Found restoring a backup onto a fresh Docker instance: the dump's people.account_id values are the old
+    // instance's, and linking one person to a new account collided with another person still holding that id.
+    $a = User::factory()->create(['email' => 'a@example.com']);
+    $b = User::factory()->create(['email' => 'b@example.com']);
+    $export = app(WarehouseAccounts::class)->export();
+    Membership::query()->delete();
+    Account::query()->delete();
+    // As the restored dump would have them: ids from elsewhere, one of them the next id this instance hands out.
+    $next = (int) DB::connection('accounts')->selectOne("SELECT AUTO_INCREMENT AS n FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'accounts'")->n;
+    DB::table('people')->where('id', $a->id)->update(['account_id' => 900001]);
+    DB::table('people')->where('id', $b->id)->update(['account_id' => $next]);
+
+    $report = app(WarehouseAccounts::class)->relinkAfterRestore($export);
+
+    expect($report)->toHaveCount(2)
+        ->and(Person::find($a->id)->account->email)->toBe('a@example.com')
+        ->and(Person::find($b->id)->account->email)->toBe('b@example.com');
 });

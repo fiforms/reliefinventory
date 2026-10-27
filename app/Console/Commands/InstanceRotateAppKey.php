@@ -49,7 +49,7 @@ class InstanceRotateAppKey extends Command
         } finally {
             umask($old);
         }
-        $this->info('Gave the instance a new APP_KEY; the default warehouse keeps the old one as its own key. Everyone is logged out once.');
+        $this->info('Gave the instance its own APP_KEY; the default warehouse keeps the previous one as its key. Anyone logged in must log in again.');
 
         return self::SUCCESS;
     }

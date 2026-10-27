@@ -70,9 +70,11 @@ class WarehouseAccounts
             ? collect($export['accounts'] ?? [])->keyBy('person_id')
             : DB::table('people')->whereNotNull('account_id')->get(['id', 'email'])
                 ->mapWithKeys(fn ($p) => [$p->id => ['person_id' => $p->id, 'email' => $p->email]]);
+        // The restored rows' account ids are another instance's (or another time's): meaningless here, and as a
+        // unique column they would collide with the ids handed out below.
+        DB::table('people')->whereNotNull('account_id')->update(['account_id' => null]);
 
         $report = [];
-        $linked = [];
         foreach ($entries as $personId => $entry) {
             $email = trim((string) ($entry['email'] ?? ''));
             if ($email === '' || ! DB::table('people')->where('id', $personId)->exists()) {
@@ -96,11 +98,8 @@ class WarehouseAccounts
                 'status' => Membership::ACTIVE, 'is_training' => $warehouse->is_training,
             ]);
             DB::table('people')->where('id', $personId)->update(['account_id' => $account->id, 'email' => $account->email]);
-            $linked[] = $personId;
         }
 
-        // Anyone the backup doesn't name as a login isn't one here.
-        DB::table('people')->whereNotNull('account_id')->whereNotIn('id', $linked)->update(['account_id' => null]);
         $this->removeOrphans();
         $this->ensureInstanceAdmin();
 
