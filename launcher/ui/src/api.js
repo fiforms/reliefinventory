@@ -104,6 +104,55 @@ export const imageDownloadCancel = () => call('image_download_cancel', {}, () =>
 export const imageWrite = () => (inTauri ? invoke('image_write') : unavailable('Opening Raspberry Pi Imager'))
 export const imageReveal = () => (inTauri ? invoke('image_reveal') : unavailable('Showing the file'))
 export const openToolPage = (which) => call('open_tool_page', { which }, () => window.open(which === 'etcher' ? 'https://etcher.balena.io/' : 'https://www.raspberrypi.com/software/', '_blank'))
+// Remote backups: servers this computer is paired with. ?mock=remote-empty | remote | remote-running | remote-unpaired select a state.
+const remoteMock = () => new URLSearchParams(location.search).get('mock') || ''
+const mockServers = () => {
+    const k = remoteMock()
+    if (k === 'remote-empty') return []
+    const server = (over) => ({
+        id: 'a1b2c3d4', name: 'Statesville warehouse', url: 'https://ri.example.org', fingerprint: '9A77-E967-6525-8550', paired_at: now - 86400 * 9,
+        schedule: { frequency: 'daily', hour: 2, minute: 0, weekday: 6 }, scope: 'database', keep: 14, dest_dir: null,
+        folder: '/home/me/.local/share/ReliefInventory/remote-backups/a1b2c3d4',
+        state: { last_attempt_at: now - 40000, last_success_at: now - 40000, failures: 0, last_error: null, last_file: 'relief-backup-20261025-020001-database-31.zip', needs_pairing: false, running: null },
+        next_run_at: now + 46000,
+        files: [
+            { name: 'relief-backup-20261025-020001-database-31.zip', path: '/x/1', size: 42643000, modified: now - 40000 },
+            { name: 'relief-backup-20261024-020002-database-30.zip', path: '/x/2', size: 41957000, modified: now - 126400 },
+        ],
+        total_bytes: 84600000,
+        ...over,
+    })
+    const a = server({})
+    if (k === 'remote-running') a.state.running = { step: 'Downloading the backup', detail: '212 of 640 MB', fraction: 0.33, started_at: now - 60 }
+    if (k === 'remote-unpaired') {
+        a.state.needs_pairing = true
+        a.state.last_error = 'the server no longer recognises this computer: it was un-paired there'
+        a.next_run_at = null
+    }
+    const b = server({ id: 'e5f6a7b8', name: 'Charlotte depot', url: 'http://depot.local:8080', fingerprint: '1C2D-3E4F-5A6B-7C8D', schedule: { frequency: 'off', hour: 2, minute: 0, weekday: 6 }, scope: 'full', files: [], total_bytes: 0, next_run_at: null, state: { last_attempt_at: null, last_success_at: null, failures: 0, last_error: null, last_file: null, needs_pairing: false, running: null } })
+    return [a, b]
+}
+let mockRemote = null
+export const remoteList = () => call('remote_list', {}, () => (mockRemote ??= mockServers()))
+export const remotePair = (address, code, name) =>
+    inTauri ? invoke('remote_pair', { address, code, name: name || null }) : Promise.reject('Pairing only works in the desktop app.')
+export const remoteConfigure = (id, options) => call('remote_configure', { id, options }, () => {
+    const s = (mockRemote ??= mockServers()).find((x) => x.id === id)
+    if (!s) return
+    if (options.name != null) s.name = options.name
+    if (options.schedule) s.schedule = options.schedule
+    if (options.scope) s.scope = options.scope
+    if (options.keep) s.keep = options.keep
+    if (options.dest_dir != null) s.dest_dir = options.dest_dir || null
+})
+export const remoteBackupNow = (id) => (inTauri ? invoke('remote_backup_now', { id }) : unavailable('Backing up'))
+export const remoteRemove = (id, deleteFiles) => call('remote_remove', { id, deleteFiles }, () => { mockRemote = (mockRemote ?? mockServers()).filter((s) => s.id !== id) })
+export const remoteReveal = (id) => (inTauri ? invoke('remote_reveal', { id }) : unavailable('Showing the folder'))
+export const pickFolder = async () => {
+    if (!inTauri) return null
+    const f = await openDialog({ directory: true, multiple: false })
+    return typeof f === 'string' ? f : null
+}
 /** Errors raised from the tray menu (e.g. Quit couldn't shut the server down). */
 export const onTrayError = (fn) => (inTauri ? listen('tray-error', (e) => fn(String(e.payload))) : Promise.resolve(() => {}))
 export const pickBackupFile = async () => {

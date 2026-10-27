@@ -65,6 +65,29 @@ not been run (`.github/workflows/launcher-linux.yml`, manual, builds the `.deb` 
   takes a safety backup first and stops if that fails, then `backup:restore … --force --no-interaction`; the window's own
   confirmation replaces the command's prompt). The encryption key (`APP_KEY`) is not in a backup — see docker/README.md.
 
+## Remote backups tab (`core/src/remote/`, `ui/src/RemoteBackups.vue`) — 2026-10-26
+Pairs this computer with *another* Relief Inventory server and keeps copies of its backups here, on a schedule. It uses the server's
+federation trust system (`rstation/FEDERATION_AUTH.md`): an administrator makes a pairing code in the server's **Trust Console** (kind
+**Backup client (RI Launcher)**, grant "Backup and reporting operator"), you type its address and the code here, and from then on this computer —
+and nothing else — may ask that server to make a backup and download it. Nothing here needs Docker or a local Relief Inventory.
+- **Schedule** per server: off, hourly, daily or weekly at a local time; what to copy (database, or database + uploaded files); how many copies to keep
+  (older ones are deleted after each good backup); and which folder (default `remote-backups/<id>` in the data dir — pick a USB drive if you like).
+  A backup runs as soon as a schedule is turned on; a computer that was off at the scheduled time catches up when it starts (once, not once per missed
+  slot); a failure is retried after 10 min, 20, 40 … up to 2 h. It only runs while the launcher is running (tray); with a schedule active, closing the
+  window doesn't quit it.
+- **Each run:** ask the server for a new backup → wait → download (resumes after a dropped connection) → check the SHA-256 the server reports → save as a
+  read-only `relief-backup-….zip` → prune. A file never appears under its real name until its checksum matched; the partial one is `<name>.part`.
+- **Security:** the key pair is made on first use (`federation-identity.json`, 0600) and only the public half is sent. Requests are signed; plain `http://`
+  is accepted only for this computer or its own network. If an administrator removes the trust (or the server regenerates its key), the next call is a 401
+  and the server shows **Needs pairing again** — settings and copies are kept; pair again with a new code.
+- **CLI:** `ri-launcher remote pair <address> <code>`, `list`, `set <id> --every daily --at 02:00 --keep 14 --scope full --folder /mnt/usb`, `backup <id>`,
+  `files <id>`, `remove <id> [--delete-files]`, `remote run` (the schedule in the foreground; `ri-launcher run` also runs it).
+- **Tests:** `cargo test` (schedule maths incl. a daylight-saving gap, the run sequence against a fake server, config), `core/tests/download_resume.rs`
+  (the real client over HTTP: a cut connection resumes with `Range`, a server that ignores `Range`, a 416), and `launcher/e2e/run.sh` (the CLI against the real
+  Laravel app on the disposable test database: a real dump downloaded and compared byte for byte, retention, revoke, re-pair). Browser mocks:
+  `?mock=remote|remote-running|remote-empty|remote-unpaired`. The Tauri window itself has not been run.
+- **Later:** reports over the same trust (`operator.full_read` already covers them), restoring a downloaded copy from this tab, tiered retention.
+
 ## R Station SD card tab (`core/src/sdimage.rs`, `ui/src/RStationImage.vue`) — 2026-10-25
 A second tab downloads the R Station Raspberry Pi image and opens **Raspberry Pi Imager** with it chosen (`rpi-imager <file>`); the
 launcher never writes to a drive itself. **Chain of trust:** the only address built in is `MANIFEST_URL`, the `rstation-image.json` asset

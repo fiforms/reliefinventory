@@ -1,7 +1,8 @@
 //! RI Launcher core: everything except the window. `platform::Platform` is the seam to the Linux layer
 //! that runs Docker (`wsl::WslBackend` on Windows, `lima::LimaBackend` on macOS, `linux::LinuxBackend` — the host's own
 //! Docker — on Linux), `service::Launcher`
-//! ties settings, compose editing, the LAN proxy and a backend together, and `backups` is the file side.
+//! ties settings, compose editing, the LAN proxy and a backend together, and `backups` is the file side. `remote` is the other
+//! direction: this computer paired (federation trust) with a *remote* Relief Inventory server, pulling its backups on a schedule.
 pub mod backups;
 pub mod compose;
 pub mod download;
@@ -12,6 +13,7 @@ pub mod linux;
 pub mod network;
 pub mod platform;
 pub mod proxy;
+pub mod remote;
 pub mod runner;
 pub mod sdimage;
 pub mod service;

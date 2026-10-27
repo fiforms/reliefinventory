@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use ri_launcher_core::backups;
 use ri_launcher_core::platform::{InstallOutcome, Platform};
+use ri_launcher_core::remote::RemoteBackups;
 use ri_launcher_core::service::Launcher;
 use ri_launcher_core::settings::Mode;
 use std::path::PathBuf;
@@ -48,11 +49,68 @@ enum Cmd {
         #[command(subcommand)]
         action: BackupCmd,
     },
+    /// Backups pulled from a remote Relief Inventory server this computer is paired with
+    Remote {
+        #[command(subcommand)]
+        action: RemoteCmd,
+    },
     /// The R Station Raspberry Pi SD card image
     Image {
         #[command(subcommand)]
         action: ImageCmd,
     },
+}
+
+#[derive(Subcommand)]
+enum RemoteCmd {
+    /// Pair with a server using a code from its Trust Console (kind "Backup client")
+    Pair {
+        /// The server's address, like ri.example.org
+        address: String,
+        code: String,
+        /// A name to show for it (default: the name the server gives itself)
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// List paired servers, their schedules and the copies kept here
+    List,
+    /// Change a server's schedule or storage. Only the options you give are changed.
+    Set {
+        id: String,
+        #[arg(long)]
+        name: Option<String>,
+        /// off, hourly, daily or weekly
+        #[arg(long)]
+        every: Option<String>,
+        /// Time of day (HH:MM); for hourly only the minutes count
+        #[arg(long)]
+        at: Option<String>,
+        /// Day of the week for weekly (mon … sun)
+        #[arg(long)]
+        day: Option<String>,
+        /// database, or full (database and uploaded files)
+        #[arg(long)]
+        scope: Option<String>,
+        /// How many backups to keep here
+        #[arg(long)]
+        keep: Option<u32>,
+        /// Full path of the folder to keep them in ("default" goes back to the data folder)
+        #[arg(long)]
+        folder: Option<String>,
+    },
+    /// Make a backup now and wait for it
+    Backup { id: String },
+    /// The backups kept here for a server
+    Files { id: String },
+    /// Forget a server (its trust stays on the server until an administrator removes it there)
+    Remove {
+        id: String,
+        /// Also delete the backups kept here
+        #[arg(long)]
+        delete_files: bool,
+    },
+    /// Run the schedule in the foreground until Ctrl+C
+    Run,
 }
 
 #[derive(Subcommand)]
@@ -117,6 +175,8 @@ async fn main() {
                 println!("  others can use {u}");
             }
             println!("Press Ctrl+C to stop.");
+            // scheduled backups from paired remote servers run for as long as the launcher does
+            tokio::spawn(die(RemoteBackups::new(&dir)).run_forever());
             let mut last = launcher.settings();
             loop {
                 tokio::select! {
@@ -163,6 +223,7 @@ async fn main() {
         }
         Cmd::Link => println!("{}", die(launcher.shareable_link())),
         Cmd::Image { action } => image_command(&dir, action).await,
+        Cmd::Remote { action } => remote_command(&dir, action).await,
         Cmd::Backups { action } => {
             let p = launcher.platform();
             match action {
@@ -179,6 +240,111 @@ async fn main() {
                     println!("{}", die(backups::export(p.as_ref(), b, &dest).await).display());
                 }
                 BackupCmd::Import { file } => die(backups::import(p.as_ref(), &file).await),
+            }
+        }
+    }
+}
+
+fn show_time(unix: Option<i64>) -> String {
+    use chrono::TimeZone;
+    unix.and_then(|t| chrono::Local.timestamp_opt(t, 0).single())
+        .map(|t| t.format("%Y-%m-%d %H:%M").to_string())
+        .unwrap_or_else(|| "-".into())
+}
+
+async fn remote_command(dir: &std::path::Path, action: RemoteCmd) {
+    use ri_launcher_core::remote::schedule::{self, Frequency};
+    use ri_launcher_core::remote::Options;
+    let remote = die(RemoteBackups::new(dir));
+    match action {
+        RemoteCmd::Pair { address, code, name } => {
+            let paired = die(remote.pair(&address, &code, name.as_deref()).await);
+            println!("Paired. Its id here is {}.", paired.id);
+            if let Some(w) = paired.warning {
+                eprintln!("warning: {w}");
+            }
+            println!("Backups: daily at 02:00 by default. Change it with `ri-launcher remote set {} --every …`.", paired.id);
+        }
+        RemoteCmd::List => {
+            let all = remote.list();
+            if all.is_empty() {
+                println!("Nothing is paired. Make a pairing code in the server's Trust Console (kind: Backup client), then `ri-launcher remote pair <address> <code>`.");
+            }
+            for v in all {
+                let s = v.schedule;
+                let when = match s.frequency {
+                    Frequency::Off => "off".to_string(),
+                    Frequency::Hourly => format!("hourly at :{:02}", s.minute),
+                    Frequency::Daily => format!("daily at {:02}:{:02}", s.hour, s.minute),
+                    Frequency::Weekly => format!("weekly, day {} at {:02}:{:02}", s.weekday, s.hour, s.minute),
+                };
+                println!("{}  {}  {}  key {}", v.id, v.name, v.url, v.fingerprint);
+                println!("    {when}, {} backups, keep {} in {}", v.scope, v.keep, v.folder);
+                println!("    last success {}; next {}; {} copies, {} MB", show_time(v.state.record.last_success_at), if v.state.needs_pairing { "-".into() } else { show_time(v.next_run_at) }, v.files.len(), v.total_bytes >> 20);
+                if v.state.needs_pairing {
+                    println!("    NOT PAIRED ANY MORE: make a new pairing code and run `ri-launcher remote pair`");
+                }
+                if let Some(e) = &v.state.last_error {
+                    println!("    last problem: {e}");
+                }
+            }
+        }
+        RemoteCmd::Set { id, name, every, at, day, scope, keep, folder } => {
+            let current = die(remote.list().into_iter().find(|v| v.id == id).ok_or("no such server")).schedule;
+            let mut sched = current;
+            if let Some(e) = &every {
+                sched.frequency = die(schedule::parse_frequency(e));
+            }
+            if let Some(a) = &at {
+                let (h, m) = die(schedule::parse_time(a));
+                (sched.hour, sched.minute) = (h, m);
+            }
+            if let Some(d) = &day {
+                sched.weekday = die(schedule::parse_weekday(d));
+            }
+            let changed = every.is_some() || at.is_some() || day.is_some();
+            let dest_dir = folder.map(|f| if f == "default" { String::new() } else { f });
+            die(remote.configure(&id, Options { name, schedule: changed.then_some(sched), scope, keep, dest_dir }));
+            println!("Saved.");
+        }
+        RemoteCmd::Backup { id } => {
+            let last = std::sync::Mutex::new(String::new());
+            let me = std::sync::Arc::clone(&remote);
+            let watcher = tokio::spawn({
+                let (id, me) = (id.clone(), me.clone());
+                async move {
+                    loop {
+                        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        if let Some(r) = me.list().into_iter().find(|v| v.id == id).and_then(|v| v.state.running) {
+                            let line = format!("{} {}", r.step, r.detail);
+                            let mut l = last.lock().unwrap();
+                            if *l != line {
+                                eprintln!("  {line}");
+                                *l = line;
+                            }
+                        }
+                    }
+                }
+            });
+            let out = die(remote.run_now(&id).await);
+            watcher.abort();
+            println!("{}{} ({} MB){}", if out.reused { "Already had " } else { "Saved " }, out.path.display(), out.size >> 20, if out.pruned > 0 { format!(", removed {} old", out.pruned) } else { String::new() });
+        }
+        RemoteCmd::Files { id } => {
+            let v = die(remote.list().into_iter().find(|v| v.id == id).ok_or("no such server"));
+            for f in v.files {
+                println!("{}\t{} bytes\t{}", f.name, f.size, show_time(Some(f.modified)));
+            }
+        }
+        RemoteCmd::Remove { id, delete_files } => {
+            die(remote.remove(&id, delete_files));
+            println!("Removed.");
+        }
+        RemoteCmd::Run => {
+            println!("Running the backup schedule. Press Ctrl+C to stop.");
+            tokio::select! {
+                _ = remote.run_forever() => {}
+                _ = tokio::signal::ctrl_c() => {}
             }
         }
     }

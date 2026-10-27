@@ -48,7 +48,7 @@ enum TrustPermission: string
             self::InventoryQueryExact => 'The peer may read exact stock quantities.',
             self::SuppliesRequest => 'The peer may submit supply requests, which staff review like any other request.',
             self::SuppliesQueryAvailable => 'The peer may see which items are available to request.',
-            self::OperatorFullRead => 'The peer may read everything, including backups. A database backup holds credentials and personal data: grant this only to an operator you would trust with the whole system.',
+            self::OperatorFullRead => 'The peer may make and download backups of this instance (and, later, read its reports). A database backup holds credentials and personal data: grant this only to an operator you would trust with the whole system.',
         };
     }
 
@@ -65,7 +65,7 @@ enum TrustPermission: string
     /** Whether an endpoint enforcing this exists yet. */
     public function built(): bool
     {
-        return in_array($this, [self::PrintShare, self::FeedbackSend], true);
+        return in_array($this, [self::PrintShare, self::FeedbackSend, self::OperatorFullRead], true);
     }
 
     /** @return list<string> */

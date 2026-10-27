@@ -14,7 +14,10 @@ use Illuminate\Database\Eloquent\Model;
  */
 class Trust extends Model
 {
-    public const KINDS = ['instance', 'print_client', 'rstation'];
+    // `backup_client` is the RI Launcher (or any operator tool) that pulls backups and, later, reports. It is a
+    // client app that signs its own requests, but not a managed device: it has no location, heartbeat or
+    // browser session, so it is deliberately not in CLIENT_KINDS.
+    public const KINDS = ['instance', 'print_client', 'rstation', 'backup_client'];
 
     public const CLIENT_KINDS = ['print_client', 'rstation'];
 

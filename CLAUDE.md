@@ -452,8 +452,8 @@ code, or an invitation between instances); each pairing is a **trust** with expl
   and revoke bump `session_epoch`, which is what kills old session tokens). Permissions are the `TrustPermission` enum, worded from the
   peer acting on us: `print.share`, `feedback.send`, `feedback.receive`, `offers.send`, `offers.receive`, `inventory.query_exact`,
   `supplies.request`, `supplies.query_available`, `operator.full_read` — each with a risk tier; `built()` says whether an endpoint
-  enforces it yet (only `print.share` and `feedback.send` do). `operator.full_read` is effectively full compromise (a database backup
-  holds credentials); it must never expose `APP_KEY`.
+  enforces it yet (`print.share`, `feedback.send` and, since the backup client below, `operator.full_read`). `operator.full_read` is effectively
+  full compromise (a database backup holds credentials); it must never expose `APP_KEY`.
 - **Authenticating a request** — `trust-auth[:permission][,signed]` (`TrustAuth`, alias in `bootstrap/app.php`) accepts, in order: a
   `Bearer RIK-…` **credential**, a `Bearer RIS-…` **session token**, or a per-request **signature** (`X-RI-Trust`, `X-RI-Timestamp`,
   `X-RI-Nonce`, `X-RI-Signature` over `METHOD\nPATH?QUERY\nHOST\nTS\nNONCE\nsha256(body)`, `RequestSigner::canonical()`). Status and
@@ -499,7 +499,17 @@ code, or an invitation between instances); each pairing is a **trust** with expl
   exact bytes it signed — `getJson` adds a `[]` body), `fakeRemote`/`serveRemote` (a fake peer instance over `Http::fake`), `pairClient`/
   `pairPrintServer` (a real pairing; the returned "token" is a session token, so `->withToken($token)` means "an authenticated device").
   End-to-end against the real app: `print-client/e2e/run.sh` (Rust client + CUPS); the Pi code was run the same way against a live server.
-- **Not built:** the endpoints for offers, supplies, exact inventory and `operator.full_read` (the grants exist; sharing a remote request
+- **Backup client** (`backup_client` trust kind, 2026-10-26): the RI Launcher (or any operator tool) pairs with a code made in the Trust Console ("Backup client
+  (RI Launcher)" — no location, no `ManagedDevice`, deliberately not in `Trust::CLIENT_KINDS`) holding `operator.full_read`, then uses
+  `FederationBackupController` under `/api/federation/v1/backups`: `GET /` list, `POST /` start one (`database`|`full`, 202; **409 carries the running one** so
+  a caller waits for it — the existing one-at-a-time rule), `GET /{id}` status plus the whole-file **SHA-256** (computed only here, cached by id+size+mtime,
+  so a cache flush just rehashes), `GET /{id}/download` (BinaryFileResponse, so `Range` resumes). Requests and the start of each download are in `trust_audit_log`
+  (`backup_requested` / `backup_downloaded`; a resumed range isn't audited again). The server still prunes its zips after `backup.keep_days`, so the client keeps
+  its own copies. The limiters are **named and keyed by bearer token / `X-RI-Trust`** (`fed-backup-read|create|download`, `AppServiceProvider`): a numeric
+  `throttle:N,1` shares one counter per IP across *all* routes, so status polling used up `POST /backups`'s budget (found by the e2e run) — and throttling runs
+  *before* `trust-auth` (priority list), so the trust isn't known yet. Spec: `FEDERATION_AUTH.md` ("Backups") + `federation.openapi.yaml`; tests:
+  `FederationBackupTest`; the client side is the launcher's "Remote backups" (see "RI Launcher").
+- **Not built:** reports over `operator.full_read` (the backup half is built, see above); the endpoints for offers, supplies and exact inventory (the grants exist; sharing a remote request
   would mean an approved Partner `Person` per site and an order left at `New Order` for staff, and the ledger arithmetic that three places
   duplicate should become one `InventoryAvailability` service first); remote print submission; **self-service pairing by account**
   (planned: a free account on a central instance, Turnstile + email verification, then the user confirms a pairing from their own instance —
@@ -779,6 +789,33 @@ keep those lines patchable. Run on real Windows 11 and on Ubuntu/Docker via the 
 macOS (2026-10-25, `lima.rs`): no admin rights or restart, so the install runs in the window's process; every `limactl` call is `env LIMA_HOME=~/.ri-lima`
 (our own Lima, never the user's — and in the home folder because Lima socket paths must be < 104 bytes); `layer.rs` holds the in-VM steps both backends
 share, and `Platform::pull`/`push` (not a host path) move backup files. Proven via the CLI on an Apple-silicon Mac; the Mac window is not run yet.
+
+**Remote backups** (2026-10-26, `launcher/core/src/remote/`, `ui/src/RemoteBackups.vue`, branch `launcher-backup-trust`, on top of `federation-trust`): the launcher
+pairs with *another* Relief Inventory server as a federation `backup_client` (see "Federation") and keeps copies of that server's backups in a local folder,
+on a schedule. Nothing here uses Docker or the Linux layer, so it works on any OS with or without a local server. Non-obvious:
+- **Files** in the data dir: `federation-identity.json` (this launcher's uuid + Ed25519 seed, 0600, kept across un-pairing — a copy of the print client's signing
+  code in `remote/identity.rs`, held to the same `federation-signing-vectors.json`), `remote-servers.json` (what a person set) and `remote-state.json` (what runs
+  did) — kept apart so a backup finishing can't overwrite a setting. Copies go to `<data dir>/remote-backups/<id>/` or a per-server folder (e.g. a USB drive).
+- **One run** (`runner::run_backup`, tested against a scripted `BackupApi` fake): ask for a backup (adopt a running one of the same scope on 409, wait out another
+  scope), poll, download to `<name>.part` with `Range` resume (dropped connections retry up to 6 times; a server ignoring `Range` or answering 416 restarts the
+  file), verify the SHA-256 from `GET /{id}`, rename, mark read-only, then prune to `keep` copies. Only `relief-backup-*.zip` files are ever listed or deleted
+  (a chosen folder may hold other things), and the server's file name is accepted only if it is a plain `relief-backup-….zip`. A folder lock (`File::try_lock`)
+  stops the window and a command from overlapping.
+- **Schedule** (`schedule.rs`, pure functions generic over the time zone): off/hourly/daily/weekly at a local time. The rule is "was the *latest* scheduled moment
+  honoured?", so a computer that was off makes one catch-up backup, not one per missed slot; a brand-new schedule is due at once (first backup immediately);
+  failures retry with 10 min → 2 h backoff instead of waiting for the next slot. The scheduler is `RemoteBackups::run_forever` (30 s ticks) started by the window
+  and by `ri-launcher run`/`remote run`; it only runs while the launcher does, so the window now stays in the tray when a schedule is active (macOS Cmd-Q too).
+- **Pairing** (`RemoteBackups::pair`): plain `http://` is accepted only for localhost, private/link-local addresses and `.local`-style names
+  (`client::check_transport`) — a backup holds personal data and signing proves who asks, not that the file is private. It then asks `GET /grants` and warns if
+  `operator.full_read` wasn't granted. A 401 means un-paired: the server is marked "needs pairing" and nothing is retried until `pair` is run again with the same
+  address (same local id, settings and copies kept). There is no call to remove the trust *on the server* — an administrator does that in the Trust Console.
+- **CLI:** `ri-launcher remote pair|list|set|backup|files|remove|run`. **Tests:** `cargo test` (schedule, runner, config, manager) +
+  `core/tests/download_resume.rs` (real HTTP client vs a tiny server: cut connection, Range ignored, 416) + `launcher/e2e/run.sh` (the CLI against the real app on
+  the test DB: pairing without the grant, a real `mariadb-dump` zip downloaded and byte-identical, retention, audit rows, revoke, re-pair). The window itself has
+  not been run in Tauri (UI checked with the browser mocks `?mock=remote|remote-running|remote-empty|remote-unpaired`).
+- **Next:** reports over the same trust (more methods on `RemoteClient`, a sibling of `runner`; the scheduler, folder and pairing are reusable); restore a downloaded
+  copy into the local app from this tab (today: Backups tab → "Restore from file…"); tiered retention (daily/weekly/monthly) instead of newest-N; a notification when
+  backups keep failing.
 
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 

@@ -20,7 +20,7 @@ older bearer-token pairing in `rstation/platform/docs/DEVICE_CONTRACT.md` for th
    10 characters from `A–Z` (no I, O) and `2–9`, shown `ABCDE-FGHJK`. Single use, 15 minutes.
 2. The client posts `POST /api/federation/v1/pair`:
    `{code, kind, uuid, name, public_key, signature, base_url?, mac_address?, language?}` where `kind` is
-   `print_client`, `rstation` or `instance`, `uuid` is the client's stable id (≤ 64 chars) and
+   `print_client`, `rstation`, `backup_client` or `instance`, `uuid` is the client's stable id (≤ 64 chars) and
    `signature` is the Ed25519 signature, by the key being submitted, over the UTF-8 string
 
        "ri-pair-v1\n" + CODE + "\n" + public_key + "\n" + uuid
@@ -121,3 +121,17 @@ What a peer may do is a set of permission keys on its trust: `print.share`, `fee
 `feedback.receive`, `offers.send`, `offers.receive`, `inventory.query_exact`, `supplies.request`,
 `supplies.query_available`, `operator.full_read`. Print servers need `print.share` for the job endpoints.
 `GET /api/federation/v1/grants` returns the caller's current set.
+
+## Backups (`operator.full_read`)
+
+A `backup_client` (the RI Launcher) pairs like any client — a code made in the Trust Console, its own key, no location — and
+holds `operator.full_read`. It then uses `/api/federation/v1/backups` (session token or signed request):
+
+1. `POST /backups {"scope":"database"|"full"}` → `202 {backup}`; `409 {backup}` if one is already running (wait for that one).
+2. Poll `GET /backups/{id}` until `status` is `complete` (or `failed`, with `error`). A complete one carries `sha256`, the hash of the
+   whole zip.
+3. `GET /backups/{id}/download` streams the zip and honours `Range`, so an interrupted download resumes. Verify the hash before
+   keeping the file, and keep it: the server deletes its copy after `keep_days`.
+
+The zip never contains `APP_KEY` (see `scripts/BACKUPS.md`), but a database backup does hold password hashes and personal data, which is
+why this grant is rated high risk.
