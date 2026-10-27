@@ -2,6 +2,26 @@
 
 use Illuminate\Support\Str;
 
+$mariadb = [
+    'driver' => 'mariadb',
+    'url' => env('DB_URL'),
+    'host' => env('DB_HOST', '127.0.0.1'),
+    'port' => env('DB_PORT', '3306'),
+    'database' => env('DB_DATABASE', 'reliefinventory'),
+    'username' => env('DB_USERNAME', 'reliefinventory'),
+    'password' => env('DB_PASSWORD', 'reliefinventory'),
+    'unix_socket' => env('DB_SOCKET', ''),
+    'charset' => env('DB_CHARSET', 'utf8mb4'),
+    'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
+    'prefix' => '',
+    'prefix_indexes' => true,
+    'strict' => true,
+    'engine' => null,
+    'options' => extension_loaded('pdo_mysql') ? array_filter([
+        PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
+    ]) : [],
+];
+
 return [
 
     /*
@@ -31,27 +51,27 @@ return [
 
     'connections' => [
 
-        'mariadb' => [
-            'driver' => 'mariadb',
-            'url' => env('DB_URL'),
-            'host' => env('DB_HOST', '127.0.0.1'),
-            'port' => env('DB_PORT', '3306'),
-            'database' => env('DB_DATABASE', 'reliefinventory'),
-            'username' => env('DB_USERNAME', 'reliefinventory'),
-            'password' => env('DB_PASSWORD', 'reliefinventory'),
-            'unix_socket' => env('DB_SOCKET', ''),
-            'charset' => env('DB_CHARSET', 'utf8mb4'),
-            'collation' => env('DB_COLLATION', 'utf8mb4_unicode_ci'),
-            'prefix' => '',
-            'prefix_indexes' => true,
-            'strict' => true,
-            'engine' => null,
-            'options' => extension_loaded('pdo_mysql') ? array_filter([
-                PDO::MYSQL_ATTR_SSL_CA => env('MYSQL_ATTR_SSL_CA'),
-            ]) : [],
-        ],
+        // The instance's base connection: host, port and credentials, and (as `database`) the schema of
+        // the default warehouse. App\Services\Warehouses\WarehouseContext re-points the default connection
+        // at the current warehouse's schema per request; see MULTI_WAREHOUSE.md.
+        'mariadb' => $mariadb,
 
-	/*
+        // The control schema: which warehouses this instance hosts (MULTI_WAREHOUSE.md §2). Named after
+        // the default warehouse's schema unless set, so instances sharing one database server don't collide.
+        'control' => [
+            'database' => env('RI_CONTROL_DATABASE', env('DB_DATABASE', 'reliefinventory').'_control'),
+            'username' => env('RI_CONTROL_DB_USERNAME', $mariadb['username']),
+            'password' => env('RI_CONTROL_DB_PASSWORD', $mariadb['password']),
+        ] + $mariadb,
+
+        // The accounts schema: login credentials shared by every warehouse (MULTI_WAREHOUSE.md §6).
+        'accounts' => [
+            'database' => env('RI_ACCOUNTS_DATABASE', env('DB_DATABASE', 'reliefinventory').'_accounts'),
+            'username' => env('RI_ACCOUNTS_DB_USERNAME', $mariadb['username']),
+            'password' => env('RI_ACCOUNTS_DB_PASSWORD', $mariadb['password']),
+        ] + $mariadb,
+
+        /*
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
@@ -113,7 +133,7 @@ return [
             // 'encrypt' => env('DB_ENCRYPT', 'yes'),
             // 'trust_server_certificate' => env('DB_TRUST_SERVER_CERTIFICATE', 'false'),
         ],
-	 */
+     */
     ],
 
     /*

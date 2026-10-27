@@ -1,8 +1,8 @@
 # Multi-warehouse instances — design
 
-**Status: designed, not built** (written 2026-10-27, from a design discussion between Daniel and Claude; Mark agrees with the
-direction). Nothing here exists in code yet. Read this before touching sessions, auth, storage paths, backups, the queue, or
-anything else that assumes "one instance = one database".
+**Status: being built** on branch `multi-warehouse-design` (designed 2026-10-27, from a design discussion between Daniel and
+Claude; Mark agrees with the direction). See "Implementation progress" (§18) for what exists so far. Read this before touching
+sessions, auth, storage paths, backups, the queue, or anything else that assumes "one instance = one database".
 
 > Items labelled **Recommended** came from a security review of this plan (2026-10-27). They are the intended implementation but
 > haven't been explicitly agreed yet. Confirm or change each one when the phase it belongs to starts.
@@ -705,3 +705,22 @@ guard, per-warehouse browser storage and device cookies, trusted hosts, look-ali
 verification (§4); a separate provisioning worker, narrower DB grants, setup-wizard latch for new warehouses (§7); no
 default-to-warehouse-1, encrypted jobs, Reverb channel checks (§9); the upgrade recovery corrections (§10); live-state tables out of
 dumps (§11); Turnstile hostnames, logs, disk use, feedback reports (§13).
+
+## 18. Implementation progress
+
+Decided while building (2026-10-27):
+- **One code path, separate schemas everywhere.** The control and accounts schemas are always their own schemas, named after the
+  default warehouse's (`<DB_DATABASE>_control`, `<DB_DATABASE>_accounts`; `RI_CONTROL_DATABASE` / `RI_ACCOUNTS_DATABASE` override),
+  so instances sharing a database server don't collide. Bare metal is slated for deprecation: it gets nothing beyond the two schemas
+  (created by hand once, `BUILDING.md`) and stays single-warehouse. Don't build or maintain elaborate bare-metal paths; the bare-metal
+  backup system (`scripts/update.sh` tiers) is to be reviewed and possibly deleted in favour of one Docker-focused backup path.
+- **Naming:** the hosted-warehouse model is `App\Models\Control\Warehouse` (control schema). `App\Models\Warehouse` is still the
+  physical building that locations belong to, inside each warehouse's schema.
+- **Tests** use `<test db>_control` / `_accounts` (`tests/InstanceSchemas.php`, one-time grant in `scripts/TESTING.md`).
+
+**Phase 0 — done.** `control` / `accounts` connections (`config/database.php`); control migrations in `database/migrations/control/`
+(`warehouses`, `warehouse_domains`); `php artisan instance:migrate` (control → accounts → every warehouse; registers the existing
+schema as the default warehouse, `warehouses.is_default`) replaces `migrate` in the entrypoint, `update.sh` and `dev-update.sh`;
+`instance:ensure-schemas` creates the two schemas on Docker with the root secret (interim, until the provisioning worker);
+`WarehouseContext` + `SwitchTask` (only `SwitchDatabase` so far); the global `ResolveWarehouse` middleware (default warehouse only;
+resets at the start of each request rather than on terminate, so terminable middleware still see the request's warehouse).

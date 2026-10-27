@@ -8,6 +8,7 @@ namespace App\Providers;
 use App\Services\ActivityRecorder;
 use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
@@ -30,6 +31,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(SlowQueryLog::class);
         // Keeps the .env mail config it snapshots before the settings below override it.
         $this->app->singleton(MailSettings::class);
+        // Which warehouse this request/job/command works in (MULTI_WAREHOUSE.md §8).
+        $this->app->singleton(WarehouseContext::class);
     }
 
     /**

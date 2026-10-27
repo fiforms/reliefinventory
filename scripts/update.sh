@@ -364,7 +364,9 @@ fi
 as_app npm run build --prefix "$APP_DIR"
 
 # ------------------------------------------------------------------ 5. database
-as_app "$PHP" artisan migrate --force
+# Needs the <db>_control and <db>_accounts schemas beside the app database (BUILDING.md, MULTI_WAREHOUSE.md):
+# create them once, by hand, as MariaDB root. Bare metal is single-warehouse and slated for deprecation.
+as_app "$PHP" artisan instance:migrate --force
 if [ "$SEED_PERMISSIONS" -eq 1 ]; then
     echo "-- Seeding permissions (PermissionsSeeder only)"
     as_app "$PHP" artisan db:seed --class=PermissionsSeeder --force

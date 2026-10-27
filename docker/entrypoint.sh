@@ -168,8 +168,12 @@ web)
     refuse_downgrade
     pre_migrate_backup
 
+    # The control and accounts schemas (MULTI_WAREHOUSE.md) sit beside the warehouse schema; created with
+    # the root password the first time, a no-op afterwards.
+    php artisan instance:ensure-schemas --no-interaction
+
     log "running migrations"
-    php artisan migrate --force --no-interaction
+    php artisan instance:migrate --force --no-interaction
 
     # Essential lookup data (statuses, units, categories, item catalog,
     # permissions) on a never-seeded database; a no-op otherwise. The web setup

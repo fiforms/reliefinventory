@@ -80,7 +80,7 @@ echo "-- Building assets"
 npm run build
 
 echo "-- Running migrations"
-"$PHP" artisan migrate --force
+"$PHP" artisan instance:migrate --force
 
 echo "-- Clearing caches"
 "$PHP" artisan config:clear

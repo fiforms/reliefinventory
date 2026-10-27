@@ -26,7 +26,8 @@ assuming it's still broken.
 
 ```bash
 composer install && npm install     # install PHP + JS deps
-php artisan migrate                 # run migrations
+php artisan instance:migrate        # run migrations: control + accounts schemas, then every warehouse
+                                     # (a plain `migrate` only migrates the default warehouse's schema)
 php artisan db:seed                 # seed essential data (run after creating a user)
 php artisan db:seed --class=WarehouseActivitySeeder   # optional realistic demo data (donations/pallets/
                                      # orders across every lifecycle stage) — demo instances only, never

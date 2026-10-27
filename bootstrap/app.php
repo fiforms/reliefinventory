@@ -11,6 +11,7 @@ use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RedirectToSetup;
+use App\Http\Middleware\ResolveWarehouse;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Http\Middleware\TrustAuth;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
@@ -29,6 +30,8 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Before anything touches the database (sessions, auth): every request works in one warehouse.
+        $middleware->prepend(ResolveWarehouse::class);
         $middleware->web(append: [
             RedirectToSetup::class,
             HandleInertiaRequests::class,
