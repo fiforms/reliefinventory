@@ -640,6 +640,16 @@ Data Import's **Names & addresses** CSV (`App\Services\Import\MailingListImporte
 (zero-permission) roles, volunteer sets `is_volunteer` (never the Volunteer role — it grants permissions), other/blank adds nothing; a row updates
 an existing person with the same name (or organization) and 5-digit zip, and two such matches is an error, not a guess.
 
+**Signs** (2026-10-26, `SignController`, Setup > **Signs** → `/setup/signs`, document `sign`, open to anyone signed in like Help):
+Letter signs with a title, optional smaller text, an optional safety header (danger/warning/caution/notice/safety), portrait or
+landscape, and arrows at any edge or corner. Ready-made ones are code (`App\Support\SignTemplates`) and only prefill the form.
+WeasyPrint can't shrink-to-fit, so `App\Support\SignLayout` does it: it measures with the bundled Liberation Sans
+(`resources/fonts/liberation/`, OFL; glyph widths pre-extracted to `metrics.php` — regenerate if the font changes), wraps and
+balances the lines itself and the view prints them `nowrap`, so the PDF breaks where it measured. Arrows sit in bands the text never
+enters (a corner arrow tries a side band and an end band, keeps whichever gives the bigger title). The page's preview is the same
+Blade view as HTML (`/setup/signs/preview`, fonts via `/setup/signs/fonts/*`) in a scaled iframe. `SignsTest` checks every template fits with
+every arrow combination. Not built: printing a batch of signs at once, numbered runs (Aisle A–F), a Help guide.
+
 **One-time server provisioning:** the `weasyprint` binary (Python, with native Pango/Cairo deps —
 `apt install weasyprint` or `pip install weasyprint` depending on distro) must be on `PATH`, or set
 `LARAVEL_PDF_WEASYPRINT_BINARY` in `.env` to its path. Not part of the deploy script; a fresh box needs it done

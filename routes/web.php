@@ -413,6 +413,14 @@ Route::get('/help/{guide}', function (string $guide) {
     ]]);
 })->whereIn('guide', array_keys(HelpReportController::GUIDES))->middleware(['auth']);
 
+// Signs (SignController): ready-made or typed warehouse signs on Letter paper, on the Setup menu.
+// Anyone signed in, like the Help guides. /setup/signs/preview is the PDF's own view as HTML.
+Route::get('/setup/signs', [SignController::class, 'page'])->middleware(['auth']);
+Route::get('/setup/signs/preview', [SignController::class, 'preview'])->middleware(['auth']);
+Route::get('/setup/signs/fonts/{file}', [SignController::class, 'font'])
+    ->whereIn('file', ['LiberationSans-Bold.ttf', 'LiberationSans-Regular.ttf'])->middleware(['auth']);
+Route::get('/report/sign.pdf', [SignController::class, 'pdf'])->name('report.sign')->middleware(['auth']);
+
 // Training Mode (App\Services\TrainingMode). Setup > Training Mode is manage-training; switching the mode on/off
 // is admin-system. The team activity sheets print from /help, for anyone signed in, like the help guides.
 Route::get('/setup/training', function () {
