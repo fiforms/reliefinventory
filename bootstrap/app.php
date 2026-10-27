@@ -6,6 +6,7 @@
 use App\Http\Middleware\AuthenticateManagedDevice;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureAccountApproved;
+use App\Http\Middleware\EnsureAccountSessionCurrent;
 use App\Http\Middleware\EnsureDeviceAccess;
 use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\EnsurePasswordChanged;
@@ -37,6 +38,7 @@ return Application::configure(basePath: dirname(__DIR__))
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
             TrackSessionActivity::class,
+            EnsureAccountSessionCurrent::class,
             EnsureAccountApproved::class,
             EnsurePasswordChanged::class,
         ]);

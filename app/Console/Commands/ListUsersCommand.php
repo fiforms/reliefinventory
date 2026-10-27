@@ -32,8 +32,8 @@ class ListUsersCommand extends Command
     public function handle()
     {
         // Retrieve all users with transformed fields
-        $users = User::select('id', 'first_name', 'last_name', 'email', 'created_at', 'email_verified_at', 'password')
-            ->with('roles')
+        $users = User::select('id', 'account_id', 'first_name', 'last_name', 'email', 'created_at')
+            ->with('roles', 'account')
             ->get()
             ->map(function ($user) {
                 return [

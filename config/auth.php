@@ -1,5 +1,7 @@
 <?php
 
+use App\Models\User;
+
 return [
 
     /*
@@ -60,9 +62,11 @@ return [
     */
 
     'providers' => [
+        // Credentials are checked against the central account, then resolved to this warehouse's person
+        // (App\Auth\AccountUserProvider, MULTI_WAREHOUSE.md §6).
         'users' => [
-            'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\User::class),
+            'driver' => 'accounts',
+            'model' => env('AUTH_MODEL', User::class),
         ],
 
         // 'users' => [
@@ -93,7 +97,9 @@ return [
     'passwords' => [
         'users' => [
             'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            // In the accounts schema, so a restored warehouse dump can't plant a token (MULTI_WAREHOUSE.md §5).
+            'connection' => 'accounts',
+            'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],

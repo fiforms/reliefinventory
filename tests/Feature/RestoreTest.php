@@ -1,6 +1,8 @@
 <?php
 
 use App\Console\Commands\SetupReset;
+use App\Models\Accounts\Account;
+use App\Models\Accounts\Membership;
 use App\Models\Backup;
 use App\Models\SetupState;
 use App\Models\User;
@@ -321,8 +323,10 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     $backup = $backup->fresh();
     expect($backup->status)->toBe('complete')->and($backup->error)->toBeNull();
 
-    // The "new instance": empty schema, never set up, no photo.
+    // The "new instance": empty schema, no logins, never set up, no photo.
     Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
+    Membership::query()->delete();
+    Account::query()->delete();
     unlink($this->tmp.'/private/receiving-photos/p.jpg');
     SetupState::current()->update(['completed_at' => null]);
     expect(User::where('email', 'old-admin@example.com')->exists())->toBeFalse();
@@ -344,10 +348,18 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
         ->and(DB::table('backups')->count())->toBe(0)
         ->and(SetupState::current()->completed_at)->not->toBeNull();
 
+    // The logins came with it (database/accounts.json): the administrator signs in with their old password
+    // and, the instance having no instance admin yet, runs it.
+    expect(Account::findByEmail('old-admin@example.com')->is_instance_admin)->toBeTrue()
+        ->and($status['logins'])->toBe(['old-admin@example.com: login created']);
+
     // The instance is now a normal, set-up one: the wizard and restore are closed.
     $this->get('/install')->assertRedirect(route('login'));
     $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertForbidden();
     expect($this->getJson('/install/restore/status')->json('state'))->toBe('complete');
+
+    $this->post('/login', ['email' => 'old-admin@example.com', 'password' => 'password']);
+    $this->assertAuthenticated();
 });
 
 // ---- restoring from zips on disk (backup:restore) -----------------------------------------------------

@@ -5,15 +5,20 @@
 
 namespace App\Providers;
 
+use App\Auth\AccountSession;
+use App\Auth\AccountUserProvider;
 use App\Services\ActivityRecorder;
 use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
 use App\Services\Warehouses\WarehouseContext;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
@@ -41,6 +46,11 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Logins check the central account, then resolve this warehouse's person (MULTI_WAREHOUSE.md §6).
+        Auth::provider('accounts', fn ($app, array $config) => new AccountUserProvider($app['hash'], $config['model']));
+        Event::listen(Login::class, fn (Login $e) => AccountSession::started($e->user));
+        Event::listen(Logout::class, fn () => AccountSession::forget());
 
         // Federation backup endpoints. Named limiters, keyed by who is calling: a numeric `throttle:N,1` shares one counter
         // per IP across every route, so a client polling a backup's status would use up the budget of the call that

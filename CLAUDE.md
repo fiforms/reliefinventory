@@ -223,7 +223,17 @@ endpoints — fixed, but keep matching page-route and JSON-endpoint gates in syn
   migration `2025_02_20_155051_drop_users_table.php`); auth is on `Person`, not a `User` model (both map
   to the same `people` table/row — `User` is what `Auth::user()` returns, `Person` is the general party
   record; they share permission-resolution logic via the `HasPermissions` trait rather than a common
-  class). `people_roles` links a person to zero or more `roles`; `permissions` / `role_permissions` /
+  class). **Credentials live in the accounts schema, not on `people`** (2026-10-27, multi-warehouse phase 0b):
+  `accounts` (email, password hash, verification, lock, `is_instance_admin`, `auth_epoch`) + `memberships` (account →
+  warehouse → person, the only record of who belongs where); `people.account_id` is a cached link and `people.email`
+  mirrors the login email. `password` and `email_verified_at` on Person/User are virtual attributes backed by the account
+  (`Concerns\HasAccount`, which overrides `save()`/`delete()` — not model events, so `Event::fake()` can't skip it — and
+  refuses a signed-in user changing *someone else's* login unless this warehouse is its sole home). Login goes through
+  `App\Auth\AccountUserProvider` (account first, then this warehouse's person via `memberships`); a User is "has an account,
+  or is a trainee". Reset tokens and login throttling are in the accounts schema; a password change/reset/lock bumps
+  `auth_epoch`, which ends the account's other sessions (`AccountSession`, `EnsureAccountSessionCurrent`). Backups carry
+  `database/accounts.json` (`WarehouseAccounts`), relinked after every restore. See MULTI_WAREHOUSE.md §6/§18.
+  `people_roles` links a person to zero or more `roles`; `permissions` / `role_permissions` /
   `person_permissions` implement the granular permission-key model described above. There is no
   `role_bitpack` column — it was dropped when the permission-key model replaced it. Neither `first_name`
   nor `last_name` is required — a disaster-response donation often arrives with only an organization known

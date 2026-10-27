@@ -14,7 +14,7 @@ namespace App\Services;
  */
 class BackupCompatibility
 {
-    private const ENTRY_PATH = '#^(database/db\.sql|files/(private|public)/[^\0\\\\]+)$#';
+    private const ENTRY_PATH = '#^(database/(db\.sql|accounts\.json)|files/(private|public)/[^\0\\\\]+)$#';
 
     /**
      * @param  array  $manifest  decoded manifest.json

@@ -27,6 +27,12 @@ class WarehouseContext
 
     public function current(): Warehouse
     {
+        // Commands (and migrations, and tests) run outside any request. While the instance has exactly one
+        // warehouse there is nothing to choose; with more, a command must name one (MULTI_WAREHOUSE.md §13).
+        if (! $this->current && app()->runningInConsole() && Warehouse::count() === 1) {
+            $this->switchTo($this->defaultWarehouse());
+        }
+
         return $this->current ?? throw new RuntimeException('No warehouse is selected for this request, job or command.');
     }
 

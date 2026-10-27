@@ -56,12 +56,11 @@ class ProfileController extends Controller
 
         $user = $request->user();
 
-        $user->email_verified_at = null;
-        $user->password = null;
-
         Auth::logout();
 
-        $user->save();
+        // Leave this warehouse: the person record (and everything it is named on) stays. The login itself is
+        // deleted only when nothing else uses it (MULTI_WAREHOUSE.md §6, "Account deletion").
+        $user->detachAccount();
 
         $request->session()->invalidate();
         $request->session()->regenerateToken();

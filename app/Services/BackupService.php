@@ -6,6 +6,7 @@
 namespace App\Services;
 
 use App\Models\Backup;
+use App\Services\Warehouses\WarehouseAccounts;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use RuntimeException;
@@ -26,6 +27,8 @@ use ZipArchive;
  * Layout of a zip:
  *   manifest.json            format version, scope, app commit, migrations, and size + SHA-256 of every entry below
  *   database/db.sql          plain mariadb-dump of the app database (scope database, full)
+ *   database/accounts.json   this warehouse's logins (WarehouseAccounts::export(); with the dump, since the
+ *                            accounts schema isn't in it — MULTI_WAREHOUSE.md §6)
  *   files/private/...        storage/app/private (the `local` disk: receiving photos, screenshots, imports, BOLs)
  *   files/public/...         storage/app/public           (scope full, storage)
  *
@@ -170,6 +173,8 @@ class BackupService
                 $progress('Dumping the database');
                 $this->dumpDatabase("{$work}/db.sql");
                 $entries[] = ['path' => 'database/db.sql', 'source' => "{$work}/db.sql"];
+                file_put_contents("{$work}/accounts.json", json_encode(app(WarehouseAccounts::class)->export(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                $entries[] = ['path' => 'database/accounts.json', 'source' => "{$work}/accounts.json"];
             }
             if (self::hasStorage($scope)) {
                 $progress('Listing uploaded files');

@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccount;
 use App\Models\Concerns\HasLoginGate;
 use App\Models\Concerns\HasPermissions;
 use App\Models\Concerns\HasPinLogin;
@@ -18,7 +19,7 @@ use Illuminate\Notifications\Notifiable;
 class User extends Authenticatable implements MustVerifyEmail
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, HasLoginGate, HasPermissions, HasPinLogin, Notifiable;
+    use HasAccount, HasFactory, HasLoginGate, HasPermissions, HasPinLogin, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -65,21 +66,22 @@ class User extends Authenticatable implements MustVerifyEmail
     protected function casts(): array
     {
         return [
-            'email_verified_at' => 'datetime',
             'disabled_at' => 'datetime',
-            'password' => 'hashed',
             'password_change_required' => 'boolean',
         ];
     }
 
     /**
-     * The "booted" method of the model.
-     * This applies a global scope to filter out users where email is NULL.
+     * Who can log in: people with an account (MULTI_WAREHOUSE.md §6), and trainees, who tap in with no
+     * password and have none. A donor or partner with only a contact email is not a User.
      */
     protected static function booted()
     {
-        static::addGlobalScope('excludeNullPasswords', function (Builder $builder) {
-            $builder->whereNotNull('email');
+        static::addGlobalScope('loginCapable', function (Builder $builder) {
+            $builder->where(fn (Builder $q) => $q->whereNotNull('account_id')->orWhere('is_trainee', true));
         });
     }
+
+    /** The auth user is shared with every page (Profile shows whether the email is verified). */
+    protected $appends = ['email_verified_at'];
 }

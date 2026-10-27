@@ -84,7 +84,10 @@ class FirstRunService
         return true;
     }
 
-    /** Create an Administrator (verified and approved, so no mail setup is needed to sign in). */
+    /**
+     * Create an Administrator (verified and approved, so no mail setup is needed to sign in). The first
+     * administrator also runs the instance, so their account is an instance admin (MULTI_WAREHOUSE.md §6).
+     */
     public function createAdministrator(string $email, string $password, string $firstName, string $lastName): User
     {
         $user = new User;
@@ -95,6 +98,7 @@ class FirstRunService
         $user->email_verified_at = now();
         $user->approved_at = now();
         $user->save();
+        $user->account->forceFill(['is_instance_admin' => true])->save();
 
         PeopleRoles::create(['person_id' => $user->id, 'role_id' => self::ADMINISTRATOR_ROLE_ID]);
         $this->markComplete();

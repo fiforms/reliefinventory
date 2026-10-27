@@ -5,6 +5,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Accounts\Account;
 use App\Models\User;
 use App\Services\FirstRunService;
 use Illuminate\Console\Command;
@@ -42,7 +43,7 @@ class BootstrapAdminCommand extends Command
 
             return self::FAILURE;
         }
-        if (User::where('email', $email)->exists()) {
+        if (User::where('email', $email)->exists() || Account::findByEmail($email)) {
             $this->error("A user with e-mail $email already exists; run user:promote to make them an Administrator.");
 
             return self::FAILURE;

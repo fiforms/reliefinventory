@@ -5,6 +5,7 @@
 
 namespace App\Services;
 
+use App\Services\Warehouses\WarehouseAccounts;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
@@ -232,8 +233,13 @@ class RestoreService
             }
             $this->progress($id, 'Replacing the database', 62);
             $this->replaceDatabase("{$work}/database/db.sql", $fresh);
+            // The restored people aren't the ones this warehouse's memberships point at (and an older dump's
+            // migration links its own logins, MULTI_WAREHOUSE.md §6).
+            app(WarehouseAccounts::class)->forgetMemberships();
             $this->progress($id, 'Updating the database to this version', 78);
             $this->migrate($fresh);
+            $accountsFile = "{$work}/database/accounts.json";
+            $logins = app(WarehouseAccounts::class)->relinkAfterRestore(is_file($accountsFile) ? json_decode((string) file_get_contents($accountsFile), true) : null);
         }
 
         // ---- 4. files ----
@@ -264,7 +270,7 @@ class RestoreService
             'blanked' => $blanked, 'admin_missing' => $adminMissing,
             'database_restored' => $plan['database'], 'includes_uploads' => $plan['files'],
             'backup_created_at' => $plan['database_created_at'], 'files_created_at' => $plan['files_created_at'],
-            'notes' => $plan['notes'],
+            'notes' => $plan['notes'], 'logins' => $logins ?? [],
         ];
         $this->writeStatus($result);
 
@@ -312,7 +318,7 @@ class RestoreService
 
         $isFile = fn (string $path) => str_starts_with($path, 'files/');
         if ($db !== null) {
-            $db['want'] = fn (string $path) => $path === 'database/db.sql' || ($dbSuppliesFiles && $isFile($path));
+            $db['want'] = fn (string $path) => in_array($path, ['database/db.sql', 'database/accounts.json'], true) || ($dbSuppliesFiles && $isFile($path));
         }
         if ($files !== null) {
             $files['want'] = $isFile;
@@ -460,6 +466,7 @@ class RestoreService
         $this->artisan('db:wipe', ['--force' => true]);
         $this->artisan('migrate', ['--force' => true]);
         $this->artisan('setup:seed-essentials');
+        app(WarehouseAccounts::class)->forgetAll();
     }
 
     /** After a failed load on a never-set-up instance: back to a clean state so /install works. Best effort. */

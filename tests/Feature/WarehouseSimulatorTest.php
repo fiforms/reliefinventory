@@ -101,6 +101,7 @@ test('the same seed produces the same simulation', function () {
 
     $run = function () {
         DB::beginTransaction();
+        DB::connection('accounts')->beginTransaction();   // the simulated logins
         try {
             $s = app(WarehouseSimulator::class)->run(14, 40, 99, 1);
             unset($s['seconds']);
@@ -110,6 +111,7 @@ test('the same seed produces the same simulation', function () {
 
             return $s;
         } finally {
+            DB::connection('accounts')->rollBack();
             DB::rollBack();
         }
     };

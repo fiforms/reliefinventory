@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Models\Concerns\HasAccount;
 use App\Models\Concerns\HasLoginGate;
 use App\Models\Concerns\HasPermissions;
 use App\Models\Concerns\HasPinLogin;
@@ -15,7 +16,7 @@ use InvalidArgumentException;
 
 class Person extends Model
 {
-    use HasFactory, HasLoginGate, HasPermissions, HasPinLogin;
+    use HasAccount, HasFactory, HasLoginGate, HasPermissions, HasPinLogin;
 
     public const PARTNER_STATUS_PENDING = 'pending';
 
@@ -132,6 +133,7 @@ class Person extends Model
         // Both set only by UserAdminController (User Administration page),
         // never accepted from client-submitted validation rules elsewhere
         // — see PeopleController/UserAdminController's VALIDATION_RULES.
+        // email_verified_at is the account's (HasAccount).
         'email_verified_at',
         'disabled_at',
         'approved_at',
@@ -149,7 +151,6 @@ class Person extends Model
     protected $casts = [
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'email_verified_at' => 'datetime',
         'disabled_at' => 'datetime',
         'is_trainee' => 'boolean',
         'approved_at' => 'datetime',

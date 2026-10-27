@@ -724,3 +724,35 @@ schema as the default warehouse, `warehouses.is_default`) replaces `migrate` in 
 `instance:ensure-schemas` creates the two schemas on Docker with the root secret (interim, until the provisioning worker);
 `WarehouseContext` + `SwitchTask` (only `SwitchDatabase` so far); the global `ResolveWarehouse` middleware (default warehouse only;
 resets at the start of each request rather than on terminate, so terminable middleware still see the request's warehouse).
+
+**Phase 0b — done** (decisions 2026-10-27: Administrator role holders become instance admins at migration; `people.password` and
+`people.email_verified_at` are dropped; `people.email` always mirrors the login email and keeps its unique index; backups carry a
+minimal `accounts.json` now rather than in phase 4). Accounts schema (`database/migrations/accounts/`): `accounts`, `memberships`,
+`password_reset_tokens`, and `cache`/`cache_locks` for the `accounts` cache store (per-account login throttling). The warehouse
+migration `move_logins_to_accounts` makes an account for everyone with a password or a verified email (never trainees, never
+contact-only donors/partners) and writes a report to `storage/logs/accounts-migration-<schema>-<time>.log`.
+- `Concerns\HasAccount` (Person and User): `password` / `email_verified_at` are virtual attributes backed by the account, written on
+  `save()` (an override, not a model event). A new User, or a person given credentials, gets an account and a membership. A signed-in
+  user changing another person's login (password, verification, email) is refused unless this warehouse is its sole home; the owner, a
+  reset-token or verify link, and the CLI aren't limited. Deleting a person, or "delete my account", leaves this warehouse; the login is
+  deleted only when no membership is left (never an instance admin's).
+- `AccountUserProvider`: account by email → active membership here → person, and the person's `account_id` must agree. No account, not a
+  member, locked and wrong password give the same answer and each cost one hash.
+- `auth_epoch`: bumped on password change/reset and lock; the session stores `[account id, epoch]` at login, and
+  `EnsureAccountSessionCurrent` logs out a stale one. Changing your own password re-records it, so only *other* sessions end.
+- Console commands, migrations and tests use the default warehouse while there is exactly one (`WarehouseContext::current()`).
+- `account:instance-admin <email> [--revoke]`; `user:create`, `admin:bootstrap` and the wizard's administrator are instance admins.
+- Backups: `database/accounts.json` (`WarehouseAccounts::export()`: this warehouse's logins; password hashes only for sole-home
+  accounts; never the instance-admin flag). A restore forgets this warehouse's memberships, migrates, then relinks from accounts.json (or,
+  for an older backup, by email): existing accounts are kept as they are, missing ones created, orphans removed, and if the instance has
+  no instance admin the restored Administrators become instance admins. `setup:reset` clears this warehouse's logins.
+
+**Still open from 0b, for later phases:**
+- A restore by a warehouse admin (phase 4) is untrusted: accounts.json and an old dump's password columns must produce *invitations*,
+  never memberships or instance admins (TODOs in `WarehouseAccounts` and the `move_logins_to_accounts` migration).
+- Self-service email change should need the current password and a confirmation link signed with `APP_KEY` (§6); today the profile
+  page changes it directly (only possible while the account's sole home is here — the HasAccount guard refuses otherwise for others,
+  but lets the owner through).
+- Account lock has no UI yet (instance console, phase 5); the column, the login refusal and the session end are in place.
+- `setup:reset` with several warehouses must not remove an instance admin who still runs the instance (TODO in `WarehouseAccounts::forgetAll`).
+- Email verification links must stay signed with `APP_KEY` once `WAREHOUSE_KEY` exists (phase 1).

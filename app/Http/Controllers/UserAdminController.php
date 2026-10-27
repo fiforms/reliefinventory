@@ -70,7 +70,7 @@ class UserAdminController extends Controller
     ];
 
     /**
-     * Retrieve all login-capable people (anyone with an email set).
+     * Retrieve all login-capable people (anyone with a login account).
      *
      * @return JsonResponse
      */
@@ -223,7 +223,7 @@ class UserAdminController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $person = Person::whereNotNull('email')->findOrFail($id);
+        $person = Person::whereNotNull('account_id')->findOrFail($id);
 
         $rules = self::VALIDATION_RULES;
         $rules['email'] = 'required|email|max:255|unique:people,email,'.$id;
@@ -279,7 +279,7 @@ class UserAdminController extends Controller
             'require_password_change' => 'nullable|boolean',
             'send_login_email' => 'nullable|boolean',
         ]);
-        $person = Person::whereNotNull('email')->findOrFail($id);
+        $person = Person::whereNotNull('account_id')->findOrFail($id);
 
         try {
             $this->assertCanTakeOver($person);
@@ -323,7 +323,7 @@ class UserAdminController extends Controller
             'ids.*' => 'integer',
         ]);
 
-        $people = Person::whereNotNull('email')->whereIn('id', $data['ids'])->get();
+        $people = Person::whereNotNull('account_id')->whereIn('id', $data['ids'])->get();
         $done = 0;
         $skipped = [];
         foreach ($people as $person) {
@@ -345,7 +345,7 @@ class UserAdminController extends Controller
 
     private function runAction(string $action, $id): JsonResponse
     {
-        $person = Person::whereNotNull('email')->findOrFail($id);
+        $person = Person::whereNotNull('account_id')->findOrFail($id);
 
         try {
             return response()->json(['message' => $this->applyAction($action, $person)], 200);
@@ -490,9 +490,9 @@ class UserAdminController extends Controller
      */
     private function loadUsers(?array $ids = null)
     {
-        $people = Person::whereNotNull('email')
+        $people = Person::whereNotNull('account_id')
             ->when($ids !== null, fn ($q) => $q->whereIn('id', $ids))
-            ->with(['people_roles', 'roles', 'person_permissions', 'createdBy', 'approvedBy'])
+            ->with(['account', 'people_roles', 'roles', 'person_permissions', 'createdBy', 'approvedBy'])
             ->withMax('loginHistory as last_login_at', 'logged_in_at')
             ->get();
 
@@ -506,6 +506,8 @@ class UserAdminController extends Controller
             // — this exposes just enough to distinguish "invited, hasn't set
             // a password yet" from "active" in the UI.
             $person->has_password = ! is_null($person->password);
+            // The account's (HasAccount), so not a column the model would serialize by itself.
+            $person->append('email_verified_at')->makeHidden('account');
             $person->status = self::status($person);
             // withMax hands back the raw column string; send an ISO time so
             // the browser reads it in the right timezone.
