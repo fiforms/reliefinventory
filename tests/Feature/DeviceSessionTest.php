@@ -1,16 +1,12 @@
 <?php
 
 use App\Models\DeviceSessionTicket;
-use App\Models\KioskLocation;
 use App\Models\ManagedDevice;
 
 function sessionDevice(string $function = 'status_sitrep'): array
 {
-    $location = KioskLocation::first() ?? KioskLocation::create(['name' => 'Site']);
-    $device = new ManagedDevice(['name' => 'Pi', 'update_channel' => 'stable', 'kiosk_function' => $function, 'kiosk_location_id' => $location->id]);
-    $device->device_uuid = 'sess-'.bin2hex(random_bytes(4));
-    $token = $device->issueToken();
-    $device->save();
+    [$device, $token] = pairClient('sess-'.bin2hex(random_bytes(4)), 'Pi');
+    $device->forceFill(['kiosk_function' => $function, 'update_channel' => 'stable'])->save();
 
     return [$device, $token];
 }
@@ -102,8 +98,7 @@ test('re-pairing a device kills its browser session', function () {
     $cookie = browserSessionFor($token);
     asBrowser($cookie)->getJson('/json/display/sitrep')->assertOk();
 
-    $device->refresh()->issueToken(); // what a re-pair does
-    $device->save();
+    pairClient($device->device_uuid, 'Pi'); // a re-pair
     asBrowser($cookie)->getJson('/json/display/sitrep')->assertForbidden();
 });
 

@@ -1,0 +1,19 @@
+# Local override for `npm run start:docker` / `stop:docker`: runs the image built by
+# `npm run build:docker` (reliefinventory:dev) instead of pulling ghcr.io/...:latest.
+# Used together with compose.yaml:  docker compose -f compose.yaml -f compose.dev.yaml up
+services:
+  init:
+    image: reliefinventory:dev
+    pull_policy: never
+  app:
+    image: reliefinventory:dev
+    pull_policy: never
+  queue:
+    image: reliefinventory:dev
+    pull_policy: never
+  scheduler:
+    image: reliefinventory:dev
+    pull_policy: never
+  reverb:
+    image: reliefinventory:dev
+    pull_policy: never

@@ -7,8 +7,15 @@
         "dev": "vite",
         "test:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/local-app/run-tests.sh -q",
         "package:rstation": "PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/local-app/package.sh",
+        "build:docker": "docker build -t reliefinventory:dev --build-arg RI_GIT_COMMIT=$(git rev-parse --short HEAD) --build-arg RI_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) .",
+        "build:docker:multiarch": "docker buildx build --platform linux/amd64,linux/arm64 -t reliefinventory:dev --build-arg RI_GIT_COMMIT=$(git rev-parse --short HEAD) --build-arg RI_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) .",
+        "start:docker": "docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up -d",
+        "stop:docker": "docker compose -f docker/compose.yaml -f docker/compose.dev.yaml down",
         "build:print-client": "npm --prefix print-client install && npm --prefix print-client run tauri build",
+        "build:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri build",
+        "dev:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri dev",
         "build:offline-bundle": "rstation/build-offline-bundle.sh",
+        "publish:rstation-image": "node scripts/publish-rstation-image.mjs",
         "build:rstation": "npm run test:rstation && PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/image-builder/build.sh --virt"
     },
     "devDependencies": {

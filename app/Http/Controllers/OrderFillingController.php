@@ -245,7 +245,7 @@ class OrderFillingController extends Controller
                     $sealed = $holding->filter(fn ($r) => ($pallets[$r['pallet_id']] ?? null)?->status === 'sealed');
                     if ($overflow > 0 && $sealed->isNotEmpty()) {
                         abort(response()->json([
-                            'message' => "Only ".($qty - $overflow)." of {$qty} can come from the sorting area and open pallets. Open a sealed pallet to pick the other {$overflow}.",
+                            'message' => 'Only '.($qty - $overflow)." of {$qty} can come from the sorting area and open pallets. Open a sealed pallet to pick the other {$overflow}.",
                             'sealed_pallets' => $sealed->map(fn ($r) => [
                                 'id' => $r['pallet_id'], 'tag' => $pallets[$r['pallet_id']]->tag,
                                 'location' => $pallets[$r['pallet_id']]->location?->code, 'qty' => $r['qty'],

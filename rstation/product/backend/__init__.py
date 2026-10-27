@@ -11,12 +11,16 @@ printer list rides on every heartbeat, and its state lives under /data and is
 wiped with the pairing. Design: rstation/PRINT_SERVER.md and
 rstation/PRINT_CLIENT_SPEC.md.
 
+Pairing and authentication are key-based (federation.py, rstation/FEDERATION_AUTH.md): the device keeps a
+credential signed by its own key where the platform expects a bearer token, so the platform is unchanged.
+
 The local server (local_server.py) runs a whole offline copy of the website on this device
 for sites with no Internet; Settings > Local server controls it. Design: rstation/LOCAL_SERVER.md."""
 from fastapi import APIRouter
 
 from product import Product
 
+from . import federation
 from .browser_session_api import build_router as browser_session_router
 from .local_server_api import build_router as local_server_router
 from .print_station import default_station
@@ -24,6 +28,8 @@ from .printers_api import build_router as printers_router
 
 router = APIRouter()
 station = default_station()
+# Pair with a key instead of receiving a bearer token (replaces the platform's pairing.pair; see federation.py).
+federation.install()
 
 
 @router.get("/api/local/portal/ping")
@@ -41,7 +47,8 @@ product = Product(
     confirm_server_url=True,
     routers=[router, printers_router(station.cups), local_server_router(), browser_session_router(station.api)],
     # Claims print jobs from the website and prints them (see print_station.py).
-    background_tasks=[station.run],
+    # Also keeps this device's key-signed credential fresh in the file the platform sends as its bearer.
+    background_tasks=[station.run, federation.maintain],
     # Appears as `portal` and `print_station` in GET /api/local/status.
     status_fields=lambda: {"portal": {"mode": "remote"}, **station.status()},
     # Merged into every heartbeat; namespaced so it can't collide. The print

@@ -8,21 +8,25 @@ namespace App\Services;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
 use App\Models\OfflineModeSetting;
+use App\Models\Trust;
+use App\Services\Federation\FederationClient;
+use App\Services\Federation\TrustService;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 /**
  * Pushes this ("remote") instance's own feedback reports to a central
- * instance's ingest endpoint (see docs/centralized-feedback-design-brief.md
- * and FeedbackIngestController on the central side). Deliberately has no
+ * instance's ingest endpoint (FeedbackIngestController::storeFromTrust on the
+ * central side). Deliberately has no
  * background retry: a push is attempted once, right when a report is
  * created (see FeedbackReportController::store), or in a single explicit
  * batch via the "Send Unsent Reports" action. This is never a hard
  * dependency for an instance's own feedback flow to work — every call here
  * fails soft (logs and returns) rather than throwing, and a freshly-cloned
- * instance with no central_ingest_url/shared_secret configured simply never
- * attempts anything.
+ * instance that hasn't chosen a paired central instance simply never
+ * attempts anything. Reports travel signed, through the trust the admin
+ * chose (see App\Services\Federation).
  */
 class FeedbackPushService
 {
@@ -68,12 +72,12 @@ class FeedbackPushService
      * configured() above) but still does nothing if central isn't
      * configured at all.
      *
-     * @return array{attempted: bool, total: int, sent: int}
+     * @return array{attempted: bool, total: int, sent: int, error: ?string}
      */
     public function pushUnsent(): array
     {
         if (! $this->configured()) {
-            return ['attempted' => false, 'total' => 0, 'sent' => 0];
+            return ['attempted' => false, 'total' => 0, 'sent' => 0, 'error' => null];
         }
 
         $reports = FeedbackReport::whereNull('instance_identifier')
@@ -81,51 +85,117 @@ class FeedbackPushService
             ->get();
 
         if ($reports->isEmpty()) {
-            return ['attempted' => true, 'total' => 0, 'sent' => 0];
+            return ['attempted' => true, 'total' => 0, 'sent' => 0, 'error' => null];
         }
 
-        $sent = $this->push($reports);
+        $result = $this->push($reports);
 
-        return ['attempted' => true, 'total' => $reports->count(), 'sent' => $sent];
+        return ['attempted' => true, 'total' => $reports->count(), ...$result];
+    }
+
+    /**
+     * Checks the saved central address and secret without sending any
+     * report: posts a `ping` that central answers once the secret matches.
+     *
+     * @return array{ok: bool, message: string}
+     */
+    public function testConnection(): array
+    {
+        $settings = FeedbackAggregationSetting::current();
+        if ($settings->feedback_trust_id === null) {
+            return ['ok' => false, 'message' => 'Choose the instance to send reports to, and save first.'];
+        }
+
+        return $this->testTrust($settings->feedbackTrust);
     }
 
     /**
      * Sends the given reports in one batch request and marks only the
      * uuids central actually acknowledges as submitted — a 200 response
      * alone is never treated as success, since a batch can partially fail
-     * (see the design brief). Returns how many were acknowledged.
+     * (see the design brief).
+     *
+     * @return array{sent: int, error: ?string} how many were acknowledged, and why none were if the request failed
      */
-    private function push(Collection $reports): int
+    private function push(Collection $reports): array
     {
-        $settings = FeedbackAggregationSetting::current();
-
-        try {
-            $response = Http::timeout(10)
-                ->withHeaders(['X-Feedback-Shared-Secret' => $settings->shared_secret])
-                ->post($settings->central_ingest_url, [
-                    'instance_identifier' => $this->instanceIdentifier(),
-                    'reports' => $reports->map(fn (FeedbackReport $r) => $this->serialize($r))->all(),
-                ]);
-        } catch (\Throwable $e) {
-            Log::warning('Feedback push to central failed: '.$e->getMessage());
-
-            return 0;
-        }
-
-        if (! $response->successful()) {
-            Log::warning('Feedback push to central failed with status '.$response->status());
-
-            return 0;
+        $response = $this->send([
+            'reports' => $reports->map(fn (FeedbackReport $r) => $this->serialize($r))->all(),
+        ], $error);
+        if ($error !== null) {
+            return ['sent' => 0, 'error' => $error];
         }
 
         $received = collect($response->json('received', []))->filter()->values();
         if ($received->isEmpty()) {
-            return 0;
+            return ['sent' => 0, 'error' => 'Central answered but accepted none of the reports (see its log).'];
         }
 
         FeedbackReport::whereIn('uuid', $received)->update(['submitted_at' => now()]);
 
-        return $received->count();
+        return ['sent' => $received->count(), 'error' => null];
+    }
+
+    /**
+     * Posts to central. Never throws: on failure $error gets a message an
+     * admin can act on (it is also logged) and null is returned.
+     */
+    private function send(array $payload, ?string &$error): ?Response
+    {
+        $error = null;
+
+        return $this->sendViaTrust(FeedbackAggregationSetting::current()->feedbackTrust, $payload, $error);
+    }
+
+    /** Signed send to a trusted central instance; never throws, `$error` carries a message an admin can act on. */
+    private function sendViaTrust(?Trust $trust, array $payload, ?string &$error): ?Response
+    {
+        if (! $trust?->isApproved()) {
+            $error = 'The trust this instance sends feedback through is no longer approved. Pair again in the Trust Console.';
+
+            return null;
+        }
+
+        try {
+            $response = FederationClient::for($trust)->post('/feedback', $payload);
+        } catch (\Throwable $e) {
+            Log::warning('Feedback push to central failed: '.$e->getMessage());
+            $error = 'Could not reach '.$trust->name.': '.$e->getMessage();
+
+            return null;
+        }
+
+        if ($response->successful()) {
+            return $response;
+        }
+
+        Log::warning('Feedback push to central failed with status '.$response->status());
+        $error = match ($response->status()) {
+            401 => $trust->name.' no longer trusts this instance (revoked, or its key changed). Pair again in the Trust Console.',
+            403 => $trust->name.' has not allowed this instance to send feedback. Ask its administrator to grant "Sending feedback".',
+            400 => $trust->name.' says this server\'s clock is too far off. Check the date and time.',
+            503 => $trust->name.' is down for maintenance (HTTP 503). Try again later.',
+            default => $trust->name.' answered with HTTP '.$response->status().'.',
+        };
+
+        return null;
+    }
+
+    /** @return array{ok: bool, message: string} */
+    private function testTrust(?Trust $trust): array
+    {
+        if (! $trust?->isApproved()) {
+            return ['ok' => false, 'message' => 'That trust is not approved. Pair again in the Trust Console.'];
+        }
+        $granted = TrustService::refreshOutbound($trust);
+        if ($granted === null) {
+            return ['ok' => false, 'message' => 'Could not get an answer from '.$trust->name.'. Check its address, that it still trusts this instance, and this server\'s clock.'];
+        }
+        if (! in_array('feedback.send', $granted, true)) {
+            return ['ok' => false, 'message' => 'Connected to '.$trust->name.', but it has not allowed this instance to send feedback. Ask its administrator to grant "Sending feedback".'];
+        }
+
+        return ['ok' => true, 'message' => 'Connected to '.$trust->name.' — it accepts feedback from this instance.'];
     }
 
     private function serialize(FeedbackReport $report): array
@@ -146,17 +216,5 @@ class FeedbackPushService
             'reporter_name' => $report->reporterFullName(),
             'reporter_email' => $report->reporterEmail(),
         ];
-    }
-
-    /**
-     * Defaults to this instance's own APP_URL host — matches how page_url
-     * already captures instance identity per CLAUDE.md's feedback section.
-     * Override via the Instance identifier field on /setup/feedback's
-     * aggregation settings when APP_URL isn't a stable/meaningful
-     * identifier for this instance.
-     */
-    public function instanceIdentifier(): string
-    {
-        return FeedbackAggregationSetting::current()->resolvedIdentifier();
     }
 }

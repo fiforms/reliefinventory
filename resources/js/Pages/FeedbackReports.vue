@@ -34,15 +34,12 @@
 	badge and falls back to a denormalized reporter name/email, since central
 	has no Person record for it.
 
-	Aggregation settings (2026-09-07): instance role/identifier, central
-	ingest URL, and shared secret used to be env-only (FEEDBACK_INSTANCE_ROLE
-	etc.) — now admin-editable here via /json/feedback-aggregation-settings
-	(FeedbackAggregationSettingsController), stored in
-	feedback_aggregation_settings (FeedbackAggregationSetting), same
-	singleton-row pattern as PinLoginSetting/BannerSetting. The shared secret
-	is never round-tripped back to the client after save — the panel only
-	ever shows whether one is currently set, and a blank field on save
-	leaves it unchanged.
+	Aggregation settings: instance role and, for a remote, which paired instance to send through — admin-editable here
+	via /json/feedback-aggregation-settings (FeedbackAggregationSettingsController), stored in
+	feedback_aggregation_settings (FeedbackAggregationSetting), same singleton-row pattern as
+	PinLoginSetting/BannerSetting. Pairing with the central instance is done in the Trust Console (/setup/trust);
+	reports travel signed through that trust (see CLAUDE.md, "Federation"). The old shared-secret fields and
+	connection codes are gone.
 -->
 
 <script setup>
@@ -62,25 +59,28 @@ const props = defineProps({
 // Unsent Reports" button's visibility) actually follows.
 const currentInstanceRole = ref(props.instanceRole);
 
-const aggregationSettings = ref(null); // { instance_role, instance_identifier, central_ingest_url, shared_secret_set }
-const aggregationForm = ref({ instance_role: 'remote', instance_identifier: '', central_ingest_url: '', shared_secret: '' });
+const aggregationSettings = ref(null); // { instance_role, feedback_trust_id }
+const aggregationForm = ref({ instance_role: 'remote', feedback_trust_id: '' });
+const peerTrusts = ref([]); // instances this one is paired with (Trust Console)
 const aggregationLoading = ref(true);
 const aggregationSaving = ref(false);
 const aggregationError = ref(null);
 const aggregationSaved = ref(false);
 
+function applySettings(data) {
+	aggregationSettings.value = data.settings;
+	aggregationForm.value = {
+		instance_role: data.settings.instance_role,
+		feedback_trust_id: data.settings.feedback_trust_id || '',
+	};
+	peerTrusts.value = data.trusts || [];
+	currentInstanceRole.value = data.settings.instance_role;
+}
+
 async function fetchAggregationSettings() {
 	aggregationLoading.value = true;
 	try {
-		const response = await axios.get('/json/feedback-aggregation-settings');
-		aggregationSettings.value = response.data.settings;
-		aggregationForm.value = {
-			instance_role: response.data.settings.instance_role,
-			instance_identifier: response.data.settings.instance_identifier || '',
-			central_ingest_url: response.data.settings.central_ingest_url || '',
-			shared_secret: '',
-		};
-		currentInstanceRole.value = response.data.settings.instance_role;
+		applySettings((await axios.get('/json/feedback-aggregation-settings')).data);
 	} finally {
 		aggregationLoading.value = false;
 	}
@@ -93,18 +93,31 @@ async function saveAggregationSettings() {
 	try {
 		const response = await axios.put('/json/feedback-aggregation-settings', {
 			instance_role: aggregationForm.value.instance_role,
-			instance_identifier: aggregationForm.value.instance_identifier.trim() || null,
-			central_ingest_url: aggregationForm.value.central_ingest_url.trim() || null,
-			shared_secret: aggregationForm.value.shared_secret.trim() || null,
+			feedback_trust_id: aggregationForm.value.feedback_trust_id || null,
 		});
-		aggregationSettings.value = response.data.settings;
-		aggregationForm.value.shared_secret = '';
-		currentInstanceRole.value = response.data.settings.instance_role;
+		applySettings(response.data);
 		aggregationSaved.value = true;
+		if (response.data.settings.instance_role === 'remote' && response.data.settings.feedback_trust_id) await testConnection();
 	} catch (e) {
 		aggregationError.value = e.response?.data?.message || 'Could not save these settings.';
 	} finally {
 		aggregationSaving.value = false;
+	}
+}
+
+const testingConnection = ref(false);
+const connectionTest = ref(null); // { ok, message }
+
+async function testConnection() {
+	testingConnection.value = true;
+	connectionTest.value = null;
+	try {
+		const response = await axios.post('/json/feedback-aggregation-settings/test');
+		connectionTest.value = response.data;
+	} catch (e) {
+		connectionTest.value = { ok: false, message: e.response?.data?.message || 'Could not run the test.' };
+	} finally {
+		testingConnection.value = false;
 	}
 }
 
@@ -160,6 +173,9 @@ const filteredReports = computed(() => {
 		if (filterStatus.value && report.status !== filterStatus.value) return false;
 		if (filterReporter.value && String(report.person?.id) !== filterReporter.value) return false;
 		if (filterPage.value && (report.page_title || report.page_url) !== filterPage.value) return false;
+		// "45" or "#45" finds report #45 itself, rather than every message that happens to contain "45".
+		const number = text.match(/^#?(\d+)$/);
+		if (number) return report.id === Number(number[1]);
 		if (text) {
 			const commentText = (report.status_logs || []).map((log) => log.comment).filter(Boolean);
 			const haystack = [report.message, report.page_title, report.page_url, report.person?.full_name, report.reporter_name, report.instance_identifier, ...commentText]
@@ -215,13 +231,13 @@ async function sendUnsentReports() {
 	sendUnsentMessage.value = null;
 	try {
 		const response = await axios.post('/json/feedback-reports/send-unsent');
-		const { attempted, total, sent } = response.data;
+		const { attempted, total, sent, error: pushError } = response.data;
 		if (!attempted) {
 			sendUnsentMessage.value = 'Central push isn\'t configured on this instance.';
 		} else if (total === 0) {
 			sendUnsentMessage.value = 'Nothing to send — every report is already submitted.';
 		} else {
-			sendUnsentMessage.value = `Sent ${sent} of ${total} report${total === 1 ? '' : 's'}.`;
+			sendUnsentMessage.value = `Sent ${sent} of ${total} report${total === 1 ? '' : 's'}.` + (pushError ? ` ${pushError}` : '');
 		}
 		await fetchReports();
 	} catch (e) {
@@ -293,7 +309,7 @@ async function confirmCompose() {
 				<div class="mt-4 space-y-4">
 					<p class="text-sm text-gray-500">
 						Every instance's own feedback flow works standalone regardless of these — only set
-						these up if this instance should push its own reports to a central triage instance,
+						these up if this instance should send its own reports to a central triage instance,
 						or should <em>be</em> that central instance.
 					</p>
 
@@ -303,50 +319,31 @@ async function confirmCompose() {
 						<label class="block text-sm">
 							<span class="text-gray-700">Role</span>
 							<select v-model="aggregationForm.instance_role" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-								<option value="remote">Remote — pushes its reports to a central instance</option>
-								<option value="central">Central — receives pushes from remote instances</option>
+								<option value="remote">Remote — sends its reports to a central instance</option>
+								<option value="central">Central — receives reports from remote instances</option>
 							</select>
 						</label>
 
-						<label class="block text-sm">
-							<span class="text-gray-700">Instance identifier (optional)</span>
-							<input
-								type="text"
-								v-model="aggregationForm.instance_identifier"
-								placeholder="Defaults to this instance's own URL host"
-								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-							/>
-						</label>
+						<p v-if="aggregationForm.instance_role === 'central'" class="text-sm text-gray-600">
+							Remote instances connect to this one from the <a href="/setup/trust" class="underline text-blue-700">Trust Console</a>:
+							create a connection code there that allows "Sending feedback", and give it to the remote's administrator.
+						</p>
 
-						<label v-if="aggregationForm.instance_role === 'remote'" class="block text-sm">
-							<span class="text-gray-700">Central ingest URL</span>
-							<input
-								type="url"
-								v-model="aggregationForm.central_ingest_url"
-								placeholder="https://central.example.org/json/feedback/ingest"
-								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-							/>
-						</label>
+						<div v-if="aggregationForm.instance_role === 'remote'" class="rounded-md border border-gray-200 bg-gray-50 p-4 space-y-2 text-sm">
+							<label class="block">
+								<span class="font-medium text-gray-700">Send reports to</span>
+								<select v-model="aggregationForm.feedback_trust_id" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
+									<option value="">Choose an instance…</option>
+									<option v-for="t in peerTrusts" :key="t.id" :value="t.id">{{ t.name }} ({{ t.base_url }}){{ t.may_send_feedback ? '' : ' — has not allowed feedback yet' }}</option>
+								</select>
+							</label>
+							<p class="text-gray-500">
+								Only instances this one is paired with appear here. Pair with the central instance in the
+								<a href="/setup/trust" class="underline text-blue-700">Trust Console</a> by pasting the connection code its administrator gives you.
+							</p>
+						</div>
 
-						<label class="block text-sm">
-							<span class="text-gray-700">
-								Shared secret
-								<span v-if="aggregationSettings?.shared_secret_set" class="text-green-600">(currently set)</span>
-								<span v-else class="text-gray-400">(not set)</span>
-							</span>
-							<input
-								type="password"
-								v-model="aggregationForm.shared_secret"
-								placeholder="Leave blank to keep the current secret"
-								autocomplete="new-password"
-								class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-							/>
-							<span class="text-xs text-gray-400">
-								Both instances in a remote/central pair must be configured with the same secret.
-							</span>
-						</label>
-
-						<div class="flex items-center gap-3">
+						<div class="flex items-center gap-3 flex-wrap">
 							<button
 								type="submit"
 								class="px-4 py-2 bg-blue-600 text-white text-sm rounded-md disabled:bg-gray-400"
@@ -354,9 +351,21 @@ async function confirmCompose() {
 							>
 								{{ aggregationSaving ? 'Saving…' : 'Save Settings' }}
 							</button>
+							<button
+								v-if="aggregationSettings?.instance_role === 'remote' && aggregationSettings?.feedback_trust_id"
+								type="button"
+								class="px-4 py-2 border border-gray-300 text-sm rounded-md disabled:text-gray-400"
+								:disabled="testingConnection"
+								@click="testConnection"
+							>
+								{{ testingConnection ? 'Testing…' : 'Test Connection' }}
+							</button>
 							<span v-if="aggregationSaved" class="text-sm text-green-600">Saved.</span>
 							<span v-if="aggregationError" class="text-sm text-red-600">{{ aggregationError }}</span>
 						</div>
+						<p v-if="connectionTest" class="text-sm" :class="connectionTest.ok ? 'text-green-700' : 'text-red-600'">
+							{{ connectionTest.message }}
+						</p>
 					</form>
 				</div>
 			</details>
@@ -414,7 +423,7 @@ async function confirmCompose() {
 						type="text"
 						v-model="searchText"
 						class="mt-1 block w-full border-gray-300 rounded-md shadow-sm"
-						placeholder="Search message, comments, page, reporter..."
+						placeholder="Search message, comments, page, reporter, or #number..."
 					/>
 				</label>
 

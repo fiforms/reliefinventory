@@ -8,11 +8,14 @@ namespace App\Providers;
 use App\Services\ActivityRecorder;
 use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
+use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessing;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Vite;
 use Illuminate\Support\ServiceProvider;
 
@@ -35,6 +38,14 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Federation backup endpoints. Named limiters, keyed by who is calling: a numeric `throttle:N,1` shares one counter
+        // per IP across every route, so a client polling a backup's status would use up the budget of the call that
+        // starts one. The key comes from the request itself (session token, else the claimed trust id) because
+        // throttling runs before `trust-auth`, so the authenticated trust isn't known yet.
+        foreach (['fed-backup-read' => 120, 'fed-backup-create' => 6, 'fed-backup-download' => 30] as $name => $perMinute) {
+            RateLimiter::for($name, fn (Request $request) => Limit::perMinute($perMinute)->by($request->ip().'|'.sha1((string) ($request->bearerToken() ?: $request->header('X-RI-Trust')))));
+        }
 
         // Who did what at each station (activity_log) — read by the Training report card.
         ActivityRecorder::register();

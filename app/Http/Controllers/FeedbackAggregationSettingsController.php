@@ -6,15 +6,15 @@
 namespace App\Http\Controllers;
 
 use App\Models\FeedbackAggregationSetting;
+use App\Models\Trust;
+use App\Services\FeedbackPushService;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
 
 /**
- * Admin-editable settings for centralized feedback aggregation (which
- * instance role this is, where a 'remote' instance pushes to, and the
- * shared secret both sides of a pair must agree on) — gated manage-feedback,
- * matching the /setup/feedback page this lives on. See
- * FeedbackAggregationSetting for the singleton-row pattern.
+ * Admin-editable settings for centralized feedback aggregation (which instance role this is and, for a 'remote',
+ * which paired instance it sends reports through) — gated manage-feedback, matching the /setup/feedback page this
+ * lives on. See FeedbackAggregationSetting for the singleton-row pattern; pairing instances is the Trust Console's job.
  */
 class FeedbackAggregationSettingsController extends Controller
 {
@@ -25,12 +25,16 @@ class FeedbackAggregationSettingsController extends Controller
         return response()->json([
             'settings' => [
                 'instance_role' => $settings->instance_role,
-                'instance_identifier' => $settings->instance_identifier,
-                'central_ingest_url' => $settings->central_ingest_url,
-                // Never sent to the client — only whether one is set, so
-                // the UI can show "configured" without exposing the value.
-                'shared_secret_set' => filled($settings->shared_secret),
+                'feedback_trust_id' => $settings->feedback_trust_id,
             ],
+            // Instances this one is paired with, for the "send reports to" choice.
+            'trusts' => Trust::where('kind', 'instance')->where('status', 'approved')->with('grants')->orderBy('name')->get()
+                ->map(fn (Trust $t) => [
+                    'id' => $t->id,
+                    'name' => $t->name,
+                    'base_url' => $t->base_url,
+                    'may_send_feedback' => $t->grants->where('direction', 'outbound')->where('permission', 'feedback.send')->isNotEmpty(),
+                ])->values(),
         ]);
     }
 
@@ -38,24 +42,20 @@ class FeedbackAggregationSettingsController extends Controller
     {
         $data = $request->validate([
             'instance_role' => ['required', Rule::in(['remote', 'central'])],
-            'instance_identifier' => 'nullable|string|max:255',
-            'central_ingest_url' => 'nullable|url|max:2048',
-            // Blank/omitted leaves the existing secret untouched — this is
-            // the only field never round-tripped back to the client, so
-            // there's nothing to "leave unchanged" by re-submitting it.
-            'shared_secret' => 'nullable|string|max:255',
+            'feedback_trust_id' => ['nullable', Rule::exists('trusts', 'id')->where('kind', 'instance')->where('status', 'approved')],
         ]);
 
         $settings = FeedbackAggregationSetting::current();
-
         $settings->instance_role = $data['instance_role'];
-        $settings->instance_identifier = $data['instance_identifier'] ?? null;
-        $settings->central_ingest_url = $data['central_ingest_url'] ?? null;
-        if (filled($data['shared_secret'] ?? null)) {
-            $settings->shared_secret = $data['shared_secret'];
-        }
+        $settings->feedback_trust_id = $data['feedback_trust_id'] ?? null;
         $settings->save();
 
         return $this->show();
+    }
+
+    /** Remote only: asks the chosen central instance what it lets this one do. */
+    public function test(FeedbackPushService $pushService)
+    {
+        return response()->json($pushService->testConnection());
     }
 }

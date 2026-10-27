@@ -14,9 +14,8 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 
 /**
- * Central-side receiver for centralized feedback aggregation (see
- * docs/centralized-feedback-design-brief.md and FeedbackPushService on the
- * remote side). Gated by VerifyFeedbackIngestSecret — instance-to-instance,
+ * Central-side receiver for centralized feedback aggregation (FeedbackPushService
+ * on the remote side). Gated by `trust-auth:feedback.send` — instance-to-instance,
  * not a logged-in person — never by `permission:` middleware.
  *
  * Ingested reports land in this instance's own `feedback_reports` table
@@ -26,27 +25,30 @@ use Illuminate\Validation\Rule;
 class FeedbackIngestController extends Controller
 {
     /**
-     * Upserts idempotently on (instance_identifier, uuid) — a real DB unique
-     * constraint (see the 2026_09_06 migration), so a retried push can't
-     * double-insert even under a race with another request for the same
-     * instance. Validates each report individually and skips (rather than
-     * rejecting the whole batch for) one that's malformed, since the batch
-     * this responds to could otherwise partially fail for reasons outside
-     * the sending instance's control — the response's `received` list is
-     * the sender's only signal of what actually landed.
+     * Reports from a trusted instance (`trust-auth:feedback.send`). The source identity is the trust itself —
+     * the body's own claim about who it is plays no part — and is shown as the trust's address host.
+     *
+     * Upserts idempotently on (instance_identifier, uuid) — a real DB unique constraint (see the 2026_09_06
+     * migration), so a retried push can't double-insert even under a race with another request. Validates each
+     * report individually and skips (rather than rejecting the whole batch for) one that's malformed, since the
+     * batch could otherwise partially fail for reasons outside the sender's control — the response's `received`
+     * list is the sender's only signal of what actually landed.
      */
-    public function store(Request $request)
+    public function storeFromTrust(Request $request)
     {
-        $data = $request->validate([
-            'instance_identifier' => ['required', 'string', 'max:255'],
-            'reports' => ['required', 'array', 'min:1'],
-        ]);
+        $trust = $request->attributes->get('trust');
+        $data = $request->validate(['reports' => ['required', 'array', 'min:1']]);
+        $identifier = parse_url((string) $trust->base_url, PHP_URL_HOST) ?: $trust->name;
 
-        $instanceIdentifier = $data['instance_identifier'];
+        return $this->ingest($data['reports'], (string) $identifier, $trust->id);
+    }
+
+    private function ingest(array $reports, string $instanceIdentifier, ?int $trustId)
+    {
         $received = [];
 
-        DB::transaction(function () use ($data, $instanceIdentifier, &$received) {
-            foreach ($data['reports'] as $incoming) {
+        DB::transaction(function () use ($reports, $instanceIdentifier, $trustId, &$received) {
+            foreach ($reports as $incoming) {
                 $validator = Validator::make($incoming, [
                     'uuid' => ['required', 'uuid'],
                     'type' => ['required', Rule::in(['bug', 'feature'])],
@@ -70,7 +72,7 @@ class FeedbackIngestController extends Controller
                     continue;
                 }
 
-                $report = $this->upsert($instanceIdentifier, $validator->validated());
+                $report = $this->upsert($instanceIdentifier, $validator->validated(), $trustId);
                 $received[] = $report->uuid;
             }
         });
@@ -78,7 +80,7 @@ class FeedbackIngestController extends Controller
         return response()->json(['received' => $received]);
     }
 
-    private function upsert(string $instanceIdentifier, array $incoming): FeedbackReport
+    private function upsert(string $instanceIdentifier, array $incoming, ?int $trustId): FeedbackReport
     {
         $key = ['instance_identifier' => $instanceIdentifier, 'uuid' => $incoming['uuid']];
         $values = [
@@ -94,6 +96,7 @@ class FeedbackIngestController extends Controller
             'flagged_reason' => $incoming['flagged_reason'] ?? null,
             'reporter_name' => $incoming['reporter_name'] ?? null,
             'reporter_email' => $incoming['reporter_email'] ?? null,
+            'trust_id' => $trustId,
         ];
 
         try {

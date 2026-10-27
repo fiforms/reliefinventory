@@ -28,8 +28,10 @@ place a zip is written. Nothing else — not `update.sh`, not the Docker scripts
   checksumming, and a restore checks it again before wiping anything — a cut-off dump checksums perfectly well, so the
   manifest alone couldn't catch it.
 - **Never in a zip:** the application key (`APP_KEY`, `.env`, `storage/app/.app_key` — `BackupService` refuses those
-  names even inside an included directory). What depends on `APP_KEY`: values encrypted in the database (today only
-  the feedback-aggregation shared secret) and login/remember cookies. Passwords and PINs are bcrypt, unaffected.
+  names even inside an included directory). What depends on `APP_KEY`: values encrypted in the database (the mail
+  passwords and **this instance's federation private key** — without
+  it the instance has no identity until a new key is generated in the Trust Console, and every peer must re-approve it)
+  and login/remember cookies. Passwords and PINs are bcrypt, unaffected.
   Admins with `view-app-key` can reveal it on the admin page (password re-entry, throttled, logged) to write it down.
   A restore without the key blanks anything encrypted with the old one. *(The tiered backups used to keep a copy of
   `.env` beside each dump; they no longer do — keep the key somewhere separate.)*
@@ -160,6 +162,17 @@ daily zips are recorded, so they appear in the admin page's Backups list; all ar
 > operator who wants a monthly or yearly keepsake has to copy a zip off the machine before it expires. The admin page says so.
 > To bring parity, `BackupService::prune()` would need `update.sh`'s promote/prune-by-tier logic (a promoted zip is a hard
 > link) and `RI_BACKUP_KEEP_*` settings, with the schedule shown read-only as it is now. See TODO.md item 14.
+
+## Off-site copies pulled by the RI Launcher (federation `backup_client`)
+
+A desktop computer running the RI Launcher can keep its own scheduled copies of this server's backups, without anyone logging in to
+download them. An administrator pairs it once in the **Trust Console** (`/setup/trust` → "Pair something new" → *Backup client (RI Launcher)*,
+grant "Backup and reporting operator" = `operator.full_read`); the launcher then asks the server to make a backup
+(`POST /api/federation/v1/backups`), downloads it resumably, checks its SHA-256 and keeps the newest N. Those backups are the same zips as the
+admin page makes (and count as "one at a time" with them), they expire on the server after `RI_BACKUP_KEEP_DAYS` like any on-demand backup, and
+every request and download is in the trust's audit log. Revoking the trust in the console stops it at once. Spec: `rstation/FEDERATION_AUTH.md`
+("Backups"); the client: `launcher/README.md` ("Remote backups tab"). The zip never holds `APP_KEY`, but it does hold password hashes and
+personal data, which is why the grant is rated high risk — pair only a computer you control.
 
 ## Restoring
 

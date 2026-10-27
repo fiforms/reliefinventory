@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\OfflineModeSetting;
+use App\Services\GitVersionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -226,8 +227,8 @@ class SystemController extends Controller
         // A container has no git checkout and nothing to fetch: just the commit the image was built from.
         if ($this->isDocker()) {
             return [
-                'current' => app(\App\Services\GitVersionService::class)->currentCommit(),
-                'release' => app(\App\Services\GitVersionService::class)->release(),
+                'current' => app(GitVersionService::class)->currentCommit(),
+                'release' => app(GitVersionService::class)->release(),
                 'current_subject' => null, 'current_date' => null, 'behind' => null, 'pending_commits' => [],
             ];
         }
@@ -237,7 +238,7 @@ class SystemController extends Controller
 
         return [
             'current' => $this->git('rev-parse', '--short=9', 'HEAD'),
-            'release' => app(\App\Services\GitVersionService::class)->release(),
+            'release' => app(GitVersionService::class)->release(),
             'current_subject' => $this->git('log', '-1', '--format=%s', 'HEAD'),
             'current_date' => $this->git('log', '-1', '--format=%cI', 'HEAD'),
             // Relative to the last fetch — "Check for updates" refreshes this.

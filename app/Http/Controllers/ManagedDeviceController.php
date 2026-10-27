@@ -5,8 +5,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\DevicePairingCode;
 use App\Models\ManagedDevice;
+use App\Services\Federation\TrustService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -56,8 +56,10 @@ class ManagedDeviceController extends Controller
     /** Un-pair: the device learns at its next heartbeat and returns to setup. */
     public function revoke(ManagedDevice $managedDevice)
     {
+        if ($managedDevice->trust) {
+            TrustService::revoke($managedDevice->trust, Auth::id());
+        }
         $managedDevice->update(['revoked_at' => now()]);
-        $managedDevice->token_hash = null;
         $managedDevice->wake_channel = null;
         $managedDevice->session_token_hash = null;
         $managedDevice->save();
@@ -67,26 +69,25 @@ class ManagedDeviceController extends Controller
 
     public function destroy(ManagedDevice $managedDevice)
     {
+        if ($managedDevice->trust) {
+            TrustService::revoke($managedDevice->trust, Auth::id());
+        }
         $managedDevice->delete();
 
         return response()->json(['message' => 'Device removed.']);
     }
 
+    /**
+     * A single-use code for a new device or print server at a location. It is a trust pairing code (kind
+     * `client`): the device generates its own key pair and submits the public half with the code. Print servers
+     * are the main use of this page, so the new trust starts with permission to claim print jobs.
+     */
     public function createPairingCode(Request $request)
     {
         $data = $request->validate(['kiosk_location_id' => 'required|exists:kiosk_locations,id']);
 
-        do {
-            $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
-        } while (DevicePairingCode::where('code', $code)->exists());
+        [$code, $row] = TrustService::createPairingCode('client', ['print.share'], null, $data['kiosk_location_id'], Auth::id());
 
-        $record = DevicePairingCode::create([
-            'code' => $code,
-            'kiosk_location_id' => $data['kiosk_location_id'],
-            'created_by' => Auth::id(),
-            'expires_at' => now()->addMinutes(config('devices.pairing_code_minutes')),
-        ]);
-
-        return response()->json(['record' => $record], 201);
+        return response()->json(['record' => ['code' => $code, 'expires_at' => $row->expires_at]], 201);
     }
 }

@@ -8,12 +8,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Singleton (always id=1), same shape as PinLoginSetting/BannerSetting —
- * admin-editable replacement for the FEEDBACK_INSTANCE_ROLE /
- * FEEDBACK_INSTANCE_IDENTIFIER / FEEDBACK_CENTRAL_INGEST_URL /
- * FEEDBACK_SHARED_SECRET env vars. `shared_secret` uses Eloquent's
- * `encrypted` cast (app key-derived, not plaintext at rest) and is
- * transparently decrypted on read/encrypted on write by the cast itself.
+ * Singleton (always id=1), same shape as PinLoginSetting/BannerSetting — admin-editable settings for centralized
+ * feedback aggregation: whether this instance is a `remote` (sends its reports to a central instance) or the
+ * `central` one, and, for a remote, which paired instance (`feedback_trust_id`, an approved `instance` Trust) it
+ * sends them through. There is no address or secret here any more: the trust carries the peer's address and key
+ * (see App\Services\Federation).
  */
 class FeedbackAggregationSetting extends Model
 {
@@ -21,13 +20,7 @@ class FeedbackAggregationSetting extends Model
 
     protected $fillable = [
         'instance_role',
-        'instance_identifier',
-        'central_ingest_url',
-        'shared_secret',
-    ];
-
-    protected $casts = [
-        'shared_secret' => 'encrypted',
+        'feedback_trust_id',
     ];
 
     public static function current(): self
@@ -35,27 +28,15 @@ class FeedbackAggregationSetting extends Model
         return self::findOrFail(1);
     }
 
-    /**
-     * Whether central push is configured at all — mirrors the old
-     * config()-based check in FeedbackPushService.
-     */
+    /** Whether central push is configured at all: a remote whose chosen trust is still approved. */
     public function pushConfigured(): bool
     {
-        return $this->instance_role === 'remote'
-            && filled($this->central_ingest_url)
-            && filled($this->shared_secret);
+        return $this->instance_role === 'remote' && $this->feedbackTrust?->isApproved() === true;
     }
 
-    /**
-     * Defaults to this instance's own APP_URL host when left blank — see
-     * FeedbackPushService::instanceIdentifier(), which delegates here.
-     */
-    public function resolvedIdentifier(): string
+    /** The instance trust reports are sent through. */
+    public function feedbackTrust()
     {
-        if (filled($this->instance_identifier)) {
-            return $this->instance_identifier;
-        }
-
-        return parse_url(config('app.url'), PHP_URL_HOST) ?: config('app.url');
+        return $this->belongsTo(Trust::class, 'feedback_trust_id');
     }
 }

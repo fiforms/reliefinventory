@@ -3,6 +3,9 @@
 One image (`linux/amd64` and `linux/arm64`) runs every role; the compose file wires them to MariaDB.
 Nothing else is needed on the host — WeasyPrint (for PDF rendering), fonts and PHP are all in the image.
 
+> **On a Windows PC or a Mac without Docker Desktop?** [RI Launcher](../launcher/README.md) installs and runs this same
+> stack with no terminal: Docker Engine inside a small private Linux layer (WSL 2 on Windows, a Lima VM on macOS).
+
 ## Quick start
 
 You only need `compose.yaml` (it is self-contained; grab it from this directory, or clone the repo).
@@ -89,7 +92,7 @@ values unreadable.
 
 **Restoring** one onto a brand-new install: open the new server, choose **Restore from a backup** on the first-run
 screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. If you
-want the encrypted settings (e.g. the feedback shared secret) to survive, set `APP_KEY` in `compose.yaml` to the old
+want the encrypted settings (the mail passwords, and the instance's federation key — without it every paired instance and client must approve this one again) to survive, set `APP_KEY` in `compose.yaml` to the old
 system's key *before* the first start; otherwise they are cleared and listed for you to re-enter. To recover a damaged
 database, the restore screen also takes a second zip that supplies just the uploaded files (any database inside it is
 ignored); on a system that is already set up, an administrator runs
@@ -125,7 +128,7 @@ logs app`) — go back to `:latest`, or restore the pre-migration backup as abov
 
 ## Print servers and R Stations
 
-They talk to the web app over HTTP exactly as they do on a bare-metal install; point them at `APP_URL`.
+They talk to the web app over HTTP exactly as they do on a bare-metal install; point them at `APP_URL`. They pair with a code from **Setup > Devices** and then authenticate with their own key (see `rstation/FEDERATION_AUTH.md`). The same goes for pairing this site with another one, in **Setup > Trust Console**: set the public address there first, since the other side records it.
 
 ## Realtime (optional)
 

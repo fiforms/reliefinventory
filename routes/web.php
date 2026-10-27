@@ -376,6 +376,20 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 Route::get('/join', [TraineeSignupController::class, 'show'])->name('join');
 Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:80,1');
 
+// Design Votes (DesignVoteController, App\Support\DesignPolls): public, so trainees and partners can vote without an
+// account. Same room-on-one-IP limit as /join; Turnstile keeps bots out.
+Route::get('/vote/{slug}', [DesignVoteController::class, 'show'])->name('design-vote');
+Route::post('/vote/{slug}', [DesignVoteController::class, 'store'])->middleware('throttle:80,1');
+Route::post('/vote/{slug}/idea', [DesignVoteController::class, 'storeIdea'])->middleware('throttle:80,1');
+Route::get('/setup/design-votes', function () {
+    return Inertia::render('Setup/DesignVotes', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/design-votes')]);
+})->middleware(['auth', 'permission:manage-design-votes']);
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-design-votes']], function () {
+    Route::get('/design-votes', [DesignVoteController::class, 'status']);
+    Route::put('/design-votes/{slug}/open', [DesignVoteController::class, 'setOpen']);
+    Route::get('/design-votes/{slug}/csv', [DesignVoteController::class, 'csv']);
+});
+
 Route::get('/forms/{slug}', [PublicFormController::class, 'show'])->name('forms.show');
 Route::post('/forms/{slug}', [PublicFormController::class, 'submit'])->name('forms.submit');
 
@@ -398,6 +412,14 @@ Route::get('/help/{guide}', function (string $guide) {
         ['href' => '/help/'.$guide, 'title' => HelpReportController::GUIDES[$guide]],
     ]]);
 })->whereIn('guide', array_keys(HelpReportController::GUIDES))->middleware(['auth']);
+
+// Signs (SignController): ready-made or typed warehouse signs on Letter paper, on the Setup menu.
+// Anyone signed in, like the Help guides. /setup/signs/preview is the PDF's own view as HTML.
+Route::get('/setup/signs', [SignController::class, 'page'])->middleware(['auth']);
+Route::get('/setup/signs/preview', [SignController::class, 'preview'])->middleware(['auth']);
+Route::get('/setup/signs/fonts/{file}', [SignController::class, 'font'])
+    ->whereIn('file', ['LiberationSans-Bold.ttf', 'LiberationSans-Regular.ttf'])->middleware(['auth']);
+Route::get('/report/sign.pdf', [SignController::class, 'pdf'])->name('report.sign')->middleware(['auth']);
 
 // Training Mode (App\Services\TrainingMode). Setup > Training Mode is manage-training; switching the mode on/off
 // is admin-system. The team activity sheets print from /help, for anyone signed in, like the help guides.
@@ -499,6 +521,12 @@ Route::get('/reports/flow', function () {
     return Inertia::render('FlowReport',
         ['breadcrumb' => MenuItem::getBreadcrumb('/reports/flow')]);
 })->middleware(['auth', 'permission:view-reports']);
+
+// Mailing labels (MailingLabelController): names and addresses, so manage-people, not view-reports.
+Route::get('/reports/mailing-labels', function () {
+    return Inertia::render('MailingLabels',
+        ['breadcrumb' => MenuItem::getBreadcrumb('/reports/mailing-labels')]);
+})->middleware(['auth', 'permission:manage-people']);
 
 Route::get('/reports/partners', function () {
     return Inertia::render('PartnerReport',
@@ -611,6 +639,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-pe
     Route::post('/people', [PeopleController::class, 'store']);
     Route::put('/people/{id}', [PeopleController::class, 'update']);
     Route::post('/people/{id}/partner-status', [PeopleController::class, 'partnerStatus']);
+    Route::get('/mailing-labels', [MailingLabelController::class, 'index']);
     // Read-only listing so the People edit form can offer per-person
     // permission overrides.
     Route::get('/permissions', [PermissionController::class, 'index']);
@@ -830,6 +859,10 @@ Route::get('/report/flow.pdf', [FlowReportController::class, 'pdf'])
 Route::get('/report/flow.csv', [FlowReportController::class, 'csv'])
     ->name('report.flow.csv')
     ->middleware(['auth', 'permission:view-reports']);
+
+Route::get('/report/mailing-labels.pdf', [MailingLabelController::class, 'pdf'])
+    ->name('report.mailing-labels')
+    ->middleware(['auth', 'permission:manage-people']);
 
 Route::get('/report/partners.pdf', [PartnerReportController::class, 'pdf'])
     ->name('report.partners')
@@ -1113,21 +1146,16 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-fe
     Route::patch('/feedback-reports/{feedbackReport}', [FeedbackReportController::class, 'update']);
     // The only retry mechanism for centralized feedback aggregation — see
     // FeedbackPushService::pushUnsent(). A no-op (but not an error) on a
-    // 'central' instance or one with no central_ingest_url configured.
+    // 'central' instance or one that hasn't chosen an instance to send through.
     Route::post('/feedback-reports/send-unsent', [FeedbackReportController::class, 'sendUnsent']);
     Route::put('/banner-settings', [BannerSettingController::class, 'update']);
     // Admin-editable centralized feedback aggregation settings (instance
-    // role/identifier, central ingest URL, shared secret) — see
+    // role, which paired instance to send through) — see
     // FeedbackAggregationSetting; gated the same as this whole page.
     Route::get('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'show']);
     Route::put('/feedback-aggregation-settings', [FeedbackAggregationSettingsController::class, 'update']);
+    Route::post('/feedback-aggregation-settings/test', [FeedbackAggregationSettingsController::class, 'test']);
 });
-
-// Central-side ingest for centralized feedback aggregation — instance-to-
-// instance, gated by a shared secret rather than a logged-in person's
-// permissions. See FeedbackIngestController and VerifyFeedbackIngestSecret.
-Route::post('/json/feedback/ingest', [FeedbackIngestController::class, 'store'])
-    ->middleware('feedback-ingest-secret');
 
 // Import: upload/preview/commit are manage-import; viewing/deleting batch
 // history is split into admin-import (both Administrator-only by default,
@@ -1219,6 +1247,28 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-ki
 
     Route::get('/kiosk-locations/{kioskLocation}/sign-in-categories', [SignInCategoryController::class, 'forLocation']);
     Route::post('/sign-in-categories', [SignInCategoryController::class, 'store']);
+});
+
+// Federation: the public half of this instance's identity (peers pin and domain-verify against it).
+Route::get('/.well-known/ri-instance.json', [FederationController::class, 'identity'])->middleware('throttle:60,1');
+
+Route::get('/setup/trust', function () {
+    return Inertia::render('TrustConsole', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/trust'),
+    ]);
+})->middleware(['auth', 'permission:manage-trusts']);
+
+Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-trusts']], function () {
+    Route::get('/trusts', [TrustConsoleController::class, 'index']);
+    Route::post('/trusts/pairing-codes', [TrustConsoleController::class, 'createPairingCode']);
+    Route::put('/trusts/identity', [TrustConsoleController::class, 'updateIdentity']);
+    Route::post('/trusts/identity/regenerate', [TrustConsoleController::class, 'regenerateIdentity']);
+    Route::post('/trusts/invitations', [TrustConsoleController::class, 'createInvitation']);
+    Route::post('/trusts/accept-invitation', [TrustConsoleController::class, 'acceptInvitation']);
+    Route::post('/trusts/{trust}/verify-domain', [TrustConsoleController::class, 'verifyDomain']);
+    Route::post('/trusts/{trust}/refresh-grants', [TrustConsoleController::class, 'refreshGrants']);
+    Route::put('/trusts/{trust}/grants', [TrustConsoleController::class, 'setGrants']);
+    Route::post('/trusts/{trust}/revoke', [TrustConsoleController::class, 'revoke']);
 });
 
 // R Station device fleet (DEVICE_CONTRACT.md): the admin page and

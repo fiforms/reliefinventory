@@ -104,6 +104,9 @@ class PermissionsSeeder extends Seeder
         // releases (and choosing where devices look for them) is its own key, separate from
         // manage-devices (pairing/configuring individual devices). Administrator-only by default.
         'manage-firmware' => 'Upload and tag R Station firmware/software releases, and set the firmware source',
+        // Federation: which other instances and client apps are trusted, and what each may do. A trust with
+        // the wrong grants can expose data to another site, so Administrator-only by default.
+        'manage-trusts' => 'Manage the Trust Console: pair client apps and other instances, and set what each trust may do',
         // Full backup zips (database + uploads): they hold every person's data, so Administrator-only by default.
         'manage-backups' => 'Create, download, and delete full backup files (database and uploads)',
         // The application key is the one secret a backup never contains; only this key reveals it.
@@ -154,6 +157,8 @@ class PermissionsSeeder extends Seeder
         'manage-donor-standing' => "Set a donor's standing (preferred / normal / watch / decline) from the Donor Report",
         // Training Mode (App\Services\TrainingMode): trainees, Prepare Training, setup packet, report cards.
         'manage-training' => 'Run Training Mode classes: trainees, Prepare Training, setup packet and training report cards',
+        // Design Votes (App\Support\DesignPolls): voting itself is public; opening/closing polls and live results are this.
+        'manage-design-votes' => 'Open and close Design Votes polls and see their results',
     ];
 
     private const VOLUNTEER_TIER_KEYS = [
@@ -191,6 +196,7 @@ class PermissionsSeeder extends Seeder
         'adjust-inventory',
         'manage-donor-standing',
         'manage-training',
+        'manage-design-votes',
     ];
 
     /**

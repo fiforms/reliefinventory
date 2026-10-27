@@ -29,22 +29,28 @@ details (fix both).
 ## 1. Setup and identity
 
 - **Configuration the client needs:** `server_url` (no trailing slash), and a place to persist the
-  `device_uuid` and bearer `token`. The Pi gets `server_url` from its first-run wizard (#7); a PC/Mac
-  client needs an equivalent — a config file or a one-time setup command. Store the token readable
-  only by the service account; never log it.
+  `device_uuid` and its **Ed25519 private key** (`FEDERATION_AUTH.md`). The Pi gets `server_url` from its
+  first-run wizard (#7); a PC/Mac client needs an equivalent — a config file or a one-time setup command.
+  Store the key readable only by the service account; never log it. There is no bearer token to store: the
+  server pairs by the client's *public* key and the client signs its requests.
 - **`device_uuid`:** generate a UUID once on first run and keep it forever (it is how the server
   recognises the same machine across re-pairing).
-- **Pairing:** an administrator generates a 6-digit code on `/setup/devices` ("Pair a New Device or
-  Print Server"); the client exchanges it per the contract (#1, *Pairing*). Surface `422` ("invalid or
-  expired code") and `429` to whoever is setting it up. Re-pairing the same `device_uuid` replaces
-  the token.
+- **Pairing:** an administrator generates a 10-character code on `/setup/devices` ("Pair a New Device or
+  Print Server") or in the Trust Console; the client sends it with its public key and a proof of key
+  possession (`FEDERATION_AUTH.md`, *Pairing*; this replaces the 6-digit bearer flow in contract #1).
+  Surface `422` ("invalid or expired code") and `429` to whoever is setting it up. Re-pairing the same
+  `device_uuid` re-attaches the record; a changed key needs a fresh code.
+- **Authenticating:** sign one request for a session token, then send it as `Authorization: Bearer`;
+  re-sign when it expires or is refused. A `400` carrying `X-RI-Server-Time` is a clock problem — adjust and
+  repeat; never treat it as a revocation.
 - **No Function to set by hand.** The first heartbeat that reports a non-empty `print_printers`
   list makes the server mark the device a print station (if an administrator hasn't already chosen
   a different Function), and that same response carries `print_realtime`. So report your queues in
   the very first heartbeat after pairing. An *empty* list doesn't count — a machine with no printers
   yet stays unset until it has some.
-- **On any `401`** from an authenticated call: the device was revoked. Delete the token, stop
-  printing, and return to the pairing flow (contract, *Revocation*). Do not retry a `401`.
+- **On a `401`** from a call made with a *fresh* session: the device was revoked (or its key is unknown).
+  Forget the pairing (keep the key and `device_uuid`), stop printing, and return to the pairing flow. A
+  `401` on a cached session means it expired — sign for a new one first. Do not retry a real revocation.
 
 ## 2. Heartbeat and printer discovery
 
@@ -129,7 +135,7 @@ The endpoints, shapes and status codes are in #3; this section is how a client s
 
    | Response | Meaning | Client action |
    |---|---|---|
-   | `401` | revoked | wipe token, return to pairing (§1) |
+   | `401` | revoked (fresh session) | forget the pairing, keep the key, return to pairing (§1) |
    | `404` on a job | not yours / gone | drop it; never retry |
    | `409` on `claim` | someone/something else has it, or it was cancelled | skip it |
    | `409` on `payload` | you don't hold the claim (it expired or was cancelled) | stop; don't print |
@@ -183,8 +189,9 @@ are not — treat those as suggestions to confirm on real hardware.*
 A client is ready when it can demonstrate each of these (the server-side tests in #5 show the
 expected responses):
 
-- [ ] Pairs with a code, stores the token, survives a restart, and re-pairs cleanly.
-- [ ] A `401` wipes the token and returns to pairing.
+- [ ] Generates a key once, pairs with a code (proving the key), survives a restart, and re-pairs cleanly.
+- [ ] Reproduces the shared signing vectors, earns a session, and replaces an expired one without un-pairing.
+- [ ] A `401` on a fresh session forgets the pairing (not the key) and returns to pairing; a clock-skew `400` does not.
 - [ ] Heartbeats include `print_platform` and the complete `print_printers` list, within 60 s and on any
       state change; a queue renamed in the OS shows as new/untyped on the server.
 - [ ] A new job is printed within one poll interval — and, with realtime on, within about a second.

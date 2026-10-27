@@ -1,0 +1,35 @@
+{
+    "seed_b64": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
+    "public_key": "iojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w",
+    "vectors": [
+        {
+            "method": "POST",
+            "path_and_query": "/federation/v1/session?a=1",
+            "host": "Example.com",
+            "timestamp": 1790000000,
+            "nonce": "nonce-1",
+            "body": "{\"x\":1}",
+            "canonical": "POST\n/federation/v1/session?a=1\nexample.com\n1790000000\nnonce-1\n5041bf1f713df204784353e82f6a4a535931cb64f1f4b4a5aeaffcb720918b22",
+            "signature": "aY2PkZOrr95CJiCtGKO5XgzSYNUlvD72e3jbfUMbKRf3g0sQLa6fXBqoEiMm7npWle5S6gsiRFRGy0s58b1oBA"
+        }
+    ],
+    "fingerprint": "3475-0F98-BD59-FCFC",
+    "pairing_vectors": [
+        {
+            "code": "abcde-fghjk",
+            "uuid": "c1a2b3d4-0000-4000-8000-000000000001",
+            "message": "ri-pair-v1\nABCDEFGHJK\niojj3XQJ8ZX9UtstPLpdcspnCb8dlBIb83SIAbQPb1w\nc1a2b3d4-0000-4000-8000-000000000001",
+            "signature": "3WYl4qV8_vCp1IfKvT7IEZ5KiGp_BIXgwousPeQRc7qlm3etxWqqF4YRNlZKITEf_RuKIsx9rwTEylmgORhDAQ"
+        }
+    ],
+    "bearer_vectors": [
+        {
+            "uuid": "c1a2b3d4-0000-4000-8000-000000000001",
+            "host": "Relief.Example.org:8443",
+            "iat": 1790000000,
+            "exp": 1791209600,
+            "message": "ri-bearer-v1\nc1a2b3d4-0000-4000-8000-000000000001\nrelief.example.org:8443\n1790000000\n1791209600",
+            "token": "RIK-YzFhMmIzZDQtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAx.1790000000.1791209600.5NH57E3q7xjq2pq9GUGqKKuzrSW2A3vX7cel7MuwPj64cq4mb51kjnvPCQU2HtRgS9l2EHl2oFG9cmol40siAQ"
+        }
+    ]
+}

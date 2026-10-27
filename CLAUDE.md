@@ -16,7 +16,7 @@ be traced back to a specific donor or pallet (no recall-style item tracing; don'
 (source traceability, stock-on-hand, the permission model, DB transactions, RIForm error/delete UX, a real
 test suite, order filling/picking as of 2026-08-27); what's still genuinely open is BOL upload, the
 order fulfillment lifecycle past Filled (Ready to Ship/Shipped), the facility-network expansion
-(Part 5), and several report pages (`/reports/flow`, `/reports/donors` and `/reports/partners` were built 2026-10-22 — see "Flow, Donor and Partner reports" below —
+(Part 5), the endpoints that would actually share data between federated instances (the trust layer itself — identity, pairing, permissions — is built: see "Federation"), and several report pages (`/reports/flow`, `/reports/donors` and `/reports/partners` were built 2026-10-22 — see "Flow, Donor and Partner reports" below —
 so no report is a placeholder any more; `/reports/orders`, the Outstanding Orders Report, is built as of
 2026-08-22, and `/reports/unfulfilled`, the Unfulfilled Requests Report — requested vs. filled per item, by the
 partner's county and zip, finished requests only — as of 2026-10-20) — check the doc's own inline "Update" notes for the current state of any given item before
@@ -46,7 +46,8 @@ vendor/bin/pest                     # run full test suite (Pest, Feature + Unit)
                                      # script exists — see TODO.md item 7).
 vendor/bin/pest tests/Feature/ProfileTest.php   # run a single test file
 vendor/bin/pest --filter="test name"            # run a single test by name
-vendor/bin/pint                     # PHP code style (Laravel Pint)
+vendor/bin/pint <files>             # PHP code style (Laravel Pint). Always pass the files you changed: the repo isn't Pint-clean,
+                                     # so running it on a directory reformats unrelated files (and it can't read docker/backups).
 ```
 
 There is effectively no frontend test suite (no JS unit tests configured); rely on manual verification
@@ -397,6 +398,25 @@ printed team sheets). **Only the login changes; the system otherwise works norma
 - Driver Portal shows staff (manage-orders) the staff view, so the Round 2 delivery is done on a device not logged in —
   the team sheet says so.
 
+### Design Votes (`/vote/{slug}` public, `/setup/design-votes` `manage-design-votes`) — 2026-10-25
+
+People try live demos of a few UX designs and react to each: 👍 "I like this" or 👎 "Not for me", each with an
+optional why (`design_poll_reactions`, one per option per ballot). An option left alone is neutral; at least one
+reaction is required (disliking all is fine). Results rank by likes, then fewest dislikes; the best-liked gets built. Polls are **code**
+(`App\Support\DesignPolls`: title, question, options) because each option is a Vue demo
+(`resources/js/DesignPolls/index.js`, slug → option key → component; `DesignVoteTest` fails if the keys don't match).
+Only open/closed state (`design_polls`) and ballots (`design_poll_votes` + their reactions) are in the database. One
+ballot per browser (HttpOnly cookie token, stored hashed; a signed-in person's also follows them), voting again
+replaces all its reactions, and
+results stay hidden on the vote page until the poll is closed. A **"Have another idea?"** box on the same page
+(`POST /vote/{slug}/idea`, `design_poll_ideas`) takes free text about that question or anything else — several per
+person, no vote needed, even after closing; shown on the admin page and in the CSV. It takes an optional email and an
+"OK to contact me about this idea" box (email required only when ticked; `email`/`ok_to_contact` on the idea). Same protection as `/join`
+(Turnstile, one widget per form; 80/min per IP).
+Adding a poll: a registry entry, its demo components, and a migration inserting its `design_polls` row (closed). First
+poll: `delivery-days` (Order Entry's "Can Accept Delivery" picker, three designs: tap to cycle, pick then star, day grid; from the 2026-10-24 class). Run polls
+on demo, not cs26 (cs26's training reset would erase the votes).
+
 ### Email Settings (`/setup/email`, `admin-system`) — 2026-10-22
 
 Outgoing mail is configured in the app, not only in `.env`: `MailSetting` (singleton row, every column nullable, null =
@@ -408,6 +428,94 @@ on every `JobProcessing`, so the queue worker picks up changes without a restart
 time it overrides it (the page shows that as each blank field's fallback) and never throws — no table yet, or a secret
 from another APP_KEY, just leaves `.env` in charge. The page's Send Test button returns the mail service's own error.
 Don't read `config('feedback.notify_emails')` directly any more; use `MailSettings::feedbackRecipients()`.
+
+### Federation: instance identity, trusts and signed requests (2026-10-26, branch `federation-trust`)
+
+One PKI-style system replaced three unrelated trust mechanisms (the feedback shared secret, bearer-token device pairing, and — for
+machines — nothing). Every instance and every client app has an **Ed25519** key pair; parties **pair once** (an admin-made one-time
+code, or an invitation between instances); each pairing is a **trust** with explicit **permissions**; everything is managed in the
+**Trust Console** (`/setup/trust`, `manage-trusts`, Administrator by default). Client-facing spec: `rstation/FEDERATION_AUTH.md` +
+`rstation/federation.openapi.yaml` (drift test: `FederationOpenApiTest`). Server code: `app/Services/Federation/`. Browser PIN trust
+(`TrustedDevice`) is a different problem and is untouched.
+- **Identity:** `federation_identities` (one row; `tenant_id` reserved so multi-tenant can hold one identity per tenant),
+  `InstanceIdentity::current()` generates the key on first use. `private_key` is APP_KEY-`encrypted` and listed in
+  `config/backup.php` `encrypted_columns`; a restore onto a different APP_KEY nulls it → `InstanceIdentity::isLost()` — `trust-auth`
+  answers 503, invitations/pairing refuse, the console shows a red banner, and **Generate a new key** (typed `REGENERATE`) makes a new
+  public key that every peer must re-approve. Public half at `GET /.well-known/ri-instance.json` (`{protocol, uuid, name, url,
+  public_key, fingerprint}`; the fingerprint is the SHA-256 of the key, 16 hex digits grouped `AAAA-BBBB-CCCC-DDDD`).
+- **Trusts:** `trusts` (`kind` instance|print_client|rstation, `peer_uuid`, the pinned `public_key`, `status`
+  approved|revoked, `auth_method` pairing_code|domain_verified, `approved_by_person_id` **or** `approved_by_label` so a
+  future self-service method can name an approver with no local person, `domain_verified_at`, `session_epoch`), `trust_grants`
+  (`direction` inbound = what the peer may do to us, enforced here; outbound = what we may do to it, mirrored from the peer's signed
+  `GET /grants`), `trust_pairing_codes` (hash only; 10 chars `ABCDE-FGHJK`, 15 min, single use, `lockForUpdate` redemption; a `client`
+  code pairs either client kind), `trust_audit_log`. **Everything that changes a trust goes through `TrustService`** (audited; enroll
+  and revoke bump `session_epoch`, which is what kills old session tokens). Permissions are the `TrustPermission` enum, worded from the
+  peer acting on us: `print.share`, `feedback.send`, `feedback.receive`, `offers.send`, `offers.receive`, `inventory.query_exact`,
+  `supplies.request`, `supplies.query_available`, `operator.full_read` — each with a risk tier; `built()` says whether an endpoint
+  enforces it yet (`print.share`, `feedback.send` and, since the backup client below, `operator.full_read`). `operator.full_read` is effectively
+  full compromise (a database backup holds credentials); it must never expose `APP_KEY`.
+- **Authenticating a request** — `trust-auth[:permission][,signed]` (`TrustAuth`, alias in `bootstrap/app.php`) accepts, in order: a
+  `Bearer RIK-…` **credential**, a `Bearer RIS-…` **session token**, or a per-request **signature** (`X-RI-Trust`, `X-RI-Timestamp`,
+  `X-RI-Nonce`, `X-RI-Signature` over `METHOD\nPATH?QUERY\nHOST\nTS\nNONCE\nsha256(body)`, `RequestSigner::canonical()`). Status and
+  grants are read from the database on **every** request, so revoking or editing a trust is immediate. Status codes are a contract:
+  **401** = unknown/revoked/badly signed (clients forget the pairing); **400 + `X-RI-Server-Time`** = clock more than 5 min off
+  (adopt the offset and retry — never a revocation); **419** = a *genuine* credential that is expired or from a wrong clock; **403** =
+  the grant is missing. Nonces are remembered 10 min (only a correctly signed request may burn one). Sessions (`POST /session`, which
+  always needs a signature) are **cache entries**, so a cache flush just makes clients sign again — fine for the Rust client and
+  `FederationClient`, which re-sign on a 401. `RIK-` credentials (`RequestSigner::mintBearer`, `rstation/FEDERATION_AUTH.md`) exist for a
+  client that can only send one fixed `Authorization` value — the Pi's platform code. They are stateless (nothing to lose in a cache
+  flush or restore), bound to the server's Host, at most 31 days, client-kind trusts only, and an expired one is a **419, not a 401**,
+  because the platform wipes its pairing on any 401.
+- **Devices:** `device-auth` (`AuthenticateManagedDevice`) delegates to `TrustAuth` and sets `managed_device`; `device-auth:print.share`
+  guards the print-job routes. Devices pair at `POST /api/federation/v1/pair` with a code, their public key and a proof of possession (a
+  signature over `ri-pair-v1\nCODE\nPUBLIC_KEY\nUUID`). The Devices page's "Generate Code" makes a `client` trust code carrying `print.share`;
+  revoking or deleting a device revokes its trust; re-pairing the same uuid re-attaches the record (a different key is allowed only with a fresh
+  code and is audited as `key_changed`) and clears the browser session and wake channel. **There is no legacy path** (removed 2026-10-26):
+  `POST /api/devices/pair`, bearer tokens, `device_pairing_codes` and `managed_devices.token_hash` are gone, so a device paired before
+  federation gets a 401, forgets its pairing and must be paired again with a code (the Pi shows its pairing screen; the desktop print client
+  re-pairs from its window).
+- **Site-to-site:** one admin makes an **invitation** (`RIFED1-` + base64url JSON of address, one-time code and the key **fingerprint**);
+  the other pastes it. The accepting side fetches the inviter's `/.well-known/ri-instance.json`, checks the fingerprint (this is what
+  tells it it reached the right instance), pairs with a proof of possession, and records a **mirrored** trust (the inviter's grants for us
+  become our outbound grants; the accepting admin chooses what the inviter may do to *us*, default nothing) and refreshes outbound grants
+  with a signed `GET /grants`. The inviting side learns the other's grants only when its admin presses **Refresh** (it can't call the
+  other side during pairing). **Domain verification** (`DomainVerifier`) re-fetches the published identity over TLS and checks it is the
+  pinned key; on success `auth_method` becomes `domain_verified` ("Approved by Admin, domain verified"), on a mismatch it is cleared.
+  Anything we are about to fetch from a peer-supplied address goes through `PeerUrl::assertSafe()`: https only and no private/loopback/
+  link-local hosts (`RI_FEDERATION_ALLOW_HTTP` / `RI_FEDERATION_ALLOW_PRIVATE` turn that off for two local dev instances). Outbound calls
+  are `FederationClient::for($trust)` — signs, trades up to a session, never follows redirects.
+- **Clients:** the desktop print client (`print-client/core/src/identity.rs`, `api.rs`) keeps its seed in `config.json` (kept across
+  un-pairing), signs once for a session, re-signs when it is refused and corrects a wrong clock from `X-RI-Server-Time`. The **R Station
+  (Pi)** is done entirely in the product layer — `rstation/product/backend/federation.py` — and the platform submodule is untouched: the
+  platform sends the contents of `/data/device-token` as its bearer, so the product keeps a key-signed `RIK-` credential there (refreshed
+  every 6 h by `federation.maintain`) and `install()` replaces the module attribute `pairing.pair` with a key-based pairing (falling back to
+  the platform's for a pre-federation server). **A Pi has no RTC and can boot weeks behind**, so credentials are stamped with the
+  *server's* time (the `Date` header of `GET /up`), and nothing is re-minted when the server can't be reached. Ed25519 there is a
+  dependency-free RFC 8032 implementation (the image's venv declares no crypto library; `cryptography` is used if present). The list of
+  platform internals this relies on is in `rstation/FEDERATION_AUTH.md` ("The Raspberry Pi") — keep it true when the platform changes.
+- **Shared vectors:** `tests/Fixtures/federation-signing-vectors.json` holds signing, pairing and credential vectors that the PHP
+  tests, the Rust client (`identity.rs`) and the Pi product (`test_federation.py`) all reproduce byte for byte. Change a message format
+  only together with that file and all three. Test helpers (`tests/Pest.php`): `fedPeer`, `fedEnroll`, `fedPairBody`, `fedCall` (sends the
+  exact bytes it signed — `getJson` adds a `[]` body), `fakeRemote`/`serveRemote` (a fake peer instance over `Http::fake`), `pairClient`/
+  `pairPrintServer` (a real pairing; the returned "token" is a session token, so `->withToken($token)` means "an authenticated device").
+  End-to-end against the real app: `print-client/e2e/run.sh` (Rust client + CUPS); the Pi code was run the same way against a live server.
+- **Backup client** (`backup_client` trust kind, 2026-10-26): the RI Launcher (or any operator tool) pairs with a code made in the Trust Console ("Backup client
+  (RI Launcher)" — no location, no `ManagedDevice`, deliberately not in `Trust::CLIENT_KINDS`) holding `operator.full_read`, then uses
+  `FederationBackupController` under `/api/federation/v1/backups`: `GET /` list, `POST /` start one (`database`|`full`, 202; **409 carries the running one** so
+  a caller waits for it — the existing one-at-a-time rule), `GET /{id}` status plus the whole-file **SHA-256** (computed only here, cached by id+size+mtime,
+  so a cache flush just rehashes), `GET /{id}/download` (BinaryFileResponse, so `Range` resumes). Requests and the start of each download are in `trust_audit_log`
+  (`backup_requested` / `backup_downloaded`; a resumed range isn't audited again). The server still prunes its zips after `backup.keep_days`, so the client keeps
+  its own copies. The limiters are **named and keyed by bearer token / `X-RI-Trust`** (`fed-backup-read|create|download`, `AppServiceProvider`): a numeric
+  `throttle:N,1` shares one counter per IP across *all* routes, so status polling used up `POST /backups`'s budget (found by the e2e run) — and throttling runs
+  *before* `trust-auth` (priority list), so the trust isn't known yet. Spec: `FEDERATION_AUTH.md` ("Backups") + `federation.openapi.yaml`; tests:
+  `FederationBackupTest`; the client side is the launcher's "Remote backups" (see "RI Launcher").
+- **Not built:** reports over `operator.full_read` (the backup half is built, see above); the endpoints for offers, supplies and exact inventory (the grants exist; sharing a remote request
+  would mean an approved Partner `Person` per site and an order left at `New Order` for staff, and the ledger arithmetic that three places
+  duplicate should become one `InventoryAvailability` service first); remote print submission; **self-service pairing by account**
+  (planned: a free account on a central instance, Turnstile + email verification, then the user confirms a pairing from their own instance —
+  `auth_method = account_verified`, restricted default grants, `approved_by_label`; the schema and `PairingService`-style method name are
+  ready for it); key rotation (a key change on a pinned trust fails closed and needs re-approval); pruning of used pairing codes and old
+  audit rows; a per-trust rate limit beyond the route throttles; multi-tenant (`tenant_id` and `trusts.identity_id` are the hooks).
 
 ### In-app feedback reporting & the site banner
 
@@ -431,6 +539,20 @@ specifically to support adding a comment without advancing) creates an immutable
 `FeedbackReportStatusLog` row and emails the reporter. The triage page renders full history —
 every log entry, always visible, not behind a click — distinguishing "moved to X" from "note while
 at X" purely by comparing each entry's status to the one before it, no extra column needed.
+
+**Centralized aggregation** (remote instances push their reports to one central instance, settings on `/setup/feedback`,
+`FeedbackAggregationSetting`) runs over the **federation trust system** (see "Federation" below, 2026-10-26): a remote picks
+the paired instance to **Send reports to** (`feedback_trust_id`; the dropdown lists approved `instance` trusts and flags one that
+hasn't granted "Sending feedback"), `FeedbackPushService` sends through `FederationClient` (signed, session-token), and central ingests at
+`POST /api/federation/v1/feedback` behind `trust-auth:feedback.send` (`FeedbackIngestController::storeFromTrust`). Central tags each
+report with the trust it arrived over (`feedback_reports.trust_id`) and shows the trust's address host as `instance_identifier` — the
+body's own claim about who sent it is ignored. Idempotent on `(instance_identifier, uuid)` as before. **Test Connection** asks the peer
+what it grants us (signed `GET /grants`) and says so when "Sending feedback" isn't among them; failures come back as readable messages
+(`pushUnsent()['error']`: revoked/key changed, not granted, clock off, maintenance).
+
+The pre-federation shared-secret path (`X-Feedback-Shared-Secret`, `RIFEED1-` connection codes, `central_ingest_url`/`shared_secret`/`instance_identifier`
+on `feedback_aggregation_settings`) was removed on 2026-10-26 (migration `remove_legacy_shared_secrets_and_device_tokens`): a remote that
+hadn't been moved to a trust stops reporting until an admin pairs it in the Trust Console and picks the instance to send through.
 
 A local-only `feedback-triage` Claude Code skill (`.claude/skills/feedback-triage/` — gitignored,
 never committed, see that directory's own README.md if present on this machine) reviews New and
@@ -463,7 +585,7 @@ is unrecorded, never expires and works with the database down. A dump is only ar
 `-- Dump completed` marker (also re-checked before a restore wipes anything). **The zip never contains `APP_KEY`/`.env`/
 `.app_key`** (guarded in code, tested); the key is only shown, password-confirmed and logged, to `view-app-key` holders on the
 admin page, and a red notice above every backup section tells the admin they NEED to write it down (it is required to restore
-the encrypted parts). Only the feedback `shared_secret` (an `encrypted` cast) and cookies depend on it; `config/backup.php`'s
+the encrypted parts). Only the encrypted columns — the mail secrets and the **federation private key** (`federation_identities.private_key`: a restore onto a different key blanks it, which the Trust Console reports as "identity lost"; peers must re-approve a regenerated key) — and cookies depend on it; `config/backup.php`'s
 `encrypted_columns` registry (test-enforced against model casts) lists what a restore blanks.
 
 - **Who calls it:** the admin page (detached `setsid` process, `backup:run <id>`, one at a time via row check + `flock`);
@@ -517,7 +639,26 @@ and a compact layout in `reports/partials/pallet_label*.blade.php` (smaller numb
 the three label documents in `DocumentRegistry` (so only printers loaded with that media are offered and accepted), and the shared Inertia prop
 `printing.palletLabelMedia` that every pallet-label `PrintMenu` passes as its `media` — don't hard-code `label_large` there. Changing it affects new
 labels only; a printer's own media is still set on R Station Devices. The compact layout was checked on paper; scanning it from a real small label is
-the thing to confirm. Not built: other label kinds (there are no inventory/item labels — only the generated UPC exists), or a per-printer size.
+the thing to confirm. Not built: a per-printer size.
+
+**Mailing labels** (2026-10-25, `MailingLabelController`, `/reports/mailing-labels`, document `mailing-labels`, all `manage-people` — it lists
+names and addresses): Avery 8160/5160 sheets (Letter, 3 x 10) on the `report` media, so any office printer — not `label_address`, which is a roll
+label nothing uses yet. Audiences: partner = Partner role or any request, donor = Donor role or any donation, volunteer = `is_volunteer`, other =
+none of those and no role at all; system records and trainees never appear. Only people with street + city + state + zip get a label. The PDF
+gets the filters plus `ids` or `exclude` (whichever is shorter) and `start` (first unused label on a partly-used sheet). Names come in through
+Data Import's **Names & addresses** CSV (`App\Services\Import\MailingListImporter`): headers matched loosely, tags donor/partner attach those
+(zero-permission) roles, volunteer sets `is_volunteer` (never the Volunteer role — it grants permissions), other/blank adds nothing; a row updates
+an existing person with the same name (or organization) and 5-digit zip, and two such matches is an error, not a guess.
+
+**Signs** (2026-10-26, `SignController`, Setup > **Signs** → `/setup/signs`, document `sign`, open to anyone signed in like Help):
+Letter signs with a title, optional smaller text, an optional safety header (danger/warning/caution/notice/safety), portrait or
+landscape, and arrows at any edge or corner. Ready-made ones are code (`App\Support\SignTemplates`) and only prefill the form.
+WeasyPrint can't shrink-to-fit, so `App\Support\SignLayout` does it: it measures with the bundled Liberation Sans
+(`resources/fonts/liberation/`, OFL; glyph widths pre-extracted to `metrics.php` — regenerate if the font changes), wraps and
+balances the lines itself and the view prints them `nowrap`, so the PDF breaks where it measured. Arrows sit in bands the text never
+enters (a corner arrow tries a side band and an end band, keeps whichever gives the bigger title). The page's preview is the same
+Blade view as HTML (`/setup/signs/preview`, fonts via `/setup/signs/fonts/*`) in a scaled iframe. `SignsTest` checks every template fits with
+every arrow combination. Not built: printing a batch of signs at once, numbered runs (Aisle A–F), a Help guide.
 
 **One-time server provisioning:** the `weasyprint` binary (Python, with native Pango/Cairo deps —
 `apt install weasyprint` or `pip install weasyprint` depending on distro) must be on `PATH`, or set
@@ -551,7 +692,7 @@ of documents a client implementer needs), `rstation/print-extension.openapi.yaml
 drift test fails if it stops matching the server) and `scripts/REVERB.md` (provisioning).
 
 - **A print server is a `ManagedDevice`** (`kiosk_function = print_station`) — an R Station Pi *or* a PC/Mac
-  software server — reusing pairing codes, bearer-token auth and the heartbeat. The heartbeat's
+  software server — reusing the federation pairing (a `client` pairing code, the device's own Ed25519 key, `device-auth:print.share`; see "Federation") and the heartbeat. The heartbeat's
   `print_printers` reports its OS print queues (a device with no Function set that reports any is made a
   `print_station` automatically; the platform goes in `print_platform`, namespaced per the device contract); each becomes a `printers` row (inactive, untyped) that staff
   name, site (`KioskLocation`), type and switch on at `/setup/devices`. One server owns many printers.
@@ -607,8 +748,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   the root Vite/Composer build — it has its own `Cargo.toml`/`package.json`. Tests: `cargo test -p ri-print-core`
   (mock server + fakes), `RI_CUPS_INTEGRATION=1 …--test cups_integration` (real CUPS), `print-client/e2e/run.sh
   [--realtime]` (real Laravel app on the disposable test DB; its PHP helpers refuse any other database).
-  Verified on Linux only; the Tauri shell has not yet been compiled on a machine with the webview libraries,
-  and Windows/macOS are untested on hardware.
+  Tested on Windows and macOS hardware (2026-10-24): works fully, Tauri shell included.
 - **SATO label printers (SBPL)** (2026-10-22, `rstation/sato-driver/` — read its README): SATO's own Linux driver is x86-only, so
   `pdftosbpl` (a Python + Ghostscript CUPS filter, PDF in, one SBPL bitmap job per page) and `sato-sbpl.ppd` replace it, packaged by
   `rstation/build-sato-driver-deb.sh` into `product/image/debs/` (the image `packages` file adds Ghostscript; Settings > Printers >
@@ -629,7 +769,7 @@ drift test fails if it stops matching the server) and `scripts/REVERB.md` (provi
   name (path and control characters stripped, 120 chars) as its title. Any active, typed, sited printer is accepted whatever its media; the PDF prints at
   its own page size (print-scaling none), so it has to be made for that paper — the page size isn't checked.
 - **Still open** (tracked in `TODO.md` item 11): first end-to-end run on 2026-10-18 (real Pi + a real Letter printer, queued from the browser and printed via the wake-up) — the queue itself works, but the Pi's Settings > Printers page (adding queues from the GUI) is untested, as are USB/label printers; the Pi's
-  on-device Printers page and CUPS admin access; running the desktop client on real Windows/macOS machines (and an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
+  on-device Printers page and CUPS admin access; an IPP backend so a CUPS-aborted job isn't reported as printed); staff notification when a printer goes
   offline; a shorter offline threshold for print servers than the fleet-wide 15 minutes.
 
 ### R Station local server — a whole offline site on the device (`rstation/LOCAL_SERVER.md`) — built 2026-10-19, branch `rstation-local-server`
@@ -644,6 +784,48 @@ not a sync target; proven end to end on a real Pi 2026-10-20 (install, first-run
 LOCAL_SERVER.md lists what is still unverified (QR/external-site/reset paths, OTA reload, power loss, phone `.local` resolution).
 Settings > Local server also has **Software updates** (2026-10-23): it pulls `ghcr.io/fiforms/reliefinventory:latest` over the baked image and restarts the stack,
 comparing the `RI_VERSION` each image carries so neither the pull nor a newer OS image's baked image can ever install an older version (LOCAL_SERVER.md, "Updates").
+
+### RI Launcher (`launcher/`, read its README) — 2026-10-25
+
+Installs and runs this app on Windows, macOS and Linux without Docker Desktop (Docker Engine inside a private Alpine WSL 2 distro, `ReliefInventory`, on
+Windows; a private Alpine Lima VM, `vmType: vz`, on macOS — `launcher/MAC_VERSION.md`; on Linux `core/src/linux.rs` uses the host's own Docker, under its own
+compose project `ri-launcher` — never the shipped `name:`, which another checkout may own — with the app port bound to 127.0.0.1). Rust core (`launcher/core`: `Platform` trait, `wsl.rs`, `service.rs` `Launcher`, settings, compose editing, a LAN TCP proxy,
+backup tools) + CLI (`ri-launcher`) + a Tauri v2/Vue window (`launcher/src-tauri`, `launcher/ui`), a separate program from `print-client/`. Non-obvious:
+`wsl --install --no-distribution` fails on a machine with no WSL, so install = DISM features → restart → WSL's own MSI (pinned, SHA-256) → `wsl --import`
+→ `apk add docker`; `docker/compose.yaml` is **embedded and regenerated from `settings.json` on every start** (only `APP_URL`, the `8080:8080` mapping →
+`18080:8080`, an optional timezone), and a launcher-process proxy owns the public port — "Run as a LAN service" = listen on every interface, "local only" =
+127.0.0.1; the share link is `<name>.local:<port>`. A launcher test fails if `docker/compose.yaml`'s `APP_URL` / `"8080:8080"` lines change shape, so
+keep those lines patchable. Run on real Windows 11 and on Ubuntu/Docker via the CLI (clean install, LAN, backups); the window has not been run yet.
+macOS (2026-10-25, `lima.rs`): no admin rights or restart, so the install runs in the window's process; every `limactl` call is `env LIMA_HOME=~/.ri-lima`
+(our own Lima, never the user's — and in the home folder because Lima socket paths must be < 104 bytes); `layer.rs` holds the in-VM steps both backends
+share, and `Platform::pull`/`push` (not a host path) move backup files. Proven via the CLI on an Apple-silicon Mac; the Mac window is not run yet.
+
+**Remote backups** (2026-10-26, `launcher/core/src/remote/`, `ui/src/RemoteBackups.vue`, branch `launcher-backup-trust`, on top of `federation-trust`): the launcher
+pairs with *another* Relief Inventory server as a federation `backup_client` (see "Federation") and keeps copies of that server's backups in a local folder,
+on a schedule. Nothing here uses Docker or the Linux layer, so it works on any OS with or without a local server. Non-obvious:
+- **Files** in the data dir: `federation-identity.json` (this launcher's uuid + Ed25519 seed, 0600, kept across un-pairing — a copy of the print client's signing
+  code in `remote/identity.rs`, held to the same `federation-signing-vectors.json`), `remote-servers.json` (what a person set) and `remote-state.json` (what runs
+  did) — kept apart so a backup finishing can't overwrite a setting. Copies go to `<data dir>/remote-backups/<id>/` or a per-server folder (e.g. a USB drive).
+- **One run** (`runner::run_backup`, tested against a scripted `BackupApi` fake): ask for a backup (adopt a running one of the same scope on 409, wait out another
+  scope), poll, download to `<name>.part` with `Range` resume (dropped connections retry up to 6 times; a server ignoring `Range` or answering 416 restarts the
+  file), verify the SHA-256 from `GET /{id}`, rename, mark read-only, then prune to `keep` copies. Only `relief-backup-*.zip` files are ever listed or deleted
+  (a chosen folder may hold other things), and the server's file name is accepted only if it is a plain `relief-backup-….zip`. A folder lock (`File::try_lock`)
+  stops the window and a command from overlapping.
+- **Schedule** (`schedule.rs`, pure functions generic over the time zone): off/hourly/daily/weekly at a local time. The rule is "was the *latest* scheduled moment
+  honoured?", so a computer that was off makes one catch-up backup, not one per missed slot; a brand-new schedule is due at once (first backup immediately);
+  failures retry with 10 min → 2 h backoff instead of waiting for the next slot. The scheduler is `RemoteBackups::run_forever` (30 s ticks) started by the window
+  and by `ri-launcher run`/`remote run`; it only runs while the launcher does, so the window now stays in the tray when a schedule is active (macOS Cmd-Q too).
+- **Pairing** (`RemoteBackups::pair`): plain `http://` is accepted only for localhost, private/link-local addresses and `.local`-style names
+  (`client::check_transport`) — a backup holds personal data and signing proves who asks, not that the file is private. It then asks `GET /grants` and warns if
+  `operator.full_read` wasn't granted. A 401 means un-paired: the server is marked "needs pairing" and nothing is retried until `pair` is run again with the same
+  address (same local id, settings and copies kept). There is no call to remove the trust *on the server* — an administrator does that in the Trust Console.
+- **CLI:** `ri-launcher remote pair|list|set|backup|files|remove|run`. **Tests:** `cargo test` (schedule, runner, config, manager) +
+  `core/tests/download_resume.rs` (real HTTP client vs a tiny server: cut connection, Range ignored, 416) + `launcher/e2e/run.sh` (the CLI against the real app on
+  the test DB: pairing without the grant, a real `mariadb-dump` zip downloaded and byte-identical, retention, audit rows, revoke, re-pair). The window itself has
+  not been run in Tauri (UI checked with the browser mocks `?mock=remote|remote-running|remote-empty|remote-unpaired`).
+- **Next:** reports over the same trust (more methods on `RemoteClient`, a sibling of `runner`; the scheduler, folder and pairing are reusable); restore a downloaded
+  copy into the local app from this tab (today: Backups tab → "Restore from file…"); tiered retention (daily/weekly/monthly) instead of newest-N; a notification when
+  backups keep failing.
 
 ### First-run setup wizard (`/install`) — built 2026-10-19 on branch `first-run-wizard`
 
@@ -776,6 +958,9 @@ Keep it lean: the smallest thing that works, with no new table, dependency or se
 - Set audit/actor fields (`person_id_user`, etc.) from `Auth::id()` server-side in controllers — never
   accept them from the request body.
 - Wrap multi-row writes (a transaction header plus its ledger/order lines) in `DB::transaction()`.
+- A new machine-to-machine endpoint (another instance, a client app) goes under `/api/federation/v1` (or `/api/devices` for a
+  device) behind `trust-auth:<permission>`, never a shared secret: add the `TrustPermission` case, document it in
+  `rstation/federation.openapi.yaml` (a drift test fails otherwise), and gate on the *inbound grant*, not on who the peer is.
 - Don't use `env()` outside `config/*.php` files — read from `config()` instead, since `env()` returns
   null once config is cached in production.
 - Cloudflare Turnstile goes through `App\Services\TurnstileService` (registration, password reset, public
@@ -825,7 +1010,8 @@ Renamed 2026-10-14 from `kiosk/` / `kiosk/reliefkiosk` to avoid colliding with t
 kiosk above. `rstation/platform` is the `slideannouncer` submodule (consumed unmodified),
 `rstation/product` is our local product layer; planning docs are `rstation/IMPLEMENTATION.md` and
 `rstation/PRINT_SERVER.md`. Server side: `ManagedDevice` & friends, `/api/devices`, `/setup/devices`
-(`RStationDevices.vue`, permission `manage-devices`). Deliberately **not** renamed: the wire-contract keys
+(`RStationDevices.vue`, permission `manage-devices`). A device is a client-kind **trust** (`managed_devices.trust_id`): it pairs with
+its own key, not a token — see "Federation"; the Pi side is `rstation/product/backend/federation.py`. Deliberately **not** renamed: the wire-contract keys
 `kiosk_function`/`kiosk_path` (and the `managed_devices.kiosk_function` column) — they're part of the
 device protocol shared with the Pi product, so changing them needs a coordinated device-side release;
 and `kiosk_location_id`, which genuinely refers to `KioskLocation` (the sign-in kiosk's sites).
@@ -848,14 +1034,14 @@ Home for 3 s, redirecting via `slide-announcer-kiosk-navigate` (DevTools) and fa
 plus a one-shot flag that `Main.vue` consumes so it opens Settings instead of the site. Confirmed working on a real Pi (2026-10-18).
 
 **Device sessions — pages with nobody logged in** (2026-10-21, `DeviceSessionController`, `EnsureDeviceAccess`, `DeviceSessionTicket`):
-a paired R Station's *browser* has no credential of its own (only the Pi's local backend holds the bearer token, and it must never
+a paired R Station's *browser* has no credential of its own (only the Pi's local backend holds the device's credential, and it must never
 reach the browser). The launcher (`Main.vue`) has the backend mint a single-use, 60 s ticket (`POST /api/devices/session-ticket`,
 `device-auth`) and opens `/device-session/{ticket}`, which sets an HttpOnly `device_session` cookie (hash in
 `managed_devices.session_token_hash`; one live session per device, re-minted each launch) and redirects to the page for the device's
 **Function** (`config/devices.php` `path`) — never a client-supplied path; no page / bad ticket → `/login`. The cookie is **not a login**
 (`Auth::user()` stays null; never set actor fields from it): the `display-access:<permission>,<function>…` middleware admits a logged-in
 user with that permission OR a device whose current Function is listed, and `EnsureKioskAccess` admits a `volunteer_checkin` device (the
-sign-in kiosk works from the pairing alone — no Trusted Device/PIN kiosk lock). Revoke, re-pair (`issueToken()`) or changing the
+sign-in kiosk works from the pairing alone — no Trusted Device/PIN kiosk lock). Revoke, re-pair (`TrustService::enroll()` clears `session_token_hash`) or changing the
 Function ends access immediately. Pages: chrome-free `/display/sitrep` and `/display/dashboard` (`Pages/Display/Stats.vue`,
 `DisplayLayout.vue` with a small bottom-left "Log in" link — the Pi's on-screen Settings button is bottom-right; self-refreshing from
 `/json/display/*`; the dashboard variant drops `donor_quality`). To add a page for devices: add a Function in `config/devices.php`, a

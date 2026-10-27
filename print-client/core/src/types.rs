@@ -103,9 +103,25 @@ pub struct ResultRequest<'a> {
 
 #[derive(Deserialize, Debug)]
 pub struct PairResponse {
-    pub token: String,
+    pub server: ServerIdentity,
     #[serde(default)]
     pub entity_name: Option<String>,
+}
+
+/// Reply to a signed `POST /api/federation/v1/session`.
+#[derive(Deserialize, Debug)]
+pub struct SessionResponse {
+    pub session_token: String,
+    #[serde(default)]
+    pub expires_in: u64,
+}
+
+/// The identity a server publishes (`/.well-known/ri-instance.json`) and returns when pairing.
+#[derive(Deserialize, Debug)]
+pub struct ServerIdentity {
+    pub public_key: String,
+    #[serde(default)]
+    pub uuid: Option<String>,
 }
 
 /// Truncate to at most `max` characters (the server rejects over-long strings with a 422).
