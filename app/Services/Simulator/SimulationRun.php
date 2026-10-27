@@ -6,6 +6,7 @@
 namespace App\Services\Simulator;
 
 use App\Models\SetupState;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Throwable;
@@ -21,9 +22,10 @@ use Throwable;
  */
 class SimulationRun
 {
+    /** In the warehouse's own files folder: a simulation is of one warehouse (MULTI_WAREHOUSE.md §11). */
     public static function statusPath(): string
     {
-        return storage_path('app/simulator-status.json');
+        return app(WarehouseContext::class)->current()->storagePath('simulator-status.json');
     }
 
     /** @return array<string, mixed> state: none|running|done|failed */

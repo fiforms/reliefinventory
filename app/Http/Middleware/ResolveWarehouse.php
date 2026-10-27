@@ -21,11 +21,9 @@ class ResolveWarehouse
 
     public function handle(Request $request, Closure $next): Response
     {
-        // A no-op in FrankenPHP's classic mode, where every request is a fresh process. In a long-lived one
-        // (worker mode) nothing may carry over from the previous request, even when resolution fails. Reset
-        // here rather than on terminate: terminable middleware that run after the response still need the
-        // request's own warehouse.
-        $this->context->forget();
+        // Switching to another warehouse resets everything the previous one set, so in a long-lived process
+        // (FrankenPHP worker mode) nothing carries over between warehouses; a failed resolution must forget()
+        // (phase 2). Not undone on terminate: terminable middleware still need the request's own warehouse.
         $this->context->switchTo($this->context->defaultWarehouse());
 
         return $next($request);

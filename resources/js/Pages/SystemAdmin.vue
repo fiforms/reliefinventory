@@ -652,16 +652,17 @@ onUnmounted(() => {
 				<h2 class="text-lg font-semibold">Application key</h2>
 				<div class="rounded bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm space-y-2">
 					<p>
-						The application key encrypts a few secret values stored in the database (for example the shared secret for
-						centralized feedback) and signs login cookies. <strong>Backups deliberately do not contain it</strong>, so a stolen
-						backup file can't decrypt anything.
+						This is this warehouse's own key. It encrypts a few secret values stored in its database (for example the email
+						password and the federation key that paired sites and devices know it by). <strong>Backups deliberately do not contain
+						it</strong>, so a stolen backup file can't decrypt anything.
 					</p>
 					<p>
 						<strong>Write this key down now and keep it somewhere safe, separate from your backups</strong> (a password manager or a
 						sealed envelope). It is needed to restore the encrypted parts of a backup: restoring onto a new system without it loses
-						those encrypted values (the restore blanks them and you must re-enter them) and everyone has to log in again. To restore
-						everything, give the new system this same key before its first start (Docker: <span class="font-mono">APP_KEY</span> in the
-						compose file; standard install: <span class="font-mono">APP_KEY</span> in <span class="font-mono">.env</span>).
+						those encrypted values (the restore blanks them and you must re-enter them). To restore everything, give the new
+						system this same key before its first start (Docker: <span class="font-mono">APP_KEY</span> in the compose file;
+						standard install: <span class="font-mono">APP_KEY</span> in <span class="font-mono">.env</span>): a new system's first
+						warehouse takes its key from there.
 					</p>
 				</div>
 

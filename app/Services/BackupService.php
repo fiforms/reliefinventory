@@ -29,8 +29,8 @@ use ZipArchive;
  *   database/db.sql          plain mariadb-dump of the app database (scope database, full)
  *   database/accounts.json   this warehouse's logins (WarehouseAccounts::export(); with the dump, since the
  *                            accounts schema isn't in it — MULTI_WAREHOUSE.md §6)
- *   files/private/...        storage/app/private (the `local` disk: receiving photos, screenshots, imports, BOLs)
- *   files/public/...         storage/app/public           (scope full, storage)
+ *   files/private/...        the warehouse's files folder (the `local` disk: receiving photos, screenshots, imports,
+ *                            BOLs) (scope full, storage). Older backups may also have files/public/..., ignored.
  *
  * The application key (APP_KEY / .env / storage/app/.app_key) is NEVER written to a zip — see
  * NEVER_INCLUDE and the "Application key" panel on /setup/system. A restore onto a new instance gets a
@@ -260,7 +260,9 @@ class BackupService
     /** @return iterable<array{path: string, source: string}> */
     private function storageFiles(): iterable
     {
-        $roots = ['private' => config('filesystems.disks.local.root'), 'public' => config('filesystems.disks.public.root')];
+        // The current warehouse's files folder (MULTI_WAREHOUSE.md §11). There is no `public` disk any more;
+        // older backups' files/public entries are accepted and ignored on restore.
+        $roots = ['private' => config('filesystems.disks.local.root')];
         $excluded = config('backup.exclude_dirs');
 
         foreach ($roots as $label => $root) {

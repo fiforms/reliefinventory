@@ -756,3 +756,36 @@ contact-only donors/partners) and writes a report to `storage/logs/accounts-migr
 - Account lock has no UI yet (instance console, phase 5); the column, the login refusal and the session end are in place.
 - `setup:reset` with several warehouses must not remove an instance admin who still runs the instance (TODO in `WarehouseAccounts::forgetAll`).
 - Email verification links must stay signed with `APP_KEY` once `WAREHOUSE_KEY` exists (phase 1).
+
+**Phase 1 — done** (decisions 2026-10-27: Docker keeps warehouse keys in a new `warehouse-secrets` volume at `/warehouse-secrets/<id>/`,
+writable only by the app container, rather than under the read-only, init-owned `/secrets`, since Docker can't create a mount
+point inside a read-only volume; bare metal writes the key file under `<repo>/secrets/warehouses/` from its current APP_KEY and
+never rotates APP_KEY).
+- `config/warehouses.php`: `storage_dir` (`storage/warehouses`) and `secrets_dir` (`RI_WAREHOUSE_SECRETS_DIR`); `Control\Warehouse`
+  has `storagePath()`, `secretsPath()`, `key()` / `writeKey()` (never replaces a key) and a `connectionConfig()` that uses a
+  `db_password` file next to the key when there is one (phase 3 makes them).
+- Switch tasks: `SwitchDatabase`, `SwitchKey`, `SwitchStorage` (the `local` disk's root, and forgets the cached disk).
+  `switchTo()` is all-or-nothing and puts the caller back where it was if a task fails. Console commands and the queue worker
+  start in the sole warehouse (`bootConsole()`; skipped in tests, where `tests/InstanceSchemas` switches after a parallel worker's
+  databases are chosen).
+- **How §5 is implemented (differs from the middleware-order sketch above):** `app.key` and the container's encrypter are *never*
+  switched — they stay APP_KEY, so cookies, the CSRF token, encrypted queue jobs and the framework's test helpers need nothing
+  special. `SwitchKey` puts the warehouse's *data* under WAREHOUSE_KEY instead: `encrypted` casts (`Model::encryptUsing()`) and the
+  URL signer's key (warehouse-level signed links). Account-level links are signed with APP_KEY (`Support\InstanceSignedUrl`: email
+  verification, generated and checked). App code must not use `Crypt`/`encrypt()` for warehouse data (use
+  `Model::currentEncrypter()`); the guard test enforces it. A first attempt that switched `app.key` itself had to pin cookies and
+  CSRF back to APP_KEY and still broke the framework's own cookie handling in tests, so it was dropped.
+- `instance:migrate` runs `WarehouseLayout` first: writes the key (the default warehouse's is the current APP_KEY) and moves
+  `storage/app/private` into `<storage>/warehouses/<id>/files/`. Docker then runs `instance:rotate-app-key` once (new APP_KEY in the
+  storage volume when the default warehouse's key still equals it; with APP_KEY set in compose it only says to change it).
+- The `public` disk, the `storage:link`, and the `local` disk's `serve` routes (`/storage/{path}`, unused, and it took uploads) are
+  gone. Backups write `files/private/` from the warehouse's folder; older backups' `files/public/` is accepted and ignored. The
+  simulator's status file is in the warehouse's folder.
+- Tests: the test warehouse's key differs from APP_KEY (like Docker after rotation), its files and key live under
+  `storage/framework/testing/`. `tests/Unit/WarehouseIsolationGuardTest.php` fails on a literal connection name outside the
+  control/accounts code, and on `storage_path('app…')` or a public disk outside `WarehouseLayout`.
+
+**Still open from phase 1:** the log context and URL root switch tasks (with phase 2 resolution); the training class archive's
+location across a training-warehouse reset (phase 3); a restore *replacing* the files folder rather than merging into it, and
+per-warehouse backup directories (phase 4); an "import a warehouse key" step for restoring onto a new instance (today: set APP_KEY
+before the first start, which seeds the first warehouse's key).

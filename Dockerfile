@@ -133,14 +133,14 @@ RUN chmod +x /usr/local/bin/ri-entrypoint /usr/local/bin/ri-scheduler /usr/local
 WORKDIR /var/www/html
 COPY --from=app-build /app /var/www/html
 
-# storage/ is a volume at runtime (private uploads, logs, caches, the generated
-# APP_KEY), so the skeleton below is only what the entrypoint re-creates anyway.
-# public/storage is the usual storage:link, created now so public/ can stay
-# read-only at runtime. public/fonts/NotoColorEmoji.ttf links the image's own emoji font so
-# every browser draws the same emoji (see @font-face in resources/css/app.css).
-RUN mkdir -p storage/app/public storage/app/private storage/framework/cache storage/framework/sessions \
+# storage/ is a volume at runtime (each warehouse's uploads, logs, caches, the generated
+# APP_KEY), so the skeleton below is only what the entrypoint re-creates anyway. There is
+# no public/storage link: nothing is served from storage directly, since one web path can't
+# serve several warehouses' files (MULTI_WAREHOUSE.md §11). public/fonts/NotoColorEmoji.ttf
+# links the image's own emoji font so every browser draws the same emoji (see @font-face in
+# resources/css/app.css).
+RUN mkdir -p storage/app/private storage/framework/cache storage/framework/sessions \
         storage/framework/views storage/logs bootstrap/cache \
-    && ln -s ../storage/app/public public/storage \
     && mkdir public/fonts \
     && ln -s /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf public/fonts/NotoColorEmoji.ttf \
     && chown -R www-data:www-data storage bootstrap/cache

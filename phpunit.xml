@@ -40,6 +40,9 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="RI_RUNTIME" value="systemd"/>
+        <!-- The test warehouse's files and key (MULTI_WAREHOUSE.md §11), never the dev instance's. -->
+        <env name="RI_WAREHOUSE_STORAGE_DIR" value="storage/framework/testing/warehouses"/>
+        <env name="RI_WAREHOUSE_SECRETS_DIR" value="storage/framework/testing/warehouse-secrets"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

@@ -7,9 +7,9 @@ namespace App\Services;
 
 use App\Services\Warehouses\WarehouseAccounts;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -246,7 +246,6 @@ class RestoreService
         if ($plan['files']) {
             $this->progress($id, 'Restoring uploaded files', 85);
             $this->moveTree("{$work}/files/private", config('filesystems.disks.local.root'));
-            $this->moveTree("{$work}/files/public", config('filesystems.disks.public.root'));
         }
 
         // ---- 5/6. fix-ups (they read the database, so only when it is the restored one) ----
@@ -518,7 +517,7 @@ class RestoreService
             $count = 0;
             foreach (DB::table($table)->whereNotNull($column)->get(['id', $column]) as $row) {
                 try {
-                    Crypt::decryptString($row->{$column});
+                    Model::currentEncrypter()->decryptString($row->{$column});
                 } catch (DecryptException) {
                     DB::table($table)->where('id', $row->id)->update([$column => null]);
                     $count++;

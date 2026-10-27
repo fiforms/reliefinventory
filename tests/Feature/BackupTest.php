@@ -2,6 +2,7 @@
 
 use App\Models\Backup;
 use App\Services\BackupService;
+use App\Services\DatabaseTools;
 use Illuminate\Support\Facades\Process;
 
 beforeEach(function () {
@@ -73,12 +74,13 @@ test('uploads are included with hashes, excluded dirs and key files are left out
     file_put_contents($this->tmp.'/private/print-jobs/j.pdf', 'pdf');
     file_put_contents($this->tmp.'/private/.app_key', 'base64:SECRETSECRET');
     file_put_contents($this->tmp.'/private/.env', 'APP_KEY=base64:SECRETSECRET');
-    file_put_contents($this->tmp.'/public/logo.png', 'png');
 
     $backup = runBackup('full');
     [$names, $manifest, $contents] = zipEntries($backup);
 
-    expect($names)->toContain('database/db.sql', 'files/private/receiving-photos/a.jpg', 'files/public/logo.png')
+    // The warehouse's own files only (there is no public disk any more), and its logins beside the dump.
+    expect($names)->toContain('database/db.sql', 'database/accounts.json', 'files/private/receiving-photos/a.jpg')
+        ->and(collect($names)->filter(fn ($n) => str_starts_with($n, 'files/public/'))->all())->toBe([])
         ->and($manifest['scope'])->toBe('full')
         ->and($names)->not->toContain('files/private/device-releases/x/firmware.img')
         ->and($names)->not->toContain('files/private/print-jobs/j.pdf')
@@ -285,7 +287,7 @@ test('the old backup files address lands on the merged page', function () {
 });
 
 test('only a dump that ends with the end-of-dump marker counts as complete', function () {
-    $tools = app(App\Services\DatabaseTools::class);
+    $tools = app(DatabaseTools::class);
     $write = fn (string $sql) => tap($this->tmp.'/d.sql', fn ($f) => file_put_contents($f, $sql));
 
     expect($tools->dumpIsComplete($write("CREATE TABLE t (id int);\n\n-- Dump completed on 2026-10-20 10:12:46\n")))->toBeTrue()

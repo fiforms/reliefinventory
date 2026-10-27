@@ -30,18 +30,13 @@ return [
 
     'disks' => [
 
+        // Every upload goes here. The root is switched to the current warehouse's own folder
+        // (App\Services\Warehouses\SwitchStorage, MULTI_WAREHOUSE.md §11); this one is only the fallback
+        // before a warehouse is selected. Not `serve`d: a file is reached only through a controller that
+        // checks the warehouse. There is no `public` disk: one web path can't serve several warehouses.
         'local' => [
             'driver' => 'local',
             'root' => storage_path('app/private'),
-            'serve' => true,
-            'throw' => false,
-        ],
-
-        'public' => [
-            'driver' => 'local',
-            'root' => storage_path('app/public'),
-            'url' => env('APP_URL').'/storage',
-            'visibility' => 'public',
             'throw' => false,
         ],
 
@@ -70,8 +65,6 @@ return [
     |
     */
 
-    'links' => [
-        public_path('storage') => storage_path('app/public'),
-    ],
+    'links' => [],
 
 ];

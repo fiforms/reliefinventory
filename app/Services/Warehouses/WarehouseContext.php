@@ -18,7 +18,7 @@ use RuntimeException;
 class WarehouseContext
 {
     /** @var list<class-string<SwitchTask>> */
-    public const TASKS = [SwitchDatabase::class];
+    public const TASKS = [SwitchDatabase::class, SwitchKey::class, SwitchStorage::class];
 
     private ?Warehouse $current = null;
 
@@ -47,8 +47,24 @@ class WarehouseContext
             return;
         }
 
-        foreach ($this->tasks() as $task) {
-            $task->makeCurrent($warehouse);
+        // All or nothing: a task that fails (a missing key file) must not leave the others pointing at it, so
+        // the caller is put back in the warehouse it was in.
+        $previous = $this->current;
+        $this->forget();
+        $applied = [];
+        try {
+            foreach ($this->tasks() as $task) {
+                $task->makeCurrent($warehouse);
+                $applied[] = $task;
+            }
+        } catch (\Throwable $e) {
+            foreach (array_reverse($applied) as $task) {
+                $task->forgetCurrent();
+            }
+            if ($previous) {
+                $this->switchTo($previous);
+            }
+            throw $e;
         }
         $this->current = $warehouse;
     }
@@ -63,6 +79,22 @@ class WarehouseContext
             $task->forgetCurrent();
         }
         $this->current = null;
+    }
+
+    /**
+     * Console commands (and the queue worker) start in the sole warehouse, so they use its connection, key and
+     * files without each one asking. Quietly does nothing before `instance:migrate` has set the instance up, or
+     * when there is more than one warehouse (a command then has to choose).
+     */
+    public function bootConsole(): void
+    {
+        try {
+            if (! $this->current && Warehouse::count() === 1) {
+                $this->switchTo($this->defaultWarehouse());
+            }
+        } catch (\Throwable) {
+            // no control schema or key yet: instance:migrate creates them
+        }
     }
 
     /** Run $callback in $warehouse, then return to whatever was current before. */

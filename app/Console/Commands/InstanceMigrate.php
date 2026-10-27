@@ -7,6 +7,7 @@ namespace App\Console\Commands;
 
 use App\Models\Control\Warehouse;
 use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseLayout;
 use Illuminate\Console\Command;
 
 /**
@@ -26,7 +27,7 @@ class InstanceMigrate extends Command
         'accounts' => 'database/migrations/accounts',
     ];
 
-    public function handle(WarehouseContext $context): int
+    public function handle(WarehouseContext $context, WarehouseLayout $layout): int
     {
         foreach (self::INSTANCE_SCHEMAS as $connection => $path) {
             if (! is_dir(base_path($path))) {
@@ -45,6 +46,9 @@ class InstanceMigrate extends Command
         $failed = 0;
         foreach (Warehouse::orderByDesc('is_default')->orderBy('created_at')->get() as $warehouse) {
             $this->components->info("Migrating warehouse {$warehouse->id} ({$warehouse->display_name}, schema {$warehouse->schema_name})");
+            foreach ($layout->ensure($warehouse) as $done) {
+                $this->line("  {$done}");
+            }
             $code = $context->run($warehouse, fn () => $this->call('migrate', ['--force' => $this->option('force')]));
             $warehouse->forceFill(['migration_state' => $code === 0 ? 'migrated' : 'failed'])->save();
             $failed += $code === 0 ? 0 : 1;

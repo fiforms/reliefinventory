@@ -87,13 +87,18 @@ see `scripts/BACKUPS.md`).
 > tiers a standard (systemd) server install keeps are not implemented for containers or the R Station local server yet —
 > copy a backup off the machine if you want to keep it longer.
 
-If you set `APP_KEY` yourself, keep it with the backups: restoring a database without its key makes encrypted
-values unreadable.
+Each warehouse has its own encryption key, kept in the `warehouse-secrets` volume (never in a backup). Keep that
+volume with `db-data` and `storage`, and write the key down (Setup > Updates & Backups shows it): restoring a database
+without its key makes its encrypted values unreadable. The instance's own `APP_KEY` (generated into the `storage`
+volume unless you set it) protects cookies and account emails; losing it only logs everyone out. An install upgraded
+from before warehouses had their own keys gives its warehouse the old `APP_KEY` and gets a new one, once (everyone logs
+in again). If you set `APP_KEY` in this file, change it yourself afterwards; the app log says so.
 
 **Restoring** one onto a brand-new install: open the new server, choose **Restore from a backup** on the first-run
 screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. If you
 want the encrypted settings (the mail passwords, and the instance's federation key — without it every paired instance and client must approve this one again) to survive, set `APP_KEY` in `compose.yaml` to the old
-system's key *before* the first start; otherwise they are cleared and listed for you to re-enter. To recover a damaged
+warehouse's key *before* the first start (the first warehouse takes its key from there); otherwise they are cleared and
+listed for you to re-enter. To recover a damaged
 database, the restore screen also takes a second zip that supplies just the uploaded files (any database inside it is
 ignored); on a system that is already set up, an administrator runs
 `docker compose exec app php artisan backup:restore backups/<database zip> --storage=backups/<files zip> --force`.

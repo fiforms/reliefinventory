@@ -132,12 +132,15 @@ x-app: &app
     CACHE_STORE: database
     # Daily backups, pre-migration backups and the zips made from Updates & Backups in the app all live here.
     RI_BACKUP_DIR: /backups
+    # Each warehouse's key file (MULTI_WAREHOUSE.md §2): outside `storage`, so never in a backup.
+    RI_WAREHOUSE_SECRETS_DIR: /warehouse-secrets
   volumes:
     # private uploads, logs, caches, print-queue PDFs and the generated APP_KEY
     - storage:/var/www/html/storage
     - secrets:/secrets:ro
     # Deliberately a host directory outside `storage`, so a backup never contains earlier backups.
     - ./backups:/backups
+    - warehouse-secrets:/warehouse-secrets:ro
 
 services:
   init:
@@ -179,6 +182,12 @@ services:
     command: ["web"]
     ports:
       - "8080:8080"
+    # The same as above, except that only this container may write the warehouse key files.
+    volumes:
+      - storage:/var/www/html/storage
+      - secrets:/secrets:ro
+      - ./backups:/backups
+      - warehouse-secrets:/warehouse-secrets
     depends_on:
       db:
         condition: service_healthy
@@ -225,3 +234,6 @@ volumes:
   # Generated database passwords. Keep this volume together with db-data: the
   # database was initialised with these values.
   secrets:
+  # Each warehouse's encryption key. Keep it together with db-data and storage:
+  # without its key a warehouse's encrypted settings can't be read.
+  warehouse-secrets:

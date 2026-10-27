@@ -3,8 +3,12 @@
 namespace Tests;
 
 use App\Console\Commands\InstanceMigrate;
+use App\Models\Control\Warehouse;
+use App\Services\Warehouses\WarehouseContext;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\File;
 use RuntimeException;
 
 /**
@@ -31,9 +35,18 @@ class InstanceSchemas
             DB::purge($connection);
         }
 
-        if (self::$migrated) {
-            return;
+        if (! self::$migrated) {
+            self::migrate();
         }
+
+        // As a console command would be (WarehouseContext::bootConsole(), which is skipped in tests because it runs
+        // before a parallel worker's databases are chosen): in the default warehouse, with its key and files.
+        app(WarehouseContext::class)->switchTo(Warehouse::default());
+    }
+
+    private static function migrate(): void
+    {
+        // Each process registers a new test warehouse (with a new id), so its key and files folder are new too.
 
         foreach (InstanceMigrate::INSTANCE_SCHEMAS as $connection => $path) {
             $name = config("database.connections.{$connection}.database");
@@ -42,8 +55,25 @@ class InstanceSchemas
                 Artisan::call('migrate:fresh', ['--database' => $connection, '--path' => $path, '--force' => true]);
             }
         }
-        InstanceMigrate::registerDefaultWarehouse();
+        $warehouse = InstanceMigrate::registerDefaultWarehouse();
+        // A key of its own, unlike APP_KEY, as on a Docker instance: anything still signing or encrypting with the
+        // instance key where it should use the warehouse's (or the other way round) fails a test.
+        $warehouse->writeKey('base64:'.base64_encode(Encrypter::generateKey(config('app.cipher'))));
+        File::ensureDirectoryExists($warehouse->storagePath());
+        self::pruneOldTestWarehouses();
 
         self::$migrated = true;
+    }
+
+    /** Each run leaves a key and a files folder per worker; keep the last day's. */
+    private static function pruneOldTestWarehouses(): void
+    {
+        foreach ([config('warehouses.storage_dir'), config('warehouses.secrets_dir')] as $dir) {
+            foreach (File::directories($dir) as $old) {
+                if (filemtime($old) < time() - 86400) {
+                    File::deleteDirectory($old);
+                }
+            }
+        }
     }
 }

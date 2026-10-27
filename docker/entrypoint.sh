@@ -22,12 +22,14 @@ log() { echo "[ri-entrypoint] $*" >&2; }
 
 # ---- phase 1 (root): fix up volume ownership, then drop privileges ----------
 if [ "$(id -u)" = 0 ] && [ -z "${RI_DROPPED:-}" ]; then
-    mkdir -p /tmp/home "$APP"/storage/{app/public,app/private,framework/cache,framework/sessions,framework/views,logs} "$APP/bootstrap/cache"
+    mkdir -p /tmp/home "$APP"/storage/{app/private,framework/cache,framework/sessions,framework/views,logs} "$APP/bootstrap/cache"
     # Named volumes start root-owned; only touch what isn't already right so a
     # large storage volume doesn't cost a full chown on every start.
     extra=""
     # only the init role writes to (and so owns) the secrets volume; everyone else mounts it read-only
     [ "$ROLE" = init-secrets ] && { mkdir -p "$SECRETS_DIR"; extra="$SECRETS_DIR"; }
+    # warehouse key files: writable (and so chowned) only where the app container mounts them read-write
+    [ "$ROLE" = web ] && [ -n "${RI_WAREHOUSE_SECRETS_DIR:-}" ] && extra="$extra $RI_WAREHOUSE_SECRETS_DIR"
     for d in /tmp/home "$APP/storage" "$APP/bootstrap/cache" "${RI_BACKUP_DIR:-/backups}" $extra ${RI_CHOWN_EXTRA:-}; do
         [ -d "$d" ] || continue
         find "$d" -not -user www-data -exec chown www-data:www-data {} + 2>/dev/null || true
@@ -104,6 +106,7 @@ init_secrets() {
 
 load_app_key() {
     if [ -n "${APP_KEY:-}" ]; then return; fi
+    APP_KEY_FROM_FILE=1
     if [ ! -s "$KEYFILE" ]; then
         if [ "$ROLE" = web ]; then
             log "no APP_KEY provided; generating one and keeping it in the storage volume ($KEYFILE)"
@@ -174,6 +177,17 @@ web)
 
     log "running migrations"
     php artisan instance:migrate --force --no-interaction
+
+    # Once, on an instance moving to per-warehouse keys: the default warehouse keeps the old APP_KEY as its own
+    # key, and the instance gets a new APP_KEY (MULTI_WAREHOUSE.md §15). Everyone is logged out once. An APP_KEY
+    # set in the compose file can't be changed from here; the command says so.
+    if [ -n "${APP_KEY_FROM_FILE:-}" ]; then
+        php artisan instance:rotate-app-key --file="$KEYFILE" --no-interaction
+        APP_KEY="$(cat "$KEYFILE")"
+        export APP_KEY
+    else
+        php artisan instance:rotate-app-key --no-interaction
+    fi
 
     # Essential lookup data (statuses, units, categories, item catalog,
     # permissions) on a never-seeded database; a no-op otherwise. The web setup

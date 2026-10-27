@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Support\InstanceSignedUrl;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -25,8 +26,9 @@ class VerifyEmailController extends Controller
     public function __invoke(Request $request, string $id, string $hash): RedirectResponse
     {
         // Checked here rather than with the `signed` middleware so an old
-        // link gets a way forward instead of a bare 403 page.
-        if (! $request->hasValidSignature()) {
+        // link gets a way forward instead of a bare 403 page. Signed with
+        // APP_KEY, not the warehouse's key (InstanceSignedUrl).
+        if (! InstanceSignedUrl::generator()->hasValidSignature($request)) {
             return redirect()->route('login')->withErrors([
                 'email' => 'That verification link has expired. Log in and we will email you a new one.',
             ]);

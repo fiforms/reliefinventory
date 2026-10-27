@@ -45,7 +45,7 @@ return [
     'upload_chunk_bytes' => (int) env('RI_RESTORE_CHUNK_BYTES', 1_000_000),
     'max_restore_bytes' => (int) env('RI_RESTORE_MAX_BYTES', 64 * 1024 * 1024 * 1024),
 
-    // Columns holding values encrypted with APP_KEY ("table.column" => what an admin would call it). A backup
+    // Columns holding values encrypted with the warehouse's key, WAREHOUSE_KEY (MULTI_WAREHOUSE.md §5) ("table.column" => what an admin would call it). A backup
     // never carries the key, so a restore onto an instance with a different key can't read these; RestoreService
     // blanks whatever it can't decrypt and lists the labels so the admin can re-enter them. A test fails if a
     // model gains an `encrypted` cast that is not registered here.

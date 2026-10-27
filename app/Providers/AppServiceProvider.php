@@ -11,8 +11,10 @@ use App\Services\ActivityRecorder;
 use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
 use App\Services\Warehouses\WarehouseContext;
+use App\Support\InstanceSignedUrl;
 use Illuminate\Auth\Events\Login;
 use Illuminate\Auth\Events\Logout;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
@@ -47,10 +49,22 @@ class AppServiceProvider extends ServiceProvider
     {
         Vite::prefetch(concurrency: 3);
 
+        // Not in tests: a parallel worker's own databases are only chosen after boot; tests\InstanceSchemas
+        // switches once they are.
+        if ($this->app->runningInConsole() && ! $this->app->runningUnitTests()) {
+            $this->app->booted(fn () => app(WarehouseContext::class)->bootConsole());
+        }
+
         // Logins check the central account, then resolve this warehouse's person (MULTI_WAREHOUSE.md §6).
         Auth::provider('accounts', fn ($app, array $config) => new AccountUserProvider($app['hash'], $config['model']));
         Event::listen(Login::class, fn (Login $e) => AccountSession::started($e->user));
         Event::listen(Logout::class, fn () => AccountSession::forget());
+        // Account-level, so signed with APP_KEY rather than the warehouse's key (VerifyEmailController checks it).
+        VerifyEmail::createUrlUsing(fn ($notifiable) => InstanceSignedUrl::generator()->temporarySignedRoute(
+            'verification.verify',
+            now()->addMinutes(config('auth.verification.expire', 60)),
+            ['id' => $notifiable->getKey(), 'hash' => sha1($notifiable->getEmailForVerification())],
+        ));
 
         // Federation backup endpoints. Named limiters, keyed by who is calling: a numeric `throttle:N,1` shares one counter
         // per IP across every route, so a client polling a backup's status would use up the budget of the call that
