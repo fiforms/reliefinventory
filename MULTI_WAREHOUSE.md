@@ -15,7 +15,7 @@ today: inventory, ACS numbers, receiving, shipping, settings, people, devices, t
 - One MariaDB schema per warehouse, plus a control schema describing all warehouses on the instance.
 - Per-warehouse storage directory, per-warehouse encryption key, per-warehouse DB user.
 - A login is pinned to one warehouse at a time.
-- Every instance has a standard **training** warehouse.
+- Any instance can easily add a standard **training** warehouse; none is created automatically (§12).
 - Existing installs keep working unchanged: the current schema is registered as warehouse 1, and with a single warehouse the
   chooser is hidden.
 
@@ -84,7 +84,7 @@ Order of resolution:
 
 **Deployment stance (decided 2026-10-27):** a hostname per warehouse is the *recommended* way to run several warehouses, but
 multiple warehouses on a **single hostname or IP are fully supported** — not a degraded mode. Wildcard DNS/TLS can be hard to arrange
-in some places, and the standard training warehouse must never depend on it. So everything in this section and §4 has to work on one
+in some places, and a training warehouse must never depend on it. So everything in this section and §4 has to work on one
 hostname; per-warehouse hostnames are the cleaner option (a stable, prefix-free address for machines) and nothing more.
 **Recommended:** say plainly in the docs that warehouses on one host share a browser origin. Script running in one warehouse's pages
 (a stored XSS, or an uploaded file displayed inline) runs with the host's origin; "one session at a time" limits what it can reach.
@@ -480,8 +480,11 @@ The database stores paths *relative to the disk root* (`receiving-photos/abc.jpg
 
 ## 12. Training as a standard warehouse
 
-Every instance gets a `training` warehouse (`is_training`, listed, reachable on a single hostname). Practice data stops mixing with
-real data. Because training memberships don't count for the sole-membership rule, the same people can belong to both a real and a
+**Training warehouses are added on request, not provisioned automatically (decided 2026-10-27).** A new instance gets only its
+default warehouse (warehouse 1). The instance admin can add a standard **training** warehouse at any time, in one step from the
+instance console: it's provisioned like any other warehouse, seeded with dummy data, and marked `is_training`, listed, and reachable
+on a single hostname. An install that never runs a class never pays for one in disk, memory or upgrade time (this matters on an R
+Station). Practice data stops mixing with real data. Because training memberships don't count for the sole-membership rule, the same people can belong to both a real and a
 training warehouse without losing their backup or admin-reset behaviour.
 
 **Decided 2026-10-27: in-warehouse Training Mode is deprecated and its code removed.** Training is simply a warehouse. Concretely that
@@ -494,8 +497,18 @@ taken when the mode is switched on, `TrainingReset` / `training:reset` (a whole-
 `CheckPermission` training-specific responses. Nothing about a class should be able to put a production database into maintenance mode.
 
 - **Seeding:** a training warehouse is provisioned from a seed — dummy data (the existing `WarehouseActivitySeeder` / simulator
-  material), or optionally a copy of a real warehouse's data. A copy of real data must be sanitised: people, donors, partners,
-  contact details and uploaded files are personal data, so the safe default is catalog/items/locations only (or names scrambled).
+  material). Seeding from a real warehouse's own data is part of the later feature below.
+- **To decide later: warehouse admins deploying their own training warehouses.** A warehouse admin might want a customized
+  training warehouse tied to their own real warehouse, seeded from its catalog, locations and other data, so a class practises on
+  familiar items. This is probably wanted, but it should be built later, after the standard training warehouse works. Questions to
+  settle then:
+  - **Personal data:** a copy of real data must be sanitised. People, donors, partners, contact details and uploaded files are
+    personal data, so the safe default is catalog/items/locations only (or names scrambled).
+  - **Creation:** warehouse admins can't create warehouses today (instance admin only, §7), so this needs either a request the
+    instance admin approves, or an allowance the instance admin grants to that warehouse.
+  - **Ownership and authority:** whether the real warehouse's admins administer its training warehouse, and how the sole-membership
+    rule (§6) treats it.
+  - **Shared-resource limits:** how many training warehouses a warehouse may have, since there are no quotas yet (§1 trust model).
 - **Reset is deliberately simple and local:** drop and re-provision *that one warehouse* from its seed (no dump/restore, no pre-reset
   backup, no maintenance mode for anyone else). It touches nothing outside the training warehouse and is the same code path as
   provisioning, so it needs no separate machinery.
@@ -626,8 +639,8 @@ mechanics:
 - **Accounts:** created only for people with a password hash, or who are part-way through registration or an invitation. Never for
   `is_trainee` people (their `trainee-…@training.invalid` emails would otherwise become logins), and never for people who only have
   a contact email (donors, partners). The migration writes a report of who got an account. Check it on each test instance.
-- **Training data on test instances** (e.g. cs26): stays in warehouse 1 as ordinary data. The old mode flag is cleared, and a
-  training warehouse is created alongside. A test instance can be reset afterwards, if wanted, by restoring a backup.
+- **Training data on test instances** (e.g. cs26): stays in warehouse 1 as ordinary data. The old mode flag is cleared. No training
+  warehouse is created; the instance admin adds one if it's wanted (§12). A test instance can be reset afterwards, if wanted, by restoring a backup.
 - **Paired devices and peers** keep working unchanged through unprefixed machine URLs (§4). Nothing needs re-pairing.
 - **Old backups** (taken before this change) can be restored into warehouse 1 or into a new warehouse. They are just an older
   schema, so the normal post-restore migrations bring them up to date. The step that turns their login people into accounts has
@@ -657,6 +670,8 @@ mechanics:
   warehouse `people` rows drifts, and encrypted columns such as 2FA secrets are key-dependent so cannot be copied raw.
   Federation between warehouses on one instance remains possible but is not needed for login.
 - Per-warehouse quotas, cross-warehouse reporting, self-service warehouse creation.
+- Warehouse admins deploying their own customized training warehouses, tied to and seeded from their real warehouse (§12, to
+  decide later).
 
 ## 17. Open questions
 
@@ -674,6 +689,9 @@ stays, as enable/disable of the training warehouse (§12).
 Also decided 2026-10-27: the trust model (§1); every Docker-image install gets multiple warehouses, including the Launcher
 and the R Station local server, and only bare metal doesn't (§1); new warehouses are handed over with a one-time setup code (§7, outline decided,
 details recommended); existing test instances are upgraded in place (§15).
+
+Also decided 2026-10-27: a training warehouse is added on request by the instance admin, never automatically; only the default
+warehouse is provisioned (§12). To decide later: warehouse admins deploying their own training warehouses (§12).
 
 Still to design during implementation (problems stated, no design yet): the instance console and the multi-warehouse test setup
 (§13).
