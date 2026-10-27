@@ -95,7 +95,7 @@ several *organizations*, recommend separate hostnames more strongly than for one
   logged in" in B. This gives "one warehouse at a time" structurally rather than by check.
 - **Tab guard.** The selector cookie is browser-wide, so two tabs on two warehouses would fight. Every page knows its warehouse
   (shared Inertia prop) and sends `X-RI-Warehouse` on each JSON call; a mismatch → 409 "you switched warehouse in another tab".
-  Plain form posts carry a hidden `w`.
+  Plain form posts and download links carry `_w`.
   **Recommended: the guard fails closed.** Laravel's CSRF check won't catch a switched warehouse: the `XSRF-TOKEN` cookie applies
   to the whole browser, so after tab 2 logs in to B, tab 1 (still showing A) sends B's token, passes CSRF and runs under B's
   session. A "Delete" on record 42 in tab 1 would delete record 42 *in B*. So when more than one warehouse exists, refuse every
@@ -113,10 +113,9 @@ several *organizations*, recommend separate hostnames more strongly than for one
   look-alike warehouse reached through a `?w=` link is harder to mistake for the real one. Rate-limit the typed code, and give the
   same answer whether or not the code exists.
 - **Generated links** (the `/join` QR code, `/vote`, driver portal, emails) always include the warehouse: host if mapped, else `?w=`.
-  **Recommended:** never build a link from the request's `Host` header. Today there's no `trustHosts` and no `forceRootUrl`, so
-  reset and verification links use whatever Host the request arrived with (a forged Host puts the attacker's address in the
-  email), and queued mail, which has no request, falls back to `APP_URL`. Trust only the hosts in `warehouse_domains` plus
-  `APP_URL`'s host, and set the URL root in the switch-warehouse tasks (§8) so queued jobs and CLI commands build links correctly.
+  **Never build an emailed link from the request's `Host` header** (a forged Host would put the attacker's address in a reset
+  email). Built in phase 2 as `Warehouse::publicUrl()` plus a URL-root switch task, *not* as a request-rejecting trusted-hosts check,
+  which would break installs reached by IP address or `.local` — see §18.
 - **Path prefixes for browser pages were rejected**: the Vue pages hard-code absolute `/json/...` URLs.
 
 ## 4. Machine clients (print client, R Station Pi, Launcher backup client, federation peers)
@@ -140,8 +139,8 @@ Pi). Not chosen.
   get it wrong the other way and a signature made for one warehouse is accepted by another.
 - **Tie `RIK-` credentials to the warehouse.** Today they are tied to the Host only (`RequestSigner::mintBearer`). The Launcher and
   print client keep one identity key across pairings, so a device paired with warehouses A and B on one host could replay A's
-  credential against B. Adding the warehouse changes the credential format, so it means updating
-  `federation-signing-vectors.json` and all three implementations (PHP, Rust, Pi) together.
+  credential against B. Built (phase 2) without a format change: the credential's audience is the host plus the `/w/<id>` prefix,
+  so unprefixed credentials are unchanged; one vector was added to `federation-signing-vectors.json` (§18).
 - **On a mapped host, refuse a `/w/<other>` prefix**, the same as `?w` (§3).
 - **Unprefixed machine URLs go to warehouse 1, permanently.** Every device, peer and launcher paired today uses a URL with no
   prefix; adding a second warehouse must not break them. This is the one deliberate exception to "no warehouse known = error" (§9).
@@ -562,7 +561,7 @@ taken when the mode is switched on, `TrainingReset` / `training:reset` (a whole-
   `RefreshDatabase` works on one connection. Multi-warehouse tests need several warehouse schemas plus the control and accounts
   schemas, a per-warehouse DB user and a test provisioner, and they must keep the "never the real database" guarantee. Without
   that, the tests this plan relies on can't be written: the guard test against a literal connection name, a query on the wrong
-  connection failing, a restore that can't reach another schema. This needs solving before Phase 2.
+  connection failing, a restore that can't reach another schema. Solved in phase 2: `tests/SecondWarehouse.php` (§18).
 - No quotas initially; size `table_open_cache` for N × ~100+ tables. **Recommended:** even without quotas, show disk use per
   warehouse in the instance console (one warehouse's photos and backups fill the shared disk for everyone), and make "one backup at
   a time" instance-wide (one `flock` file), so N warehouses' scheduled backups don't all hit the database at once.
@@ -724,7 +723,7 @@ schema as the default warehouse, `warehouses.is_default`) replaces `migrate` in 
 `instance:ensure-schemas` creates the two schemas on Docker with the root secret (interim, until the provisioning worker);
 `WarehouseContext` + `SwitchTask`; the global `ResolveWarehouse` middleware (default warehouse only). It switches at the start of a
 request and never undoes it on terminate, so terminable middleware still see the request's warehouse; switching to a *different*
-warehouse resets everything the previous one set (worker-mode safe), and a failed resolution must `forget()` (phase 2).
+warehouse resets everything the previous one set (worker-mode safe), (phase 2 decided a refused resolution needn't `forget()`, §18).
 
 **Phase 0b — done** (decisions 2026-10-27: Administrator role holders become instance admins at migration; `people.password` and
 `people.email_verified_at` are dropped; `people.email` always mirrors the login email and keeps its unique index; backups carry a
@@ -785,7 +784,7 @@ never rotates APP_KEY).
   `storage/framework/testing/`. `tests/Unit/WarehouseIsolationGuardTest.php` fails on a literal connection name outside the
   control/accounts code, and on `storage_path('app…')` or a public disk outside `WarehouseLayout`.
 
-**Still open from phase 1:** the log context and URL root switch tasks (with phase 2 resolution); the training class archive's
+**Still open from phase 1:** (the log context and URL root switch tasks were done in phase 2); the training class archive's
 location across a training-warehouse reset (phase 3); a restore *replacing* the files folder rather than merging into it, and
 per-warehouse backup directories (phase 4); an "import a warehouse key" step for restoring onto a new instance (today: set APP_KEY
 before the first start, which seeds the first warehouse's key).
@@ -813,25 +812,62 @@ checkout's tracked `.gitignore` with it.
 the bare-metal demo/wa26 boxes, which need their `<db>_control` and `<db>_accounts` schemas created by hand **before** they are
 deployed with this branch, or `instance:migrate` fails.
 
+**Phase 2 — mostly done** (2026-10-28). Decided while building:
+- **One named connection per warehouse** (`warehouse_<id>`, `SwitchDatabase`) instead of re-pointing one connection: switching away
+  and back never drops a connection or the transaction on it. That is what makes a second warehouse testable: `tests/SecondWarehouse.php`
+  (`SecondWarehouse::make($this)`) gives a real one — schema `<test db>_w2`, migrated once per process from the schema snapshot, its
+  control row and its connection both inside transactions rolled back after the test. This settles the §13 test-setup problem.
+- **No request-rejecting trusted-hosts check.** It would break the LAN, R Station and Launcher installs reached by IP address or `.local`.
+  Instead, links that leave the browser never use the Host header: `Warehouse::publicUrl()` (primary hostname with APP_URL's scheme,
+  else APP_URL, plus `?w=` when the address alone doesn't pick the warehouse) for emails, the reset link and the verification link (signed
+  with APP_KEY, then `w` added; the `?w=` redirect keeps the rest of the raw query string byte for byte, so the signature still matches).
+  In-page links people share (the `/join` QR code and poster, design-vote links) keep the request's address and get `withSelector()`.
+  Outside a request (jobs, commands) `SwitchUrlRoot` roots URLs at `publicRoot()`. Consequence: on an install whose APP_URL is wrong
+  (`localhost`), emailed links are wrong too, as they would be from a queued job today.
+- **`RIK-` audience = host + the `/w/<id>` prefix** (when the client's server URL has one). Unprefixed credentials are unchanged, so no
+  existing client is affected; only the Pi mints these (`server_audience()` in `rstation/product/backend/federation.py`), the Rust
+  clients sign per request. One vector added to `federation-signing-vectors.json`.
+- **Cookie and localStorage names:** the default warehouse keeps the old names (approved PIN devices stay approved); other warehouses get
+  `_<id>` (`WarehouseContext::cookieName()`, the `storageSuffix` prop, `warehouseStorageKey()` in `bootstrap.js`).
+- **Unresolved browsers land in the default warehouse** until the chooser exists (phase 3). Unprefixed machine URLs stay there for good.
+- **A refused resolution doesn't `forget()`**: it returns before anything runs, and forgetting would push a test's later queries out of
+  its transaction. A prefixed request's forced URL root is cleared at the start of the next request and on terminate.
+- **`--warehouse=default`** is accepted (Docker entrypoint and backup script), and is a no-op before the control schema exists.
+
+Built:
+- `ResolveWarehouse`: `/w/<id>` prefix (machine surfaces `/api/*`, `/up`, the well-known document: stripped for routing, original URI in
+  `ri.original_uri`, URL root `…/w/<id>`; any other GET: a landing link like `?w=`), mapped hostname (locked; `?w=` is dropped, a prefix
+  for another warehouse is a 404), `?w=` (cookie `ri_warehouse`, not encrypted, then a redirect), the cookie, the default. Unknown or
+  inactive ids are treated like no choice. Non-active warehouses get a 503 (phase 4 refines the statuses).
+- `GuardWarehouseTab` (web group): `X-RI-Warehouse` (set on axios from the `warehouse` prop, which Inertia uses too) or `_w`; a mismatch
+  is a 409 (`warehouse_switched`; Inertia gets `X-Inertia-Location` to `/warehouse-switched`); with several warehouses a non-GET or an
+  Inertia visit naming none is refused; the session records its warehouse and is invalidated in another. `PrintMenu` adds `_w` to its
+  download links (`withWarehouse()`); other CSV/PDF links don't yet (plain GETs naming nothing are allowed).
+- Switch tasks `SwitchCache` (per-warehouse prefix on the default store; forgets cached stores and the rate limiter; the `accounts`
+  store untouched), `SwitchLogContext` (`warehouse` on every log line), `SwitchUrlRoot`.
+- Federation: `TrustAuth` checks signatures against `ri.original_uri` and credentials against host + prefix; `PeerUrl` keeps a `/w/<id>`
+  path (and `FederationClient` sends and signs it), as does the Launcher's `normalize_server_url` (the print client already kept the
+  typed path); the well-known document has `warehouse` and `shared_host`, and `DomainVerifier` won't verify a peer whose address is
+  shared; a new identity's `base_url` is `Warehouse::machineUrl()`. `FEDERATION_AUTH.md` documents the prefix.
+- Cookies: `pin_device_token`, `device_session`, `design_vote_token` per warehouse; `ri_print_last_<media>` per warehouse.
+- Queue in the control schema (`jobs`, `job_batches`, `failed_jobs`; jobs left in a warehouse's old `jobs` table aren't run);
+  `WarehouseJobs`: `warehouse` in every payload, switch on `JobProcessing` and back afterwards (a stack, so the `sync` queue inside a
+  request works), a job naming no active warehouse fails. `FormSubmissionNotification` (the only queued job) is `ShouldBeEncrypted`.
+- Commands: a global `--warehouse` (`WarehouseConsole`); with several warehouses any command not on its instance-level list refuses to
+  start without one. `warehouse:list`, `warehouse:each "<command>"`; `docker/scheduler.sh` runs the volunteer sync and backup prune
+  through it.
+- Reverb: channels `w.<id>.print-queue` etc. (`Warehouse::channel()`), each authorisation also checks the id is the current warehouse.
+- `feedback_reports.warehouse_id`, sent with pushed reports; central's `instance_identifier` includes a `/w/<id>` prefix.
+- Tests: `WarehouseResolutionTest`, `FederationWarehousesTest`, `WarehouseBackgroundTest`.
+
+**Still open from phase 2:** `_w` on the remaining download links (CSV exports, report PDFs opened by plain links); the Docker pre-migration
+backup and downgrade check cover only the default warehouse (phase 4 does every warehouse); the daily Docker backup is the default
+warehouse's only (phase 4: per-warehouse folders); a `/w/<id>` landing doesn't check the warehouse's status beyond "active"; nothing
+was run outside the test suite yet (two warehouses on one Docker stack, a Pi and a print client on a prefixed URL).
+
 ### Remaining work
 
-**Phase 2 — resolution and background processes** (not started; design questions to settle first):
-- Resolving the warehouse per request: mapped hostname (locked) → `?w=<id>` (sets the selector cookie, redirects) → selector cookie →
-  chooser; machine URLs prefixed `/w/<id>` for `/api/*`, `/up` and `/.well-known/ri-instance.json`, stripped for routing only (signatures
-  are checked against the original URI); unprefixed machine URLs stay on the default warehouse; a `/w/<other>` prefix or `?w` on a
-  mapped host is refused. A failed resolution must `forget()`.
-- The fail-closed tab guard (`X-RI-Warehouse` on JSON calls, a hidden `w` on form posts, refusing non-GET and Inertia visits that don't
-  name the current warehouse; the warehouse id stored in the session; download links carry the warehouse).
-- Per-warehouse browser storage and device cookies (`ri_print_last_<media>`, `pin_device_token`, `device_session`).
-- `RIK-` credentials tied to the warehouse (a credential-format change: `federation-signing-vectors.json` and the PHP, Rust and Pi
-  implementations together); the well-known document reports the warehouse id; "domain verified" only for a warehouse with its own host.
-- Trusted hosts (`warehouse_domains` + `APP_URL`'s host) and the URL root / log context switch tasks, so links never come from the
-  request's `Host` header and queued jobs and commands build them correctly.
-- Queue: jobs and failed jobs in the control schema, the warehouse id in every payload, a `JobProcessing` switch, a job with no warehouse
-  fails (no default), `ShouldBeEncrypted` for jobs with personal data. Scheduler: `warehouse:each <command>`. Reverb: channel names
-  prefixed with the warehouse, and the channel authorisation checks the prefix. Commands: `--warehouse`, required for destructive ones
-  once there is more than one warehouse.
-- Feedback reports record the warehouse id as well as the host.
+**Phase 2 — the rest:** see "Still open from phase 2" above. The chooser moved to phase 3 with the `listed` flag it needs.
 
 **Phase 3 — provisioning and new warehouses:**
 - Per-warehouse database users (`ri_<id>`, the narrow grant list, `max_user_connections`); the provisioner credential only in a small

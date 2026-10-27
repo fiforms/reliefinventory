@@ -59,11 +59,16 @@ Useful artisan commands specific to this project: `php artisan user:create`, `ph
 
 ## Architecture
 
-**Multi-warehouse instances are designed but not built** (2026-10-27) — `MULTI_WAREHOUSE.md` is the design: one MariaDB schema,
+**Multi-warehouse instances are partly built** (designed 2026-10-27) — `MULTI_WAREHOUSE.md` is the design: one MariaDB schema,
 storage directory, `WAREHOUSE_KEY` and DB user per warehouse; a control schema; central `accounts` (credentials) with per-warehouse
-`people`; a standard training warehouse; per-warehouse maintenance/backup/restore. Today an instance is still exactly one
-warehouse, so everything below is accurate as written; read that doc before changing sessions, login/auth, `storage_path()` use,
-backups/restore, the queue or scheduler, or anything else that assumes "one instance = one database". It also decides that
+`people`; a standard training warehouse; per-warehouse maintenance/backup/restore. Phases 0–2 are built (§18 of that doc): requests, jobs and commands each
+run in one warehouse (`WarehouseContext`; `ResolveWarehouse` picks it from the hostname, `/w/<id>` on machine URLs, `?w=` or the
+`ri_warehouse` cookie), but nothing creates a second warehouse yet (phase 3), so an instance still has exactly one and everything below
+is accurate as written. Read that doc before changing sessions, login/auth, `storage_path()` use, backups/restore, the queue or
+scheduler, broadcast channels, cookies, emailed links, or anything else that assumes "one instance = one database". In short: every
+request names its warehouse (`X-RI-Warehouse`, `GuardWarehouseTab`); emailed links come from `Warehouse::publicUrl()`, never the Host
+header; long-lived cookies use `WarehouseContext::cookieName()`; broadcast channels use `Warehouse::channel()`; commands take
+`--warehouse`; tests that need a second warehouse use `tests/SecondWarehouse.php`. It also decides that
 in-warehouse Training Mode (below) will be removed in favour of a separate, seeded training warehouse — don't extend Training Mode.
 
 ### Backend: Laravel + Inertia, JSON API under `/json`
