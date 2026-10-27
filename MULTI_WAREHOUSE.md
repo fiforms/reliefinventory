@@ -51,10 +51,12 @@ sessions/cache/queue (all `database` driver today) follow the connection. The wo
 Cross-warehouse reporting, per-warehouse quotas, self-service warehouse creation, moving a warehouse between instances as a one-click
 operation (the backup/restore design supports it, the UI doesn't), shared data between warehouses.
 
-**Recommended — which installs get it:** at first, multiple warehouses only on the Docker image. Bare metal (`update.sh` tiered
-backups, systemd timers), the RI Launcher (which writes its own compose file) and the R Station local server stay single-warehouse
-until each is planned on its own. On a Pi in particular, a mandatory training warehouse costs RAM and upgrade time for little
-benefit, so "every instance has a training warehouse" applies to Docker instances.
+**Which installs get it (decided 2026-10-27):** every install that runs the Docker image, which includes the **RI Launcher** and
+the **R Station local server** (both run the same image). Only **bare metal** (systemd, `update.sh` tiered backups) stays
+single-warehouse. One thing to keep in step: the image is shared, but the compose files aren't. The Launcher embeds
+`docker/compose.yaml` (`launcher/core/src/compose.rs`) and regenerates it on every start, while the R Station has its own
+`rstation/product/offline/compose.yaml`. So any compose change this plan needs (the secrets volume, the provisioner credential, the
+provisioning worker, §7) has to reach both, and the Launcher's compose test must still pass.
 
 ## 2. Vocabulary and layout
 
@@ -669,7 +671,8 @@ instance-wide operations always need the account password re-entered, never a PI
 (§13); account-level signed links use `APP_KEY`, and password reset tokens live in the accounts schema (§5); the training switch
 stays, as enable/disable of the training warehouse (§12).
 
-Also decided 2026-10-27: the trust model (§1); new warehouses are handed over with a one-time setup code (§7, outline decided,
+Also decided 2026-10-27: the trust model (§1); every Docker-image install gets multiple warehouses, including the Launcher
+and the R Station local server, and only bare metal doesn't (§1); new warehouses are handed over with a one-time setup code (§7, outline decided,
 details recommended); existing test instances are upgraded in place (§15).
 
 Still to design during implementation (problems stated, no design yet): the instance console and the multi-warehouse test setup
@@ -683,4 +686,4 @@ removal mechanics (§6) — plus everything else the review raised: the `members
 guard, per-warehouse browser storage and device cookies, trusted hosts, look-alike names (§3); machine URL details and domain
 verification (§4); a separate provisioning worker, narrower DB grants, setup-wizard latch for new warehouses (§7); no
 default-to-warehouse-1, encrypted jobs, Reverb channel checks (§9); the upgrade recovery corrections (§10); live-state tables out of
-dumps (§11); which installs get multiple warehouses (§1); Turnstile hostnames, logs, disk use, feedback reports (§13).
+dumps (§11); Turnstile hostnames, logs, disk use, feedback reports (§13).
