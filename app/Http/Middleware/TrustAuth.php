@@ -89,7 +89,11 @@ class TrustAuth
         if (! $trust || ! $trust->isClient()) {
             return null;
         }
-        $message = RequestSigner::bearerMessage($parts['uuid'], $request->getHttpHost(), $parts['iat'], $parts['exp']);
+        // The audience is the server's address as the client knows it: the Host, plus `/w/<id>` when it reached this
+        // warehouse through a prefix (MULTI_WAREHOUSE.md §4) — so a credential minted for one warehouse on a shared
+        // host can't be replayed against another, even by a client that kept one key across both pairings.
+        $audience = $request->getHttpHost().$request->attributes->get('ri.warehouse_prefix', '');
+        $message = RequestSigner::bearerMessage($parts['uuid'], $audience, $parts['iat'], $parts['exp']);
         if (! RequestSigner::verify($message, $parts['sig'], $trust->public_key)
             || (int) config('federation.max_bearer_seconds') < $parts['exp'] - $parts['iat']) {
             return null;
@@ -126,7 +130,9 @@ class TrustAuth
         }
 
         $canonical = RequestSigner::canonical(
-            $request->method(), $request->getRequestUri(), $request->getHttpHost(), (int) $timestamp, $nonce, $request->getContent(),
+            // The URI as sent, `/w/<id>` prefix included (ResolveWarehouse strips it for routing only): a signature made
+            // for one warehouse's address must not pass at another's.
+            $request->method(), $request->attributes->get('ri.original_uri', $request->getRequestUri()), $request->getHttpHost(), (int) $timestamp, $nonce, $request->getContent(),
         );
         if (! RequestSigner::verify($canonical, $signature, $trust->public_key)) {
             return null;

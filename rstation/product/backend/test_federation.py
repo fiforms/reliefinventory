@@ -107,6 +107,15 @@ def test_server_host_is_what_the_server_sees(url, host):
     assert federation.server_host(url) == host
 
 
+@pytest.mark.parametrize("url, audience", [
+    ("https://ri.example.org", "ri.example.org"), ("https://ri.example.org/app", "ri.example.org"),
+    ("https://ri.example.org/w/K7Q2X9MD", "ri.example.org/w/K7Q2X9MD"), ("http://10.0.0.5:8080/w/k7q2x9md/", "10.0.0.5:8080/w/k7q2x9md"),
+    ("https://ri.example.org/w/short", "ri.example.org"),
+])
+def test_server_audience_includes_a_warehouse_prefix(url, audience):
+    assert federation.server_audience(url) == audience
+
+
 def test_credential_times_ignores_anything_else():
     assert federation.credential_times("a-legacy-random-token") is None
     assert federation.credential_times("RIK-x.1.2") is None

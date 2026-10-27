@@ -130,10 +130,18 @@ pub fn normalize_server_url(input: &str) -> Result<String, String> {
     if !matches!(u.scheme(), "http" | "https") || u.host_str().is_none() {
         return Err("The server address must start with http:// or https://.".into());
     }
-    // Only the origin matters: a pasted page address (…/setup/trust) must not become part of every API path.
+    // Only the origin matters: a pasted page address (…/setup/trust) must not become part of every API path. The one
+    // exception is a warehouse prefix, `/w/<id>`: on a host shared by several warehouses it is what picks this one
+    // (MULTI_WAREHOUSE.md §4), and it is part of every path we send and sign.
     let mut origin = format!("{}://{}", u.scheme(), u.host_str().unwrap_or_default());
     if let Some(p) = u.port() {
         origin.push_str(&format!(":{p}"));
+    }
+    let mut segments = u.path_segments().into_iter().flatten();
+    if let (Some("w"), Some(id)) = (segments.next(), segments.next()) {
+        if id.len() == 8 && id.chars().all(|c| c.is_ascii_alphanumeric()) {
+            origin.push_str(&format!("/w/{}", id.to_ascii_uppercase()));
+        }
     }
     Ok(origin)
 }
@@ -429,6 +437,9 @@ mod tests {
         assert_eq!(normalize_server_url("http://10.0.0.5:8000//").unwrap(), "http://10.0.0.5:8000");
         assert_eq!(normalize_server_url("https://ri.example.org/setup/trust?x=1").unwrap(), "https://ri.example.org");
         assert!(normalize_server_url("").is_err() && normalize_server_url("ftp://x").is_err());
+        // a warehouse on a shared host keeps its prefix, and nothing after it
+        assert_eq!(normalize_server_url("https://ri.example.org/w/k7q2x9md/setup/trust").unwrap(), "https://ri.example.org/w/K7Q2X9MD");
+        assert_eq!(normalize_server_url("https://ri.example.org/w/short").unwrap(), "https://ri.example.org");
     }
 
     #[test]

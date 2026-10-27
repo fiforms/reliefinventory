@@ -8,7 +8,8 @@ namespace App\Services\Federation;
 use InvalidArgumentException;
 
 /**
- * A peer's address as an origin (scheme://host[:port]). Anything an admin or a peer hands us that we are about
+ * A peer's address as an origin (scheme://host[:port]), plus a `/w/<id>` path when the peer is one warehouse of
+ * several on a shared host (MULTI_WAREHOUSE.md §4); any other path is dropped. Anything an admin or a peer hands us that we are about
  * to fetch goes through here first, so a trust cannot be used to make this server probe its own network.
  * (A host's DNS can still change between this check and the request; the fetch itself never follows redirects.)
  */
@@ -25,7 +26,21 @@ class PeerUrl
             throw new InvalidArgumentException('That is not a valid address.');
         }
 
-        return strtolower($parts['scheme']).'://'.strtolower($parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : '');
+        $warehouse = preg_match('#^/w/([A-Za-z0-9]{8})(/|$)#', $parts['path'] ?? '', $m) ? '/w/'.strtoupper($m[1]) : '';
+
+        return strtolower($parts['scheme']).'://'.strtolower($parts['host']).(isset($parts['port']) ? ':'.$parts['port'] : '').$warehouse;
+    }
+
+    /** The `/w/<id>` part of a normalized address, or ''. Request paths start with it, and signatures cover it. */
+    public static function basePath(string $address): string
+    {
+        return (string) parse_url($address, PHP_URL_PATH);
+    }
+
+    /** scheme://host[:port] of a normalized address, without any warehouse path. */
+    public static function origin(string $address): string
+    {
+        return substr($address, 0, strlen($address) - strlen(self::basePath($address)));
     }
 
     /** @throws InvalidArgumentException when the origin may not be contacted under this instance's settings */

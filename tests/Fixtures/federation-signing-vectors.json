@@ -30,6 +30,14 @@
             "exp": 1791209600,
             "message": "ri-bearer-v1\nc1a2b3d4-0000-4000-8000-000000000001\nrelief.example.org:8443\n1790000000\n1791209600",
             "token": "RIK-YzFhMmIzZDQtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAx.1790000000.1791209600.5NH57E3q7xjq2pq9GUGqKKuzrSW2A3vX7cel7MuwPj64cq4mb51kjnvPCQU2HtRgS9l2EHl2oFG9cmol40siAQ"
+        },
+        {
+            "uuid": "c1a2b3d4-0000-4000-8000-000000000001",
+            "host": "Relief.Example.org/w/K7Q2X9MD",
+            "iat": 1790000000,
+            "exp": 1791209600,
+            "message": "ri-bearer-v1\nc1a2b3d4-0000-4000-8000-000000000001\nrelief.example.org/w/k7q2x9md\n1790000000\n1791209600",
+            "token": "RIK-YzFhMmIzZDQtMDAwMC00MDAwLTgwMDAtMDAwMDAwMDAwMDAx.1790000000.1791209600.o6ICDGuNBApheXfGvTp3yslD0sSRoztdWzK1exI3X0UyOBvxOcaDHMJy5kM6wORtwqAbANYw_vtBUo9lGNBpDQ"
         }
     ]
 }

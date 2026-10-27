@@ -7,7 +7,7 @@ and this product's own print_api.py). So the device keeps a credential **signed 
 
     RIK-<base64url uuid>.<issued-at>.<expires-at>.<signature>
 
-signature = Ed25519 over `"ri-bearer-v1\\n" uuid "\\n" server host "\\n" issued-at "\\n" expires-at`. The server holds only
+signature = Ed25519 over `"ri-bearer-v1\\n" uuid "\\n" server host[/w/<warehouse>] "\\n" issued-at "\\n" expires-at`. The server holds only
 the public key, accepts a credential for its own host only, and answers an expired one with 419 (never 401 — the
 platform wipes its pairing on any 401). `maintain()` mints a fresh credential every few hours. The private key
 lives in `/data/federation-key`, outside the platform's wipe list, so un-pairing forgets the server but not the
@@ -33,6 +33,7 @@ import email.utils
 import hashlib
 import logging
 import os
+import re
 import time
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -218,6 +219,13 @@ def server_host(server_url: str) -> str:
     return f"{host}:{parts.port}" if parts.port and parts.port != default else host
 
 
+def server_audience(server_url: str) -> str:
+    """What a credential is minted for: the Host, plus the `/w/<id>` warehouse prefix when the server URL has one (a
+    warehouse on a host shared with others), so it is accepted by that warehouse only (MULTI_WAREHOUSE.md §4)."""
+    match = re.match(r"^/w/([A-Za-z0-9]{8})(/|$)", urlsplit(server_url).path)
+    return server_host(server_url) + (f"/w/{match.group(1)}" if match else "")
+
+
 # ---- the credential file ----------------------------------------------------------------------------------
 
 def write_credential(token: str, keep_mtime: float | None = None) -> None:
@@ -302,7 +310,7 @@ async def federated_pair(code: str, device_name: str, transport: httpx.AsyncBase
 
     data = resp.json()
     now = date_header_seconds(resp) or int(time.time())  # the server's time, not this device's
-    write_credential(mint_credential(seed, uuid, server_host(server), now, now + CREDENTIAL_SECONDS))
+    write_credential(mint_credential(seed, uuid, server_audience(server), now, now + CREDENTIAL_SECONDS))
 
     # The rest is what the platform's pair() does after it has a token.
     pairing.write_device_name(device_name)
@@ -369,7 +377,7 @@ async def refresh_once(now: float | None = None, transport: httpx.AsyncBaseTrans
         # Fresh: issued recently (by a clock that agrees with ours) and good for at least another refresh interval.
         if 0 <= now - times[0] < REFRESH_AFTER_SECONDS and times[1] - now > REFRESH_AFTER_SECONDS:
             return "fresh"
-        write_credential(mint_credential(seed, uuid, server_host(server), now, now + CREDENTIAL_SECONDS), keep_mtime=mtime)
+        write_credential(mint_credential(seed, uuid, server_audience(server), now, now + CREDENTIAL_SECONDS), keep_mtime=mtime)
         return "refreshed"
 
     # A token from before federation: not ours to refresh. The server no longer honours it, so the platform's next

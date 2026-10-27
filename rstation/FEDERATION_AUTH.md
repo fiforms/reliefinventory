@@ -33,6 +33,16 @@ older bearer-token pairing in `rstation/platform/docs/DEVICE_CONTRACT.md` for th
 Pairing again with the same `uuid` re-attaches the existing record; a different key is accepted only with a
 fresh code and is recorded as a key change. Un-pairing on the client forgets the server, not the key.
 
+## Warehouses: the server address can carry a path
+
+An instance can host several warehouses (`MULTI_WAREHOUSE.md`). Each is a separate server as far as a client is
+concerned — its own identity key, trusts, pairing codes and grants — and is addressed **by URL**: its own hostname,
+or `https://host/w/<id>` on a host shared with other warehouses (`<id>` is 8 letters and digits). A client keeps the
+whole URL it was given as its server address and puts every path after it: `https://host/w/K7Q2X9MD/api/federation/v1/pair`.
+An address without `/w/<id>` reaches the instance's default warehouse, which is where everything paired before there
+were several warehouses lives, so existing clients need no change. `/.well-known/ri-instance.json` also reports the
+`warehouse` id and `shared_host` (true when the address is shared, so its domain can't vouch for this warehouse alone).
+
 ## Signing a request
 
 Send these headers: `X-RI-Trust` (the client's `uuid`), `X-RI-Timestamp` (unix seconds), `X-RI-Nonce`
@@ -40,7 +50,7 @@ Send these headers: `X-RI-Trust` (the client's `uuid`), `X-RI-Timestamp` (unix s
 with `\n`:
 
     METHOD                      upper-case
-    PATH?QUERY                  exactly as sent, e.g. /api/devices/print-jobs?x=1
+    PATH?QUERY                  exactly as sent, e.g. /api/devices/print-jobs?x=1 — including any /w/<id> prefix
     HOST                        lower-case, with the port only if it is not the scheme's default
     TIMESTAMP
     NONCE
@@ -70,11 +80,13 @@ place and refreshes it in the background:
 
     ri-bearer-v1
     <uuid>
-    <server host, lower-case, port only if not the scheme's default>
+    <server host, lower-case, port only if not the scheme's default>[/w/<id>]
     <issued-at>
     <expires-at>
 
-The server accepts it only for its own host, only for a `rstation` or `print_client` trust, only if
+The audience line is the host, followed by the server address's `/w/<id>` warehouse prefix when it has one
+(lower-cased with the rest), so a credential for one warehouse is refused by another on the same host — even when
+the client paired both with the same key. The server accepts it only for its own address, only for a `rstation` or `print_client` trust, only if
 `expires-at − issued-at` is at most 31 days, and only within `[issued-at − 5 min, expires-at)`. It carries no
 server-side state, so a cache flush or a database restore cannot invalidate it. Stealing one lets the thief act as
 that device until it expires or the trust is revoked — which is why a client that *can* sign per request should.

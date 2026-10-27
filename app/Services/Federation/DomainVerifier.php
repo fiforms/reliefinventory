@@ -43,6 +43,12 @@ class DomainVerifier
             $doc = self::fetchIdentity($trust->base_url);
             $ok = hash_equals($trust->public_key, (string) $doc['public_key']) && ($doc['uuid'] ?? null) === $trust->peer_uuid;
             $message = $ok ? 'The address publishes the key this trust is pinned to.' : 'The address publishes a different key or identity than this trust.';
+            // Several warehouses on one address: the domain belongs to whoever hosts them, so it can't vouch for this
+            // one's organization (MULTI_WAREHOUSE.md §4). Only a warehouse with a hostname of its own can be verified.
+            if ($ok && ($doc['shared_host'] ?? false) === true) {
+                $ok = false;
+                $message = 'That address is shared by several warehouses, so its domain can\'t vouch for this one. The trust stays approved by an administrator.';
+            }
         } catch (Throwable $e) {
             $ok = false;
             $message = $e instanceof InvalidArgumentException ? $e->getMessage() : 'Could not reach that address.';

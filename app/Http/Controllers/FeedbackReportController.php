@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Mail\FeedbackReportStatusUpdated;
 use App\Mail\FeedbackReportSubmitted;
+use App\Models\Control\Warehouse;
 use App\Models\FeedbackReport;
 use App\Models\FeedbackReportStatusLog;
 use App\Services\FeedbackContentScanner;
@@ -64,6 +65,7 @@ class FeedbackReportController extends Controller
 
         $report = FeedbackReport::create([
             'person_id' => Auth::id(),
+            'warehouse_id' => Warehouse::current()->id,
             'type' => $data['type'],
             'urgent' => $data['urgent'] ?? false,
             'message' => $data['message'],

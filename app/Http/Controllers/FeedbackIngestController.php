@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\FeedbackReport;
+use App\Services\Federation\PeerUrl;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -38,7 +39,10 @@ class FeedbackIngestController extends Controller
     {
         $trust = $request->attributes->get('trust');
         $data = $request->validate(['reports' => ['required', 'array', 'min:1']]);
-        $identifier = parse_url((string) $trust->base_url, PHP_URL_HOST) ?: $trust->name;
+        // The host, plus `/w/<id>` for a warehouse sharing its host with others (MULTI_WAREHOUSE.md §4).
+        $identifier = parse_url((string) $trust->base_url, PHP_URL_HOST)
+            ? parse_url((string) $trust->base_url, PHP_URL_HOST).PeerUrl::basePath(PeerUrl::normalize((string) $trust->base_url))
+            : $trust->name;
 
         return $this->ingest($data['reports'], (string) $identifier, $trust->id);
     }
@@ -51,6 +55,7 @@ class FeedbackIngestController extends Controller
             foreach ($reports as $incoming) {
                 $validator = Validator::make($incoming, [
                     'uuid' => ['required', 'uuid'],
+                    'warehouse_id' => ['nullable', 'string', 'max:8'],
                     'type' => ['required', Rule::in(['bug', 'feature'])],
                     'message' => ['required', 'string'],
                     'page_url' => ['required', 'string'],
@@ -96,6 +101,7 @@ class FeedbackIngestController extends Controller
             'flagged_reason' => $incoming['flagged_reason'] ?? null,
             'reporter_name' => $incoming['reporter_name'] ?? null,
             'reporter_email' => $incoming['reporter_email'] ?? null,
+            'warehouse_id' => $incoming['warehouse_id'] ?? null,
             'trust_id' => $trustId,
         ];
 

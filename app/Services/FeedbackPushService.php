@@ -202,6 +202,7 @@ class FeedbackPushService
     {
         return [
             'uuid' => $report->uuid,
+            'warehouse_id' => $report->warehouse_id,
             'type' => $report->type,
             'urgent' => $report->urgent,
             'message' => $report->message,
