@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use ri_launcher_core::backups::{self, BackupFile};
 use ri_launcher_core::platform::{InstallOutcome, Platform, State as RunState};
+use ri_launcher_core::remote::{Options as RemoteOptions, Paired, RemoteBackups, ServerView};
 use ri_launcher_core::sdimage::{self, ImageInfo};
 use ri_launcher_core::service::{Launcher, Summary};
 use ri_launcher_core::settings::{Mode, Settings};
@@ -30,6 +31,8 @@ type L = Launcher<DefaultBackend>;
 
 struct AppState {
     launcher: Arc<L>,
+    /// Remote servers this computer is paired with, whose backups it pulls on a schedule.
+    remote: Arc<RemoteBackups>,
     image: Arc<Mutex<ImageDownload>>,
     image_cancel: Arc<AtomicBool>,
 }
@@ -229,6 +232,42 @@ async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String)
 #[tauri::command]
 async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), String> {
     backups::import(state.launcher.platform().as_ref(), std::path::Path::new(&path)).await.map_err(err)
+}
+
+// ---- Remote backups: servers this computer is paired with (federation backup trust) ----
+
+#[tauri::command]
+fn remote_list(state: State<'_, AppState>) -> Vec<ServerView> {
+    state.remote.list()
+}
+
+#[tauri::command]
+async fn remote_pair(state: State<'_, AppState>, address: String, code: String, name: Option<String>) -> Result<Paired, String> {
+    state.remote.pair(&address, &code, name.as_deref()).await.map_err(err)
+}
+
+#[tauri::command]
+fn remote_configure(state: State<'_, AppState>, id: String, options: RemoteOptions) -> Result<(), String> {
+    state.remote.configure(&id, options)
+}
+
+/// Starts a backup in the background; the window follows `remote_list` for its progress.
+#[tauri::command]
+fn remote_backup_now(state: State<'_, AppState>, id: String) -> Result<(), String> {
+    state.remote.start_now(&id)
+}
+
+#[tauri::command]
+fn remote_remove(state: State<'_, AppState>, id: String, delete_files: bool) -> Result<(), String> {
+    state.remote.remove(&id, delete_files)
+}
+
+/// Shows the folder holding a server's copies in the file manager (created first, so there is something to open).
+#[tauri::command]
+fn remote_reveal(app: AppHandle, state: State<'_, AppState>, id: String) -> Result<(), String> {
+    let folder = state.remote.folder(&id).ok_or("That server isn't in the list.")?;
+    std::fs::create_dir_all(&folder).map_err(err)?;
+    app.opener().open_path(folder.to_string_lossy(), None::<&str>).map_err(err)
 }
 
 #[tauri::command]
@@ -453,7 +492,8 @@ fn main() {
             get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, backups_list, backup_create, backup_export,
             backup_import, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
-            image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page
+            image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page, remote_list, remote_pair,
+            remote_configure, remote_backup_now, remote_remove, remote_reveal
         ])
         .on_window_event(|window, event| {
             // The window is just a view; closing it leaves Relief Inventory (and its LAN proxy) running in the tray.
@@ -467,7 +507,10 @@ fn main() {
             let launcher = make_launcher();
             #[cfg(not(windows))]
             recover_interrupted_install(launcher.dir());
-            app.manage(AppState { launcher: launcher.clone(), image: Arc::default(), image_cancel: Arc::default() });
+            let remote = RemoteBackups::new(&data_dir()).map_err(|e| format!("could not set up remote backups: {e}"))?;
+            // scheduled backups of paired remote servers run for as long as the launcher does (it lives in the tray)
+            tauri::async_runtime::spawn(remote.clone().run_forever());
+            app.manage(AppState { launcher: launcher.clone(), remote, image: Arc::default(), image_cancel: Arc::default() });
 
             let open = MenuItem::with_id(app, "open_app", "Open Relief Inventory", true, None::<&str>)?;
             let show = MenuItem::with_id(app, "show", "Show RI Launcher", true, None::<&str>)?;
@@ -546,7 +589,8 @@ fn main() {
 }
 
 /// macOS Cmd-Q and the Dock's Quit ask the app to exit without going through the tray menu, which would stop the
-/// LAN proxy while Docker keeps running. Treat them like closing the window while the server is running (stay in the
+/// LAN proxy while Docker keeps running. Treat them like closing the window while the server is running, or while a
+/// scheduled backup of a remote server is waiting to happen (stay in the
 /// menu bar; the tray's "Shut Down Server and Quit" is the way out) and quit normally when it isn't. Only a request
 /// from outside is held back: our own `app.exit(0)` carries an exit code, so the tray's Quit still works. Other
 /// platforms have no such path (closing the window already hides it), and holding back a logoff would be wrong.
@@ -556,9 +600,10 @@ fn keep_running_while_serving(app: &AppHandle, api: tauri::ExitRequestApi) {
     }
     api.prevent_exit();
     let app = app.clone();
-    let launcher = app.state::<AppState>().launcher.clone();
+    let (launcher, remote) = (app.state::<AppState>().launcher.clone(), app.state::<AppState>().remote.clone());
     tauri::async_runtime::spawn(async move {
-        if launcher.platform().state().await.ok() == Some(RunState::Running) {
+        // a scheduled backup that never runs because the program quit is as bad as a stopped proxy
+        if launcher.platform().state().await.ok() == Some(RunState::Running) || remote.has_active_schedule() {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.hide();
             }

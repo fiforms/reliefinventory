@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import * as api from './api'
 import iconUrl from './assets/icon.png'
 import splashUrl from './assets/splash.webp'
+import RemoteBackups from './RemoteBackups.vue'
 import RStationImage from './RStationImage.vue'
 
 const summary = ref(null)
@@ -16,7 +17,8 @@ const confirming = ref('') // 'uninstall' | 'restore' | ''
 const keepData = ref(true)
 const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
 const restoreFile = ref('')
-const tab = ref(new URLSearchParams(location.search).get('mock')?.startsWith('image') ? 'image' : 'app') // 'app' | 'backups' | 'image'
+const mockTab = new URLSearchParams(location.search).get('mock') || ''
+const tab = ref(mockTab.startsWith('image') ? 'image' : mockTab.startsWith('remote') ? 'remote' : 'app') // 'app' | 'backups' | 'remote' | 'image'
 const form = reactive({ hostname: '', port: 8080, timezone: '' })
 let formLoaded = false
 let timer
@@ -173,10 +175,12 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
         <nav class="tabs" role="tablist">
             <button role="tab" :aria-selected="tab === 'app'" :class="{ on: tab === 'app' }" @click="tab = 'app'">Local RI Server</button>
             <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Backups</button>
+            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote backups</button>
             <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image' }" @click="tab = 'image'">R Station SD card</button>
         </nav>
 
         <RStationImage v-if="tab === 'image'" @note="note" />
+        <RemoteBackups v-if="tab === 'remote'" @note="note" />
 
         <!-- Backups tab -->
         <section v-if="tab === 'backups'" class="card">
@@ -390,7 +394,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 .mark { width: 32px; height: 32px; }
 .pre { white-space: pre-wrap; margin: 0 0 8px; }
 .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
-.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; background: transparent; padding: 8px 14px; font-weight: 600; color: var(--muted); }
+.tabs button { border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; background: transparent; padding: 8px 10px; font-weight: 600; color: var(--muted); }
 .tabs button.on { color: inherit; border-bottom-color: var(--accent); }
 .statusline { display: flex; gap: 8px; margin: 0 0 10px; }
 .splash { width: 100%; border-radius: 10px; display: block; }

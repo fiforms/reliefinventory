@@ -163,6 +163,17 @@ daily zips are recorded, so they appear in the admin page's Backups list; all ar
 > To bring parity, `BackupService::prune()` would need `update.sh`'s promote/prune-by-tier logic (a promoted zip is a hard
 > link) and `RI_BACKUP_KEEP_*` settings, with the schedule shown read-only as it is now. See TODO.md item 14.
 
+## Off-site copies pulled by the RI Launcher (federation `backup_client`)
+
+A desktop computer running the RI Launcher can keep its own scheduled copies of this server's backups, without anyone logging in to
+download them. An administrator pairs it once in the **Trust Console** (`/setup/trust` → "Pair something new" → *Backup client (RI Launcher)*,
+grant "Backup and reporting operator" = `operator.full_read`); the launcher then asks the server to make a backup
+(`POST /api/federation/v1/backups`), downloads it resumably, checks its SHA-256 and keeps the newest N. Those backups are the same zips as the
+admin page makes (and count as "one at a time" with them), they expire on the server after `RI_BACKUP_KEEP_DAYS` like any on-demand backup, and
+every request and download is in the trust's audit log. Revoking the trust in the console stops it at once. Spec: `rstation/FEDERATION_AUTH.md`
+("Backups"); the client: `launcher/README.md` ("Remote backups tab"). The zip never holds `APP_KEY`, but it does hold password hashes and
+personal data, which is why the grant is rated high risk — pair only a computer you control.
+
 ## Restoring
 
 **Onto a brand-new instance — the first-run wizard** (`/install` → "Restore from a backup"). Creating or emptying an instance

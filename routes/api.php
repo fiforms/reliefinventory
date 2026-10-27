@@ -8,6 +8,7 @@ use App\Http\Controllers\DeviceHeartbeatController;
 use App\Http\Controllers\DevicePrintJobController;
 use App\Http\Controllers\DeviceSessionController;
 use App\Http\Controllers\DeviceUpdateCheckController;
+use App\Http\Controllers\FederationBackupController;
 use App\Http\Controllers\FederationController;
 use App\Http\Controllers\FeedbackIngestController;
 use Illuminate\Support\Facades\Route;
@@ -43,4 +44,11 @@ Route::prefix('federation/v1')->group(function () {
     Route::post('/session', [FederationController::class, 'session'])->middleware(['trust-auth:,signed', 'throttle:60,1']);
     Route::post('/feedback', [FeedbackIngestController::class, 'storeFromTrust'])->middleware(['trust-auth:feedback.send', 'throttle:120,1']);
     Route::get('/grants', [FederationController::class, 'grants'])->middleware(['trust-auth', 'throttle:120,1']);
+    // Backups for an operator tool such as the RI Launcher (operator.full_read): list, ask for a new one, watch it, download it.
+    Route::prefix('backups')->middleware('trust-auth:operator.full_read')->group(function () {
+        Route::get('/', [FederationBackupController::class, 'index'])->middleware('throttle:fed-backup-read');
+        Route::post('/', [FederationBackupController::class, 'store'])->middleware('throttle:fed-backup-create');
+        Route::get('/{id}', [FederationBackupController::class, 'show'])->whereNumber('id')->middleware('throttle:fed-backup-read');
+        Route::get('/{id}/download', [FederationBackupController::class, 'download'])->whereNumber('id')->middleware('throttle:fed-backup-download');
+    });
 });

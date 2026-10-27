@@ -26,7 +26,7 @@ const error = ref('');
 const notice = ref('');
 const busy = ref(false);
 
-const kindLabels = { instance: 'Another instance', print_client: 'Print client', rstation: 'R Station' };
+const kindLabels = { instance: 'Another instance', print_client: 'Print client', rstation: 'R Station', backup_client: 'Backup client (RI Launcher)' };
 const methodLabels = { pairing_code: 'Approved by Admin via shared code', domain_verified: 'Approved by Admin, domain verified' };
 const riskClass = { low: 'bg-green-100 text-green-800', medium: 'bg-amber-100 text-amber-800', high: 'bg-red-100 text-red-800' };
 
@@ -42,7 +42,8 @@ const confirmRevoke = ref(null);
 const confirmRegenerate = ref(false);
 const regenerateText = ref('');
 
-const isClientKind = computed(() => codeForm.kind !== 'instance');
+// A device (print client, R Station) belongs to a location; a backup client and another instance don't.
+const isClientKind = computed(() => ['print_client', 'rstation'].includes(codeForm.kind));
 
 function describe(code) {
 	return (data.value?.permissions ?? []).find((p) => p.key === code);
@@ -92,7 +93,7 @@ const regenerate = () => run(async () => {
 }, 'Could not generate a new key.');
 
 function pickKind() {
-	codeForm.grants = codeForm.kind === 'instance' ? [] : ['print.share'];
+	codeForm.grants = codeForm.kind === 'instance' ? [] : codeForm.kind === 'backup_client' ? ['operator.full_read'] : ['print.share'];
 }
 
 function toggle(list, key) {
