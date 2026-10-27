@@ -31,4 +31,4 @@
 <p><strong>Running commit:</strong> {{ $report->commit_hash }}</p>
 @endif
 
-<p><a href="{{ config('app.url') }}/setup/feedback">View in Relief Inventory</a></p>
+<p><a href="{{ \App\Models\Control\Warehouse::current()->publicUrl('/setup/feedback') }}">View in Relief Inventory</a></p>

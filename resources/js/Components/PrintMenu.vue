@@ -51,6 +51,7 @@
 <script>
 import Modal from '@/Components/Modal.vue';
 import { onPrintEvent } from '@/realtime';
+import { warehouseStorageKey, withWarehouse } from '@/bootstrap';
 
 // Printer lists are small and shared by every menu on a page, so cache them
 // briefly per media type rather than refetching on every open.
@@ -149,7 +150,7 @@ export default {
 	},
 	methods: {
 		storageKey() {
-			return 'ri_print_last_' + this.media;
+			return warehouseStorageKey('ri_print_last_' + this.media);
 		},
 		async openDialog() {
 			if (this.busy) return;
@@ -238,7 +239,7 @@ export default {
 			const tab = this.prepare ? window.open('', '_blank') : null;
 			try {
 				const resolved = await this.resolve();
-				const href = resolved?.downloadHref;
+				const href = withWarehouse(resolved?.downloadHref);
 				if (!href) {
 					tab?.close();
 					return;

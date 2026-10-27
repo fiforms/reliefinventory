@@ -9,6 +9,7 @@ use App\Models\DeviceTrustGrant;
 use App\Models\Person;
 use App\Models\PinLoginSetting;
 use App\Models\TrustedDevice;
+use App\Services\Warehouses\WarehouseContext;
 use App\Support\UserAgent;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -28,6 +29,12 @@ class PinLoginService
     private const COOKIE_NAME = 'pin_device_token';
 
     private const COOKIE_YEARS = 5;
+
+    /** Per warehouse: approving a shared tablet for one warehouse must not replace its trust in another (MULTI_WAREHOUSE.md §3). */
+    private static function cookieName(): string
+    {
+        return app(WarehouseContext::class)->cookieName(self::COOKIE_NAME);
+    }
 
     public function settings(): PinLoginSetting
     {
@@ -70,7 +77,7 @@ class PinLoginService
         }
 
         $token = Str::random(64);
-        Cookie::queue(Cookie::make(self::COOKIE_NAME, $token, 60 * 24 * 365 * self::COOKIE_YEARS, null, null, null, true));
+        Cookie::queue(Cookie::make(self::cookieName(), $token, 60 * 24 * 365 * self::COOKIE_YEARS, null, null, null, true));
 
         return TrustedDevice::create($attributes + $seen + ['device_token' => $token, 'requested_at' => now()]);
     }
@@ -113,7 +120,7 @@ class PinLoginService
             return false;
         }
 
-        $token = $request->cookie(self::COOKIE_NAME);
+        $token = $request->cookie(self::cookieName());
         if (! $token) {
             return false;
         }
@@ -129,7 +136,7 @@ class PinLoginService
      */
     public function deviceFromCookie(Request $request): ?TrustedDevice
     {
-        $token = $request->cookie(self::COOKIE_NAME);
+        $token = $request->cookie(self::cookieName());
         if (! $token) {
             return null;
         }

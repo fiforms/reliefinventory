@@ -18,9 +18,14 @@ use RuntimeException;
 class WarehouseContext
 {
     /** @var list<class-string<SwitchTask>> */
-    public const TASKS = [SwitchDatabase::class, SwitchKey::class, SwitchStorage::class];
+    public const TASKS = [SwitchDatabase::class, SwitchKey::class, SwitchStorage::class, SwitchCache::class, SwitchLogContext::class, SwitchUrlRoot::class];
+
+    /** Names the browser's chosen warehouse (MULTI_WAREHOUSE.md §3). Not encrypted, read before EncryptCookies. */
+    public const SELECTOR_COOKIE = 'ri_warehouse';
 
     private ?Warehouse $current = null;
+
+    private ?bool $multiple = null;
 
     /** @var list<SwitchTask>|null */
     private ?array $tasks = null;
@@ -41,6 +46,24 @@ class WarehouseContext
         return $this->current !== null;
     }
 
+    /** Whether the instance hosts more than one warehouse: the tab guard and selector links only matter then. */
+    public function multiple(): bool
+    {
+        return $this->multiple ??= Warehouse::count() > 1;
+    }
+
+    /**
+     * The name of a long-lived cookie that belongs to one warehouse (PIN device trust, device sessions, design-vote
+     * ballots): warehouses on one host share the browser's cookies, so each gets its own (§3). The default warehouse
+     * keeps the plain name, so browsers approved before there were several warehouses stay approved.
+     */
+    public function cookieName(string $base): string
+    {
+        $warehouse = $this->current();
+
+        return $warehouse->is_default ? $base : $base.'_'.strtolower($warehouse->id);
+    }
+
     public function switchTo(Warehouse $warehouse): void
     {
         if ($this->current?->is($warehouse)) {
@@ -57,6 +80,7 @@ class WarehouseContext
                 $task->makeCurrent($warehouse);
                 $applied[] = $task;
             }
+            $this->multiple = null;
         } catch (\Throwable $e) {
             foreach (array_reverse($applied) as $task) {
                 $task->forgetCurrent();

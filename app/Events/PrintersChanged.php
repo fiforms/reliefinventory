@@ -5,6 +5,7 @@
 
 namespace App\Events;
 
+use App\Models\Control\Warehouse;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -22,7 +23,7 @@ class PrintersChanged implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        return [new PrivateChannel('print-printers')];
+        return [new PrivateChannel(Warehouse::current()->channel('print-printers'))];
     }
 
     public function broadcastAs(): string

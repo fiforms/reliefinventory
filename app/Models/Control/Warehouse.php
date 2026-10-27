@@ -5,6 +5,7 @@
 
 namespace App\Models\Control;
 
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Str;
@@ -62,6 +63,36 @@ class Warehouse extends Model
         return self::where('is_default', true)->first();
     }
 
+    /** The warehouse this request, job or command works in. */
+    public static function current(): self
+    {
+        return app(WarehouseContext::class)->current();
+    }
+
+    /**
+     * A broadcast channel name inside this warehouse (`w.<id>.print-queue`): with one Reverb for every warehouse,
+     * an unprefixed name would carry one warehouse's print queue to another's browsers (MULTI_WAREHOUSE.md §9).
+     */
+    public function channel(string $name): string
+    {
+        return "w.{$this->id}.{$name}";
+    }
+
+    /** An active warehouse by id (any case), or null — whether it doesn't exist or isn't active, alike. */
+    public static function findActive(string $id): ?self
+    {
+        if (! preg_match('/^[A-Za-z0-9]{8}$/', $id)) {
+            return null;
+        }
+
+        return self::whereKey(strtoupper($id))->where('status', 'active')->first();
+    }
+
+    public function isActive(): bool
+    {
+        return $this->status === 'active';
+    }
+
     public function domains(): HasMany
     {
         return $this->hasMany(WarehouseDomain::class);
@@ -81,6 +112,58 @@ class Warehouse extends Model
         }
 
         return ['database' => $this->schema_name] + $base;
+    }
+
+    /**
+     * The address people reach this warehouse at, for links that leave the browser (emails) and for anything built
+     * outside a request: its primary hostname (with APP_URL's scheme), else APP_URL. Never the request's Host
+     * header, which the sender of a request chooses (MULTI_WAREHOUSE.md §3).
+     */
+    public function publicRoot(): string
+    {
+        $app = rtrim((string) config('app.url'), '/');
+        $domain = $this->domains()->where('is_primary', true)->value('hostname');
+
+        return $domain ? (parse_url($app, PHP_URL_SCHEME) ?: 'https').'://'.$domain : $app;
+    }
+
+    /**
+     * The address machines (devices, peers, launchers) use for this warehouse (§4): its own hostname, or the
+     * instance's address — plus `/w/<id>` for any warehouse but the default one, which unprefixed URLs reach.
+     */
+    public function machineUrl(): string
+    {
+        $root = $this->publicRoot();
+        $ownHost = $this->domains()->where('is_primary', true)->exists();
+
+        return $ownHost || $this->is_default ? $root : "{$root}/w/{$this->id}";
+    }
+
+    /** Whether $host reaches this warehouse by itself (a mapped hostname), rather than being shared with others. */
+    public function ownsHost(string $host): bool
+    {
+        return $this->domains()->where('hostname', strtolower($host))->exists();
+    }
+
+    /** An absolute link into this warehouse for an email: publicRoot() plus `w=` when the address needs it. */
+    public function publicUrl(string $path = '/'): string
+    {
+        return $this->withSelector($this->publicRoot().'/'.ltrim($path, '/'));
+    }
+
+    /**
+     * $url with `w=<id>` added when its address alone doesn't reach this warehouse: there are several warehouses
+     * and the host isn't one of this warehouse's own. With one warehouse, links stay as they always were.
+     */
+    public function withSelector(string $url): string
+    {
+        $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        if (! app(WarehouseContext::class)->multiple() || ($host !== '' && $this->domains()->where('hostname', $host)->exists())) {
+            return $url;
+        }
+        [$url, $fragment] = array_pad(explode('#', $url, 2), 2, null);
+
+        return $url.(str_contains($url, '?') ? '&' : '?').'w='.$this->id.($fragment !== null ? "#{$fragment}" : '');
     }
 
     /** A path inside the warehouse's own files folder, which is its `local` disk (MULTI_WAREHOUSE.md §11). */

@@ -39,7 +39,7 @@ class DeviceSessionController extends Controller
         // The destination is the device's own Function page — never a client-supplied path.
         $path = config("devices.functions.{$device->kiosk_function}.path") ?: '/login';
         $cookie = cookie(
-            ManagedDevice::SESSION_COOKIE, $device->issueSessionToken(),
+            ManagedDevice::sessionCookie(), $device->issueSessionToken(),
             60 * 24 * 30, '/', null, $request->isSecure(), true, false, 'lax'
         );
 

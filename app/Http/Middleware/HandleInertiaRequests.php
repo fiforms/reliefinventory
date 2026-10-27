@@ -5,11 +5,13 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Control\Warehouse;
 use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
 use App\Services\PinLoginService;
 use App\Services\TrainingMode;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -42,6 +44,10 @@ class HandleInertiaRequests extends Middleware
             'auth' => [
                 'user' => $request->user(),
             ],
+            // Which warehouse this page belongs to (MULTI_WAREHOUSE.md §3): every request the page makes names it
+            // (bootstrap.js), so a tab left on one warehouse can't act on another; and browser storage is kept
+            // per warehouse with `storageSuffix` (empty for the default warehouse, which keeps its old keys).
+            'warehouse' => fn () => self::warehouseProps(),
             // A Training Mode tap-your-name session (capped to station work) — the layout shows a strip saying so.
             'training' => [
                 'session' => TrainingMode::isTrainingSession(),
@@ -80,6 +86,19 @@ class HandleInertiaRequests extends Middleware
             // request, rather than firing it and eating a slow timeout or
             // a 503. See OfflineModeSetting.
             'offlineMode' => OfflineModeSetting::isOffline(),
+        ];
+    }
+
+    /** @return array{id: string, name: string, multiple: bool, storageSuffix: string} */
+    public static function warehouseProps(): array
+    {
+        $warehouse = Warehouse::current();
+
+        return [
+            'id' => $warehouse->id,
+            'name' => $warehouse->display_name,
+            'multiple' => app(WarehouseContext::class)->multiple(),
+            'storageSuffix' => $warehouse->is_default ? '' : '_'.strtolower($warehouse->id),
         ];
     }
 }

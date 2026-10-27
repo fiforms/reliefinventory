@@ -135,7 +135,9 @@ pre_migrate_backup() {
     fi
     local status
     # migrate:status fails when there is no migrations table: a brand-new database.
-    status="$(php artisan migrate:status --no-ansi --no-interaction 2>/dev/null)" || return 0
+    status="$(php artisan migrate:status --warehouse=default --no-ansi --no-interaction 2>/dev/null)" || return 0
+    # (Only the default warehouse is checked and backed up before migrating, for now; every warehouse is phase 4 of
+    # MULTI_WAREHOUSE.md.)
     # pending rows end in "Pending"; anchored so a migration *named* ..._pending can't match
     printf '%s\n' "$status" | grep -Eq '[. ]Pending[[:space:]]*$' || return 0
 
@@ -150,7 +152,7 @@ pre_migrate_backup() {
 # Refuse to start an OLDER image on a database a newer one has migrated: it can't undo those migrations (the
 # undo code ships with the newer image) and would run against a schema it doesn't understand. Nothing is changed.
 refuse_downgrade() {
-    if ! php artisan migrate:check-downgrade --no-interaction >&2; then
+    if ! php artisan migrate:check-downgrade --warehouse=default --no-interaction >&2; then
         local last
         last="$(ls -1t "${RI_BACKUP_DIR:-/backups}"/relief-backup-*-premigrate.zip 2>/dev/null | head -n1)"
         [ -n "$last" ] && log "most recent pre-migration backup: $last (restore: docker compose exec app php artisan backup:restore <file> --force, using the matching older image)"
@@ -192,15 +194,15 @@ web)
     # Essential lookup data (statuses, units, categories, item catalog,
     # permissions) on a never-seeded database; a no-op otherwise. The web setup
     # wizard does the same, so this only matters for RI_ADMIN_EMAIL installs.
-    php artisan setup:seed-essentials --no-interaction
+    php artisan setup:seed-essentials --warehouse=default --no-interaction
 
     if [ -n "${RI_ADMIN_EMAIL:-}" ]; then
-        php artisan admin:bootstrap --no-interaction \
+        php artisan admin:bootstrap --warehouse=default --no-interaction \
             --email="$RI_ADMIN_EMAIL" \
             ${RI_ADMIN_PASSWORD:+--password="$RI_ADMIN_PASSWORD"} \
             ${RI_ADMIN_FIRST_NAME:+--firstname="$RI_ADMIN_FIRST_NAME"} \
             ${RI_ADMIN_LAST_NAME:+--lastname="$RI_ADMIN_LAST_NAME"} || log "admin:bootstrap did not create an administrator (see above)"
-    elif [ "$(php artisan setup:status --no-interaction)" = needs-setup ]; then
+    elif [ "$(php artisan setup:status --warehouse=default --no-interaction)" = needs-setup ]; then
         log "first run: open ${APP_URL:-the server address} in a browser to create the administrator (setup wizard)"
     fi
 

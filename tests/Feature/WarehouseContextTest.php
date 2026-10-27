@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
@@ -17,7 +18,7 @@ test('the existing database is registered once as the default warehouse', functi
     $default = Warehouse::default();
 
     expect($default)->not->toBeNull()
-        ->and($default->schema_name)->toBe(config('database.connections.mariadb.database'))
+        ->and($default->schema_name)->toBe(config('database.connections.'.config('database.default').'.database'))
         ->and($default->id)->toMatch('/^[2-9ABCDEFGHJKMNPQRSTVWXYZ]{8}$/')
         ->and($default->uuid)->toBeString()
         ->and(InstanceMigrate::registerDefaultWarehouse()->is($default))->toBeTrue()
@@ -33,7 +34,7 @@ test('every request works in the default warehouse', function () {
 test('switching warehouses re-points the connection, key and files, and switching back restores them', function () {
     $context = app(WarehouseContext::class);
     $home = $context->current();
-    $state = fn () => [config('database.connections.mariadb'), Model::currentEncrypter()->getKey(), config('filesystems.disks.local.root')];
+    $state = fn () => [config('database.default'), config('database.connections.'.config('database.default')), Model::currentEncrypter()->getKey(), config('filesystems.disks.local.root')];
     $before = $state();
     $other = new Warehouse(['schema_name' => 'test_reliefinventory_other', 'display_name' => 'Other']);
     $other->id = 'ZZZZZZZZ';
@@ -41,7 +42,7 @@ test('switching warehouses re-points the connection, key and files, and switchin
 
     try {
         $seen = $context->run($other, fn () => [
-            config('database.connections.mariadb.database'), 'base64:'.base64_encode(Model::currentEncrypter()->getKey()),
+            DB::connection()->getDatabaseName(), 'base64:'.base64_encode(Model::currentEncrypter()->getKey()),
             config('filesystems.disks.local.root'), Model::currentEncrypter()->encryptString('secret'),
         ]);
     } finally {
@@ -59,7 +60,7 @@ test('switching warehouses re-points the connection, key and files, and switchin
 
 test('a warehouse without a key file cannot be switched to, and nothing is left half-switched', function () {
     $context = app(WarehouseContext::class);
-    $state = fn () => [config('database.connections.mariadb'), Model::currentEncrypter()->getKey(), config('filesystems.disks.local.root')];
+    $state = fn () => [config('database.default'), config('database.connections.'.config('database.default')), Model::currentEncrypter()->getKey(), config('filesystems.disks.local.root')];
     $before = $state();
     $keyless = new Warehouse(['schema_name' => 'test_reliefinventory_keyless', 'display_name' => 'Keyless']);
     $keyless->id = 'YYYYYYYY';

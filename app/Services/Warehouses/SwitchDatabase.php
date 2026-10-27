@@ -9,41 +9,44 @@ use App\Models\Control\Warehouse;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Re-points the default database connection at the warehouse's schema, so Eloquent models and queries
- * (and the database session/cache/queue drivers) need no changes. The base settings are captured once;
- * every switch starts from them.
+ * Makes the warehouse's own connection (`warehouse_<id>`: the instance's base connection pointed at its schema)
+ * the default one, so Eloquent models and queries (and the database session/cache/queue drivers) need no
+ * changes. Each warehouse keeps its own named connection rather than one connection being re-pointed, so
+ * switching away and back never drops a connection — or the transaction open on it (a test's, or a request
+ * that ran a job synchronously).
  */
 class SwitchDatabase implements SwitchTask
 {
-    private string $name;
+    private string $baseName;
 
     private array $base;
 
     public function __construct()
     {
-        $this->name = config('database.default');
-        $this->base = config("database.connections.{$this->name}");
+        $this->baseName = config('database.default');
+        $this->base = config("database.connections.{$this->baseName}");
+    }
+
+    public static function connectionName(Warehouse $warehouse): string
+    {
+        return 'warehouse_'.strtolower($warehouse->id);
     }
 
     public function makeCurrent(Warehouse $warehouse): void
     {
-        $this->apply($warehouse->connectionConfig($this->base));
+        $name = self::connectionName($warehouse);
+        $config = $warehouse->connectionConfig($this->base);
+
+        // A changed configuration (a new database password file) must not keep using the old connection.
+        if (config("database.connections.{$name}") != $config) {
+            config(["database.connections.{$name}" => $config]);
+            DB::purge($name);
+        }
+        DB::setDefaultConnection($name);
     }
 
     public function forgetCurrent(): void
     {
-        $this->apply($this->base);
-    }
-
-    private function apply(array $config): void
-    {
-        // Purging an unchanged connection would only drop it (and with it any open transaction, which is
-        // what every RefreshDatabase test is inside of).
-        if (config("database.connections.{$this->name}") == $config) {
-            return;
-        }
-
-        config(["database.connections.{$this->name}" => $config]);
-        DB::purge($this->name);
+        DB::setDefaultConnection($this->baseName);
     }
 }

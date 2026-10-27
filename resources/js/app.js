@@ -3,9 +3,9 @@
 
 
 import '../css/app.css';
-import './bootstrap';
+import { setWarehouse } from './bootstrap';
 
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
@@ -20,6 +20,8 @@ createInertiaApp({
             import.meta.glob('./Pages/**/*.vue'),
         ),
     setup({ el, App, props, plugin }) {
+        setWarehouse(props.initialPage.props.warehouse);
+        router.on('navigate', (event) => setWarehouse(event.detail.page.props.warehouse));
         return createApp({ render: () => h(App, props) })
             .use(plugin)
             .use(ZiggyVue)

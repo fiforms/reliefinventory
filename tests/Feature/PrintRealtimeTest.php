@@ -3,6 +3,7 @@
 use App\Events\PrintersChanged;
 use App\Events\PrintJobAvailable;
 use App\Events\PrintJobChanged;
+use App\Models\Control\Warehouse;
 use App\Models\ManagedDevice;
 use App\Models\Printer;
 use App\Models\PrintJob;
@@ -68,7 +69,7 @@ test('enqueueing broadcasts to the queue and requester channels and wakes the pr
         $channels = collect($e->broadcastOn())->map->name->all();
 
         return $e->job['job_id'] === $job->id && $e->job['status'] === 'queued' && $e->job['requested_by'] === $user->id
-            && $channels === ['private-print-queue', 'private-print-user.'.$user->id];
+            && $channels === [rtChannel('print-queue'), rtChannel('print-user.'.$user->id)];
     });
     Event::assertDispatched(PrintJobAvailable::class, fn ($e) => $e->channel === $device->fresh()->wake_channel);
 });
@@ -98,7 +99,7 @@ test('with no requester only the queue channel is used', function () {
 
     rtEnqueue(rtPrinter($device), null);
 
-    Event::assertDispatched(PrintJobChanged::class, fn ($e) => collect($e->broadcastOn())->map->name->all() === ['private-print-queue']);
+    Event::assertDispatched(PrintJobChanged::class, fn ($e) => collect($e->broadcastOn())->map->name->all() === [rtChannel('print-queue')]);
 });
 
 test('cancel and divert broadcast; a divert wakes the new printer\'s server', function () {
@@ -226,15 +227,19 @@ test('channel authorization follows print permissions', function () {
     $nobody = userWithPermissions('general-access');
     $auth = fn ($user, $channel) => $this->actingAs($user)->postJson('/broadcasting/auth', ['socket_id' => '123.456', 'channel_name' => $channel]);
 
-    $auth($manager, 'private-print-queue')->assertOk();
-    $auth($printer, 'private-print-queue')->assertForbidden();
+    $auth($manager, rtChannel('print-queue'))->assertOk();
+    $auth($printer, rtChannel('print-queue'))->assertForbidden();
 
-    $auth($printer, 'private-print-printers')->assertOk();
-    $auth($nobody, 'private-print-printers')->assertForbidden();
+    $auth($printer, rtChannel('print-printers'))->assertOk();
+    $auth($nobody, rtChannel('print-printers'))->assertForbidden();
 
-    $auth($printer, 'private-print-user.'.$printer->id)->assertOk();
-    $auth($printer, 'private-print-user.'.$manager->id)->assertForbidden();
-    $auth($nobody, 'private-print-user.'.$nobody->id)->assertForbidden();
+    $auth($printer, rtChannel('print-user.'.$printer->id))->assertOk();
+    $auth($printer, rtChannel('print-user.'.$manager->id))->assertForbidden();
+    $auth($nobody, rtChannel('print-user.'.$nobody->id))->assertForbidden();
+
+    // Another warehouse's channel, or one with no warehouse, is refused whatever the permissions (MULTI_WAREHOUSE.md §9).
+    $auth($manager, 'private-w.ZZZZZZZZ.print-queue')->assertForbidden();
+    $auth($manager, 'private-print-queue')->assertForbidden();
 });
 
 test('an unreachable Reverb never breaks printing', function () {
@@ -264,3 +269,9 @@ test('nothing is broadcast when Reverb is not the configured broadcaster', funct
 
     Event::assertNothingDispatched();
 });
+
+/** A private channel's name inside the current warehouse. */
+function rtChannel(string $name): string
+{
+    return 'private-'.Warehouse::current()->channel($name);
+}

@@ -10,6 +10,7 @@
  * One Echo connection and one subscription per channel for the whole page,
  * shared by every component through onPrintEvent(). Channels (all private,
  * authorised by routes/channels.php):
+ * (each prefixed `w.<warehouse id>.`, MULTI_WAREHOUSE.md §9)
  *   print-printers      printer status changed          (print-documents)
  *   print-user.{id}     my own jobs changed             (print-documents)
  *   print-queue         every job changed               (manage-print-queue)
@@ -22,6 +23,7 @@ import axios from 'axios';
 import Echo from 'laravel-echo';
 import Pusher from 'pusher-js';
 import { reactive } from 'vue';
+import { currentWarehouseId } from './bootstrap';
 
 window.Pusher = Pusher;
 
@@ -84,7 +86,9 @@ function connect() {
 	return echo;
 }
 
-function listen(channelName, event) {
+function listen(name, event) {
+	// Channels belong to one warehouse (routes/channels.php): `w.<id>.<name>`.
+	const channelName = `w.${currentWarehouseId()}.${name}`;
 	const id = `${channelName}|${event}`;
 	if (subscribed.has(id) || !connect()) return;
 	subscribed.add(id);

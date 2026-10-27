@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Controllers\Auth\TrainingLoginController;
 use App\Models\ActivityLog;
+use App\Models\Control\Warehouse;
 use App\Models\LabelSetting;
 use App\Models\Person;
 use App\Models\TrainingProduct;
@@ -66,7 +67,7 @@ class TrainingAdminController extends Controller
                 'plan' => TrainingPreparer::plan(),
             ],
             'signup' => [
-                'url' => route('join'),
+                'url' => Warehouse::current()->withSelector(route('join')),
                 'qr_svg' => self::signupQrSvg(),
                 'today' => TrainingRegistration::where('created_at', '>=', now()->startOfDay())->count(),
                 'total' => TrainingRegistration::count(),
@@ -292,7 +293,7 @@ class TrainingAdminController extends Controller
     /** The /join sign-up URL as a QR code (SVG) — on the Training Mode page and the poster. */
     public static function signupQrSvg(int $size = 6): string
     {
-        $svg = (new DNS2D)->getBarcodeSVG(route('join'), 'QRCODE', $size, $size);
+        $svg = (new DNS2D)->getBarcodeSVG(Warehouse::current()->withSelector(route('join')), 'QRCODE', $size, $size);
 
         return preg_replace('/^.*?(<svg)/s', '$1', $svg); // drop the XML prolog/doctype so it can be inlined
     }
@@ -305,7 +306,7 @@ class TrainingAdminController extends Controller
     /** Unrendered PDF — shared by the download route and the print queue. A page to show or post: QR + URL. */
     public function signupPosterBuilder(): PdfBuilder
     {
-        return Pdf::view('reports.training.signup-poster', ['qr' => self::signupQrSvg(14), 'url' => route('join')])
+        return Pdf::view('reports.training.signup-poster', ['qr' => self::signupQrSvg(14), 'url' => Warehouse::current()->withSelector(route('join'))])
             ->driver('weasyprint')
             ->format('letter')
             ->name('training-signup-poster.pdf');

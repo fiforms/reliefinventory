@@ -25,8 +25,9 @@ backup_done_today() { ls "$BACKUP_DIR"/relief-backup-"$(date +%Y%m%d)"-??????-*-
 
 log "started (volunteer sync hourly; backup ${RI_BACKUP_ENABLED:-true} daily at hour $BACKUP_HOUR (${RI_BACKUP_SCOPE:-database}), keep $KEEP_DAYS days in $BACKUP_DIR)"
 while true; do
-    php artisan volunteers:sync-active-windows --no-interaction || log "volunteer sync failed"
-    php artisan backup:prune --no-interaction || log "backup prune failed"
+    # Per-warehouse work runs once in each warehouse (MULTI_WAREHOUSE.md §9); the slow log is the instance's.
+    php artisan warehouse:each "volunteers:sync-active-windows --no-interaction" --no-interaction || log "volunteer sync failed"
+    php artisan warehouse:each "backup:prune --no-interaction" --no-interaction || log "backup prune failed"
     php artisan slowlog:maintain --prune --no-interaction || log "slow log prune failed"
 
     if [ "${RI_BACKUP_ENABLED:-true}" = true ] && [ "$(date +%-H)" -ge "$BACKUP_HOUR" ] && ! backup_done_today; then

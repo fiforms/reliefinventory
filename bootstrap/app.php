@@ -10,11 +10,13 @@ use App\Http\Middleware\EnsureAccountSessionCurrent;
 use App\Http\Middleware\EnsureDeviceAccess;
 use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\EnsurePasswordChanged;
+use App\Http\Middleware\GuardWarehouseTab;
 use App\Http\Middleware\HandleInertiaRequests;
 use App\Http\Middleware\RedirectToSetup;
 use App\Http\Middleware\ResolveWarehouse;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Http\Middleware\TrustAuth;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -33,7 +35,10 @@ return Application::configure(basePath: dirname(__DIR__))
     ->withMiddleware(function (Middleware $middleware) {
         // Before anything touches the database (sessions, auth): every request works in one warehouse.
         $middleware->prepend(ResolveWarehouse::class);
+        // The selector cookie only names a warehouse, and ResolveWarehouse reads it before EncryptCookies runs.
+        $middleware->encryptCookies(except: [WarehouseContext::SELECTOR_COOKIE]);
         $middleware->web(append: [
+            GuardWarehouseTab::class,
             RedirectToSetup::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,

@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -17,6 +18,12 @@ use Illuminate\Support\Str;
 class ManagedDevice extends Model
 {
     public const SESSION_COOKIE = 'device_session';
+
+    /** The device-session cookie's name in the current warehouse (one per warehouse, MULTI_WAREHOUSE.md §3). */
+    public static function sessionCookie(): string
+    {
+        return app(WarehouseContext::class)->cookieName(self::SESSION_COOKIE);
+    }
 
     protected $fillable = [
         'name', 'kiosk_location_id', 'update_channel', 'os_auto_update_enabled', 'kiosk_function',
@@ -103,7 +110,7 @@ class ManagedDevice extends Model
     /** The paired device a request's browser is, if any — see EnsureDeviceAccess. */
     public static function fromRequest(Request $request): ?self
     {
-        return static::fromSessionToken($request->cookie(self::SESSION_COOKIE));
+        return static::fromSessionToken($request->cookie(self::sessionCookie()));
     }
 
     /**

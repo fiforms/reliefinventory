@@ -92,6 +92,9 @@ Route::get('/about', function () {
     return Inertia::render('About');
 });
 
+// Where the tab guard (GuardWarehouseTab) sends a tab left on a warehouse the browser no longer uses.
+Route::get('/warehouse-switched', fn () => Inertia::render('WarehouseSwitched'))->name('warehouse.switched');
+
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
 })->middleware(['auth', 'verified'])->name('dashboard');

@@ -30,7 +30,8 @@ if [ -n "$LABEL" ]; then
     args+=(--dest="$BACKUP_DIR" --name="relief-backup-$(date +%Y%m%d-%H%M%S)-$SCOPE-$LABEL")
 fi
 
-if out="$(php artisan backup:create --no-interaction "${args[@]}")"; then
+# The default warehouse only, for now: a backup of every warehouse, each in its own folder, is phase 4 of MULTI_WAREHOUSE.md.
+if out="$(php artisan backup:create --warehouse=default --no-interaction "${args[@]}")"; then
     log "backup written: $(printf '%s\n' "$out" | tail -n1) ($(du -h "$(printf '%s\n' "$out" | tail -n1)" | cut -f1))"
     # Dumps from before backups were zipped (RI image <= 2026-10-20): age them out the old way.
     find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete

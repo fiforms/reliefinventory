@@ -5,11 +5,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Control\Warehouse;
 use App\Models\DesignPoll;
 use App\Models\DesignPollIdea;
 use App\Models\DesignPollReaction;
 use App\Models\DesignPollVote;
 use App\Services\TurnstileService;
+use App\Services\Warehouses\WarehouseContext;
 use App\Support\DesignPolls;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -35,6 +37,12 @@ use Milon\Barcode\DNS2D;
 class DesignVoteController extends Controller
 {
     private const COOKIE = 'design_vote_token';
+
+    /** A ballot belongs to one warehouse's polls, so its cookie is per warehouse (MULTI_WAREHOUSE.md §3). */
+    private static function cookieName(): string
+    {
+        return app(WarehouseContext::class)->cookieName(self::COOKIE);
+    }
 
     public function __construct(private TurnstileService $turnstile) {}
 
@@ -110,7 +118,7 @@ class DesignVoteController extends Controller
         });
 
         return response()->json(['reactions' => $reactions], 201)
-            ->cookie(self::COOKIE, $token, 60 * 24 * 365, '/', null, null, true, false, 'lax');
+            ->cookie(self::cookieName(), $token, 60 * 24 * 365, '/', null, null, true, false, 'lax');
     }
 
     /**
@@ -153,7 +161,7 @@ class DesignVoteController extends Controller
     {
         return response()->json(['polls' => array_map(function (array $poll) {
             $state = DesignPoll::forSlug($poll['slug']);
-            $url = route('design-vote', $poll['slug']);
+            $url = Warehouse::current()->withSelector(route('design-vote', $poll['slug']));
 
             return $this->pollPayload($poll) + [
                 'open' => $state->is_open,
@@ -290,7 +298,7 @@ class DesignVoteController extends Controller
 
     private function cookieToken(Request $request): ?string
     {
-        $token = $request->cookie(self::COOKIE);
+        $token = $request->cookie(self::cookieName());
 
         return is_string($token) && strlen($token) >= 20 ? $token : null;
     }

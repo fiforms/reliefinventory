@@ -7,6 +7,7 @@ namespace App\Mail;
 
 use App\Models\FormSubmission;
 use Illuminate\Bus\Queueable;
+use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Mail\Mailable;
 use Illuminate\Queue\SerializesModels;
 
@@ -14,8 +15,11 @@ use Illuminate\Queue\SerializesModels;
  * Mirrors FeedbackReportSubmitted, sent to a form's free-text notify_emails
  * list — addresses that may not have an app login at all, so this is
  * separate from the in-app FormSubmissionReceived bell alert.
+ *
+ * Encrypted on the queue: it is queued, and a failed job's payload is kept in the control schema, which every
+ * warehouse shares (MULTI_WAREHOUSE.md §9).
  */
-class FormSubmissionNotification extends Mailable
+class FormSubmissionNotification extends Mailable implements ShouldBeEncrypted
 {
     use Queueable, SerializesModels;
 
