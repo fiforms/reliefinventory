@@ -722,8 +722,9 @@ Decided while building (2026-10-27):
 (`warehouses`, `warehouse_domains`); `php artisan instance:migrate` (control → accounts → every warehouse; registers the existing
 schema as the default warehouse, `warehouses.is_default`) replaces `migrate` in the entrypoint, `update.sh` and `dev-update.sh`;
 `instance:ensure-schemas` creates the two schemas on Docker with the root secret (interim, until the provisioning worker);
-`WarehouseContext` + `SwitchTask` (only `SwitchDatabase` so far); the global `ResolveWarehouse` middleware (default warehouse only;
-resets at the start of each request rather than on terminate, so terminable middleware still see the request's warehouse).
+`WarehouseContext` + `SwitchTask`; the global `ResolveWarehouse` middleware (default warehouse only). It switches at the start of a
+request and never undoes it on terminate, so terminable middleware still see the request's warehouse; switching to a *different*
+warehouse resets everything the previous one set (worker-mode safe), and a failed resolution must `forget()` (phase 2).
 
 **Phase 0b — done** (decisions 2026-10-27: Administrator role holders become instance admins at migration; `people.password` and
 `people.email_verified_at` are dropped; `people.email` always mirrors the login email and keeps its unique index; backups carry a
@@ -755,7 +756,6 @@ contact-only donors/partners) and writes a report to `storage/logs/accounts-migr
   but lets the owner through).
 - Account lock has no UI yet (instance console, phase 5); the column, the login refusal and the session end are in place.
 - `setup:reset` with several warehouses must not remove an instance admin who still runs the instance (TODO in `WarehouseAccounts::forgetAll`).
-- Email verification links must stay signed with `APP_KEY` once `WAREHOUSE_KEY` exists (phase 1).
 
 **Phase 1 — done** (decisions 2026-10-27: Docker keeps warehouse keys in a new `warehouse-secrets` volume at `/warehouse-secrets/<id>/`,
 writable only by the app container, rather than under the read-only, init-owned `/secrets`, since Docker can't create a mount
@@ -789,3 +789,82 @@ never rotates APP_KEY).
 location across a training-warehouse reset (phase 3); a restore *replacing* the files folder rather than merging into it, and
 per-warehouse backup directories (phase 4); an "import a warehouse key" step for restoring onto a new instance (today: set APP_KEY
 before the first start, which seeds the first warehouse's key).
+
+### Verified in practice (2026-10-27)
+
+Beyond the test suite, on Daniel's machine:
+- **Bare-metal upgrade:** the dev database built with the pre-branch code (an administrator, a staff login, an unverified registrant, a
+  30-day simulation), then `instance:migrate`: the right people got accounts (3 logins + 40 partner organizations as invitations; no
+  donors or trainees; only the Administrator an instance admin), 6,969 uploads moved and their stored paths resolve, and over HTTP old
+  passwords work, failures are refused, and a password change ends the account's other sessions but not its own.
+- **Bare-metal fresh install:** `instance:migrate` from nothing, then the setup wizard over HTTP.
+- **Docker upgrade** of an existing stack (twice, the second time from copies of the volumes, which also proved rolling back works):
+  pre-migration backup written, schemas created, key file written, uploads moved, APP_KEY rotated exactly once, and mail secrets the
+  old code encrypted still decrypt under the warehouse key. Login, pages, queue and scheduler work; the next backup has accounts.json.
+- **Docker fresh install** (wizard, login, a restart keeps sessions) and **disaster recovery** (the upgraded stack's backup restored
+  with `backup:restore` onto the fresh instance; the old login works there).
+
+Found by those runs and fixed: the Docker pre-migration backup tried to export accounts.json before the accounts schema existed (the
+upgrade looped refusing to migrate); a restore collided on the old instance's `people.account_id` values; moving uploads took the
+checkout's tracked `.gitignore` with it.
+
+**Not yet run anywhere:** the R Station local server (compose and reset-script changes made, not run on a device); the RI Launcher
+(its compose test passes, but no install was run); a federation identity surviving the Docker upgrade (the test stack had none);
+the bare-metal demo/wa26 boxes, which need their `<db>_control` and `<db>_accounts` schemas created by hand **before** they are
+deployed with this branch, or `instance:migrate` fails.
+
+### Remaining work
+
+**Phase 2 — resolution and background processes** (not started; design questions to settle first):
+- Resolving the warehouse per request: mapped hostname (locked) → `?w=<id>` (sets the selector cookie, redirects) → selector cookie →
+  chooser; machine URLs prefixed `/w/<id>` for `/api/*`, `/up` and `/.well-known/ri-instance.json`, stripped for routing only (signatures
+  are checked against the original URI); unprefixed machine URLs stay on the default warehouse; a `/w/<other>` prefix or `?w` on a
+  mapped host is refused. A failed resolution must `forget()`.
+- The fail-closed tab guard (`X-RI-Warehouse` on JSON calls, a hidden `w` on form posts, refusing non-GET and Inertia visits that don't
+  name the current warehouse; the warehouse id stored in the session; download links carry the warehouse).
+- Per-warehouse browser storage and device cookies (`ri_print_last_<media>`, `pin_device_token`, `device_session`).
+- `RIK-` credentials tied to the warehouse (a credential-format change: `federation-signing-vectors.json` and the PHP, Rust and Pi
+  implementations together); the well-known document reports the warehouse id; "domain verified" only for a warehouse with its own host.
+- Trusted hosts (`warehouse_domains` + `APP_URL`'s host) and the URL root / log context switch tasks, so links never come from the
+  request's `Host` header and queued jobs and commands build them correctly.
+- Queue: jobs and failed jobs in the control schema, the warehouse id in every payload, a `JobProcessing` switch, a job with no warehouse
+  fails (no default), `ShouldBeEncrypted` for jobs with personal data. Scheduler: `warehouse:each <command>`. Reverb: channel names
+  prefixed with the warehouse, and the channel authorisation checks the prefix. Commands: `--warehouse`, required for destructive ones
+  once there is more than one warehouse.
+- Feedback reports record the warehouse id as well as the host.
+
+**Phase 3 — provisioning and new warehouses:**
+- Per-warehouse database users (`ri_<id>`, the narrow grant list, `max_user_connections`); the provisioner credential only in a small
+  provisioning worker reading plain commands from the control schema (re-checked against it), not in the web container — which then
+  stops needing the database root password (`instance:ensure-schemas` moves there).
+- Restores run the `mariadb` client with `--sandbox` and refuse dumps containing `USE`, `CREATE DATABASE`, `GRANT` or `DEFINER`.
+- Setup codes (hash only, 7 days, single use, rate-limited) and the setup/restore screen for an `awaiting_setup` warehouse;
+  provisioning sets `setup_state.completed_at` so `/install` never runs inside a provisioned warehouse.
+- The chooser (`listed`, unique display names, the warehouse name shown on the login page, a rate-limited typed code with one answer
+  either way); domain mapping (including the Turnstile hostname step).
+- The training warehouse (seeded, simple local reset, the training switch as enable/disable, members kept across a reset via
+  `memberships`), and removing in-warehouse Training Mode (§12); where the class archive lives across a reset.
+- Warehouse removal (archive first, waiting period, final backup, typed confirmation, the account cascade, instance audit log).
+- Invitations instead of direct memberships wherever someone else's account would be attached (§6), including a restore's
+  accounts.json and the people importers; keep-and-report for the Names & addresses importer.
+
+**Phase 4 — per-warehouse operations:**
+- Per-warehouse `status` enforced by middleware (replacing `php artisan down` for restores and resets).
+- Per-warehouse backups (`<backup dir>/warehouses/<id>/`, status files beside them), one-backup-at-a-time instance-wide, live-state
+  tables left out of dumps (`--ignore-table-data`) and emptied after a restore.
+- Single-warehouse restore as untrusted input (its own DB user, `--sandbox`, invitations, lineage uuid check; cloning another
+  warehouse's backup is instance-admin only), replacing the files folder rather than merging into it, purging that warehouse's jobs.
+- Hold-all upgrades (per-warehouse `migration_state` and pre-upgrade backup ids, the unblock screen with its commit-point warning,
+  a disk-space check, the web container's longer start-up), and the global backup.
+- An "import a warehouse key" step for restoring onto a new instance (today: set APP_KEY before the first start).
+
+**Phase 5 — instance console** (its design is still open, §13): reached with the step-up re-authentication (account password, never a
+PIN); mail settings and Turnstile keys move there (mail to the control schema, encrypted with APP_KEY); software update, Docker/TLS,
+Reverb, logs and the slow log, disk use per warehouse, creating/suspending/archiving/removing warehouses, setup codes, global backups;
+support sessions (synthetic Administrator, time-boxed, audited, a notice to the warehouse's admins); account lock and instance-admin
+management in the UI; splitting `SystemAdmin.vue`, `/setup/email` and `/setup/testing` into instance vs. warehouse parts, including on a
+single-warehouse install.
+
+**Smaller items carried from 0b/1:** self-service email change with password + an APP_KEY-signed confirmation link; `setup:reset` must not
+remove an instance admin who still runs another warehouse; review and probably delete the bare-metal tiered-backup path.
+
