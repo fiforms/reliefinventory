@@ -16,6 +16,7 @@ use App\Http\Controllers\OrderFillingController;
 use App\Http\Controllers\OutstandingOrdersReportController;
 use App\Http\Controllers\PalletReportController;
 use App\Http\Controllers\PartnerReportController;
+use App\Http\Controllers\SignController;
 use App\Http\Controllers\SitrepController;
 use App\Http\Controllers\TrainingAdminController;
 use App\Http\Controllers\TrainingReportController;
@@ -24,6 +25,7 @@ use App\Models\LabelSetting;
 use App\Services\TrainingMode;
 use App\Services\WarehouseMetrics;
 use Closure;
+use Illuminate\Support\Str;
 use Spatie\LaravelPdf\PdfBuilder;
 
 /**
@@ -87,6 +89,12 @@ class DocumentRegistry
                 'rules' => MailingLabelController::PRINT_RULES,
                 'title' => fn (array $p) => 'Mailing labels ('.(MailingLabelController::AUDIENCES[$p['audience']] ?? $p['audience']).')',
                 'build' => fn (array $p) => app(MailingLabelController::class)->labelsBuilder($p),
+            ],
+            'sign' => [
+                'media' => 'report', 'permission' => null,
+                'rules' => SignController::rules(),
+                'title' => fn (array $p) => 'Sign: '.Str::limit($p['title'], 40),
+                'build' => fn (array $p) => app(SignController::class)->builder($p),
             ],
             'sitrep' => [
                 'media' => 'report', 'permission' => 'view-sitrep', 'rules' => [],
