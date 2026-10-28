@@ -192,10 +192,14 @@ services:
     environment:
       <<: *app-env
       RI_DB_ROOT_PASSWORD_FILE: /admin-secrets/db_root_password
+    # Also the storage volume and ./backups: the whole-instance backup and restore (`php artisan instance:backup` /
+    # `restore:instance`, run in this container) read and write every warehouse's files and the zips.
     volumes:
       - secrets:/secrets:ro
       - admin-secrets:/admin-secrets:ro
       - warehouse-secrets:/warehouse-secrets
+      - storage:/var/www/html/storage
+      - ./backups:/backups
     depends_on:
       db:
         condition: service_healthy

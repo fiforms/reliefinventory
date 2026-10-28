@@ -188,8 +188,8 @@ pre_migrate_backup() {
 refuse_downgrade() {
     if ! php artisan migrate:check-downgrade --warehouse=default --no-interaction >&2; then
         local last
-        last="$(ls -1t "${RI_BACKUP_DIR:-/backups}"/relief-backup-*-premigrate.zip 2>/dev/null | head -n1)"
-        [ -n "$last" ] && log "most recent pre-migration backup: $last (restore: docker compose exec app php artisan backup:restore <file> --force, using the matching older image)"
+        last="$(ls -1t "${RI_BACKUP_DIR:-/backups}"/instance/relief-instance-*-premigrate.zip "${RI_BACKUP_DIR:-/backups}"/relief-backup-*-premigrate.zip 2>/dev/null | head -n1)"
+        [ -n "$last" ] && log "most recent pre-migration backup: $last (restore: a relief-instance-* file with restore:instance in the provisioner container, or a relief-backup-* one with backup:restore <file> --force, using the matching older image)"
         log "refusing to start; the database was not touched."
         exit 1
     fi

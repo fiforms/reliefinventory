@@ -16,8 +16,8 @@ class ProvisioningCommand extends Model
 {
     protected $connection = 'control';
 
-    /** `create`: schema, user and password for a new warehouse. `adopt`: the same for the default warehouse, after renaming its schema. `drop`: schema and user of an archived (or never-finished) warehouse. */
-    public const COMMANDS = ['create', 'adopt', 'drop'];
+    /** `create`: schema, user and password for a new warehouse. `adopt`: the same for the default warehouse, after renaming its schema. `drop`: schema and user of an archived (or never-finished) warehouse. `instance-backup`: the whole-instance backup an upgrade takes before migrating (no warehouse, no parameters: it only ever writes the fixed `premigrate` zip, without keys). */
+    public const COMMANDS = ['create', 'adopt', 'drop', 'instance-backup'];
 
     protected $fillable = ['warehouse_id', 'command', 'requested_by'];
 

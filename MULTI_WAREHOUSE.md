@@ -1092,6 +1092,30 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   path has no automated test (needs a pre-accounts dump); the audit log records the start, not the outcome.
 - Tests: `WarehouseOwnRestoreTest` (manifest lineage, a real restore end to end, lineage refusal and clone, a backup with no lineage, endpoint gates, the progress poll).
 
+**Phase 4, slice (c), the whole-instance backup and restore, is built (2026-10-30)** — simpler than §11's first sketch, by decision: for moving an instance and disaster recovery only.
+- **One zip** (`App\Services\InstanceBackupService`, manifest `kind: instance`): `instance/dump.sql` is one `mariadb-dump --single-transaction --databases` of the control
+  schema, the accounts schema and every warehouse's schema (one consistent instant; live-state tables and the provisioner's queue left out of the data, structure kept),
+  `instance/instance.json` (schema names, warehouses), optional `files/<warehouse id>/…` (each warehouse's files folder, the warehouse backup's exclusions), and optional
+  `keys/<id>/warehouse.key` **encrypted with a passphrase** (AES-256 zip entries; no passphrase = no keys, and the command says so). `BackupCompatibility` refuses an instance zip
+  as a warehouse backup and the reverse. Taken under the same `.instance-backup.lock` as every other backup; written 0600.
+- **Runs in the provisioner container only**, since both halves need the database administrator's password (`Provisioner::credentials()`): `docker compose exec provisioner php artisan
+  instance:backup [--files] [--with-keys [--passphrase-file=…]] [--label=…] [--dest=…]`. The provisioner service now also mounts `storage` and `./backups`.
+- **`restore:instance <zip> [--passphrase-file=…] [--force]`** (provisioner container, other containers stopped): verifies every checksum and the passphrase *before* touching
+  anything, refuses if its control/accounts schema names differ from this instance's (set `DB_DATABASE` / `RI_CONTROL_DATABASE` / `RI_ACCOUNTS_DATABASE` to the old ones), refuses an
+  instance that is in use (a set-up warehouse, or more than one) without `--force`, then drops the instance's schemas, warehouse users, keys and files, loads the dump as the administrator
+  (client in `--sandbox`, local-infile off; not parsed), writes each warehouse's key and files back and makes its **database user again** (new password: a backup never carries one).
+  Trusted input, so no relinking and no invitations: the accounts schema comes back as it was. Audited (`instance.restored`).
+- **Upgrades:** the web container's pre-migration backup is now this backup (`ri-db-backup premigrate` → `php artisan instance:backup --via-provisioner`: a new `instance-backup`
+  provisioning command, `provisioning_commands.warehouse_id` now nullable, no parameters, no keys, `<backup dir>/instance/relief-instance-<stamp>-database-premigrate.zip`, pruned after
+  `RI_BACKUP_KEEP_DAYS`). Exit 2 (no control schema yet: the first upgrade to this version) falls back to the old default-warehouse backup. This covers every warehouse in one zip, with
+  one lock and one dump; the hold-all part (per-warehouse `migration_state`, holding every warehouse if one migration fails, the unblock command, the disk check) is still to do, and so is
+  the pending-migration check, which still looks at the default warehouse only.
+- **Not built:** the first-run wizard's restore still restores only warehouse 1 (the instance restore is CLI-only, by decision); removed warehouses' backups (`removed-warehouses/`) are not
+  part of it; rolling back a single warehouse from an instance zip is by restoring the whole instance (or restoring that warehouse's own backup); no UI (phase 5); APP_KEY is not in
+  the zip (a restored instance needs APP_KEY set before first start, slice 4).
+- Tests: `InstanceBackupTest` (zip shape, encrypted keys, live state left out, the two kinds refuse each other, and a real backup → wipe → restore of an instance of its own with two
+  warehouses).
+
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
 mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal ✔.
 
@@ -1121,7 +1145,7 @@ mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training
 - Single-warehouse restore as untrusted input (its own DB user, `--sandbox`, invitations, lineage uuid check; cloning another
   warehouse's backup is instance-admin only), replacing the files folder rather than merging into it, purging that warehouse's jobs.
 - Hold-all upgrades (per-warehouse `migration_state` and pre-upgrade backup ids, the unblock screen with its commit-point warning,
-  a disk-space check, the web container's longer start-up), and the global backup.
+  a disk-space check, the web container's longer start-up). The global backup is built (slice (c) above), and is the pre-upgrade backup.
 - An "import a warehouse key" step for restoring onto a new instance (today: set APP_KEY before the first start).
 
 **Phase 5 — instance console** (its design is still open, §13): reached with the step-up re-authentication (account password, never a

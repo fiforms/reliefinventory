@@ -7,6 +7,7 @@ namespace App\Services\Warehouses;
 
 use App\Models\Control\ProvisioningCommand;
 use App\Models\Control\Warehouse;
+use App\Services\InstanceBackupService;
 use PDO;
 use RuntimeException;
 
@@ -29,8 +30,13 @@ class Provisioner
 
     public function __construct(private PDO $admin) {}
 
-    /** A connection as the administrator, from config (a file in the Docker stack's secrets volume). */
-    public static function fromConfig(): self
+    /**
+     * The database administrator's login, from config (a file in the Docker stack's secrets volume). Only the provisioner process
+     * has the password; asking anywhere else fails.
+     *
+     * @return array{host: string, port: string|int, user: string, password: string}
+     */
+    public static function credentials(): array
     {
         $c = config('warehouses.provisioning');
         $base = config('database.connections.'.$c['base_connection']);
@@ -43,12 +49,32 @@ class Provisioner
             $password = trim((string) file_get_contents($file));
         }
 
+        return ['host' => $base['host'], 'port' => $base['port'], 'user' => $c['admin_user'], 'password' => $password];
+    }
+
+    /** A connection as the administrator (see credentials()). */
+    public static function fromConfig(): self
+    {
+        $c = self::credentials();
+
         return new self(new PDO(
-            "mysql:host={$base['host']};port={$base['port']}",
-            $c['admin_user'],
-            $password,
+            "mysql:host={$c['host']};port={$c['port']}",
+            $c['user'],
+            $c['password'],
             [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_TIMEOUT => 5],
         ));
+    }
+
+    /** The connection, for the whole-instance backup and restore (MULTI_WAREHOUSE.md §11), which run in this process. */
+    public function pdo(): PDO
+    {
+        return $this->admin;
+    }
+
+    /** A restored warehouse's database user and password file, which a backup never carries (the schema came with the dump). */
+    public function restoreAccess(Warehouse $warehouse): array
+    {
+        return $this->ensure($warehouse);
     }
 
     public static function standardSchemaName(string $warehouseId): string
@@ -68,6 +94,9 @@ class Provisioner
      */
     public function run(ProvisioningCommand $command): array
     {
+        if ($command->command === 'instance-backup') {
+            return app(InstanceBackupService::class)->premigrate();
+        }
         $warehouse = Warehouse::find($command->warehouse_id)
             ?? throw new RuntimeException("There is no warehouse {$command->warehouse_id}.");
 

@@ -21,7 +21,7 @@ class DatabaseTools
         return config('database.connections.'.config('database.default'));
     }
 
-    private function find(array $names): string
+    public function find(array $names): string
     {
         foreach ($names as $name) {
             $path = trim((string) shell_exec('command -v '.escapeshellarg($name)));
@@ -33,7 +33,7 @@ class DatabaseTools
     }
 
     /** --skip-ssl for the MariaDB client (it otherwise insists on verified TLS), nothing for MySQL's. */
-    private function extraArgs(string $binary): array
+    public function extraArgs(string $binary): array
     {
         $extra = config('backup.dump_args') ?? (str_starts_with(basename($binary), 'mariadb') ? '--skip-ssl' : '');
 

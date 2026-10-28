@@ -244,6 +244,7 @@ class BackupService
             'format' => self::FORMAT,
             'created_at' => now()->toIso8601String(),
             'app' => ['name' => config('app.name'), 'commit' => app(GitVersionService::class)->currentCommit(), 'version' => app(GitVersionService::class)->release()],
+            'kind' => 'warehouse',
             'scope' => $scope,
             // The lineage: which warehouse this is a backup of. It proves nothing about origin (whoever made the zip chose it);
             // it only lets a warehouse admin's restore catch the wrong file (MULTI_WAREHOUSE.md §11).
@@ -281,7 +282,18 @@ class BackupService
     {
         // The current warehouse's files folder (MULTI_WAREHOUSE.md §11). There is no `public` disk any more;
         // older backups' files/public entries are accepted and ignored on restore.
-        $roots = ['private' => config('filesystems.disks.local.root')];
+        yield from $this->filesIn(config('filesystems.disks.local.root'), 'files/private');
+    }
+
+    /**
+     * Every file under a warehouse's files folder, as zip entries under $prefix (the excluded directories and never-included names left
+     * out, symlinks never followed). Shared with the whole-instance backup.
+     *
+     * @return iterable<array{path: string, source: string}>
+     */
+    public function filesIn(?string $folder, string $prefix): iterable
+    {
+        $roots = [$prefix => $folder];
         $excluded = config('backup.exclude_dirs');
 
         foreach ($roots as $label => $root) {
@@ -302,7 +314,7 @@ class BackupService
             ));
             foreach ($iterator as $file) {
                 if ($file->isFile()) {
-                    yield ['path' => "files/{$label}/".substr($file->getPathname(), strlen($root) + 1), 'source' => $file->getPathname()];
+                    yield ['path' => "{$label}/".substr($file->getPathname(), strlen($root) + 1), 'source' => $file->getPathname()];
                 }
             }
         }
@@ -369,6 +381,17 @@ class BackupService
         fclose($handle);
 
         return ! $free;
+    }
+
+    /** Run $callback holding the instance-wide backup lock (waiting for it), or fail if it never comes. */
+    public function withInstanceLock(callable $callback): mixed
+    {
+        $lock = $this->instanceLock() ?? throw new RuntimeException('Another backup kept the instance busy for too long. Try again later.');
+        try {
+            return $callback();
+        } finally {
+            $this->unlock($lock);
+        }
     }
 
     /**

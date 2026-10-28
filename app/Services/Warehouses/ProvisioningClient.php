@@ -29,19 +29,19 @@ class ProvisioningClient
     }
 
     /** Ask for `$command` and wait until the provisioner has answered. @return list<string> what it did */
-    public function request(Warehouse $warehouse, string $command, ?string $requestedBy = null): array
+    public function request(?Warehouse $warehouse, string $command, ?string $requestedBy = null, ?int $waitSeconds = null): array
     {
-        $row = ProvisioningCommand::create(['warehouse_id' => $warehouse->id, 'command' => $command, 'requested_by' => $requestedBy]);
+        $row = ProvisioningCommand::create(['warehouse_id' => $warehouse?->id, 'command' => $command, 'requested_by' => $requestedBy]);
 
-        $deadline = time() + (int) config('warehouses.provisioning.wait_seconds');
+        $deadline = time() + ($waitSeconds ?? (int) config('warehouses.provisioning.wait_seconds'));
         while (! $row->refresh()->isFinished()) {
             if (time() >= $deadline) {
-                throw new RuntimeException("The provisioner did not answer `{$command}` for warehouse {$warehouse->id} in time. Is it running?");
+                throw new RuntimeException("The provisioner did not answer `{$command}` in time. Is it running?");
             }
             usleep(500_000);
         }
         if ($row->status === 'failed') {
-            throw new RuntimeException("Provisioning ({$command}) failed for warehouse {$warehouse->id}: {$row->message}");
+            throw new RuntimeException("Provisioning ({$command}) failed: {$row->message}");
         }
 
         return array_filter(explode("\n", (string) $row->message));

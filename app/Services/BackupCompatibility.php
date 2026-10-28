@@ -28,6 +28,10 @@ class BackupCompatibility
     {
         $problems = [];
 
+        if (($manifest['kind'] ?? 'warehouse') !== 'warehouse') {
+            return ['This is a whole-instance backup, not a warehouse backup. Restore it onto a new instance with "php artisan restore:instance" (run in the provisioner container).'];
+        }
+
         $format = $manifest['format'] ?? null;
         if (! is_int($format) || $format < 1) {
             return ['This does not look like a Relief Inventory backup (no valid manifest).'];
