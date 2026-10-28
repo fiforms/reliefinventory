@@ -338,7 +338,7 @@ onMounted(async () => {
 							<div class="flex flex-wrap gap-2">
 								<PrintMenu document-key="training-signup-poster" media="report" variant="form" label="QR Poster"
 									download-href="/report/training/signup-poster.pdf" />
-								<a href="/report/training/signups.csv" class="ri_formbutton">Follow-up List (CSV)</a>
+								<a :href="$withWarehouse('/report/training/signups.csv')" class="ri_formbutton">Follow-up List (CSV)</a>
 								<button type="button" class="ri_formbutton" @click="load">Refresh</button>
 							</div>
 						</div>
@@ -461,7 +461,7 @@ onMounted(async () => {
 							<tr v-for="a in status.archives" :key="a.stamp">
 								<td>{{ archiveTime(a.stamp) }}</td>
 								<td>
-									<a v-for="f in a.files" :key="f.name" :href="'/report/training/archives/' + a.stamp + '/' + f.name"
+									<a v-for="f in a.files" :key="f.name" :href="$withWarehouse('/report/training/archives/' + a.stamp + '/' + f.name)"
 										class="underline text-blue-700 mr-4">{{ f.label }}</a>
 								</td>
 							</tr>

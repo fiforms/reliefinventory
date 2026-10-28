@@ -100,7 +100,7 @@ onMounted(load);
 						</button>
 						<button v-if="confirmingClose === poll.slug" class="text-sm underline text-gray-600" @click="confirmingClose = null">Cancel</button>
 					</template>
-					<a :href="`/json/design-votes/${poll.slug}/csv`" class="text-sm text-blue-600 underline">Download CSV</a>
+					<a :href="$withWarehouse(`/json/design-votes/${poll.slug}/csv`)" class="text-sm text-blue-600 underline">Download CSV</a>
 					<a :href="poll.url" target="_blank" class="text-sm text-blue-600 underline">Open the vote page</a>
 				</div>
 

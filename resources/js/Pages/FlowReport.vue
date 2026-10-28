@@ -161,7 +161,7 @@ export default {
 			<h2 class="ri_datatable_head flr_head">
 				Inventory Flow Report
 				<span class="flr_exports">
-					<a :href="'/report/flow.csv' + query" class="ri_defaultbutton">Download CSV</a>
+					<a :href="$withWarehouse('/report/flow.csv' + query)" class="ri_defaultbutton">Download CSV</a>
 					<PrintMenu document-key="inventory-flow" media="report" label="Print / PDF"
 						:params="appliedParams" :download-href="'/report/flow.pdf' + query" />
 				</span>

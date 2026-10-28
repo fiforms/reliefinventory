@@ -103,7 +103,7 @@ export default {
 			<h2 class="ri_datatable_head urr_head">
 				Unfulfilled Requests Report
 				<span class="urr_exports">
-					<a :href="'/report/unfulfilled.csv' + query" class="ri_defaultbutton">Download CSV</a>
+					<a :href="$withWarehouse('/report/unfulfilled.csv' + query)" class="ri_defaultbutton">Download CSV</a>
 					<PrintMenu document-key="unfulfilled-requests" media="report" label="Print / PDF"
 						:params="appliedParams" :download-href="'/report/unfulfilled.pdf' + query" />
 				</span>

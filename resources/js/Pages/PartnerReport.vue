@@ -131,7 +131,7 @@ export default {
 			<h2 class="ri_datatable_head ptr_head">
 				Partner Report
 				<span class="ptr_exports">
-					<a :href="'/report/partners.csv' + query" class="ri_defaultbutton">Download CSV</a>
+					<a :href="$withWarehouse('/report/partners.csv' + query)" class="ri_defaultbutton">Download CSV</a>
 					<PrintMenu document-key="partner-report" media="report" label="Print / PDF"
 						:params="appliedParams" :download-href="'/report/partners.pdf' + query" />
 				</span>

@@ -412,7 +412,7 @@ export default {
 						<td>{{ order.person?.full_name || order.person?.organization || '(no partner)' }}</td>
 						<td>{{ order.driver?.name }}</td>
 						<td>{{ order.status_changed_at ? new Date(order.status_changed_at).toLocaleDateString() : '' }}</td>
-						<td><a :href="'/json/shipping/' + order.id + '/signed-bol'" target="_blank">View Signed BOL</a></td>
+						<td><a :href="$withWarehouse('/json/shipping/' + order.id + '/signed-bol')" target="_blank">View Signed BOL</a></td>
 					</tr>
 					<tr v-if="!completed.length && !loading"><td colspan="5" class="ship_empty">Nothing completed yet.</td></tr>
 				</tbody>

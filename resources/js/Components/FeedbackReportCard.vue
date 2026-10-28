@@ -134,7 +134,7 @@ function historyEntries(report) {
 			</div>
 			<a
 				v-if="report.screenshot_path"
-				:href="`/json/feedback-reports/${report.id}/screenshot`"
+				:href="$withWarehouse(`/json/feedback-reports/${report.id}/screenshot`)"
 				target="_blank"
 				class="text-xs text-blue-600 underline shrink-0"
 			>

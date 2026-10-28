@@ -241,7 +241,7 @@ onMounted(fetchAll);
 					<h3 class="font-medium text-sm">Images</h3>
 					<ul class="text-sm space-y-1">
 						<li v-for="r in imageDownloads" :key="r.id">
-							<a :href="r.download_url" class="underline text-blue-700">{{ downloadLabel(r) }} {{ r.version }}</a>
+							<a :href="$withWarehouse(r.download_url)" class="underline text-blue-700">{{ downloadLabel(r) }} {{ r.version }}</a>
 							<span class="text-gray-500"> — {{ r.architecture }}, {{ formatSize(r.size_bytes) }}</span>
 							<span v-if="r.notes" class="text-gray-500"> — {{ r.notes }}</span>
 						</li>
@@ -251,7 +251,7 @@ onMounted(fetchAll);
 					<h3 class="font-medium text-sm pt-1">RI Print Client</h3>
 					<ul class="text-sm space-y-1">
 						<li v-for="r in printClientDownloads" :key="r.id">
-							<a :href="r.download_url" class="underline text-blue-700">{{ downloadLabel(r) }} {{ r.version }}</a>
+							<a :href="$withWarehouse(r.download_url)" class="underline text-blue-700">{{ downloadLabel(r) }} {{ r.version }}</a>
 							<span class="text-gray-500"> — {{ formatSize(r.size_bytes) }}</span>
 							<span v-if="r.notes" class="text-gray-500"> — {{ r.notes }}</span>
 						</li>

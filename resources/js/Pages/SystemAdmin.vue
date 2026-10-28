@@ -505,7 +505,7 @@ onUnmounted(() => {
 							<div v-if="r.expires_at" class="text-xs text-gray-500">Deleted automatically {{ when(r.expires_at) }}</div>
 						</div>
 						<div class="flex items-center gap-3">
-							<a v-if="r.status === 'complete'" :href="`/json/backups/${r.id}/download`"
+							<a v-if="r.status === 'complete'" :href="$withWarehouse(`/json/backups/${r.id}/download`)"
 								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-gray-800 hover:bg-gray-700">Download</a>
 							<button v-if="r.status !== 'queued' && r.status !== 'running'" @click="deleteBackup(r)"
 								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white"
@@ -565,7 +565,7 @@ onUnmounted(() => {
 						<ul class="text-xs font-mono text-gray-600 mt-1 space-y-0.5 max-h-48 overflow-y-auto">
 							<li v-for="entry in status.backups.tiers[tier].entries" :key="entry.name">
 								{{ formatStamp(entry.name) }}<span v-if="entry.size" class="text-gray-400"> · {{ formatBytes(entry.size) }}</span>
-								<a v-if="canManageBackups && entry.downloadable" :href="`/json/backups/tier/${tier}/${entry.name}/download`"
+								<a v-if="canManageBackups && entry.downloadable" :href="$withWarehouse(`/json/backups/tier/${tier}/${entry.name}/download`)"
 									class="font-sans text-blue-700 underline ml-1" title="Download this backup (.zip)">download</a>
 							</li>
 							<li v-if="status.backups.tiers[tier].count === 0" class="text-gray-400 font-sans">none yet</li>

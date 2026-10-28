@@ -86,7 +86,7 @@ export default {
 		<div class="oor_container">
 			<h2 class="ri_datatable_head oor_head">
 				Outstanding Orders Report
-				<a href="/report/orders.csv" class="ri_defaultbutton">Download CSV</a>
+				<a :href="$withWarehouse('/report/orders.csv')" class="ri_defaultbutton">Download CSV</a>
 				<PrintMenu document-key="outstanding-orders" media="report" label="Print / PDF"
 					download-href="/report/orders.pdf" />
 			</h2>
