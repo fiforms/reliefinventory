@@ -3,23 +3,18 @@
 
 <!-- SystemAdmin.vue
 
-	Updates & Backups (/setup/system) — the one page for everything about keeping this system current and safe.
-	Each section is shown only when the person holds its permission AND the platform can do it:
+	Warehouse Backups (/setup/system) — backups and keys for the current warehouse. (Software updates, offline mode and
+	whole-instance backups are on Instance Admin, /setup/instance, InstanceAdmin.vue.) Each section is shown only when
+	the person holds its permission AND the platform can do it:
 
-	  admin-system     Software update (Docker: check/install through the host-side updater, instance administrators
-	                   only — see InstanceUpdate; systemd: the DEPRECATED in-app updater, shown with a warning and
-	                   due to be removed), Offline mode, and Scheduled backups (systemd: the tiered backups, their
-	                   schedule and retention, from backup-settings.conf read by the hourly timer — see
-	                   scripts/BACKUPS.md; Docker: a read-only summary of what compose.yaml configured).
+	  admin-system     Scheduled backups (systemd: the tiered backups, their schedule and retention, from
+	                   backup-settings.conf read by the hourly timer — see scripts/BACKUPS.md; Docker: a read-only
+	                   summary of what compose.yaml configured).
 	  manage-backups   Create a backup zip (database, or database + uploaded files), list / download / delete them.
-	  view-app-key     Reveal the application key (password re-entry).
+	  view-app-key     Reveal the warehouse key (password re-entry).
 
 	`runtime` ('systemd' | 'docker') comes from config('system.runtime'). Server halves: SystemController
-	(status, update, schedule), BackupController (zips, key).
-
-	During an update the site enters maintenance mode, so status polls start failing with 503 — that's expected
-	and shown as "maintenance mode" progress rather than an error; polling continues until the updater reports
-	success or failure through its status file.
+	(status, schedule), BackupController (zips, key).
 -->
 
 <script setup>
@@ -42,27 +37,9 @@ const docker = computed(() => props.runtime === 'docker');
 const status = ref(null);
 const error = ref('');
 const notice = ref('');
-const checking = ref(false);
-const updating = ref(false);
-const confirmingUpdate = ref(false);
-const inMaintenance = ref(false);
 const backingUp = ref(false);
 const savingSettings = ref(false);
 const settingsSavedAt = ref(null);
-const savingOfflineMode = ref(false);
-
-// Docker: the self-update flag the host-side updater works from (status.docker_update).
-const dockerUpdate = computed(() => status.value?.docker_update ?? null);
-const dockerBusy = computed(() => ['requested', 'checking', 'pulling', 'restarting'].includes(dockerUpdate.value?.state));
-const requestingDocker = ref(false);
-const confirmingDockerUpdate = ref(false);
-const dockerStateText = {
-	requested: 'Waiting for the updater on the server to pick this up…',
-	checking: 'Looking for a new version…',
-	pulling: 'Downloading the new version…',
-	restarting: 'Installing. The site is offline for a few minutes and this page will recover on its own.',
-};
-let dockerTimer = null;
 
 const settings = reactive({
 	frequency: 'daily',
@@ -78,8 +55,6 @@ const settings = reactive({
 
 const dayNames = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
 
-let pollTimer = null;
-
 function fail(e, fallback) {
 	error.value = e.response?.data?.errors
 		? Object.values(e.response.data.errors).flat().join(' ')
@@ -92,133 +67,7 @@ async function fetchStatus(applySettings = true) {
 	if (applySettings && response.data.backup_settings) {
 		Object.assign(settings, response.data.backup_settings);
 	}
-	// An update left running (or just finished) when the page loaded
-	if (response.data.update_status?.state === 'running' && !updating.value) {
-		updating.value = true;
-		startPolling();
-	} else if (response.data.update_status?.state === 'stalled') {
-		error.value = `Update stalled: ${response.data.update_status.message}`;
-	}
-	if (response.data.docker_update) {
-		if (dockerBusy.value) startDockerPolling();
-		else stopDockerPolling();
-	}
 	return response.data;
-}
-
-async function requestDockerUpdate(action) {
-	if (action === 'update' && !confirmingDockerUpdate.value) {
-		confirmingDockerUpdate.value = true;
-		return;
-	}
-	confirmingDockerUpdate.value = false;
-	requestingDocker.value = true;
-	error.value = '';
-	notice.value = '';
-	try {
-		const response = await axios.post(action === 'update' ? '/json/system/update' : '/json/system/check-updates');
-		status.value.docker_update = response.data.docker_update;
-		startDockerPolling();
-	} catch (e) {
-		error.value = e.response?.data?.message || 'Could not send the request.';
-	} finally {
-		requestingDocker.value = false;
-	}
-}
-
-// Poll while a request is open. The app is down while it restarts, so a failed poll is expected, not an error.
-function startDockerPolling() {
-	if (dockerTimer) return;
-	let wasBusy = true;
-	dockerTimer = setInterval(async () => {
-		try {
-			const data = await fetchStatus(false);
-			const du = data.docker_update;
-			if (du && !dockerBusy.value && wasBusy) {
-				wasBusy = false;
-				if (du.state === 'failed') error.value = `Update failed: ${du.message}`;
-				else if (du.state === 'stalled') error.value = du.message;
-				else notice.value = du.message || 'Finished.';
-			}
-		} catch (e) {
-			// offline while restarting — keep polling
-		}
-	}, 4000);
-}
-
-function stopDockerPolling() {
-	if (dockerTimer) {
-		clearInterval(dockerTimer);
-		dockerTimer = null;
-	}
-}
-
-async function checkForUpdates() {
-	checking.value = true;
-	error.value = '';
-	notice.value = '';
-	try {
-		const response = await axios.post('/json/system/check-updates');
-		status.value.version = response.data.version;
-		notice.value = response.data.version.behind === 0
-			? 'You are running the latest version.'
-			: `Update available: ${response.data.version.behind} new commit(s).`;
-	} catch (e) {
-		error.value = e.response?.data?.message || 'Update check failed.';
-	} finally {
-		checking.value = false;
-	}
-}
-
-async function startUpdate() {
-	if (!confirmingUpdate.value) {
-		confirmingUpdate.value = true;
-		return;
-	}
-	confirmingUpdate.value = false;
-	updating.value = true;
-	error.value = '';
-	notice.value = '';
-	try {
-		await axios.post('/json/system/update');
-		startPolling();
-	} catch (e) {
-		updating.value = false;
-		error.value = e.response?.data?.message || 'Could not start the update.';
-	}
-}
-
-function startPolling() {
-	stopPolling();
-	pollTimer = setInterval(async () => {
-		try {
-			const data = await fetchStatus(false);
-			inMaintenance.value = false;
-			const state = data.update_status?.state;
-			if (state === 'success' || state === 'failed' || state === 'stalled') {
-				stopPolling();
-				updating.value = false;
-				if (props.canManageBackups) loadBackups({ quiet: true });
-				if (state === 'success') {
-					notice.value = 'Update finished successfully.';
-				} else if (state === 'stalled') {
-					error.value = `Update stalled: ${data.update_status.message}`;
-				} else {
-					error.value = `Update failed: ${data.update_status.message} The site may be in maintenance mode — check the server.`;
-				}
-			}
-		} catch (e) {
-			// 503 = maintenance mode = update in progress; keep polling
-			inMaintenance.value = true;
-		}
-	}, 4000);
-}
-
-function stopPolling() {
-	if (pollTimer) {
-		clearInterval(pollTimer);
-		pollTimer = null;
-	}
 }
 
 // Systemd only: a scheduled-style backup right now, filed into the Hourly tier.
@@ -251,23 +100,6 @@ async function saveSettings() {
 		error.value = e.response?.data?.message || 'Could not save backup settings.';
 	} finally {
 		savingSettings.value = false;
-	}
-}
-
-async function toggleOfflineMode() {
-	const desired = status.value.offline_mode;
-	savingOfflineMode.value = true;
-	error.value = '';
-	notice.value = '';
-	try {
-		const response = await axios.put('/json/system/offline-mode', { enabled: desired });
-		status.value.offline_mode = response.data.offline_mode;
-		notice.value = response.data.offline_mode ? 'Offline mode enabled.' : 'Offline mode disabled.';
-	} catch (e) {
-		status.value.offline_mode = !desired; // revert the checkbox — save failed
-		error.value = e.response?.data?.message || 'Could not save offline mode.';
-	} finally {
-		savingOfflineMode.value = false;
 	}
 }
 
@@ -397,152 +229,28 @@ onMounted(async () => {
 	if (props.canManageBackups) {
 		await loadBackups();
 		// Poll while a backup runs (and keep polling so a second admin's backup shows up).
-		// Paused while this page's update runs (the site is in maintenance mode); quiet covers an
-		// update this page doesn't know about — started elsewhere, or viewed without admin-system.
+		// Quiet: an update elsewhere puts the site in maintenance mode, and its 503s aren't worth showing.
 		backupTimer = setInterval(() => {
-			if (!updating.value) loadBackups({ quiet: true });
+			loadBackups({ quiet: true });
 		}, 4000);
 	}
 });
 onUnmounted(() => {
-	stopPolling();
-	stopDockerPolling();
 	clearInterval(backupTimer);
 	hideKey();
 });
 </script>
 
 <template>
-	<Head title="Updates & Backups" />
+	<Head title="Warehouse Backups" />
 	<AuthenticatedLayout :breadcrumb="breadcrumb">
 		<div class="max-w-4xl mx-auto p-4 space-y-6">
-			<h1 class="text-2xl font-bold">Updates & Backups</h1>
+			<h1 class="text-2xl font-bold">Warehouse Backups</h1>
 
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>
 			<div v-if="notice" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3">{{ notice }}</div>
 
 			<div v-if="canAdminSystem && !status" class="text-gray-500">Loading system status…</div>
-
-			<!-- Software update -->
-			<section v-if="canAdminSystem && status" class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Software {{ docker ? 'Version' : 'Update' }}</h2>
-				<div class="text-sm text-gray-700">
-					<p>
-						Current version:
-						<span v-if="status.version.release" class="font-semibold">{{ status.version.release }}</span>
-						<span v-else class="text-gray-500">unversioned</span>
-						(commit <span class="font-mono">{{ status.version.current || 'unknown' }}</span>)
-						<span v-if="status.version.current_date"> — {{ new Date(status.version.current_date).toLocaleString() }}</span>
-					</p>
-					<p v-if="status.version.current_subject" class="text-gray-500">“{{ status.version.current_subject }}”</p>
-				</div>
-
-				<!-- Docker / R Station: the host-side updater does the work; this page only asks it -->
-				<template v-if="docker">
-					<p v-if="!dockerUpdate?.enabled" class="text-sm text-gray-600">
-						Updating from this page is not set up. To turn it on, set <span class="font-mono">RI_UPDATE_SECRET</span> in
-						compose.yaml and install the updater on the server (“Automatic updates” in the Docker guide). Until then, upgrade by
-						pulling the new image and restarting it; the database is backed up automatically first when the upgrade has changes to apply.
-					</p>
-					<template v-else>
-						<p v-if="dockerUpdate.available_version" class="text-sm font-medium text-amber-700">
-							Version {{ dockerUpdate.available_version }} is available (checked {{ new Date(dockerUpdate.last_checked_at).toLocaleString() }}).
-						</p>
-						<p v-else-if="dockerUpdate.last_checked_at" class="text-sm text-gray-600">
-							Last checked {{ new Date(dockerUpdate.last_checked_at).toLocaleString() }}: nothing newer.
-						</p>
-
-						<div v-if="dockerBusy" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">
-							<p class="font-medium">{{ dockerStateText[dockerUpdate.state] }}</p>
-							<p v-if="dockerUpdate.message">{{ dockerUpdate.message }}</p>
-						</div>
-						<div v-else-if="dockerUpdate.state === 'stalled'" class="rounded bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 text-sm">
-							{{ dockerUpdate.message }}
-						</div>
-
-						<div v-if="dockerUpdate.can_request && !dockerBusy" class="flex gap-3 items-center">
-							<PrimaryButton :disabled="requestingDocker" @click="requestDockerUpdate('check')">Check for Updates</PrimaryButton>
-							<button
-								v-if="dockerUpdate.available_version || confirmingDockerUpdate"
-								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white"
-								:class="confirmingDockerUpdate ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'"
-								:disabled="requestingDocker"
-								@click="requestDockerUpdate('update')"
-							>
-								{{ confirmingDockerUpdate ? 'Confirm — every warehouse goes offline briefly' : 'Install Update' }}
-							</button>
-							<button v-if="confirmingDockerUpdate" class="text-sm text-gray-500 underline" @click="confirmingDockerUpdate = false">Cancel</button>
-						</div>
-						<p v-else-if="!dockerUpdate.can_request" class="text-xs text-gray-500">
-							Only an instance administrator can check for or install updates: it restarts every warehouse on this system.
-						</p>
-						<p class="text-xs text-gray-500">
-							The updater on the server downloads the new release and restarts the system. The database is backed up first when the release has changes to apply.
-						</p>
-					</template>
-				</template>
-
-				<template v-else>
-					<div v-if="status.updater_deprecated" class="rounded bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm">
-						<p class="font-medium">Deprecated: updating from this page will be removed.</p>
-						<p>
-							It pulls the code from GitHub, then runs the database migration and rebuilds the web assets from inside a web request,
-							which can leave the system half-updated if anything goes wrong. It still works for now. Prefer a Docker install, or
-							run <span class="font-mono">scripts/update.sh</span> from a shell on the server where you can watch it.
-						</p>
-					</div>
-					<div v-if="status.version.behind > 0" class="text-sm">
-						<p class="font-medium text-amber-700">{{ status.version.behind }} update(s) available:</p>
-						<ul class="font-mono text-xs text-gray-600 mt-1 space-y-0.5">
-							<li v-for="commit in status.version.pending_commits" :key="commit">{{ commit }}</li>
-						</ul>
-					</div>
-
-					<div v-if="updating" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">
-						<p class="font-medium">Update in progress…</p>
-						<p v-if="inMaintenance">The site is in maintenance mode while the update runs. This page will recover automatically.</p>
-						<p v-else-if="status.update_status?.message">{{ status.update_status.message }}</p>
-					</div>
-
-					<div class="flex gap-3 items-center" v-if="!updating">
-						<PrimaryButton :disabled="checking" @click="checkForUpdates">
-							{{ checking ? 'Checking…' : 'Check for Updates' }}
-						</PrimaryButton>
-						<button
-							v-if="status.version.behind > 0 || confirmingUpdate"
-							class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white"
-							:class="confirmingUpdate ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'"
-							@click="startUpdate"
-						>
-							{{ confirmingUpdate ? 'Confirm — site will briefly go offline' : 'Install Update' }}
-						</button>
-						<button v-if="confirmingUpdate" class="text-sm text-gray-500 underline" @click="confirmingUpdate = false">Cancel</button>
-					</div>
-					<p class="text-xs text-gray-500">
-						Installing an update backs up first, puts the site into maintenance mode, applies the update,
-						and verifies health before coming back online.
-					</p>
-				</template>
-			</section>
-
-			<!-- Offline Mode -->
-			<section v-if="canAdminSystem && status" class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Offline Mode</h2>
-				<p class="text-sm text-gray-600">
-					Turn this on when this warehouse has no reliable internet connection. It automatically
-					disables Cloudflare Turnstile (bot protection on login/registration/password reset) and
-					geocod.io address lookups (county/city/state auto-fill on Order Entry and People) — neither
-					is required for normal operation, they just fail slowly without a real network otherwise.
-					Nothing else changes — address, order, and inventory entry all work exactly the same either way.
-				</p>
-				<label class="flex items-center gap-3">
-					<input type="checkbox" v-model="status.offline_mode" :disabled="savingOfflineMode"
-						@change="toggleOfflineMode" class="h-5 w-5 rounded border-gray-300" />
-					<span class="text-sm font-medium text-gray-700">
-						{{ status.offline_mode ? 'Offline mode is ON' : 'Offline mode is off' }}
-					</span>
-				</label>
-			</section>
 
 			<!-- The key is not in any backup: say so, loudly, wherever backups are made or listed -->
 			<section v-if="canAdminSystem || canManageBackups" class="rounded-lg border-2 border-red-400 bg-red-50 p-5 space-y-2 text-sm text-red-900">

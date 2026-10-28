@@ -8,6 +8,7 @@ use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureAccountApproved;
 use App\Http\Middleware\EnsureAccountSessionCurrent;
 use App\Http\Middleware\EnsureDeviceAccess;
+use App\Http\Middleware\EnsureInstanceAdmin;
 use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\GuardWarehouseTab;
@@ -53,6 +54,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: RedirectToSetup::class);
         $middleware->alias([
             'permission' => CheckPermission::class,
+            'instance-admin' => EnsureInstanceAdmin::class,
             'kiosk-access' => EnsureKioskAccess::class,
             'device-auth' => AuthenticateManagedDevice::class,
             'trust-auth' => TrustAuth::class,

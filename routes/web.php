@@ -325,9 +325,26 @@ Route::get('/setup/package-types', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/package-types')]);
 })->middleware(['auth', 'permission:manage-packagetypes']);
 
-// Updates & Backups: one page for software updates, offline mode, backup zips, the tiered backup schedule and
-// the app key. Each section is gated by its own permission (the JSON endpoints below enforce the same), so the
-// page opens for anyone holding admin-system or manage-backups.
+// Instance Admin: what belongs to the whole instance rather than one warehouse — software updates, offline mode,
+// whole-instance backups (and later warehouse management). Instance administrators only; the JSON half is
+// /json/instance/*, which reuses SystemController's actions behind the same gate.
+Route::get('/setup/instance', function () {
+    return Inertia::render('InstanceAdmin', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/instance'),
+        'runtime' => config('system.runtime') === 'docker' ? 'docker' : 'systemd',
+    ]);
+})->middleware(['auth', 'instance-admin']);
+
+Route::group(['prefix' => 'json/instance', 'middleware' => ['auth', 'instance-admin']], function () {
+    Route::get('/status', [SystemController::class, 'status']);
+    Route::post('/check-updates', [SystemController::class, 'checkUpdates']);
+    Route::post('/update', [SystemController::class, 'update']);
+    Route::put('/offline-mode', [SystemController::class, 'saveOfflineMode']);
+});
+
+// Warehouse Backups (/setup/system): backup zips, the backup schedule and the warehouse key. Each section is gated
+// by its own permission (the JSON endpoints below enforce the same), so the page opens for anyone holding
+// admin-system or manage-backups.
 Route::get('/setup/system', function () {
     $user = Auth::user();
     $canAdmin = $user->hasPermission('admin-system');

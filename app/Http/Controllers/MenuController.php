@@ -23,6 +23,10 @@ class MenuController extends Controller
         // permission_key means "visible to everyone authenticated".
         // hasPermission() recomputes the whole effective set (three queries) on every call, so ask once.
         $allowed = array_flip($user->effectivePermissionKeys());
+        // 'instance-admin' is not a permission key: it means the login is an instance administrator.
+        if ($user->account?->is_instance_admin) {
+            $allowed['instance-admin'] = 0;
+        }
 
         $pages = Page::with(['menuItems' => function ($query) {
             $query->orderBy('order');

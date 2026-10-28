@@ -125,3 +125,19 @@ test('instance:update requests through the flag and refuses when off or busy', f
     $this->artisan('instance:update', ['action' => 'check'])->assertFailed();
     $this->artisan('instance:update', ['action' => 'status'])->assertSuccessful();
 });
+
+test('Instance Admin is for instance administrators only, with its own menu tile', function () {
+    $plain = ($this->admin)(false);
+    $this->actingAs($plain)->get('/setup/instance')->assertForbidden();
+    $this->actingAs($plain)->getJson('/json/instance/status')->assertForbidden();
+    $this->actingAs($plain)->putJson('/json/instance/offline-mode', ['enabled' => true])->assertForbidden();
+
+    $instanceAdmin = ($this->admin)(true);
+    $this->actingAs($instanceAdmin)->get('/setup/instance')->assertOk();
+    $this->actingAs($instanceAdmin)->getJson('/json/instance/status')->assertOk()->assertJsonStructure(['version', 'offline_mode']);
+
+    $tiles = fn ($user) => collect($this->actingAs($user)->getJson('/json/menu-data')->json())
+        ->pluck('menu_items')->flatten(1)->pluck('link_url');
+    expect($tiles($instanceAdmin))->toContain('/setup/instance')
+        ->and($tiles($plain))->not->toContain('/setup/instance');
+});
