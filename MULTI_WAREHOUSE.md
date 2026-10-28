@@ -963,6 +963,23 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   first-run wizard restore (warehouse 1, `/install/restore`) uses the same folder scheme. Backup zips and their status files stay in the shared
   backup dir until phase 4.
 - Tests: `WarehouseRestoreSetupTest` (real schema: the restore, the failure recovery, the gates).
+**Slice (d), the chooser and domain mapping, is built (2026-10-29).**
+- **Chooser** (`WarehouseChooserController`, `Auth/Login.vue`): the login page always names the warehouse once there are several ("Signing in to X"),
+  and on the shared address offers "Not the right warehouse?": the `listed`, active warehouses as `?w=` links, plus a typed code. A **mapped
+  hostname never shows a chooser** (it is locked, §3). The typed code is the warehouse's id (any case or spacing), posted to `/choose-warehouse`
+  (10/min per address) and followed through the same `?w=` landing that sets the selector cookie; a warehouse awaiting setup is reached the same way
+  and lands on `/activate`. A code that matches nothing, or a warehouse that isn't open, gets the same plain "No warehouse matches that code."
+  Unlisted warehouses are never in the list.
+- **Names are unique** (the control table already had the unique index): `WarehouseCreator` checks first and says "There is already a warehouse called …".
+- **Domain mapping** (`WarehouseDomains`, `php artisan warehouse:domain list | add <id> <host> [--primary] | remove | primary`; the instance console, phase 5,
+  will do it in the browser): a bare lower-case hostname with a dot; no scheme/port/path, no IP address, and never the instance's own address (APP_URL),
+  which is the shared one and carries the default warehouse's machine URLs. A hostname reaches one warehouse only. A warehouse's first hostname is its
+  primary (`publicRoot()`, used in emails); removing the primary promotes another. DNS and TLS for the host are outside the app and the command says so.
+- **Turnstile hostname step:** with Turnstile on, `add` warns that the host must be added to the Cloudflare widget's hostnames. Cloudflare's siteverify
+  answer names the host a passed check came from, so `TurnstileService` records `warehouse_domains.turnstile_confirmed_at` the first time that equals a mapped
+  host; until then `warehouse:domain list` shows "NOT confirmed". It is a warning, never a block.
+- Tests: `WarehouseDomainsTest`, `WarehouseChooserTest`. Not built: `skip_chooser` has no use yet (a mapped host never shows one).
+
 - **Backup and restore, the whole picture (confirmed 2026-10-29).** Two kinds, both required: (1) **per warehouse**, the normal flow
   (that warehouse's database and files; a warehouse admin's own restore is the same engine plus the lineage check, phase 4); (2) **whole
   instance** (instance admin only): control + accounts + every warehouse's database and files, restoring them all onto a new instance.
@@ -994,7 +1011,7 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   reach it that way: part of the restore slice).
 
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
-mapping; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode; (f) removal.
+mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode; (f) removal.
 
 ### Remaining work
 

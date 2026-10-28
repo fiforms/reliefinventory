@@ -32,6 +32,12 @@ class WarehouseCreator
     /** @return array{0: Warehouse, 1: string} the warehouse and its setup code (shown once) */
     public function create(string $displayName, ?string $adminEmail = null, ?string $createdBy = null): array
     {
+        $displayName = trim($displayName);
+        // Names are unique on the instance (§3): the chooser and the login page show them, so a look-alike would mislead.
+        if ($displayName === '' || Warehouse::where('display_name', $displayName)->exists()) {
+            throw new \InvalidArgumentException($displayName === '' ? 'A warehouse needs a name.' : "There is already a warehouse called \"{$displayName}\".");
+        }
+
         $id = Warehouse::newId();
         $warehouse = new Warehouse([
             'schema_name' => Provisioner::standardSchemaName($id),

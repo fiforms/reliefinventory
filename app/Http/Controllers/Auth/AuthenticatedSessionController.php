@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\WarehouseChooserController;
 use App\Http\Requests\Auth\LoginRequest;
 use App\Models\LoginHistory;
 use App\Services\PinLoginService;
@@ -52,6 +53,7 @@ class AuthenticatedSessionController extends Controller
         return Inertia::render('Auth/Login', [
             'canResetPassword' => Route::has('password.request') && ! app(TurnstileService::class)->misconfigured(),
             'status' => session('status'),
+            'chooser' => WarehouseChooserController::forLogin($request),
         ]);
     }
 

@@ -39,6 +39,9 @@ Route::get('/activate', [WarehouseSetupController::class, 'show'])->name('activa
 Route::post('/activate/code', [WarehouseSetupController::class, 'code'])->middleware('throttle:30,1')->name('activate.code');
 Route::post('/activate/setup', [WarehouseSetupController::class, 'setup'])->middleware('throttle:15,1')->name('activate.setup');
 
+// The login page's "enter a warehouse code" (MULTI_WAREHOUSE.md §3): a typed code is a warehouse's id, rate-limited and answered plainly.
+Route::post('/choose-warehouse', [WarehouseChooserController::class, 'choose'])->middleware('throttle:10,1')->name('warehouse.choose');
+
 // Accepting an invitation to a warehouse with an existing login (MULTI_WAREHOUSE.md §6): the emailed link is public (the invitee
 // can't be signed in to the inviting warehouse yet); the in-app list is for a login signed in anywhere it belongs.
 Route::get('/invitations/{token}', [MembershipInvitationController::class, 'show'])->name('invitations.show');
