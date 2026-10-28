@@ -12,8 +12,10 @@
 	  Full Instance Backups    One zip of every warehouse plus the control and accounts schemas. Command-line only for
 	                           now (it needs the database administrator's password, which only the provisioner container
 	                           holds) — this tab says how.
-	  Warehouses (planned)     List / enable / disable / create / delete warehouses, with the 30-days-inactive rule
-	                           before deletion (the artisan command can still delete at once).
+	  Warehouses               The warehouse:* commands as buttons (InstanceWarehouseController): list, create, edit, suspend /
+	                           maintenance / activate / resume, archive, remove, setup codes, hostnames. Every change asks for
+	                           the person's password again. Removal waits 30 days after archiving here (the artisan command
+	                           removes at once).
 
 	`runtime` ('systemd' | 'docker') comes from config('system.runtime'). During an update the site enters
 	maintenance mode, so status polls start failing with 503 — expected, and shown as progress rather than an error.
@@ -24,7 +26,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import axios from 'axios';
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
 
 const props = defineProps({
 	breadcrumb: { type: Array },
@@ -206,7 +208,177 @@ async function toggleOfflineMode() {
 	}
 }
 
+
+// ---- Warehouses ----
+// Every change goes through one dialog that asks for your password again (the server checks it on each request).
+const warehouses = ref(null);
+const removalWaitDays = ref(30);
+const dialog = ref(null); // { title, text, danger, button, fields: [{ key, label, type, value, help }], run(values, password) }
+const dialogPassword = ref('');
+const dialogError = ref('');
+const dialogBusy = ref(false);
+const result = ref(null); // a setup code to show once
+const statusNames = {
+	provisioning: 'Being created', awaiting_setup: 'Waiting for setup', active: 'Active', maintenance: 'Maintenance', restoring: 'Restoring',
+	upgrading: 'Upgrading', held: 'Held', suspended: 'Suspended', archived: 'Archived',
+};
+const statusClass = (st) => ({
+	active: 'bg-green-100 text-green-800',
+	awaiting_setup: 'bg-blue-100 text-blue-800',
+	archived: 'bg-gray-200 text-gray-700',
+	suspended: 'bg-amber-100 text-amber-800',
+	maintenance: 'bg-amber-100 text-amber-800',
+}[st] || 'bg-red-100 text-red-800');
+const shortDate = (iso) => (iso ? new Date(iso).toLocaleDateString() : '');
+
+async function loadWarehouses() {
+	try {
+		const { data } = await axios.get('/json/instance/warehouses');
+		warehouses.value = data.warehouses;
+		removalWaitDays.value = data.removal_wait_days;
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not load the warehouses.';
+	}
+}
+
+function openDialog(d) {
+	dialog.value = { fields: [], ...d, values: Object.fromEntries((d.fields || []).map((f) => [f.key, f.value ?? (f.type === 'checkbox' ? false : '')])) };
+	dialogPassword.value = '';
+	dialogError.value = '';
+	error.value = '';
+	notice.value = '';
+	result.value = null;
+}
+
+function closeDialog() {
+	if (dialogBusy.value) return;
+	dialog.value = null;
+	dialogPassword.value = '';
+}
+
+async function submitDialog() {
+	dialogBusy.value = true;
+	dialogError.value = '';
+	try {
+		const { data } = await dialog.value.run(dialog.value.values, dialogPassword.value);
+		notice.value = data.message || 'Done.';
+		if (data.setup_code) result.value = { code: data.setup_code, url: data.setup_url, note: data.message };
+		else if (data.backup !== undefined) result.value = { removed: data };
+		else if (data.note) notice.value += ` ${data.note}`;
+		dialog.value = null;
+		await loadWarehouses();
+	} catch (e) {
+		dialogError.value = e.response?.data?.errors
+			? Object.values(e.response.data.errors).flat().join(' ')
+			: e.response?.data?.message || 'That did not work.';
+	} finally {
+		dialogBusy.value = false;
+		dialogPassword.value = '';
+	}
+}
+
+const post = (id, action, body) => (password) => axios.post(`/json/instance/warehouses/${id}/${action}`, { ...body, password });
+
+function newWarehouse() {
+	openDialog({
+		title: 'New warehouse', button: 'Create warehouse',
+		text: 'Creates an empty warehouse with its own database and files, and a one-time setup code. Whoever holds the code makes themselves its Administrator. This can take a minute.',
+		fields: [
+			{ key: 'name', label: 'Name', type: 'text' },
+			{ key: 'email', label: 'Contact email (optional)', type: 'email' },
+			{ key: 'training', label: 'A training warehouse (class tools; disposable)', type: 'checkbox' },
+		],
+		run: (v, password) => axios.post('/json/instance/warehouses', { name: v.name, email: v.email || null, training: v.training, password }),
+	});
+}
+
+function editWarehouse(w) {
+	openDialog({
+		title: `Edit ${w.name}`, button: 'Save',
+		fields: [
+			{ key: 'name', label: 'Name (the login page and the chooser show it)', type: 'text', value: w.name },
+			{ key: 'email', label: 'Contact email', type: 'email', value: w.admin_email || '' },
+			{ key: 'listed', label: 'Listed in the chooser on the shared address', type: 'checkbox', value: w.listed },
+			{ key: 'notes', label: 'Notes (only instance admins see these)', type: 'textarea', value: w.notes || '' },
+		],
+		run: (v, password) => axios.put(`/json/instance/warehouses/${w.id}`, { name: v.name, email: v.email || null, listed: v.listed, notes: v.notes || null, password }),
+	});
+}
+
+function suspendWarehouse(w, maintenance) {
+	openDialog({
+		title: `${maintenance ? 'Put into maintenance' : 'Suspend'} ${w.name}`, button: maintenance ? 'Start maintenance' : 'Suspend',
+		text: `${w.name} stops answering everyone (logins, machine URLs, print clients) until it is activated again. Nothing is deleted.`
+			+ (w.is_default ? ' This is the default warehouse: the unprefixed machine URLs stop working too.' : ''),
+		danger: true,
+		fields: [{ key: 'reason', label: 'Reason (kept in the audit log)', type: 'text' }],
+		run: (v, password) => post(w.id, 'suspend', { maintenance, reason: v.reason || null })(password),
+	});
+}
+
+const simple = (w, action, title, text, button = title, danger = false) => openDialog({ title: `${title}: ${w.name}`, text, button, danger, run: (v, password) => post(w.id, action, {})(password) });
+const activateWarehouse = (w) => simple(w, 'activate', 'Activate', `${w.name} goes back into service.`);
+const resumeWarehouse = (w) => simple(w, 'resume', 'Resume', `Ends a restore that left ${w.name} out of service. Check the restore log first.`);
+
+function archiveWarehouse(w, undo = false) {
+	openDialog({
+		title: `${undo ? 'Bring back' : 'Archive'} ${w.name}`, button: undo ? 'Bring back' : 'Archive', danger: !undo,
+		text: undo
+			? `${w.name} returns to the state it was in before it was archived.`
+			: `${w.name} stops serving anyone, but nothing is deleted. After ${removalWaitDays.value} days it can be removed for good from here. You can bring it back at any time before that.`,
+		run: (v, password) => post(w.id, 'archive', { undo })(password),
+	});
+}
+
+function removeWarehouse(w) {
+	openDialog({
+		title: `Remove ${w.name} for good`, button: 'Remove for good', danger: true,
+		text: 'A final backup is taken first and kept in the removed-warehouses folder of the backup directory. Then the warehouse\'s database, files and the logins that belonged only to it are deleted. This cannot be undone. It can take several minutes.',
+		fields: [{ key: 'confirm', label: `Type the warehouse's name (${w.name}) to confirm`, type: 'text' }],
+		run: (v, password) => axios.delete(`/json/instance/warehouses/${w.id}`, { data: { confirm: v.confirm, password } }),
+	});
+}
+
+function newSetupCode(w) {
+	simple(w, 'setup-code', 'New setup code', 'Issues a new one-time code for whoever will set this warehouse up. Any earlier code stops working. The code is shown once.', 'Issue code');
+}
+
+function revokeSetupCode(w) {
+	openDialog({ title: `Revoke the setup code: ${w.name}`, button: 'Revoke', danger: true, text: 'The waiting code stops working.', run: (v, password) => post(w.id, 'setup-code', { revoke: true })(password) });
+}
+
+function addHostname(w) {
+	openDialog({
+		title: `Add a hostname to ${w.name}`, button: 'Add hostname',
+		text: 'A hostname mapped to a warehouse reaches only that warehouse and never shows the chooser. You must point DNS and TLS for it at this server yourself.',
+		fields: [
+			{ key: 'hostname', label: 'Hostname (for example warehouse2.example.org)', type: 'text' },
+			{ key: 'primary', label: 'Make it the primary address (used in emails and links)', type: 'checkbox' },
+		],
+		run: (v, password) => post(w.id, 'domains', { hostname: v.hostname, primary: v.primary })(password),
+	});
+}
+
+function removeHostname(w, hostname) {
+	openDialog({
+		title: `Remove ${hostname}`, button: 'Remove hostname', danger: true,
+		text: `${hostname} will no longer reach ${w.name}.`,
+		run: (v, password) => axios.delete(`/json/instance/warehouses/${w.id}/domains`, { data: { hostname, password } }),
+	});
+}
+
+const copied = ref(false);
+async function copyCode() {
+	try {
+		await navigator.clipboard.writeText(result.value.code);
+		copied.value = true;
+	} catch {
+		copied.value = false;
+	}
+}
+
 onMounted(() => {
+	loadWarehouses();
 	fetchStatus().catch(() => { error.value = 'Could not load system status.'; });
 });
 onUnmounted(() => {
@@ -229,7 +401,7 @@ onUnmounted(() => {
 			<div v-if="notice" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3">{{ notice }}</div>
 
 			<div class="flex gap-1 border-b border-gray-300">
-				<button v-for="t in [['updates', 'Updates & Mode'], ['backups', 'Full Instance Backups']]" :key="t[0]"
+				<button v-for="t in [['updates', 'Updates & Mode'], ['warehouses', 'Warehouses'], ['backups', 'Full Instance Backups']]" :key="t[0]"
 					class="px-4 py-2 text-sm font-medium -mb-px border-b-2"
 					:class="tab === t[0] ? 'border-indigo-600 text-indigo-700' : 'border-transparent text-gray-600 hover:text-gray-900'"
 					@click="tab = t[0]">{{ t[1] }}</button>
@@ -360,6 +532,114 @@ onUnmounted(() => {
 
 			</div>
 
+			<div v-if="tab === 'warehouses'" class="space-y-6">
+				<section class="bg-white shadow rounded-lg p-6 space-y-4">
+					<div class="flex items-center justify-between gap-3 flex-wrap">
+						<h2 class="text-lg font-semibold">Warehouses</h2>
+						<PrimaryButton @click="newWarehouse">New warehouse</PrimaryButton>
+					</div>
+					<p class="text-sm text-gray-600">
+						Each warehouse has its own database, files and people. Every change here asks for your password again.
+						Archiving takes a warehouse out of service without deleting anything; an archived warehouse can be removed for good from here
+						after {{ removalWaitDays }} days. <span class="text-gray-500">(The command
+						<span class="font-mono">php artisan warehouse:remove &lt;id&gt;</span> removes an archived warehouse immediately, with no waiting period.)</span>
+					</p>
+
+					<div v-if="result?.code" class="rounded border-2 border-amber-400 bg-amber-50 p-4 text-sm space-y-2">
+						<p class="font-semibold">{{ result.note }}</p>
+						<p>Setup code: <span class="font-mono text-lg font-bold">{{ result.code }}</span>
+							<button class="ml-3 text-xs underline" @click="copyCode">{{ copied ? 'Copied' : 'Copy' }}</button></p>
+						<p>Address: <span class="font-mono break-all">{{ result.url }}</span></p>
+					</div>
+					<div v-if="result?.removed" class="rounded border border-gray-300 bg-gray-50 p-4 text-sm space-y-1">
+						<p>Final backup: <span class="font-mono break-all">{{ result.removed.backup || 'none' }}</span></p>
+						<p>Logins removed with it: {{ result.removed.accounts_removed.length ? result.removed.accounts_removed.join(', ') : 'none' }}; kept (they belong elsewhere): {{ result.removed.accounts_kept }}</p>
+						<p v-for="n in result.removed.notes" :key="n" class="text-amber-800">{{ n }}</p>
+					</div>
+
+					<div v-if="!warehouses" class="text-gray-500">Loading…</div>
+					<div v-for="w in warehouses" :key="w.id" class="border rounded-lg p-4 space-y-2" :class="w.status === 'archived' ? 'bg-gray-50' : ''">
+						<div class="flex items-center gap-2 flex-wrap">
+							<h3 class="font-semibold">{{ w.name }}</h3>
+							<span class="text-xs rounded px-2 py-0.5" :class="statusClass(w.status)">{{ statusNames[w.status] || w.status }}</span>
+							<span v-if="w.is_default" class="text-xs rounded px-2 py-0.5 bg-indigo-100 text-indigo-800">Default</span>
+							<span v-if="w.is_training" class="text-xs rounded px-2 py-0.5 bg-yellow-100 text-yellow-800">Training</span>
+							<span v-if="!w.listed" class="text-xs text-gray-500">not listed in the chooser</span>
+							<span class="ml-auto font-mono text-xs text-gray-500">{{ w.id }}</span>
+						</div>
+						<p v-if="w.admin_email" class="text-xs text-gray-600">Contact: {{ w.admin_email }}</p>
+						<p v-if="w.notes" class="text-xs text-gray-600 whitespace-pre-line">{{ w.notes }}</p>
+						<p v-if="w.status === 'archived'" class="text-xs text-gray-600">
+							Archived {{ shortDate(w.archived_at) }}.
+							<template v-if="w.is_default">The default warehouse cannot be removed.</template>
+							<template v-else-if="w.can_remove_now">It can be removed for good now.</template>
+							<template v-else>It can be removed here from {{ shortDate(w.removable_on) }}.</template>
+						</p>
+						<p v-if="w.status === 'awaiting_setup'" class="text-xs text-gray-600">
+							Setup address <span class="font-mono break-all">{{ w.setup_url }}</span> —
+							{{ w.setup_code_until ? `a code is waiting, valid until ${shortDate(w.setup_code_until)}` : 'no setup code is waiting' }}.
+						</p>
+
+						<div class="flex gap-2 flex-wrap items-center text-xs">
+							<span class="text-gray-500">Hostnames:</span>
+							<span v-if="!w.domains.length" class="text-gray-400">none (reached by the shared address)</span>
+							<span v-for="d in w.domains" :key="d.hostname" class="inline-flex items-center gap-1 rounded bg-gray-100 px-2 py-0.5 font-mono">
+								{{ d.hostname }}<span v-if="d.primary" class="text-gray-500 font-sans">(primary)</span>
+								<button class="text-red-600 font-sans" :title="`Remove ${d.hostname}`" @click="removeHostname(w, d.hostname)">×</button>
+							</span>
+							<button class="underline text-indigo-700" @click="addHostname(w)">Add hostname</button>
+						</div>
+
+						<div class="flex gap-3 flex-wrap text-sm pt-1">
+							<button class="underline text-indigo-700" @click="editWarehouse(w)">Edit</button>
+							<template v-if="w.status === 'active'">
+								<button class="underline text-amber-700" @click="suspendWarehouse(w, false)">Suspend</button>
+								<button class="underline text-amber-700" @click="suspendWarehouse(w, true)">Maintenance</button>
+							</template>
+							<button v-if="w.status === 'suspended' || w.status === 'maintenance'" class="underline text-green-700" @click="activateWarehouse(w)">Activate</button>
+							<button v-if="w.status === 'restoring'" class="underline text-green-700" @click="resumeWarehouse(w)">Resume</button>
+							<template v-if="w.status === 'awaiting_setup'">
+								<button class="underline text-indigo-700" @click="newSetupCode(w)">New setup code</button>
+								<button class="underline text-amber-700" @click="revokeSetupCode(w)">Revoke code</button>
+							</template>
+							<button v-if="w.status === 'archived'" class="underline text-indigo-700" @click="archiveWarehouse(w, true)">Bring back</button>
+							<button v-else-if="!w.is_default && ['active', 'suspended', 'maintenance', 'awaiting_setup'].includes(w.status)" class="underline text-red-700" @click="archiveWarehouse(w)">Archive</button>
+							<button v-if="w.status === 'archived' && !w.is_default" class="underline" :class="w.can_remove_now ? 'text-red-700 font-semibold' : 'text-gray-400 cursor-not-allowed'"
+								:disabled="!w.can_remove_now" :title="w.can_remove_now ? '' : `Available from ${shortDate(w.removable_on)}`" @click="removeWarehouse(w)">Remove for good</button>
+						</div>
+					</div>
+				</section>
+
+				<!-- The password dialog every change goes through -->
+				<div v-if="dialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="closeDialog">
+					<form class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4 max-h-full overflow-y-auto" @submit.prevent="submitDialog">
+						<h2 class="text-lg font-semibold" :class="dialog.danger ? 'text-red-800' : ''">{{ dialog.title }}</h2>
+						<p v-if="dialog.text" class="text-sm text-gray-700">{{ dialog.text }}</p>
+						<div v-for="f in dialog.fields" :key="f.key">
+							<label v-if="f.type === 'checkbox'" class="flex items-center gap-2 text-sm">
+								<input type="checkbox" v-model="dialog.values[f.key]" class="h-4 w-4 rounded border-gray-300" /> {{ f.label }}
+							</label>
+							<label v-else class="block text-sm">
+								<span class="text-gray-700">{{ f.label }}</span>
+								<textarea v-if="f.type === 'textarea'" v-model="dialog.values[f.key]" rows="3" class="mt-1 block w-full rounded border-gray-300 text-sm"></textarea>
+								<input v-else :type="f.type" v-model="dialog.values[f.key]" class="mt-1 block w-full rounded border-gray-300 text-sm" autocomplete="off" />
+							</label>
+						</div>
+						<label class="block text-sm">
+							<span class="text-gray-700 font-medium">Your password, to confirm</span>
+							<input type="password" v-model="dialogPassword" required autocomplete="current-password" class="mt-1 block w-full rounded border-gray-300 text-sm" />
+						</label>
+						<p v-if="dialogError" class="rounded bg-red-100 border border-red-400 text-red-800 px-3 py-2 text-sm">{{ dialogError }}</p>
+						<div class="flex gap-3 justify-end items-center">
+							<button type="button" class="text-sm text-gray-600 underline" :disabled="dialogBusy" @click="closeDialog">Cancel</button>
+							<PrimaryButton :disabled="dialogBusy || !dialogPassword" :class="dialog.danger ? 'bg-red-600 hover:bg-red-500' : ''">
+								{{ dialogBusy ? 'Working…' : dialog.button }}
+							</PrimaryButton>
+						</div>
+					</form>
+				</div>
+			</div>
+
 			<div v-if="tab === 'backups'" class="space-y-6">
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
 					<h2 class="text-lg font-semibold">Full Instance Backups</h2>
@@ -377,7 +657,7 @@ onUnmounted(() => {
 docker compose exec provisioner php artisan restore:instance &lt;zip&gt;   # other containers stopped</pre>
 					<p class="text-xs text-gray-500">
 						Backups are written to the <span class="font-mono">instance</span> folder of the backup directory. Buttons to make,
-						list and download them will come here later, next to warehouse management (list, enable/disable, create and delete).
+						list and download them will come here later.
 					</p>
 				</section>
 			</div>

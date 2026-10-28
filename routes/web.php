@@ -340,6 +340,21 @@ Route::group(['prefix' => 'json/instance', 'middleware' => ['auth', 'instance-ad
     Route::post('/check-updates', [SystemController::class, 'checkUpdates']);
     Route::post('/update', [SystemController::class, 'update']);
     Route::put('/offline-mode', [SystemController::class, 'saveOfflineMode']);
+
+    // Warehouse management. Every write re-asks for the signed-in person's password (InstanceWarehouseController::guarded).
+    Route::get('/warehouses', [InstanceWarehouseController::class, 'index']);
+    Route::middleware('throttle:20,1')->group(function () {
+        Route::post('/warehouses', [InstanceWarehouseController::class, 'store']);
+        Route::put('/warehouses/{id}', [InstanceWarehouseController::class, 'update']);
+        Route::post('/warehouses/{id}/suspend', [InstanceWarehouseController::class, 'suspend']);
+        Route::post('/warehouses/{id}/activate', [InstanceWarehouseController::class, 'activate']);
+        Route::post('/warehouses/{id}/resume', [InstanceWarehouseController::class, 'resume']);
+        Route::post('/warehouses/{id}/archive', [InstanceWarehouseController::class, 'archive']);
+        Route::post('/warehouses/{id}/setup-code', [InstanceWarehouseController::class, 'setupCode']);
+        Route::post('/warehouses/{id}/domains', [InstanceWarehouseController::class, 'addDomain']);
+        Route::delete('/warehouses/{id}/domains', [InstanceWarehouseController::class, 'removeDomain']);
+        Route::delete('/warehouses/{id}', [InstanceWarehouseController::class, 'destroy']);
+    });
 });
 
 // Warehouse Backups (/setup/system): backup zips, the backup schedule and the warehouse key. Each section is gated

@@ -164,6 +164,10 @@ async function markAllNotificationsRead() {
                                     </template>
 
                                     <template #content>
+                                        <div v-if="$page.props.warehouse?.name" class="border-b border-gray-200 px-4 py-2">
+                                            <div class="text-xs text-gray-500">Warehouse</div>
+                                            <div class="break-words text-sm font-medium text-gray-800">{{ $page.props.warehouse.name }}</div>
+                                        </div>
                                         <DropdownLink
                                             :href="route('profile.edit')"
                                         >
@@ -283,6 +287,9 @@ async function markAllNotificationsRead() {
                             </div>
                             <div class="text-sm font-medium text-gray-500">
                                 {{ $page.props.auth.user.email }}
+                            </div>
+                            <div v-if="$page.props.warehouse?.name" class="mt-1 text-sm text-gray-500">
+                                Warehouse: {{ $page.props.warehouse.name }}
                             </div>
                         </div>
 
