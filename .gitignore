@@ -6,6 +6,7 @@
 /secrets
 /storage/*.key
 /storage/pail
+/storage/backups
 /vendor
 /chatgpt
 /docs
