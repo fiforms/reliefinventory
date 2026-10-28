@@ -1026,6 +1026,22 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
 - Tests: `WarehouseRemovalTest` (archive and undo, the default is protected, the guards, the account matrix with a training warehouse, and a real warehouse removed end to end).
 - **Not built:** the console buttons and a page for the audit log (phase 5); a global-backup option to include removed warehouses' backups (phase 4).
 
+**Phase 4, slice (a), per-warehouse backups, is built (2026-10-29)** (the rest of phase 4 is listed under "Remaining work"):
+- **A folder per warehouse:** `BackupService::dir()` is `<backup dir>/warehouses/<id>` (zips, `backup.log`, the lock; the restore and training folders were already there),
+  and `Backup::path()` follows it. The default warehouse's existing zips move in on `instance:migrate` (`WarehouseLayout`, only `relief-backup-*.zip` and `backup.log`;
+  their `backups` rows hold file names only, so they stay valid).
+- **One backup at a time, instance-wide:** every backup also takes `<backup dir>/.instance-backup.lock` and waits for it (`backup.lock_wait_seconds`, 3600; the page shows
+  "Waiting for another backup to finish"), then fails with a plain message if it never comes. The per-warehouse lock and the row check stay.
+- **Live-state tables:** `config/backup.php` `live_state_tables` (`sessions`, `cache`, `cache_locks`, `jobs`, `job_batches`; `password_reset_tokens` is gone from warehouse schemas) are dumped
+  with `--ignore-table-data` (structure kept; mariadb-dump only, since mysqldump has no such option and `--ignore-table` would drop the structure) and **truncated after every
+  restore** (`clearMachineLocalState`), which also covers older backups. A test fails if a listed table doesn't exist.
+- **No more `artisan down` for a restore:** a forced restore of a set-up warehouse sets that warehouse's status to `restoring` (ResolveWarehouse answers 503 for it alone) and back
+  after; a failed load leaves it `restoring` on purpose, and `php artisan warehouse:resume <id>` (or `setup:reset`) ends that. `scripts/update.sh`'s `down` is the software update, which
+  is instance-wide by nature, and stays.
+- **Docker scheduler:** `ri-db-backup` (no label) runs `warehouse:each "backup:scheduled"`: every active warehouse gets one recorded backup a day (a marker file in its folder remembers),
+  one at a time. The labelled pre-migration backup is still the default warehouse's only, in `$RI_BACKUP_DIR`: a pre-upgrade backup of every warehouse is the hold-all slice.
+- Tests: in `BackupTest` (per-warehouse folders, the instance lock, the dump arguments and the list, truncation, `backup:scheduled`, the legacy move, `warehouse:resume`) and `RestoreTest`.
+
 - **Backup and restore, the whole picture (confirmed 2026-10-29).** Two kinds, both required: (1) **per warehouse**, the normal flow
   (that warehouse's database and files; a warehouse admin's own restore is the same engine plus the lineage check, phase 4); (2) **whole
   instance** (instance admin only): control + accounts + every warehouse's database and files, restoring them all onto a new instance.
