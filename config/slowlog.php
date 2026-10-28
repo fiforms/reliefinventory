@@ -35,7 +35,4 @@ return [
 
     // When the file passes this size it is rotated to slow-queries.jsonl.1 (one old copy kept).
     'max_bytes' => 5 * 1024 * 1024,
-
-    // Docker only: where the stack keeps the database root password (see App\Console\Commands\SlowLogMaintain).
-    'db_root_password_file' => env('RI_DB_ROOT_PASSWORD_FILE', '/secrets/db_root_password'),
 ];

@@ -23,7 +23,7 @@ class WarehouseConsole
 {
     /** Commands (or `prefix:` families) that never work on one warehouse's data. */
     private const INSTANCE_COMMANDS = [
-        'instance:', 'warehouse:', 'account:', 'queue:', 'schedule:', 'slowlog:', 'config:', 'route:', 'view:', 'event:',
+        'instance:', 'provisioner:', 'warehouse:', 'account:', 'queue:', 'schedule:', 'slowlog:', 'config:', 'route:', 'view:', 'event:',
         'optimize', 'reverb:', 'package:discover', 'vendor:publish', 'key:generate', 'list', 'help', 'about', 'env',
         'completion', '_complete', 'inspire', 'test', 'pail', 'serve', 'make:', 'pest:', 'ziggy:', 'up', 'down', 'storage:',
         'lang:', 'stub:', 'docs', 'inertia:', 'sail:', 'install:', 'reload',

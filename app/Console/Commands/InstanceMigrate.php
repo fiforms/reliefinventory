@@ -6,6 +6,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Control\Warehouse;
+use App\Services\Warehouses\ProvisioningClient;
 use App\Services\Warehouses\WarehouseContext;
 use App\Services\Warehouses\WarehouseLayout;
 use Illuminate\Console\Command;
@@ -42,6 +43,28 @@ class InstanceMigrate extends Command
         }
 
         self::registerDefaultWarehouse();
+
+        // Docker: each warehouse needs its own database user (and the default one a standard schema name) before it can
+        // be opened. Only the provisioner may make them; ask it and wait.
+        if (ProvisioningClient::applies()) {
+            foreach (Warehouse::orderByDesc('is_default')->orderBy('created_at')->get() as $warehouse) {
+                if (! ProvisioningClient::needed($warehouse)) {
+                    continue;
+                }
+                $this->components->info("Asking the provisioner to set up warehouse {$warehouse->id}");
+                try {
+                    foreach (app(ProvisioningClient::class)->request($warehouse, $warehouse->is_default ? 'adopt' : 'create', 'instance:migrate') as $line) {
+                        $this->line("  {$line}");
+                    }
+                } catch (\Throwable $e) {
+                    $this->components->error($e->getMessage());
+
+                    return self::FAILURE;
+                }
+                // Its schema name or password may have changed under the connection this process already opened.
+                $context->forget();
+            }
+        }
 
         $failed = 0;
         foreach (Warehouse::orderByDesc('is_default')->orderBy('created_at')->get() as $warehouse) {

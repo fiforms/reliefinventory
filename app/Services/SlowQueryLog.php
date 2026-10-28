@@ -5,6 +5,7 @@
 
 namespace App\Services;
 
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -178,8 +179,13 @@ class SlowQueryLog
      */
     public function dbEntries(int $limit = 200): array
     {
+        // The slow log holds every warehouse's queries and is read as the instance's own user, not a warehouse's. Once
+        // there are several warehouses it belongs in the instance console (MULTI_WAREHOUSE.md §13, phase 5).
+        if (app(WarehouseContext::class)->multiple()) {
+            return ['available' => false, 'message' => 'The database slow log covers every warehouse on this instance, so it is not shown inside one.', 'entries' => []];
+        }
         try {
-            $rows = DB::select(
+            $rows = DB::connection(config('warehouses.provisioning.base_connection'))->select(
                 // Seconds spelled out from the parts: MariaDB's TIME_TO_SEC keeps the fraction, MySQL's drops it.
                 'SELECT start_time, user_host, '
                 .'HOUR(query_time) * 3600 + MINUTE(query_time) * 60 + SECOND(query_time) + MICROSECOND(query_time) / 1000000 AS secs, '
@@ -206,7 +212,7 @@ class SlowQueryLog
     {
         $msg = $e->getMessage();
         if (str_contains($msg, 'command denied') || str_contains($msg, '1142')) {
-            $user = config('database.connections.'.config('database.default').'.username');
+            $user = config('database.connections.'.config('warehouses.provisioning.base_connection').'.username');
 
             return "The database user can't read MariaDB's slow log. As the database administrator run: GRANT SELECT ON mysql.slow_log TO '{$user}'@'%'; (the Docker stack does this on first start).";
         }

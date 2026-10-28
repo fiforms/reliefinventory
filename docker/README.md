@@ -68,12 +68,18 @@ the proxy can reach the app port) so generated links and redirects use `https`.
 
 ## Data and backups
 
-State lives in three named volumes:
+State lives in named volumes:
 
 - `db-data` — the database.
 - `secrets` — the generated database passwords. **Keep it together with `db-data`**: the database was initialised
   with those values, so deleting one without the other leaves the app unable to connect (`docker compose down -v`
   removes all of them, i.e. a clean slate).
+- `admin-secrets` — the database administrator (root) password, mounted only by the one-shot `init`, by `db` and by the
+  `provisioner` container, which makes each warehouse's schema and its own database user. The web, queue and scheduler
+  containers can't read it. Keep it with `db-data` too. An install upgraded from before this moves the password here once
+  (`init` does it), and the first start after the upgrade renames the warehouse's schema to `reliefinventory_<id>` and gives
+  it its own database user (the old, now empty, `reliefinventory` schema stays; don't use `compose.yaml` files from before
+  this with the same volumes afterwards).
 - `storage` — uploads (donation photos, feedback screenshots), print-queue PDFs, logs, and the generated app key.
 
 The scheduler writes a backup **.zip** daily into `./backups` (next to `compose.yaml`), keeping

@@ -26,6 +26,11 @@ Design for **warehouses whose managers don't trust each other**, under one **ful
 - **Who uses it.** In practice, one organization hosting its subsidiary organizations. But the design must also hold for a
   **hosting provider selling shared "warehouse" hosting** to customers who don't know or trust each other. Build for the second
   case; the first gets it for free. So the protections in this plan are requirements, not extras for "if we ever host".
+- **Rule of thumb (decided 2026-10-28): an instance admin is assumed to be able to run arbitrary commands inside the container or
+  on the hardware that runs the instance.** So software never tries to enforce a rule *against* the instance admin: no forced
+  retention ("keep a removed warehouse 30 days"), no "instance admins only get read-only access to warehouse data", no hiding
+  secrets from them. Where such a rule is wanted it is a policy or an audit trail, not a control. What the software does enforce is
+  isolation *between warehouses* (and from the web container's own mistakes), which is the part an admin of one warehouse could attack.
 - **Instance admin: fully trusted.** On a hosted instance, this is the hosting party. Can do anything: create, suspend, remove and
   restore warehouses, global backups, software updates, and enter any warehouse through an audited support session (§6).
 - **Warehouse admin: trusted inside their own warehouse only.** Assume a warehouse admin may be hostile to every other warehouse
@@ -274,8 +279,9 @@ Decided: when a warehouse's data is removed, **every account that is not multi-m
 sole-membership test (training warehouses excluded), so an account that belonged only to the removed warehouse (and any training
 warehouse) goes; an account that also belongs to another real warehouse just loses this membership and is untouched. Instance admin
 accounts are never removed by this cascade. Removing a training warehouse never removes an account that has a real membership.
-**Recommended mechanics:** instance admin only; the warehouse goes `archived` first and is removed from that state, after a waiting
-period (so a mistaken archive can still be undone); a final warehouse backup is taken; typed confirmation naming the warehouse; the
+**Recommended mechanics:** instance admin only; the warehouse goes `archived` first and is removed from that state. **Decided
+2026-10-28: no waiting period is forced.** The instance admin chooses when to remove an archived warehouse, and may do it at once
+(archiving is the undoable step; removing is the instance admin's decision and the typed confirmation is the safeguard); a final warehouse backup is taken; typed confirmation naming the warehouse; the
 schema, DB user, storage dir, `WAREHOUSE_KEY` and `warehouse_domains` rows go with it; the removal is audited in the instance log
 (including which accounts were removed). Deleting the removed accounts' `memberships` rows also covers their training memberships
 in one step; the training warehouses' `people.account_id` copies are cleared from it.
@@ -306,11 +312,18 @@ Three kinds of credential:
 
 **Why per-warehouse users (recommended, not optional):** restore executes SQL from an uploaded zip (`RestoreService` /
 `DatabaseTools`). With a single pattern-granted user, a crafted dump could `USE`, read or drop another warehouse; with per-warehouse
-users it is confined to its own schema. Dumps will *also* be rejected if they contain `USE`, `CREATE DATABASE` or `GRANT` (a new
-check: `RestoreService` has none today). A per-warehouse user only limits what the *server* will do, though; the `mariadb` command-line
-client that reads the dump can itself run shell commands (`\!`) and read local files. So the restore also runs the client with
-**`--sandbox`** (refuses anything that touches the file system; supported by the MariaDB 11.8 client in the image), and
-`--local-infile` stays off (the client's default; never turn it on). Both are flags in `DatabaseTools::clientCommand()`. The same
+users it is confined to its own schema, and the grant list (no FILE, no GRANT, no CREATE USER, no TRIGGER/VIEW/ROUTINE) covers the rest.
+
+**Restore security model (decided 2026-10-28, built):** two layers, and nothing else.
+1. *What the SQL can do* is limited by the database user's grants, nothing more. The dump is **not parsed or filtered** (no scan for
+   `USE`, `GRANT`, `DEFINER`...): a keyword filter would be a weak layer next to the grants, and whatever it let through the server
+   refuses anyway.
+2. *What the client program can do.* `mariadb` runs inside the app container and has `system`/`\!`, `source`, `tee`/`pager` and
+   `LOAD DATA LOCAL INFILE`, none of which the grants touch. `DatabaseTools::clientCommand()` therefore passes **`--sandbox`** (no
+   client command that touches the file system) and **`--local-infile=0`**, and requires the `mariadb` client (the image has it;
+   MySQL's client has no `--sandbox`). `RestoreClientSandboxTest` runs hostile SQL through the real client.
+A dump's content is still *its warehouse's own data*: a bad restore can wreck that warehouse and nothing else (the compatibility check
+on the manifest's migration list, and the pre-restore backup, are the protection against mistakes). The same
 property makes a wrong-connection bug or an SQL injection fail closed. The accounts connection is used only by the login code with
 parameterised queries, so an injection in a normal warehouse query (running as the warehouse user) cannot reach it.
 
@@ -720,7 +733,7 @@ Decided while building (2026-10-27):
 **Phase 0 — done.** `control` / `accounts` connections (`config/database.php`); control migrations in `database/migrations/control/`
 (`warehouses`, `warehouse_domains`); `php artisan instance:migrate` (control → accounts → every warehouse; registers the existing
 schema as the default warehouse, `warehouses.is_default`) replaces `migrate` in the entrypoint, `update.sh` and `dev-update.sh`;
-`instance:ensure-schemas` creates the two schemas on Docker with the root secret (interim, until the provisioning worker);
+the provisioner creates the two schemas on Docker with the root secret (interim, until the provisioning worker);
 `WarehouseContext` + `SwitchTask`; the global `ResolveWarehouse` middleware (default warehouse only). It switches at the start of a
 request and never undoes it on terminate, so terminable middleware still see the request's warehouse; switching to a *different*
 warehouse resets everything the previous one set (worker-mode safe), (phase 2 decided a refused resolution needn't `forget()`, §18).
@@ -842,7 +855,8 @@ Built:
 - `GuardWarehouseTab` (web group): `X-RI-Warehouse` (set on axios from the `warehouse` prop, which Inertia uses too) or `_w`; a mismatch
   is a 409 (`warehouse_switched`; Inertia gets `X-Inertia-Location` to `/warehouse-switched`); with several warehouses a non-GET or an
   Inertia visit naming none is refused; the session records its warehouse and is invalidated in another. `PrintMenu` adds `_w` to its
-  download links (`withWarehouse()`); other CSV/PDF links don't yet (plain GETs naming nothing are allowed).
+  download links (`withWarehouse()`), and so does every other plain link to a CSV, report, backup, photo or file (`$withWarehouse()` in
+  templates, a global property set in `app.js`); `DownloadLinksGuardTest` fails on a new one that doesn't.
 - Switch tasks `SwitchCache` (per-warehouse prefix on the default store; forgets cached stores and the rate limiter; the `accounts`
   store untouched), `SwitchLogContext` (`warehouse` on every log line), `SwitchUrlRoot`.
 - Federation: `TrustAuth` checks signatures against `ri.original_uri` and credentials against host + prefix; `PeerUrl` keeps a `/w/<id>`
@@ -860,10 +874,62 @@ Built:
 - `feedback_reports.warehouse_id`, sent with pushed reports; central's `instance_identifier` includes a `/w/<id>` prefix.
 - Tests: `WarehouseResolutionTest`, `FederationWarehousesTest`, `WarehouseBackgroundTest`.
 
-**Still open from phase 2:** `_w` on the remaining download links (CSV exports, report PDFs opened by plain links); the Docker pre-migration
+**Still open from phase 2:** (download links: done, see above) the Docker pre-migration
 backup and downgrade check cover only the default warehouse (phase 4 does every warehouse); the daily Docker backup is the default
 warehouse's only (phase 4: per-warehouse folders); a `/w/<id>` landing doesn't check the warehouse's status beyond "active"; nothing
 was run outside the test suite yet (two warehouses on one Docker stack, a Pi and a print client on a prefixed URL).
+
+**Phase 2 verification plan (not yet run; 2026-10-28).** Locally, on Daniel's machine: (1) two warehouses on one Docker stack
+(`docker/compose.dev.yaml`; a second warehouse can only be made by hand until phase 3: insert a `warehouses` row, schema, key file),
+checking `?w=`, the cookie, two tabs on two warehouses (the 409 page), a download link from a stale tab, an emailed link's address,
+`warehouse:each`, the queue picking the right warehouse, Reverb channel names; (2) the Rust print client against
+`http://host/w/<id>` (`print-client/e2e/run.sh` with a prefixed URL), pairing, a job, and the same client paired with both warehouses
+to prove a credential for one is refused by the other; (3) the Launcher's remote backup against a prefixed URL (`launcher/e2e/run.sh`).
+Needs Daniel or hardware: the R Station Pi (a `RIK-` credential with a prefixed `server_url`, wake channel), a real label printer, a
+phone on the LAN (`.local`, camera scan under `/w/…` is not affected, pages are not prefixed) and the R Station local server.
+
+**Phase 3 — in progress** (2026-10-28). Slice (a), database users and the provisioner, is built; the rest is below. Decided:
+- **Every warehouse, the default one too, has the standard schema name `<prefix>_<id>`** (prefix = the instance's own database
+  name, e.g. `reliefinventory_k7q2x9md`) **and its own user `ri_<id>`.** The default warehouse's schema is *renamed* once, on the first
+  start after upgrading (`RENAME TABLE` of every table in one statement, which keeps rows and foreign keys; tested). The old
+  `reliefinventory` schema is left behind, empty, because the base connection and the entrypoint's database probe still name it.
+  Bare metal and tests don't run a provisioner (`ProvisioningClient::applies()` is Docker only), so there the default warehouse keeps
+  its schema name and the instance's own user.
+- **The provisioner is a separate container** (`provisioner`, `ri-entrypoint provisioner`, `php artisan provisioner:work`) in
+  `docker/compose.yaml`, the Launcher's embedded copy of it and the R Station's `offline/compose.yaml` (the Pi too: one more small PHP
+  process). It is the only process with the database administrator password, which now lives in its own `admin-secrets` volume
+  (mounted by `init`, `db` and `provisioner` only; `init` moves an old install's copy there). Web, queue and scheduler cannot read it.
+- **Commands are plain rows** in the control schema (`provisioning_commands`: warehouse id, `create` | `adopt` | `drop`, status). The
+  provisioner un-serializes nothing and **re-checks each command against the `warehouses` row** (`Provisioner::run()`): `create` only
+  for a warehouse still `provisioning`; `adopt` only for the default warehouse, and only renaming the instance's own schema; `drop` only
+  for an `archived` (or unfinished `provisioning`) warehouse that isn't the default; and every schema name must be the standard one, so a
+  forged row can't make it drop `…_control`. Steps are idempotent and look at the state they find (a crash after the rename but before the
+  row was updated, or after the user but before the password file, is repaired by running again; an interrupted `running` command is run
+  again at start-up). The web side is `ProvisioningClient` (writes a row, waits up to `RI_PROVISIONER_WAIT_SECONDS`, 120);
+  `instance:migrate` asks for every warehouse that still needs it before migrating it.
+- **The provisioner also**: makes the control and accounts schemas and grants the base user on them (replaces `instance:ensure-schemas`,
+  deleted; `app` now waits for them) and prunes MariaDB's slow-log table hourly (replaces `slowlog:maintain`, deleted, and the
+  scheduler's call), so no application container needs root any more.
+- **Grants** (`Provisioner::GRANTS`): `SELECT, INSERT, UPDATE, DELETE, CREATE, DROP, ALTER, INDEX, REFERENCES, CREATE TEMPORARY TABLES,
+  LOCK TABLES` on the warehouse's own schema, re-applied narrowly each time; `max_user_connections` 20 (`RI_WAREHOUSE_DB_MAX_CONNECTIONS`).
+  Tested as that user: can't reach another warehouse's schema, create a database, view, trigger or user, grant, or read a file.
+  Backup and restore ran fine as that user on a real Docker stack.
+- **The slow log** (`mysql.slow_log`) is read as the instance's base user, not a warehouse user, and once there are several warehouses
+  Setup > Testing Tools shows no database slow log (it covers every warehouse; it belongs in the instance console, phase 5).
+- **Verified for real** (2026-10-28): an old-layout stack (root password in `secrets`) upgraded in place to the new compose file: 96 tables
+  renamed, `ri_<id>` made, root password moved out of `secrets` and unreadable from app/queue/scheduler, the app runs as the warehouse
+  user, backup and restore work, a second restart changes nothing. Not run: the Launcher or R Station with the new compose files (the
+  Launcher's compose tests pass; the Pi is untested).
+- Tests: `ProvisionerTest` (uses the `ri_test_provisioner` user of scripts/TESTING.md and skips without it).
+
+Decided 2026-10-28: `control` and `accounts` keep one user with ALL on both schemas (a read-only control user isn't worth the
+complexity; read access for others will come through federation), and there is no password-rotation command (nothing enforces
+rotation; the provisioner re-syncs a user to its password file, and re-running `adopt`/`create` makes a new file if it was lost).
+Slice (a) still open: `create` makes the schema and user but nothing yet migrates or seeds a new warehouse (the next slices do).
+**Slice (b), restore hardening, is built:** the model is in §7 ("Restore security model"): the client runs `--sandbox
+--local-infile=0` as the warehouse's own user, and the dump is not parsed.
+Order of the rest, agreed 2026-10-28: (b) restore hardening; (c) setup codes and the awaiting-setup screen; (d) chooser and domain
+mapping; (g-lite) invitations, which (c)'s restore needs; (e) training warehouse and removing Training Mode; (f) removal.
 
 ### Remaining work
 
@@ -873,7 +939,7 @@ was run outside the test suite yet (two warehouses on one Docker stack, a Pi and
 - Per-warehouse database users (`ri_<id>`, the narrow grant list, `max_user_connections`); the provisioner credential only in a small
   provisioning worker reading plain commands from the control schema (re-checked against it), not in the web container — which then
   stops needing the database root password (`instance:ensure-schemas` moves there).
-- Restores run the `mariadb` client with `--sandbox` and refuse dumps containing `USE`, `CREATE DATABASE`, `GRANT` or `DEFINER`.
+- Restore hardening (done, 2026-10-28): see §7; the dump is deliberately *not* scanned for keywords.
 - Setup codes (hash only, 7 days, single use, rate-limited) and the setup/restore screen for an `awaiting_setup` warehouse;
   provisioning sets `setup_state.completed_at` so `/install` never runs inside a provisioned warehouse.
 - The chooser (`listed`, unique display names, the warehouse name shown on the login page, a rate-limited typed code with one answer

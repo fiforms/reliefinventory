@@ -63,12 +63,18 @@ Useful artisan commands specific to this project: `php artisan user:create`, `ph
 storage directory, `WAREHOUSE_KEY` and DB user per warehouse; a control schema; central `accounts` (credentials) with per-warehouse
 `people`; a standard training warehouse; per-warehouse maintenance/backup/restore. Phases 0–2 are built (§18 of that doc): requests, jobs and commands each
 run in one warehouse (`WarehouseContext`; `ResolveWarehouse` picks it from the hostname, `/w/<id>` on machine URLs, `?w=` or the
-`ri_warehouse` cookie), but nothing creates a second warehouse yet (phase 3), so an instance still has exactly one and everything below
-is accurate as written. Read that doc before changing sessions, login/auth, `storage_path()` use, backups/restore, the queue or
+`ri_warehouse` cookie), but nothing creates a second warehouse yet (phase 3, begun: on Docker every warehouse — the default one too, whose schema is
+renamed once to `reliefinventory_<id>` — has its own DB user `ri_<id>`, made by a separate `provisioner` container; see §18), so an
+instance still has exactly one and everything below is accurate as written. Read that doc before changing sessions, login/auth, `storage_path()` use, backups/restore, the queue or
 scheduler, broadcast channels, cookies, emailed links, or anything else that assumes "one instance = one database". In short: every
 request names its warehouse (`X-RI-Warehouse`, `GuardWarehouseTab`); emailed links come from `Warehouse::publicUrl()`, never the Host
 header; long-lived cookies use `WarehouseContext::cookieName()`; broadcast channels use `Warehouse::channel()`; commands take
-`--warehouse`; tests that need a second warehouse use `tests/SecondWarehouse.php`. It also decides that
+`--warehouse`; only the `provisioner` container holds the database administrator password (the `admin-secrets` volume) — never read it
+from application code, ask it through `ProvisioningClient`; tests that need a second warehouse use `tests/SecondWarehouse.php`. Restores are untrusted input: they run as the warehouse's own DB user with the `mariadb` client in `--sandbox --local-infile=0`
+(`DatabaseTools::clientCommand()`); the grants bound the SQL and the flags bound the client, and the dump is deliberately not parsed
+for keywords — don't add a filter. Rule of thumb: an instance admin is assumed able to run any command in the container or on the
+hardware, so never enforce a rule *against* the instance admin in software (retention periods, read-only access); enforce isolation
+between warehouses. It also decides that
 in-warehouse Training Mode (below) will be removed in favour of a separate, seeded training warehouse — don't extend Training Mode.
 
 ### Backend: Laravel + Inertia, JSON API under `/json`
@@ -900,7 +906,7 @@ assignments, 15k ledger rows, 18k pallet-history rows, ~85 s. When you change an
 `SlowQueryLog` (`config/slowlog.php`, off unless `RI_SLOW_QUERY_MS` > 0; the Docker stack sets 250) is a `DB::listen` + `RequestHandled`
 hook writing `storage/logs/slow-queries.jsonl`: slow queries (SQL shape only, never bindings) AND whole-request profiles (slow,
 60+ queries, or 1 MB+ response — a slow screen is usually not a slow query). It also reads MariaDB's `mysql.slow_log` when the server
-writes it to the table and the app user can read it (Docker: `slowlog:maintain --grant` at start-up, `--prune` hourly). View at
+writes it to the table and the app user can read it (Docker: the `provisioner` container grants it at start-up and prunes it hourly). View at
 `/setup/testing` (`admin-system`) or `php artisan slowlog:show [--requests|--recent]`.
 
 ### Volunteer hours kiosk — active-window sync needs a systemd timer
