@@ -385,6 +385,23 @@ impl<R: Runner, D: Downloader> Platform for WslBackend<R, D> {
         copy_file(host_path(remote), local.to_path_buf()).await
     }
 
+    /// A new console window with a shell inside the layer, in the compose folder. `start` is what gives it a
+    /// window (the runner hides the console of anything it spawns directly).
+    async fn open_terminal(&self) -> Result<()> {
+        let script = layer::install_shortcuts_script(layer::SHORTCUT_DIR, &layer::layer_preamble());
+        let out = self
+            .runner
+            .run_stdin("wsl.exe", &["-d", DISTRO, "--exec", "sh"], script.as_bytes())
+            .await
+            .map_err(|e| PlatformError::Failed(format!("could not set up the command shortcuts: {e}")))?;
+        if !out.ok() {
+            return fail(format!("could not set up the command shortcuts: {}", tail(&out)));
+        }
+        self.runner
+            .spawn_detached("cmd.exe", &["/c", "start", "Relief Inventory", "wsl.exe", "-d", DISTRO, "--cd", REMOTE_DIR])
+            .map_err(|e| PlatformError::Failed(format!("could not open a terminal: {e}")))
+    }
+
     async fn push(&self, local: &Path, remote: &str) -> Result<()> {
         copy_file(local.to_path_buf(), host_path(remote)).await
     }
@@ -487,6 +504,13 @@ mod tests {
     #[test]
     fn host_path_is_a_wsl_unc_path() {
         assert_eq!(host_path("/opt/ri/backups/x.zip").to_string_lossy(), r"\\wsl.localhost\ReliefInventory\opt\ri\backups\x.zip");
+    }
+
+    #[tokio::test]
+    async fn open_terminal_starts_a_console_in_the_compose_folder() {
+        let (b, calls) = backend(Box::new(|_| None));
+        b.open_terminal().await.unwrap();
+        assert_eq!(calls.lock().unwrap().last().unwrap(), "SPAWN cmd.exe /c start Relief Inventory wsl.exe -d ReliefInventory --cd /opt/ri");
     }
 
     #[tokio::test]

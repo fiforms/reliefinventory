@@ -438,6 +438,34 @@ impl<R: Runner, D: Downloader> Platform for LimaBackend<R, D> {
         result
     }
 
+    /// Terminal.app with a root shell in the VM's compose folder (the stack and Docker are root's).
+    async fn open_terminal(&self) -> Result<()> {
+        let script = layer::install_shortcuts_script(layer::SHORTCUT_DIR, &layer::layer_preamble());
+        let (program, argv) = self.lima_argv(&["shell", "--workdir", "/", INSTANCE, "--", "sudo", "sh"]);
+        let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+        let out = self
+            .runner
+            .run_stdin(&program, &argv, script.as_bytes())
+            .await
+            .map_err(|e| PlatformError::Failed(format!("could not set up the command shortcuts: {e}")))?;
+        if !out.ok() {
+            return fail(format!("could not set up the command shortcuts: {}", tail(&out)));
+        }
+        let shell = format!(
+            "/usr/bin/env LIMA_HOME={} {} shell --workdir {} {INSTANCE} -- sudo -s",
+            sq(&self.lima_home.to_string_lossy()),
+            sq(&self.limactl().to_string_lossy()),
+            layer::REMOTE_DIR,
+        );
+        let script = format!(
+            "tell application \"Terminal\"\nactivate\ndo script \"{}\"\nend tell",
+            shell.replace('\\', "\\\\").replace('"', "\\\"")
+        );
+        self.runner
+            .spawn_detached("/usr/bin/osascript", &["-e", &script])
+            .map_err(|e| PlatformError::Failed(format!("could not open Terminal: {e}")))
+    }
+
     async fn push(&self, local: &Path, remote: &str) -> Result<()> {
         let tmp = self.staging();
         let to = format!("{INSTANCE}:{tmp}");
@@ -512,6 +540,16 @@ mod tests {
 
     fn listed(status: &str) -> Output {
         out(0, &format!("{{\"name\":\"other\",\"status\":\"Running\"}}\n{{\"name\":\"ri\",\"status\":\"{status}\"}}\n"))
+    }
+
+    #[tokio::test]
+    async fn open_terminal_asks_terminal_app_for_a_root_shell_in_the_compose_folder() {
+        let (b, calls, _d) = backend(Box::new(|_| None), true);
+        b.open_terminal().await.unwrap();
+        let last = calls.lock().unwrap().last().unwrap().clone();
+        assert!(last.starts_with("SPAWN /usr/bin/osascript -e tell application \"Terminal\""), "{last}");
+        assert!(last.contains("shell --workdir /opt/ri ri -- sudo -s"), "{last}");
+        assert!(last.contains("LIMA_HOME="), "{last}");
     }
 
     fn silent() -> ProgressFn {

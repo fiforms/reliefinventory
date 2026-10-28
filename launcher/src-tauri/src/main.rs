@@ -203,6 +203,11 @@ fn open_local(app: &AppHandle, launcher: &L) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn open_terminal(state: State<'_, AppState>) -> Result<(), String> {
+    state.launcher.platform().open_terminal().await.map_err(err)
+}
+
+#[tauri::command]
 async fn backups_list(state: State<'_, AppState>) -> Result<Vec<BackupFile>, String> {
     backups::list(state.launcher.platform().as_ref()).await.map_err(err)
 }
@@ -490,7 +495,7 @@ fn main() {
         .plugin(tauri_plugin_autostart::init(MacosLauncher::LaunchAgent, Some(vec!["--hidden"])))
         .invoke_handler(tauri::generate_handler![
             get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
-            get_settings, apply_settings, shareable_link, open_app, backups_list, backup_create, backup_export,
+            get_settings, apply_settings, shareable_link, open_app, open_terminal, backups_list, backup_create, backup_export,
             backup_import, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
             image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page, remote_list, remote_pair,
             remote_configure, remote_backup_now, remote_remove, remote_reveal

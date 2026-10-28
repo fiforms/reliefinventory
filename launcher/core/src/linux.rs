@@ -292,6 +292,29 @@ impl<R: Runner> Platform for LinuxBackend<R> {
         self.compose_ok("preparing the file", &["exec", "-T", "-u", "root", "app", "chmod", "644", &inside]).await.map(|_| ())
     }
 
+    /// The first terminal program this computer has, running a shell in the stack folder. `COMPOSE_PROJECT_NAME`
+    /// makes a bare `docker compose` there mean this stack and not a project named after the folder.
+    async fn open_terminal(&self) -> Result<()> {
+        let bin = self.stack.join("bin");
+        let preamble = format!("cd {} || exit 1\nexport COMPOSE_PROJECT_NAME={PROJECT}", shell_quote(&self.stack.to_string_lossy()));
+        let setup = crate::layer::install_shortcuts_script(&shell_quote(&bin.to_string_lossy()), &preamble);
+        let out = self
+            .runner
+            .run_stdin("sh", &[], setup.as_bytes())
+            .await
+            .map_err(|e| crate::platform::PlatformError::Failed(format!("could not set up the command shortcuts: {e}")))?;
+        if !out.ok() {
+            return fail(format!("could not set up the command shortcuts: {}", tail(&out)));
+        }
+        let inner = format!("cd {} && PATH={}:\"$PATH\" COMPOSE_PROJECT_NAME={PROJECT} exec \"${{SHELL:-bash}}\"", shell_quote(&self.stack.to_string_lossy()), shell_quote(&bin.to_string_lossy()));
+        for (program, run_flag) in [("gnome-terminal", "--"), ("konsole", "-e"), ("xfce4-terminal", "-x"), ("x-terminal-emulator", "-e"), ("xterm", "-e")] {
+            if self.runner.spawn_detached(program, &[run_flag, "sh", "-c", &inner]).is_ok() {
+                return Ok(());
+            }
+        }
+        fail(format!("No terminal program was found. Open one yourself and run:  cd {}", self.stack.display()))
+    }
+
     fn stack_options(&self) -> crate::compose::StackOptions {
         crate::compose::StackOptions { loopback_only: true, project_name: Some(PROJECT.into()) }
     }
