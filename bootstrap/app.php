@@ -12,6 +12,7 @@ use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\EnsurePasswordChanged;
 use App\Http\Middleware\GuardWarehouseTab;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\InstanceUpdateSecret;
 use App\Http\Middleware\RedirectToSetup;
 use App\Http\Middleware\ResolveWarehouse;
 use App\Http\Middleware\TrackSessionActivity;
@@ -55,6 +56,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'kiosk-access' => EnsureKioskAccess::class,
             'device-auth' => AuthenticateManagedDevice::class,
             'trust-auth' => TrustAuth::class,
+            'update-secret' => InstanceUpdateSecret::class,
             'display-access' => EnsureDeviceAccess::class,
         ]);
 

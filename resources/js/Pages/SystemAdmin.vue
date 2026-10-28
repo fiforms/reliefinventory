@@ -6,8 +6,9 @@
 	Updates & Backups (/setup/system) — the one page for everything about keeping this system current and safe.
 	Each section is shown only when the person holds its permission AND the platform can do it:
 
-	  admin-system     Software update (systemd: check/install; Docker: version only — you upgrade by pulling a
-	                   new image), Offline mode, and Scheduled backups (systemd: the tiered backups, their
+	  admin-system     Software update (Docker: check/install through the host-side updater, instance administrators
+	                   only — see InstanceUpdate; systemd: the DEPRECATED in-app updater, shown with a warning and
+	                   due to be removed), Offline mode, and Scheduled backups (systemd: the tiered backups, their
 	                   schedule and retention, from backup-settings.conf read by the hourly timer — see
 	                   scripts/BACKUPS.md; Docker: a read-only summary of what compose.yaml configured).
 	  manage-backups   Create a backup zip (database, or database + uploaded files), list / download / delete them.
@@ -50,6 +51,19 @@ const savingSettings = ref(false);
 const settingsSavedAt = ref(null);
 const savingOfflineMode = ref(false);
 
+// Docker: the self-update flag the host-side updater works from (status.docker_update).
+const dockerUpdate = computed(() => status.value?.docker_update ?? null);
+const dockerBusy = computed(() => ['requested', 'checking', 'pulling', 'restarting'].includes(dockerUpdate.value?.state));
+const requestingDocker = ref(false);
+const confirmingDockerUpdate = ref(false);
+const dockerStateText = {
+	requested: 'Waiting for the updater on the server to pick this up…',
+	checking: 'Looking for a new version…',
+	pulling: 'Downloading the new version…',
+	restarting: 'Installing. The site is offline for a few minutes and this page will recover on its own.',
+};
+let dockerTimer = null;
+
 const settings = reactive({
 	frequency: 'daily',
 	hourly: false,
@@ -85,7 +99,58 @@ async function fetchStatus(applySettings = true) {
 	} else if (response.data.update_status?.state === 'stalled') {
 		error.value = `Update stalled: ${response.data.update_status.message}`;
 	}
+	if (response.data.docker_update) {
+		if (dockerBusy.value) startDockerPolling();
+		else stopDockerPolling();
+	}
 	return response.data;
+}
+
+async function requestDockerUpdate(action) {
+	if (action === 'update' && !confirmingDockerUpdate.value) {
+		confirmingDockerUpdate.value = true;
+		return;
+	}
+	confirmingDockerUpdate.value = false;
+	requestingDocker.value = true;
+	error.value = '';
+	notice.value = '';
+	try {
+		const response = await axios.post(action === 'update' ? '/json/system/update' : '/json/system/check-updates');
+		status.value.docker_update = response.data.docker_update;
+		startDockerPolling();
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not send the request.';
+	} finally {
+		requestingDocker.value = false;
+	}
+}
+
+// Poll while a request is open. The app is down while it restarts, so a failed poll is expected, not an error.
+function startDockerPolling() {
+	if (dockerTimer) return;
+	let wasBusy = true;
+	dockerTimer = setInterval(async () => {
+		try {
+			const data = await fetchStatus(false);
+			const du = data.docker_update;
+			if (du && !dockerBusy.value && wasBusy) {
+				wasBusy = false;
+				if (du.state === 'failed') error.value = `Update failed: ${du.message}`;
+				else if (du.state === 'stalled') error.value = du.message;
+				else notice.value = du.message || 'Finished.';
+			}
+		} catch (e) {
+			// offline while restarting — keep polling
+		}
+	}, 4000);
+}
+
+function stopDockerPolling() {
+	if (dockerTimer) {
+		clearInterval(dockerTimer);
+		dockerTimer = null;
+	}
 }
 
 async function checkForUpdates() {
@@ -341,6 +406,7 @@ onMounted(async () => {
 });
 onUnmounted(() => {
 	stopPolling();
+	stopDockerPolling();
 	clearInterval(backupTimer);
 	hideKey();
 });
@@ -371,13 +437,60 @@ onUnmounted(() => {
 					<p v-if="status.version.current_subject" class="text-gray-500">“{{ status.version.current_subject }}”</p>
 				</div>
 
-				<!-- Docker / R Station: nothing to install from here -->
-				<p v-if="docker" class="text-xs text-gray-500">
-					This system runs from a container image. To upgrade, pull the new image and restart it (see the
-					Docker guide); the database is backed up automatically first when the upgrade has changes to apply.
-				</p>
+				<!-- Docker / R Station: the host-side updater does the work; this page only asks it -->
+				<template v-if="docker">
+					<p v-if="!dockerUpdate?.enabled" class="text-sm text-gray-600">
+						Updating from this page is not set up. To turn it on, set <span class="font-mono">RI_UPDATE_SECRET</span> in
+						compose.yaml and install the updater on the server (“Automatic updates” in the Docker guide). Until then, upgrade by
+						pulling the new image and restarting it; the database is backed up automatically first when the upgrade has changes to apply.
+					</p>
+					<template v-else>
+						<p v-if="dockerUpdate.available_version" class="text-sm font-medium text-amber-700">
+							Version {{ dockerUpdate.available_version }} is available (checked {{ new Date(dockerUpdate.last_checked_at).toLocaleString() }}).
+						</p>
+						<p v-else-if="dockerUpdate.last_checked_at" class="text-sm text-gray-600">
+							Last checked {{ new Date(dockerUpdate.last_checked_at).toLocaleString() }}: nothing newer.
+						</p>
+
+						<div v-if="dockerBusy" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">
+							<p class="font-medium">{{ dockerStateText[dockerUpdate.state] }}</p>
+							<p v-if="dockerUpdate.message">{{ dockerUpdate.message }}</p>
+						</div>
+						<div v-else-if="dockerUpdate.state === 'stalled'" class="rounded bg-amber-50 border border-amber-300 text-amber-800 px-4 py-3 text-sm">
+							{{ dockerUpdate.message }}
+						</div>
+
+						<div v-if="dockerUpdate.can_request && !dockerBusy" class="flex gap-3 items-center">
+							<PrimaryButton :disabled="requestingDocker" @click="requestDockerUpdate('check')">Check for Updates</PrimaryButton>
+							<button
+								v-if="dockerUpdate.available_version || confirmingDockerUpdate"
+								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white"
+								:class="confirmingDockerUpdate ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'"
+								:disabled="requestingDocker"
+								@click="requestDockerUpdate('update')"
+							>
+								{{ confirmingDockerUpdate ? 'Confirm — every warehouse goes offline briefly' : 'Install Update' }}
+							</button>
+							<button v-if="confirmingDockerUpdate" class="text-sm text-gray-500 underline" @click="confirmingDockerUpdate = false">Cancel</button>
+						</div>
+						<p v-else-if="!dockerUpdate.can_request" class="text-xs text-gray-500">
+							Only an instance administrator can check for or install updates: it restarts every warehouse on this system.
+						</p>
+						<p class="text-xs text-gray-500">
+							The updater on the server downloads the new release and restarts the system. The database is backed up first when the release has changes to apply.
+						</p>
+					</template>
+				</template>
 
 				<template v-else>
+					<div v-if="status.updater_deprecated" class="rounded bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm">
+						<p class="font-medium">Deprecated: updating from this page will be removed.</p>
+						<p>
+							It pulls the code from GitHub, then runs the database migration and rebuilds the web assets from inside a web request,
+							which can leave the system half-updated if anything goes wrong. It still works for now. Prefer a Docker install, or
+							run <span class="font-mono">scripts/update.sh</span> from a shell on the server where you can watch it.
+						</p>
+					</div>
 					<div v-if="status.version.behind > 0" class="text-sm">
 						<p class="font-medium text-amber-700">{{ status.version.behind }} update(s) available:</p>
 						<ul class="font-mono text-xs text-gray-600 mt-1 space-y-0.5">

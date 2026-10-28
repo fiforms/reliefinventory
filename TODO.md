@@ -283,3 +283,16 @@ Issues identified October 8, 2026
    - Ask the slideannouncer maintainers for a `Product.pair` hook and a bearer-provider hook, so the Pi product can drop the `pairing.pair` module-attribute
      swap and the credential file (`rstation/FEDERATION_AUTH.md`, "The Raspberry Pi", lists what it depends on today).
    - The Docker image now names `sodium` explicitly and `composer.json` requires `ext-sodium`; not rebuilt here, so confirm the image builds.
+
+- **Remove the deprecated bare-metal web updater.** Marked deprecated when the Docker host-side updater (`docker/updater/`, `InstanceUpdate`) was added:
+  it runs `git pull`, `artisan migrate` and `npm run build` from a web request and can leave a broken system. To delete in one go:
+  `SystemController::checkUpdates()` / `update()` / `startUnit()` / `readUpdateStatus()` / `versionInfo()`'s git branch / `requireSystemd()` for update, the
+  `/json/system/check-updates` and `/json/system/update` routes, the systemd branch of the Software Update section in `SystemAdmin.vue` (and its polling),
+  `scripts/update.sh`'s update path (its `--scheduled` backup mode is a separate thing and stays), `scripts/systemd/reliefinventory-update.service`,
+  its line in `reliefinventory-sudoers`, `config/system.php` `update_unit`/`update_status_file`, and the update tests in `SystemAdminTest`.
+  Still to do for the Docker updater itself: R Station / RI-Launcher monitors that speak the same two calls (`launcher/core/src/compose.rs`).
+
+- **Verify the Docker self-updater for real.** Built and unit-tested against a fake docker (`docker/updater/test_ri_updater.py`, `InstanceUpdateTest`), but not yet:
+  run against a live compose stack (pull, `down`, `up -d`, health wait, the page recovering afterwards), installed with `docker/updater/install.sh` on a clean Linux host, or looked at in a
+  browser (the new Docker section and the bare-metal "Deprecated" banner on Updates & Backups). Also: the suite now uses `APP_MAINTENANCE_DRIVER=cache` with the `array` store
+  (`phpunit.xml`; the shared `storage/framework/down` file made `pest --parallel` flaky), so the real `file` driver, including `down --secret`, is no longer exercised by any test.

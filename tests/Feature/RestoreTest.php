@@ -35,7 +35,6 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    @unlink(storage_path('framework/down')); // a failed --force test must not leave the dev site in maintenance mode
     if (! empty($GLOBALS['restore_test_dirtied_db'])) {
         Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
         $GLOBALS['restore_test_dirtied_db'] = false;
@@ -452,7 +451,7 @@ test('a files-only restore lays the files down and leaves the database alone', f
         ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('good-photo')
         ->and(file_get_contents($this->tmp.'/private/keep-me.txt'))->toBe('newer than the backup') // nothing is deleted
         ->and(DB::table('people')->count())->toBe($people)
-        ->and(file_exists(storage_path('framework/down')))->toBeFalse()                              // no maintenance mode for a files-only restore
+        ->and(app()->isDownForMaintenance())->toBeFalse()                                            // no maintenance mode for a files-only restore
         ->and(app(RestoreService::class)->status()['state'])->toBe('complete');
 });
 
@@ -497,7 +496,7 @@ test('a failed database load on a set-up instance leaves the warehouse out of se
     $this->artisan('backup:restore', ['database' => $this->tmp.'/broken.zip', '--force' => true, '--no-interaction' => true])->assertFailed();
 
     expect(Warehouse::current()->fresh()->status)->toBe('restoring')
-        ->and(file_exists(storage_path('framework/down')))->toBeFalse();   // never Laravel's instance-wide maintenance mode
+        ->and(app()->isDownForMaintenance())->toBeFalse();   // never Laravel's instance-wide maintenance mode
 });
 
 test('a truncated database dump is refused before anything is wiped', function () {

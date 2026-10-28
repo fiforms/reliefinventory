@@ -1,3 +1,4 @@
+# DEPRECATED: the web-triggered bare-metal updater will be removed (see TODO.md). Docker installs use docker/updater/.
 [Unit]
 Description=Relief Inventory self-update (triggered from the System Administration panel)
 After=network.target mariadb.service

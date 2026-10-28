@@ -122,6 +122,33 @@ the upgrade migrates the database. Only the newest release is supported, so we r
 pin one release (`:1.4.0`) to delay an upgrade briefly, but not to stay on an old version long-term. `:edge` is an
 unreleased development build for the test instance; don't point real data at it.
 
+### Automatic updates (optional)
+
+Instance administrators can check for and install a new release from **Updates & Backups** instead of running the
+commands above. The app cannot restart its own containers, so a small service on this machine does it: the page sets a
+flag, the service (`docker/updater/ri-updater.py`, Python 3, standard library only) polls for it, runs
+`docker compose pull` and, if the pulled image is a newer release, `docker compose down` then `docker compose up -d`,
+and reports progress back to the page. It never goes backwards, never removes volumes, and the usual pre-migration backup
+still happens when the new container starts.
+
+Setting this up on a new Docker web host, start to finish: bring the stack up as in Quick start, then follow the steps
+below (a gentler walk-through is in [INSTALL.md](INSTALL.md#optional-update-from-the-web-page-linux-server)). Requirements:
+a Linux host with systemd, `docker compose` v2, `python3` and root access. The service holds no secrets of its own and
+only talks to Docker and to the app on the host's own port (default `http://127.0.0.1:8080`; pass another URL as the
+second argument to `install.sh` if you changed the published port).
+
+1. In `compose.yaml`, set `RI_UPDATE_SECRET` to a long random string and `docker compose up -d`. (Unset = the feature is
+   off and the endpoints answer 404.)
+2. On the host: `sudo docker/updater/install.sh /path/to/compose.yaml` (installs a systemd service, `ri-updater`; logs with
+   `journalctl -u ri-updater -f`). The service reads the secret from the compose file itself, via `docker compose config`.
+3. The same thing from the command line: `docker compose exec app php artisan instance:update check|apply|status`.
+
+The secret is the only credential on the update endpoints (`/api/instance/update`), so keep it private. The address of the
+caller is not checked, as behind Docker's network the app can't tell a local caller from a proxied one.
+
+The older in-app updater for bare-metal (systemd) installs is **deprecated** and will be removed; it runs `git pull`,
+`artisan migrate` and `npm run build` from a web request, which can leave a half-updated system.
+
 If the new image has pending migrations, the `app` container backs up the database to `backups/` first
 (`relief-backup-<timestamp>-database-premigrate.zip`) and only then migrates. **If that backup fails, it does not migrate** —
 the container exits with a message in `docker compose logs app` (usually the backup directory isn't writable). Fix that

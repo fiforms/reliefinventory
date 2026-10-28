@@ -43,7 +43,6 @@ afterEach(function () {
         $warehouse->delete();
     }
     exec('rm -rf '.escapeshellarg($this->tmp));
-    @unlink(storage_path('framework/down'));
 });
 
 test('account:create makes a verified login (instance admin on request), refuses a duplicate or a weak password, and is audited', function () {

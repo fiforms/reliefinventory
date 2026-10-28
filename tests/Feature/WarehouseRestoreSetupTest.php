@@ -135,7 +135,7 @@ test('a restore into a warehouse awaiting setup brings the data, invites the bac
     // The restore folder is this warehouse's own, and the claim is gone.
     expect(is_dir($this->tmp.'/out/warehouses/'.$this->warehouse->id.'/restore'))->toBeTrue()
         ->and(is_file($this->tmp.'/out/warehouses/'.$this->warehouse->id.'/restore/claim.json'))->toBeFalse()
-        ->and(file_exists(storage_path('framework/down')))->toBeFalse();
+        ->and(app()->isDownForMaintenance())->toBeFalse();
 });
 
 test('a restore that fails returns the warehouse to its empty, ready-to-set-up state and the code still works', function () {

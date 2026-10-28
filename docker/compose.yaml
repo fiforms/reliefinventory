@@ -94,6 +94,11 @@ x-settings: &settings
   # RI_FEDERATION_ALLOW_HTTP: "true"        # let this site reach another over plain http:// (a private network)
   # RI_FEDERATION_ALLOW_PRIVATE: "true"     # ...and at private/loopback addresses (LAN-only sites, local testing)
 
+  # Updates from the web page (Updates & Backups, instance administrators only): the app only *asks*; a small
+  # service on this machine (docker/updater/, see README.md "Automatic updates") does the pull and restart.
+  # Any long random string; the updater reads the same value from this file. Leave it unset to keep updating by hand.
+  # RI_UPDATE_SECRET: choose-a-long-random-string
+
   # Passwords are generated for you. Only set these to pick your own, and only
   # BEFORE the first `docker compose up` (afterwards they're already in the
   # database and changing them here would lock the app out).

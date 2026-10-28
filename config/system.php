@@ -23,6 +23,9 @@ return [
     // The Dockerfile sets RI_RUNTIME=docker; /.dockerenv is the fallback for a hand-rolled container.
     'runtime' => env('RI_RUNTIME') ?: (is_file('/.dockerenv') ? 'docker' : 'systemd'),
 
+    // Docker self-update (docker/updater/ri-updater.py on the host): the shared secret the updater presents. Empty = off.
+    'update_secret' => env('RI_UPDATE_SECRET'),
+
     'backup_dir' => env('SYSTEM_BACKUP_DIR', '/var/backups/reliefinventory'),
 
     'settings_file' => env('SYSTEM_BACKUP_SETTINGS_FILE', storage_path('app/backup-settings.conf')),

@@ -129,6 +129,49 @@ docker compose up -d
 Your data is kept, and the database is backed up automatically before any update changes it.
 Release notes are on the [Releases page](https://github.com/fiforms/reliefinventory/releases).
 
+## Optional: update from the web page (Linux server)
+
+By default you update with the two commands above. On a Linux server you can instead let an administrator do it from
+**Updates & Backups** in the web page. The web app can't restart its own containers, so a small helper service
+runs on the server itself: the page leaves it a note, the helper picks the note up, downloads the new release and
+restarts Relief Inventory. This is for a **new or existing Linux Docker host**; Docker Desktop on Windows/Mac
+doesn't need it.
+
+You need: `sudo` access on the server, `python3` (already on nearly every Linux server), and the `compose.yaml`
+you started Relief Inventory from.
+
+1. **Choose a secret.** Make a long random string, for example `openssl rand -hex 32`. It is the password the helper
+   uses to talk to the app, so keep it private.
+2. **Put it in `compose.yaml`.** In the settings block at the top, add (remove the `#` if the line is already
+   there):
+
+   ```
+   RI_UPDATE_SECRET: paste-your-secret-here
+   ```
+
+   Then apply it: `docker compose up -d`.
+3. **Install the helper.** In a copy of the Relief Inventory files (`git clone https://github.com/fiforms/reliefinventory`
+   or download the `docker/updater` folder), run, giving the full path to your `compose.yaml`:
+
+   ```
+   sudo docker/updater/install.sh /home/you/relief/compose.yaml
+   ```
+
+   If people reach the app at an address other than `http://127.0.0.1:8080` *from the server itself* (you changed
+   the port), add it as the second argument: `sudo docker/updater/install.sh /home/you/relief/compose.yaml http://127.0.0.1:8090`.
+4. **Check that it's running:** `systemctl status ri-updater` should say *active (running)*;
+   `journalctl -u ri-updater -f` shows what it is doing.
+5. **Try it.** Sign in as an **instance administrator**, open **Updates & Backups** and press **Check for Updates**.
+   Within about 30 seconds it should report either a new version or "nothing newer". **Install Update** then restarts
+   the system for a few minutes (the page comes back on its own).
+
+If a request sits at "Waiting for the updater…", the helper isn't running or can't read the secret: check step 4.
+You can also ask from the command line: `docker compose exec app php artisan instance:update check`
+(or `apply`, or `status`).
+
+To remove the helper: `sudo systemctl disable --now ri-updater && sudo rm /etc/systemd/system/ri-updater.service`,
+and delete the `RI_UPDATE_SECRET` line.
+
 ## Troubleshooting
 
 - **"docker: command not found" or "Cannot connect to the Docker daemon":** Docker Desktop isn't running. Open it and

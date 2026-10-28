@@ -81,6 +81,8 @@ for keywords — don't add a filter. Rule of thumb: an instance admin is assumed
 hardware, so never enforce a rule *against* the instance admin in software (retention periods, read-only access); enforce isolation
 between warehouses. It also decides that training is a warehouse of its own, not a mode of a live one ("Training warehouse" below): don't add anything to a real warehouse's behaviour for a class.
 
+**Docker self-update** (`InstanceUpdate`, control table `instance_update`, `docker/updater/ri-updater.py`): the app can't run `docker compose`, so Updates & Backups (instance admins only, `instance:update check|apply|status`) only sets a flag; a Python service on the host polls `GET /api/instance/update`, does pull → (newer `RI_VERSION` only) `down` → `up -d`, and reports back to `POST /api/instance/update/status`. The shared secret `RI_UPDATE_SECRET` (compose.yaml, read by the updater through `docker compose config`) is the only credential (`InstanceUpdateSecret`; unset = 404) — never trust the caller's IP here (Docker's bridge hides it). **The bare-metal web updater (`SystemController::update()`/`checkUpdates()`, `scripts/update.sh` from the web page) is deprecated** — it runs `git pull`/`migrate`/`npm build` in a request and can leave a broken system; don't extend it (removal list in TODO.md).
+
 ### Backend: Laravel + Inertia, JSON API under `/json`
 
 Routes live in `routes/web.php`. Page routes render Inertia views directly from closures (not

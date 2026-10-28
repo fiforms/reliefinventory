@@ -4,6 +4,7 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 test('the system admin page requires admin-system or manage-backups', function () {
     $this->actingAs(User::factory()->create())
@@ -93,8 +94,9 @@ test('a Docker install shows what compose configured and refuses the systemd-onl
         ->assertJsonPath('container_backups', ['enabled' => true, 'hour' => 3, 'premigrate' => false, 'scope' => 'full', 'keep_days' => 9])
         ->assertJsonPath('version.behind', null);
 
-    $this->actingAs($admin)->post('/json/system/update')->assertStatus(409);
-    $this->actingAs($admin)->post('/json/system/check-updates')->assertStatus(409);
+    // Updating is the host-side updater's (InstanceUpdateTest); a warehouse admin who isn't an instance admin may not ask for it.
+    $this->actingAs($admin)->post('/json/system/update')->assertStatus(403);
+    $this->actingAs($admin)->post('/json/system/check-updates')->assertStatus(403);
     $this->actingAs($admin)->post('/json/system/backup')->assertStatus(409);
     $this->actingAs($admin)->putJson('/json/system/backup-settings', [])->assertStatus(409);
     // what applies everywhere still works
@@ -237,4 +239,15 @@ test('invalid backup settings are rejected', function () {
         ])
         ->assertStatus(422)
         ->assertJsonValidationErrors(['frequency', 'hour', 'tz', 'keep_hourly', 'keep_daily']);
+});
+
+test('the deprecated bare-metal web updater still runs but logs a deprecation warning', function () {
+    config(['system.update_status_file' => sys_get_temp_dir().'/ri-test-update-status-'.bin2hex(random_bytes(3)).'.json']);
+    Log::spy();
+
+    // No sudoers rule in the test environment, so starting the unit fails — the point is that the path is still taken.
+    $this->actingAs(userWithPermissions('admin-system'))->post('/json/system/update');
+
+    Log::shouldHaveReceived('warning')->withArgs(fn ($message) => str_contains($message, 'Deprecated bare-metal web update'))->once();
+    @unlink(config('system.update_status_file'));
 });

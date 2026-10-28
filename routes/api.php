@@ -11,7 +11,15 @@ use App\Http\Controllers\DeviceUpdateCheckController;
 use App\Http\Controllers\FederationBackupController;
 use App\Http\Controllers\FederationController;
 use App\Http\Controllers\FeedbackIngestController;
+use App\Http\Controllers\InstanceUpdateController;
 use Illuminate\Support\Facades\Route;
+
+// The host-side Docker updater (docker/updater/ri-updater.py): polls for a requested check/update and reports back.
+// Shared-secret guarded; 404 unless RI_UPDATE_SECRET is set. See App\Models\Control\InstanceUpdate.
+Route::middleware(['throttle:60,1', 'update-secret'])->prefix('instance/update')->group(function () {
+    Route::get('/', [InstanceUpdateController::class, 'poll']);
+    Route::post('/status', [InstanceUpdateController::class, 'report']);
+});
 
 // Server half of rstation/platform/docs/DEVICE_CONTRACT.md. The device's
 // product sets api_base = /api/devices (rstation/product/backend/__init__.py);

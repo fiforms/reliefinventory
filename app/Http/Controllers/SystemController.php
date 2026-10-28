@@ -5,6 +5,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Control\InstanceUpdate;
 use App\Models\OfflineModeSetting;
 use App\Services\GitVersionService;
 use Illuminate\Http\JsonResponse;
@@ -19,9 +20,10 @@ use Illuminate\Support\Facades\Process;
  * update triggering, the tiered backup inventory and schedule, and offline mode.
  * (The backup-zip list and the app-key panel on the same page are BackupController's.)
  *
- * Platform: config('system.runtime') is 'systemd' (bare metal) or 'docker'. Updating, the tiered backup
- * timer and its settings only exist on systemd; a container is upgraded by pulling a new image and its
- * schedule lives in compose.yaml. status() says which one this is and leaves out what doesn't apply, and the
+ * Platform: config('system.runtime') is 'systemd' (bare metal) or 'docker'. The tiered backup timer and its
+ * settings only exist on systemd; a container's schedule lives in compose.yaml. A container is upgraded by the
+ * host-side updater (docker/updater/), which this controller only asks (InstanceUpdate); the bare-metal web
+ * updater is deprecated. status() says which one this is and leaves out what doesn't apply, and the
  * systemd-only actions refuse in a container (the page doesn't offer them there either).
  *
  * Design notes (see scripts/BACKUPS.md):
@@ -84,7 +86,7 @@ class SystemController extends Controller
     private function requireSystemd(): ?JsonResponse
     {
         return $this->isDocker()
-            ? response()->json(['message' => 'Not available in a Docker install: upgrade by pulling a new image, and set the backup schedule in compose.yaml.'], 409)
+            ? response()->json(['message' => 'Not available in a Docker install: set the backup schedule in compose.yaml.'], 409)
             : null;
     }
 
@@ -100,6 +102,10 @@ class SystemController extends Controller
             // What the compose file configured for the scheduler container (read-only here).
             'container_backups' => $docker ? config('backup.container') + ['keep_days' => (int) config('backup.keep_days')] : null,
             'update_status' => $docker ? null : $this->readUpdateStatus(),
+            // Docker: the self-update flag the host-side updater works from (InstanceUpdate). Only instance admins may use it.
+            'docker_update' => $docker ? InstanceUpdate::current()->payload() + ['can_request' => $this->isInstanceAdmin()] : null,
+            // The bare-metal web updater is deprecated (see update()); the page says so.
+            'updater_deprecated' => ! $docker,
             'timezones' => $docker ? [] : \DateTimeZone::listIdentifiers(),
             'offline_mode' => OfflineModeSetting::current()->enabled,
         ]);
@@ -124,12 +130,17 @@ class SystemController extends Controller
 
     /**
      * Fetch from origin so versionInfo() can see whether we're behind.
+     *
+     * @deprecated The bare-metal web updater (this, update(), startUnit(), scripts/update.sh and its systemd unit) runs `git pull`,
+     *             `artisan migrate` and `npm run build` from a web request, which can leave a half-updated system. It is kept
+     *             working for now and will be removed (TODO.md); Docker installs use the host-side updater (InstanceUpdate).
      */
     public function checkUpdates(): JsonResponse
     {
-        if ($refused = $this->requireSystemd()) {
-            return $refused;
+        if ($this->isDocker()) {
+            return $this->requestDockerUpdate('check');
         }
+        Log::warning('Deprecated bare-metal web update check used', ['person_id_user' => Auth::id()]);
         $result = Process::path(base_path())->timeout(60)->run(['git', 'fetch', 'origin', 'master']);
         if (! $result->successful()) {
             return response()->json([
@@ -140,11 +151,13 @@ class SystemController extends Controller
         return response()->json(['version' => $this->versionInfo()]);
     }
 
+    /** @deprecated See checkUpdates(). */
     public function update(): JsonResponse
     {
-        if ($refused = $this->requireSystemd()) {
-            return $refused;
+        if ($this->isDocker()) {
+            return $this->requestDockerUpdate('update');
         }
+        Log::warning('Deprecated bare-metal web update used', ['person_id_user' => Auth::id()]);
         if (($this->readUpdateStatus()['state'] ?? null) === 'running') {
             return response()->json(['message' => 'An update is already running.'], 409);
         }
@@ -203,6 +216,31 @@ class SystemController extends Controller
         return response()->json(['backup_settings' => $this->readBackupSettings()]);
     }
 
+    private function isInstanceAdmin(): bool
+    {
+        return (bool) Auth::user()?->account?->is_instance_admin;
+    }
+
+    /**
+     * Docker: queue a check or an update for the host-side updater. An update restarts every warehouse on the instance,
+     * so it is for instance administrators only, not for whoever holds admin-system in one warehouse.
+     */
+    private function requestDockerUpdate(string $action): JsonResponse
+    {
+        if (! $this->isInstanceAdmin()) {
+            return response()->json(['message' => 'Only an instance administrator can check for or install updates.'], 403);
+        }
+        if (! InstanceUpdate::enabled()) {
+            return response()->json(['message' => 'Automatic updates are not set up: set RI_UPDATE_SECRET in compose.yaml and run the updater on the host (docker/updater/).'], 409);
+        }
+        if (! InstanceUpdate::request($action, Auth::user()->email)) {
+            return response()->json(['message' => 'An update is already in progress.'], 409);
+        }
+
+        return response()->json(['docker_update' => InstanceUpdate::current()->payload() + ['can_request' => true]], 202);
+    }
+
+    /** @deprecated See checkUpdates(). */
     private function startUnit(string $unit): JsonResponse
     {
         $result = Process::timeout(15)->run(['sudo', '-n', '/usr/bin/systemctl', 'start', '--no-block', $unit]);
