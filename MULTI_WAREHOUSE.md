@@ -980,6 +980,33 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   host; until then `warehouse:domain list` shows "NOT confirmed". It is a warning, never a block.
 - Tests: `WarehouseDomainsTest`, `WarehouseChooserTest`. Not built: `skip_chooser` has no use yet (a mapped host never shows one).
 
+**Slice (e), training in its own warehouse, is built (2026-10-29).** In-warehouse Training Mode is gone; §12's decisions are in code:
+- **Training is a warehouse:** `warehouse:create "<name>" --training` makes an ordinary warehouse with `is_training` (set before it is migrated), which the usual setup
+  code hands to the trainer. `TrainingMode::active()` (the current warehouse is a training one) is the single test; the class tools
+  exist only there. **Removed:** the permission cap (`TRAINING_KEYS` intersected in `HasPermissions`), the `training_login_person_id` session marker, the
+  "needs a full login" page and `/training-login/exit`, the `CheckPermission` special case, the `training` shared prop and the trainee strip, the
+  reset-point backup, `training_settings.enabled/enabled_at/enabled_by/reset_point_*` (migration `retire_training_mode_switch`, which also renames the menu
+  tile and hides the Trainee role outside training warehouses), and `PUT /json/training/mode`.
+- **What keeps real warehouses clean:** `HasPermissions` drops `manage-training` unless the warehouse is training (so the class pages, menu tiles and routes aren't
+  there), `ActivityRecorder` records only in training warehouses (it used to log every station action everywhere), `/join`, `/training-login` and Prepare Training
+  refuse elsewhere. The *schema* (`people.is_trainee`, `activity_log`, `training_*`) still exists in every warehouse because every warehouse runs the same migrations;
+  it is empty and unused outside a training one. A shared strip in the layout says "Training warehouse" (`warehouse.training`).
+- **The switch:** off is the warehouse's `suspended` status (`php artisan warehouse:training disable|enable <id>`). A suspended warehouse refuses everything
+  and leaves the chooser (both already true of any non-active warehouse), so no training-specific refusal code was needed. **Deviation from §12:** the design lets a
+  warehouse's own training admins flip it; they can't turn it back on once it refuses their login, so for now enabling and disabling is the instance admin's (the
+  instance console, phase 5, will offer it).
+- **Reset** (`TrainingReset`, `training:reset`, `warehouse:training reset <id>`, Setup > Training Warehouse, `manage-training`, typed `RESET`): as in §12, drop and rebuild
+  *that one warehouse* with its own database user (`db:wipe`, `migrate`, essentials, setup latch), status `restoring` meanwhile, no dump/restore and no maintenance
+  mode. A **class archive** is saved first and kept (with trainer signatures); other uploads are deleted. **Deviation:** the members' role bundle is a snapshot *file*
+  (`<backup dir>/warehouses/<id>/training/reset-snapshot.json`, outside the database, so a crashed reset is finished by running it again), not a column on
+  `memberships`: the reset is its only reader. Logins, roles, and the certificate details come back (new person rows, same accounts, memberships re-pointed);
+  trainees, sign-ups, practice records, the activity log, added catalog items and approved devices do not. On failure the warehouse stays `restoring` with the reason in
+  `reset-status.json`.
+- **Left as is:** the placeholder `trainee-<id>@training.invalid` emails (only in training warehouses; removing them means changing what `User` considers a login);
+  seeding a training warehouse with example data (it gets the essentials; Prepare Training stages the class); warehouse admins deploying training warehouses of their own.
+- Tests: `TrainingResetTest` (gates; archive + launch; a real rebuild against a provisioned training warehouse; `warehouse:training`), `TrainingLoginTest` (no cap, no
+  mode; the class tools exist only in a training warehouse), and the other training tests now run in a training warehouse (`trainingWarehouse()` in `tests/Pest.php`).
+
 - **Backup and restore, the whole picture (confirmed 2026-10-29).** Two kinds, both required: (1) **per warehouse**, the normal flow
   (that warehouse's database and files; a warehouse admin's own restore is the same engine plus the lineage check, phase 4); (2) **whole
   instance** (instance admin only): control + accounts + every warehouse's database and files, restoring them all onto a new instance.
@@ -1011,7 +1038,7 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   reach it that way: part of the restore slice).
 
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
-mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode; (f) removal.
+mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal.
 
 ### Remaining work
 
