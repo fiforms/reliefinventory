@@ -17,7 +17,7 @@ use Illuminate\Console\Command;
  */
 class WarehouseCreate extends Command
 {
-    protected $signature = 'warehouse:create {name? : Display name} {--email= : Contact for the person who will run it} {--resume= : Finish a warehouse stuck in provisioning} {--new-code= : Issue a new setup code for a warehouse awaiting setup}';
+    protected $signature = 'warehouse:create {name? : Display name} {--email= : Contact for the person who will run it} {--resume= : Finish a warehouse stuck in provisioning} {--new-code= : Issue a new setup code for a warehouse awaiting setup} {--training : Make it a training warehouse (the class tools, practice data)}';
 
     protected $description = 'Create a new, empty warehouse and print its setup code.';
 
@@ -36,7 +36,7 @@ class WarehouseCreate extends Command
                 $warehouse = Warehouse::findOrFail(strtoupper($id));
                 $code = $creator->provision($warehouse, 'warehouse:create');
             } elseif ($name = $this->argument('name')) {
-                [$warehouse, $code] = $creator->create($name, $this->option('email') ?: null, 'warehouse:create');
+                [$warehouse, $code] = $creator->create($name, $this->option('email') ?: null, 'warehouse:create', (bool) $this->option('training'));
             } else {
                 $this->components->error('Give the new warehouse a name, or --resume=<id> / --new-code=<id>.');
 

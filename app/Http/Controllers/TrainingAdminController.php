@@ -19,7 +19,6 @@ use App\Services\TrainingPreparer;
 use App\Services\TrainingReset;
 use App\Support\TrainingGuide;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
 use League\Csv\Writer;
@@ -27,10 +26,9 @@ use Milon\Barcode\DNS2D;
 use RuntimeException;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
-use Throwable;
 
 /**
- * Setup > Training Mode (`manage-training`; switching the mode itself needs `admin-system`): the switch, the
+ * Setup > Training Warehouse (`manage-training`, which only exists in a training warehouse): the reset, the
  * trainee list, Prepare Training and its setup packet + labels, and the team activity sheets (those print from
  * /help for anyone signed in). See App\Services\TrainingMode.
  */
@@ -43,8 +41,6 @@ class TrainingAdminController extends Controller
             ->selectRaw('person_id, count(*) as n')->groupBy('person_id')->pluck('n', 'person_id');
 
         return response()->json([
-            'enabled' => $settings->enabled,
-            'enabled_at' => $settings->enabled_at,
             'prepared_at' => $settings->prepared_at,
             'prepared' => (bool) $settings->prepared_summary,
             'event_title' => $settings->event_title,
@@ -55,8 +51,6 @@ class TrainingAdminController extends Controller
                 'has_signature' => (bool) $settings->{"trainer{$slot}_signature"},
                 'signature_version' => $settings->{"trainer{$slot}_signature"} ? md5($settings->{"trainer{$slot}_signature"}) : null,
             ], TrainingSetting::TRAINER_SLOTS),
-            'can_toggle' => Auth::user()->hasPermission('admin-system'),
-            'reset_point' => app(TrainingReset::class)->resetPoint(),
             'reset_status' => app(TrainingReset::class)->status(),
             'archives' => app(TrainingReset::class)->archives(),
             'approved_devices' => TrustedDevice::where('status', 'approved')->count(),
@@ -81,34 +75,8 @@ class TrainingAdminController extends Controller
     }
 
     /**
-     * Turning the mode on takes a reset point first (TrainingReset) unless `reset_point` is false; if that backup fails
-     * the mode stays off and the reason comes back, so the page can offer to turn it on without one. Turning it off
-     * here keeps everything — "Turn off and reset" is reset().
-     */
-    public function setMode(Request $request, TrainingReset $reset)
-    {
-        $data = $request->validate(['enabled' => 'required|boolean', 'reset_point' => 'sometimes|boolean']);
-        $settings = TrainingSetting::current();
-        if ($data['enabled'] && ! $settings->enabled && ($data['reset_point'] ?? true)) {
-            try {
-                $reset->takeResetPoint();
-            } catch (Throwable $e) {
-                report($e);
-
-                return response()->json(['message' => 'Training Mode is still off: the reset point (a database backup) could not be taken — '
-                    .$e->getMessage(), 'reset_point_failed' => true], 422);
-            }
-        }
-        $settings->update($data['enabled']
-            ? ['enabled' => true, 'enabled_at' => now(), 'enabled_by' => Auth::id()]
-            : ['enabled' => false]);
-
-        return $this->status();
-    }
-
-    /**
-     * "Turn off and reset": save the class archive and restore the reset point in the background (TrainingReset). The
-     * typed confirmation is checked here, not only in the page. Everyone is logged out when it finishes.
+     * Reset this training warehouse: save the class archive, then rebuild the warehouse from its seed in the background
+     * (TrainingReset). The typed confirmation is checked here, not only in the page. Everyone is logged out when it finishes.
      */
     public function reset(Request $request, TrainingReset $reset)
     {

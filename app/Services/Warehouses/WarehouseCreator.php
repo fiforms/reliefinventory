@@ -30,7 +30,7 @@ class WarehouseCreator
     ) {}
 
     /** @return array{0: Warehouse, 1: string} the warehouse and its setup code (shown once) */
-    public function create(string $displayName, ?string $adminEmail = null, ?string $createdBy = null): array
+    public function create(string $displayName, ?string $adminEmail = null, ?string $createdBy = null, bool $training = false): array
     {
         $displayName = trim($displayName);
         // Names are unique on the instance (§3): the chooser and the login page show them, so a look-alike would mislead.
@@ -44,6 +44,8 @@ class WarehouseCreator
             'display_name' => $displayName,
             'admin_email' => $adminEmail,
             'status' => 'provisioning',
+            // Set before it is migrated: the class tools a training warehouse has (and a real one doesn't) key off it (§12).
+            'is_training' => $training,
         ]);
         $warehouse->id = $id;
         $warehouse->save();
