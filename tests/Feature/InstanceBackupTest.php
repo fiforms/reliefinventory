@@ -12,6 +12,7 @@ use App\Services\BackupService;
 use App\Services\InstanceBackupService;
 use App\Services\Warehouses\WarehouseContext;
 use App\Services\Warehouses\WarehouseCreator;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -98,13 +99,32 @@ test('an instance zip is refused by a warehouse restore and a warehouse zip by a
     expect(fn () => app(InstanceBackupService::class)->restore($zip, null, false))->toThrow(RuntimeException::class, 'warehouse backup, not a whole-instance');
 });
 
-test('a whole instance is backed up, wiped and restored, with its warehouses, logins, files, keys and database users', function () {
-    // An instance of its own: new control and accounts schemas, migrated, and a warehouse registered in them.
+/** Disaster: every warehouse, its user, key and files gone, and the control and accounts schemas empty again (a new instance's). */
+function wipeInstance($test, array $warehouses): void
+{
+    foreach ($warehouses as $w) {
+        $test->admin->exec('DROP DATABASE `'.$w->schema_name.'`');
+        $test->admin->exec("DROP USER 'ri_".strtolower($w->id)."'@'localhost'");
+        File::deleteDirectory($w->secretsPath());
+        File::deleteDirectory(dirname($w->storagePath()));
+    }
+    foreach (['control', 'accounts'] as $connection) {
+        $name = config("database.connections.{$connection}.database");
+        $test->admin->exec("DROP DATABASE `{$name}`");
+        $test->admin->exec("CREATE DATABASE `{$name}`");   // a new instance starts with empty schemas (the provisioner makes them)
+    }
+    DB::purge('control');
+    DB::purge('accounts');
+}
+
+/** An instance of its own (new control and accounts schemas, migrated) with two warehouses, a login, a file and a marker person. @return array{0: Warehouse, 1: Warehouse, 2: string} */
+function isolatedInstance($test): array
+{
     $suffix = bin2hex(random_bytes(2));
     $names = ['control' => "test_reliefinventory_ic{$suffix}_control", 'accounts' => "test_reliefinventory_ic{$suffix}_accounts"];
-    $this->extraSchemas = array_values($names);
+    $test->extraSchemas = array_values($names);
     foreach ($names as $connection => $name) {
-        $this->admin->exec("CREATE DATABASE `{$name}`");
+        $test->admin->exec("CREATE DATABASE `{$name}`");
         config(["database.connections.{$connection}.database" => $name]);
         DB::purge($connection);
         Artisan::call('migrate:fresh', ['--database' => $connection, '--path' => "database/migrations/{$connection}", '--force' => true]);
@@ -115,7 +135,7 @@ test('a whole instance is backed up, wiped and restored, with its warehouses, lo
     [$one] = $creator->create('Restored One', null, 'test');
     [$two] = $creator->create('Restored Two', null, 'test');
     foreach ([$one, $two] as $w) {
-        $this->created[] = ['id' => $w->id, 'schema' => $w->schema_name];
+        $test->created[] = ['id' => $w->id, 'schema' => $w->schema_name];
     }
     $account = new Account(['email' => 'kept@example.org']);
     $account->forceFill(['password' => Hash::make('kept-password-1'), 'email_verified_at' => now()])->save();
@@ -124,21 +144,14 @@ test('a whole instance is backed up, wiped and restored, with its warehouses, lo
     file_put_contents($one->storagePath('receiving-photos/p.jpg'), 'one-photo');
     app(WarehouseContext::class)->run($two, fn () => DB::table('people')->insert(['first_name' => 'Marker', 'last_name' => 'Person', 'email' => 'marker@example.org', 'created_at' => now(), 'updated_at' => now()]));
 
+    return [$one, $two, $oneKey];
+}
+
+test('a whole instance is backed up, wiped and restored, with its warehouses, logins, files, keys and database users', function () {
+    [$one, $two, $oneKey] = isolatedInstance($this);
     $zip = app(InstanceBackupService::class)->create($this->tmp.'/zips', null, true, 'a long passphrase')['path'];
 
-    // Disaster: everything gone.
-    foreach ([$one, $two] as $w) {
-        $this->admin->exec('DROP DATABASE `'.$w->schema_name.'`');
-        $this->admin->exec("DROP USER 'ri_".strtolower($w->id)."'@'localhost'");
-        File::deleteDirectory($w->secretsPath());
-        File::deleteDirectory(dirname($w->storagePath()));
-    }
-    foreach ($names as $name) {
-        $this->admin->exec("DROP DATABASE `{$name}`");
-        $this->admin->exec("CREATE DATABASE `{$name}`");   // a new instance starts with empty schemas (the provisioner makes them)
-    }
-    DB::purge('control');
-    DB::purge('accounts');
+    wipeInstance($this, [$one, $two]);
 
     expect(fn () => app(InstanceBackupService::class)->restore($zip, 'wrong passphrase!', false))->toThrow(RuntimeException::class, 'passphrase');
     expect(fn () => app(InstanceBackupService::class)->restore($zip, null, false))->toThrow(RuntimeException::class, 'passphrase');
@@ -158,4 +171,48 @@ test('a whole instance is backed up, wiped and restored, with its warehouses, lo
 
     // A second restore onto an instance now in use needs --force.
     expect(fn () => app(InstanceBackupService::class)->restore($zip, 'a long passphrase', false))->toThrow(RuntimeException::class, '--force');
+});
+
+test('a backup made without keys is restored with the keys from a folder laid out like the old warehouse-secrets volume', function () {
+    [$one, $two, $oneKey] = isolatedInstance($this);
+    $zip = app(InstanceBackupService::class)->create($this->tmp.'/zips', null, false, null)['path'];
+    foreach ([$one, $two] as $w) {
+        File::ensureDirectoryExists($this->tmp."/keys/{$w->id}");
+        copy($w->secretsPath('warehouse.key'), $this->tmp."/keys/{$w->id}/warehouse.key");
+    }
+    wipeInstance($this, [$one, $two]);
+
+    $withoutKeys = app(InstanceBackupService::class)->restore($zip, null, false);
+    expect($withoutKeys['keys'])->toBeFalse()->and($withoutKeys['notes'])->not->toBeEmpty()->and(Warehouse::find($one->id)->hasKey())->toBeFalse();
+
+    wipeInstance($this, [Warehouse::find($one->id), Warehouse::find($two->id)]);
+    $result = app(InstanceBackupService::class)->restore($zip, null, false, null, $this->tmp.'/keys');
+
+    expect($result['keys'])->toBeTrue()->and($result['notes'])->toBeEmpty()
+        ->and(trim(file_get_contents(Warehouse::find($one->id)->secretsPath('warehouse.key'))))->toBe($oneKey);
+});
+
+test('warehouse:key shows a key, refuses a bad one, and replaces the key of a warehouse in use only with --force', function () {
+    $warehouse = Warehouse::default();
+    $original = $warehouse->key();
+    $newKey = 'base64:'.base64_encode(Encrypter::generateKey(config('app.cipher')));
+    file_put_contents($this->tmp.'/new.key', $newKey);
+    file_put_contents($this->tmp.'/bad.key', 'not-a-key');
+
+    try {
+        Artisan::call('warehouse:key', ['action' => 'show', 'warehouse' => $warehouse->id]);
+        expect(trim(Artisan::output()))->toBe($original);
+
+        $this->artisan('warehouse:key', ['action' => 'import', 'warehouse' => $warehouse->id, '--file' => $this->tmp.'/bad.key'])->assertFailed();
+        // A set-up warehouse (the test one is) keeps its key unless forced.
+        $this->artisan('warehouse:key', ['action' => 'import', 'warehouse' => $warehouse->id, '--file' => $this->tmp.'/new.key'])->assertFailed();
+        expect($warehouse->key())->toBe($original);
+
+        $this->artisan('warehouse:key', ['action' => 'import', 'warehouse' => $warehouse->id, '--file' => $this->tmp.'/new.key', '--force' => true])->assertSuccessful();
+        expect($warehouse->key())->toBe($newKey)
+            ->and(InstanceAuditLog::whereIn('action', ['warehouse.key_revealed', 'warehouse.key_imported'])->count())->toBeGreaterThanOrEqual(2);
+    } finally {
+        $warehouse->replaceKey($original);
+        app(WarehouseContext::class)->refresh();
+    }
 });

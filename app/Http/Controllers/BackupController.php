@@ -6,7 +6,9 @@
 namespace App\Http\Controllers;
 
 use App\Models\Backup;
+use App\Models\Control\InstanceAuditLog;
 use App\Services\BackupService;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -89,7 +91,7 @@ class BackupController extends Controller
     }
 
     /**
-     * Reveal APP_KEY. A POST (never a GET, so it can't be linked, prefetched or land in a URL log) that
+     * Reveal this warehouse's key (what its encrypted values are under; the instance's APP_KEY is not what a restore needs). A POST (never a GET, so it can't be linked, prefetched or land in a URL log) that
      * re-asks for the person's own password, is throttled at the route, never cached, and is logged.
      */
     public function appKey(Request $request)
@@ -98,15 +100,16 @@ class BackupController extends Controller
         $user = Auth::user();
 
         if (! $user->password || ! Hash::check($data['password'], $user->password)) {
-            Log::warning('App key reveal refused: wrong or missing password', ['person' => $user->id]);
+            Log::warning('Warehouse key reveal refused: wrong or missing password', ['person' => $user->id]);
 
             return response()->json([
                 'message' => 'That password is not correct.',
                 'errors' => ['password' => [$user->password ? 'That password is not correct.' : 'Your account has no password set, so the key cannot be shown.']],
             ], 422);
         }
-        Log::warning('App key revealed', ['person' => $user->id]);
+        Log::warning('Warehouse key revealed', ['person' => $user->id]);
+        InstanceAuditLog::record('warehouse.key_revealed', app(WarehouseContext::class)->current(), [], $user->email);
 
-        return response()->json(['key' => config('app.key')])->header('Cache-Control', 'no-store, private');
+        return response()->json(['key' => app(WarehouseContext::class)->current()->key()])->header('Cache-Control', 'no-store, private');
     }
 }

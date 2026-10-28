@@ -267,11 +267,12 @@ test('the app key needs its own permission, the right password and is never cach
     // manage-backups alone is not enough
     $this->actingAs(userWithPermissions('manage-backups'))->postJson('/json/backups/app-key', ['password' => 'x'])->assertForbidden();
 
-    $this->actingAs($viewer)->postJson('/json/backups/app-key', ['password' => 'wrong'])->assertStatus(422)->assertJsonMissing(['key' => config('app.key')]);
+    $this->actingAs($viewer)->postJson('/json/backups/app-key', ['password' => 'wrong'])->assertStatus(422)->assertJsonMissing(['key' => Warehouse::current()->key()]);
     $this->actingAs($viewer)->getJson('/json/backups/app-key')->assertStatus(405);
 
     $ok = $this->actingAs($viewer)->postJson('/json/backups/app-key', ['password' => $password])->assertOk();
-    expect($ok->json('key'))->toBe(config('app.key'))->and($ok->headers->get('Cache-Control'))->toContain('no-store');
+    expect($ok->json('key'))->toBe(Warehouse::current()->key())->not->toBe(config('app.key'))   // this warehouse's key, not the instance's
+        ->and($ok->headers->get('Cache-Control'))->toContain('no-store');
 });
 
 test('the page offers only a database or a database + files backup, never a files-only one', function () {

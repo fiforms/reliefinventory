@@ -101,6 +101,28 @@ class RestoreService
         return is_array($claim) && isset($claim['code_id'], $claim['account_id'], $claim['first_name'], $claim['last_name']) ? $claim : null;
     }
 
+    private function keyImportPath(): string
+    {
+        return $this->dir().'/import.key';
+    }
+
+    /**
+     * The old warehouse's key, typed or pasted by whoever is restoring onto a new instance (or into a warehouse awaiting its setup code), so
+     * the values it encrypted can be read: a backup never carries one. Kept in a file for the same reason as the claim (the database
+     * replacement wipes the session), 0600, deleted as soon as the restore ends. Only ever used on a warehouse that holds nothing yet (perform()).
+     */
+    public function stageKeyImport(string $key): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        file_put_contents($this->keyImportPath(), trim($key), LOCK_EX);
+        chmod($this->keyImportPath(), 0600);
+    }
+
+    public function clearKeyImport(): void
+    {
+        @unlink($this->keyImportPath());
+    }
+
     private function ownPath(): string
     {
         return $this->dir().'/own.json';
@@ -236,6 +258,7 @@ class RestoreService
             $this->removeTree($this->dir().'/'.$uploadId);
             $this->clearClaim();
             $this->clearOwnRestore();
+            $this->clearKeyImport();
             flock($lock, LOCK_UN);
             fclose($lock);
         }
@@ -297,6 +320,7 @@ class RestoreService
         if (! $fresh && ! $force) {
             throw new RuntimeException('This instance has already been set up. Restoring replaces its data; add --force if that is what you want.');
         }
+        $this->importKey($fresh);
         $maintenance = $force && ! $fresh && ($plan['database'] || $own !== null);
         $previousStatus = app(WarehouseContext::class)->current()->fresh()->status;
 
@@ -577,6 +601,25 @@ class RestoreService
         foreach (new \FilesystemIterator($root, \FilesystemIterator::SKIP_DOTS) as $entry) {
             $entry->isDir() && ! $entry->isLink() ? $this->removeTree($entry->getPathname()) : @unlink($entry->getPathname());
         }
+    }
+
+    /**
+     * Use the staged old key, if there is one. Only while the warehouse is fresh (never set up, or awaiting its setup code): it holds
+     * nothing encrypted under the key it has, so nothing is lost by replacing it. On a set-up warehouse it is refused outright (it
+     * would make everything already encrypted there unreadable), and a wrong key shows up afterwards as settings that had to be blanked.
+     */
+    private function importKey(bool $fresh): void
+    {
+        $key = is_file($this->keyImportPath()) ? trim((string) file_get_contents($this->keyImportPath())) : '';
+        if ($key === '') {
+            return;
+        }
+        if (! $fresh) {
+            throw new RuntimeException('A key can only be imported into a warehouse that has not been set up yet: replacing the key of one in use would make its encrypted settings unreadable.');
+        }
+        $context = app(WarehouseContext::class);
+        $context->current()->replaceKey($key);
+        $context->refresh();
     }
 
     /** @param  bool  $fresh  never set up: a failure resets it to a clean state; otherwise it is left for the operator */

@@ -19,6 +19,7 @@ class RestoreInstance extends Command
     protected $signature = 'restore:instance
         {zip : The whole-instance backup zip}
         {--passphrase-file= : A file holding the passphrase the keys were encrypted with (otherwise asked for when the backup has keys)}
+        {--keys-dir= : For a backup made without keys: a folder with <warehouse id>/warehouse.key files (a copy of the old warehouse-secrets volume)}
         {--force : Replace an instance that is already in use}';
 
     protected $description = 'Restore a whole-instance backup onto this (new) instance; run in the provisioner container';
@@ -39,7 +40,7 @@ class RestoreInstance extends Command
         }
 
         try {
-            $result = $backups->restore($this->argument('zip'), $passphrase, (bool) $this->option('force'), fn ($m) => $this->line($m));
+            $result = $backups->restore($this->argument('zip'), $passphrase, (bool) $this->option('force'), fn ($m) => $this->line($m), $this->option('keys-dir') ?: null);
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 

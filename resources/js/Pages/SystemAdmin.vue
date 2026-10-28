@@ -433,18 +433,18 @@ onUnmounted(() => {
 
 			<!-- The key is not in any backup: say so, loudly, wherever backups are made or listed -->
 			<section v-if="canAdminSystem || canManageBackups" class="rounded-lg border-2 border-red-400 bg-red-50 p-5 space-y-2 text-sm text-red-900">
-				<h2 class="text-base font-bold">Write down the application key — backups do not contain it</h2>
+				<h2 class="text-base font-bold">Write down this warehouse's key — backups do not contain it</h2>
 				<p>
-					For your protection no backup ever contains the application key. <strong>You NEED a copy of it, kept in a safe place
+					For your protection no backup ever contains the warehouse key. <strong>You NEED a copy of it, kept in a safe place
 					separate from your backups</strong> (a password manager or a sealed envelope): it is required to restore the encrypted
 					parts of a backup — for example the shared secret for centralized feedback. Without the key those values can't be
 					recovered and have to be re-entered, and everyone has to sign in again; with it, a restore is complete.
 				</p>
 				<p v-if="canViewAppKey">
-					<a href="#application-key" class="font-semibold underline">Show the application key (at the bottom of this page)</a>
+					<a href="#application-key" class="font-semibold underline">Show the warehouse key (at the bottom of this page)</a>
 					and record it now — and again if it is ever changed.
 				</p>
-				<p v-else>An administrator who can view the application key needs to record it. Ask for it to be done if you are not sure it has been.</p>
+				<p v-else>An administrator who can view the warehouse key needs to record it. Ask for it to be done if you are not sure it has been.</p>
 			</section>
 
 			<!-- Create a backup -->
@@ -481,7 +481,7 @@ onUnmounted(() => {
 				</div>
 				<p class="text-xs text-gray-500">
 					Backups are deleted automatically {{ keepDays }} days after they are made, or earlier if you delete them below.
-					A backup <strong>never</strong> contains the application key — see the panel at the bottom of this page.
+					A backup <strong>never</strong> contains the warehouse key — see the panel at the bottom of this page.
 				</p>
 			</section>
 
@@ -651,7 +651,7 @@ onUnmounted(() => {
 
 			<!-- Application key -->
 			<section v-if="canViewAppKey" id="application-key" class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Application key</h2>
+				<h2 class="text-lg font-semibold">Warehouse key</h2>
 				<div class="rounded bg-amber-50 border border-amber-300 text-amber-900 px-4 py-3 text-sm space-y-2">
 					<p>
 						This is this warehouse's own key. It encrypts a few secret values stored in its database (for example the email
@@ -661,10 +661,9 @@ onUnmounted(() => {
 					<p>
 						<strong>Write this key down now and keep it somewhere safe, separate from your backups</strong> (a password manager or a
 						sealed envelope). It is needed to restore the encrypted parts of a backup: restoring onto a new system without it loses
-						those encrypted values (the restore blanks them and you must re-enter them). To restore everything, give the new
-						system this same key before its first start (Docker: <span class="font-mono">APP_KEY</span> in the compose file;
-						standard install: <span class="font-mono">APP_KEY</span> in <span class="font-mono">.env</span>): a new system's first
-						warehouse takes its key from there.
+						those encrypted values (the restore blanks them and you must re-enter them). To restore everything onto a new system, paste this key
+						into “Key from the old system” when you choose the backup there (the setup screen's restore step); an instance
+						administrator restoring a whole instance can instead keep it with the backup (<span class="font-mono">instance:backup --with-keys</span>).
 					</p>
 				</div>
 

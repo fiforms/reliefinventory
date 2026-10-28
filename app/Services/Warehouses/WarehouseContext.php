@@ -93,6 +93,16 @@ class WarehouseContext
         $this->current = $warehouse;
     }
 
+    /** Switch to the same warehouse again from scratch, for when something it is switched with (its key) was changed on disk. */
+    public function refresh(): void
+    {
+        if ($this->current) {
+            $warehouse = $this->current->fresh() ?? $this->current;
+            $this->forget();
+            $this->switchTo($warehouse);
+        }
+    }
+
     public function forget(): void
     {
         if (! $this->current) {

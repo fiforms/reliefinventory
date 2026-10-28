@@ -12,6 +12,7 @@ use App\Services\BackupService;
 use App\Services\Federation\InstanceIdentity;
 use App\Services\FirstRunService;
 use App\Services\RestoreService;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Artisan;
@@ -361,6 +362,51 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
 
     $this->post('/login', ['email' => 'old-admin@example.com', 'password' => 'password']);
     $this->assertAuthenticated();
+});
+
+test('the old warehouse key given at the restore step keeps the encrypted settings readable, and only on a warehouse nothing has been set up in', function () {
+    $GLOBALS['restore_test_dirtied_db'] = true;
+    Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
+    $warehouse = Warehouse::current();
+    $ownKey = $warehouse->key();
+    $oldKey = 'base64:'.base64_encode(Encrypter::generateKey(config('app.cipher')));
+    DB::table('federation_identities')->insert([
+        'uuid' => '11111111-2222-4333-8444-555555555555', 'name' => 'old-box', 'public_key' => str_repeat('A', 43),
+        'private_key' => (new Encrypter(base64_decode(substr($oldKey, 7)), config('app.cipher')))->encryptString('the-private-key'),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $admin = User::factory()->create(['email' => 'old-admin@example.com']);
+    DB::table('people_roles')->insert(['person_id' => $admin->id, 'role_id' => 15, 'created_at' => now(), 'updated_at' => now()]);
+    $backup = Backup::create(['status' => 'queued', 'scope' => 'database']);
+    app(BackupService::class)->run($backup);
+    $zip = $backup->fresh()->path();
+
+    try {
+        Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
+        Membership::query()->delete();
+        Account::query()->delete();
+        freshInstance();
+
+        Process::fake();
+        $id = uploadZip($zip);
+        $this->postJson('/install/restore/launch', ['upload_id' => $id, 'warehouse_key' => 'not a key'])->assertStatus(422)->assertJsonValidationErrors('warehouse_key');
+        $this->postJson('/install/restore/launch', ['upload_id' => $id, 'warehouse_key' => $oldKey])->assertStatus(202);
+        app(RestoreService::class)->run($id);
+
+        $status = app(RestoreService::class)->status();
+        expect($status['state'])->toBe('complete', $status['error'] ?? '')->and($status['blanked'])->toBe([])
+            ->and($warehouse->fresh()->key())->toBe($oldKey)
+            ->and(InstanceIdentity::isLost())->toBeFalse()
+            ->and(is_file(app(RestoreService::class)->dir().'/import.key'))->toBeFalse();   // the key was not left lying about
+
+        // A set-up warehouse refuses an import: it would make what is encrypted under its key unreadable.
+        app(RestoreService::class)->stageKeyImport($ownKey);
+        expect(fn () => app(RestoreService::class)->runFromFiles($zip, null, true))->toThrow(RuntimeException::class, 'has not been set up');
+    } finally {
+        $warehouse->replaceKey($ownKey);
+        app(WarehouseContext::class)->refresh();
+        app(RestoreService::class)->clearKeyImport();
+    }
 });
 
 // ---- restoring from zips on disk (backup:restore) -----------------------------------------------------

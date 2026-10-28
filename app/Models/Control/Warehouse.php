@@ -8,6 +8,7 @@ namespace App\Models\Control;
 use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Str;
 use RuntimeException;
 
@@ -219,6 +220,39 @@ class Warehouse extends Model
         }
 
         return $key;
+    }
+
+    /** Whether $key is usable as a warehouse key (`base64:…` of the right length for the cipher). */
+    public static function validKey(string $key): bool
+    {
+        $raw = str_starts_with($key, 'base64:') ? base64_decode(substr($key, 7), true) : false;
+
+        return $raw !== false && Encrypter::supported($raw, config('app.cipher'));
+    }
+
+    /**
+     * Replace the key file: the import step when restoring onto a new instance, so values the old warehouse encrypted can be read
+     * (a backup never carries a key). Only for a warehouse that holds nothing encrypted under its current key (callers check): the
+     * old key can no longer be read once this has run. The caller re-switches the warehouse so the new key is the one in use.
+     */
+    public function replaceKey(string $key): void
+    {
+        $key = trim($key);
+        if (! self::validKey($key)) {
+            throw new RuntimeException('That is not a warehouse key (it starts with "base64:" and is 44 characters after that).');
+        }
+        $dir = $this->secretsPath();
+        if (! is_dir($dir) && ! mkdir($dir, 0700, true) && ! is_dir($dir)) {
+            throw new RuntimeException("Could not create {$dir}.");
+        }
+        $tmp = $dir.'/.warehouse.key.'.getmypid();
+        $old = umask(077);
+        try {
+            file_put_contents($tmp, $key) !== false && rename($tmp, $this->secretsPath('warehouse.key'))
+                || throw new RuntimeException("Could not write the key for warehouse {$this->id}.");
+        } finally {
+            umask($old);
+        }
     }
 
     /** Write the key file once; an existing key is never replaced (it is what this warehouse's data needs). */

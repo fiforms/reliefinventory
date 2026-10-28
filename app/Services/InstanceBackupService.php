@@ -217,9 +217,11 @@ class InstanceBackupService
      * Replace this instance with the one in the zip. Throws, with the reason, before changing anything for every problem that can be
      * found beforehand (the zip, its checksums, its schema names, an instance that is already in use without $force).
      *
+     * @param  ?string  $keysDir  for a backup made without keys: a folder holding `<warehouse id>/warehouse.key` (the layout of the warehouse-secrets
+     *                            volume, so a copy of it will do); used for any warehouse the zip has no key for
      * @return array{warehouses: int, files: bool, keys: bool, notes: list<string>}
      */
-    public function restore(string $zipPath, ?string $passphrase, bool $force, ?callable $log = null): array
+    public function restore(string $zipPath, ?string $passphrase, bool $force, ?callable $log = null, ?string $keysDir = null): array
     {
         $log ??= fn (string $m) => null;
         $zip = $this->open($zipPath);
@@ -258,8 +260,10 @@ class InstanceBackupService
             foreach (Warehouse::orderBy('id')->get() as $warehouse) {
                 $log("Warehouse {$warehouse->id}: files, key and database user");
                 File::deleteDirectory($warehouse->secretsPath());
-                if (is_file("{$work}/keys/{$warehouse->id}/warehouse.key")) {
-                    $warehouse->writeKey(trim((string) file_get_contents("{$work}/keys/{$warehouse->id}/warehouse.key")));
+                $keyFile = collect(["{$work}/keys/{$warehouse->id}/warehouse.key", $keysDir ? rtrim($keysDir, '/')."/{$warehouse->id}/warehouse.key" : null])
+                    ->first(fn ($f) => $f && is_file($f) && Warehouse::validKey(trim((string) file_get_contents($f))));
+                if ($keyFile) {
+                    $warehouse->writeKey(trim((string) file_get_contents($keyFile)));
                     $keys = true;
                 } else {
                     $notes[] = "Warehouse {$warehouse->id} ({$warehouse->display_name}) has no key in this backup: what it encrypts (settings) must be entered again.";

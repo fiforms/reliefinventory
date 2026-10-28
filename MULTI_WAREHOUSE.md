@@ -1110,11 +1110,28 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   `RI_BACKUP_KEEP_DAYS`). Exit 2 (no control schema yet: the first upgrade to this version) falls back to the old default-warehouse backup. This covers every warehouse in one zip, with
   one lock and one dump; the hold-all part (per-warehouse `migration_state`, holding every warehouse if one migration fails, the unblock command, the disk check) is still to do, and so is
   the pending-migration check, which still looks at the default warehouse only.
-- **Not built:** the first-run wizard's restore still restores only warehouse 1 (the instance restore is CLI-only, by decision); removed warehouses' backups (`removed-warehouses/`) are not
+- **Not built:** the first-run wizard restores only warehouse 1 (the instance restore is CLI-only, decided 2026-10-30); removed warehouses' backups (`removed-warehouses/`) are not
   part of it; rolling back a single warehouse from an instance zip is by restoring the whole instance (or restoring that warehouse's own backup); no UI (phase 5); APP_KEY is not in
   the zip (a restored instance needs APP_KEY set before first start, slice 4).
 - Tests: `InstanceBackupTest` (zip shape, encrypted keys, live state left out, the two kinds refuse each other, and a real backup → wipe → restore of an instance of its own with two
   warehouses).
+
+**Phase 4, slice (d), importing warehouse keys when restoring onto a new instance, is built (2026-10-30)**; decisions the same day: the first-run wizard's restore stays
+warehouse-only (the whole-instance restore is CLI-only), and recovering **one** warehouse from a whole-instance backup is done by restoring the whole instance somewhere temporary
+(RI Launcher, say), taking that warehouse's own backup there, and restoring it into production — a clean path, deliberately not automated.
+- **The panel was wrong:** Updates & Backups' "key" panel (`view-app-key`) revealed `APP_KEY`, but a warehouse's encrypted values are under its *warehouse* key (they differ after
+  `instance:rotate-app-key`), so people were being told to record the wrong one. It now reveals the current warehouse's key (password-confirmed, logged, and audited as
+  `warehouse.key_revealed`), and says so.
+- **At the restore step** (first-run wizard `/install/restore` and `/activate/restore`): an optional "Key from the old system" field. `RestoreController::launch` validates it
+  (`Warehouse::validKey`) and stages it (`RestoreService::stageKeyImport`, a 0600 file in the restore folder, deleted when the restore ends); `perform()` applies it before the
+  database is loaded, **only while the warehouse is fresh** (never set up, or awaiting its setup code; on a set-up one it refuses, since it would make what is encrypted there
+  unreadable) with `Warehouse::replaceKey` + `WarehouseContext::refresh()`. A wrong key shows up exactly as before: the settings it couldn't read are blanked and listed.
+  Not offered for an administrator's restore into their own warehouse (its key stays).
+- **CLI:** `php artisan warehouse:key show|import <warehouse> [--file=] [--force]`: import is for the warehouse that holds nothing yet (else `--force`), and both are audited
+  (`warehouse.key_imported`). `restore:instance --keys-dir=<folder>` takes keys for a backup made without `--with-keys` from `<folder>/<warehouse id>/warehouse.key` (the layout of
+  the warehouse-secrets volume, so a copy of the old volume works); a warehouse with no key from either source is restored and reported.
+- The "set `APP_KEY` before first start" route still works for the default warehouse but is no longer the documented way.
+- Tests: `RestoreTest` (key given at the restore step; refused on a set-up warehouse), `InstanceBackupTest` (`--keys-dir`, `warehouse:key`), `BackupTest` (the panel shows the warehouse key).
 
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
 mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal ✔.
@@ -1146,7 +1163,7 @@ mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training
   warehouse's backup is instance-admin only), replacing the files folder rather than merging into it, purging that warehouse's jobs.
 - Hold-all upgrades (per-warehouse `migration_state` and pre-upgrade backup ids, the unblock screen with its commit-point warning,
   a disk-space check, the web container's longer start-up). The global backup is built (slice (c) above), and is the pre-upgrade backup.
-- An "import a warehouse key" step for restoring onto a new instance (today: set APP_KEY before the first start).
+- ~~An "import a warehouse key" step for restoring onto a new instance~~ (built, slice (d) above).
 
 **Phase 5 — instance console** (its design is still open, §13): reached with the step-up re-authentication (account password, never a
 PIN); mail settings and Turnstile keys move there (mail to the control schema, encrypted with APP_KEY); software update, Docker/TLS,

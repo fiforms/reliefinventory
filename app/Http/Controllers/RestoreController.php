@@ -6,6 +6,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Control\InstanceAuditLog;
+use App\Models\Control\Warehouse;
 use App\Services\FirstRunService;
 use App\Services\RestoreService;
 use App\Services\Warehouses\SetupCodes;
@@ -115,6 +116,7 @@ class RestoreController extends Controller
         $data = $request->validate([
             'upload_id' => 'required|string',
             'storage_upload_id' => 'nullable|string|different:upload_id',
+            'warehouse_key' => ['nullable', 'string', 'max:200', fn ($attribute, $value, $fail) => $value === null || $value === '' || Warehouse::validKey(trim($value)) ?: $fail('That is not a warehouse key: it starts with "base64:" and is 51 characters in all.')],
         ] + ($this->activating() ? WarehouseSetup::personRules($existing) : [])
             + ($this->owning() ? ['password' => ['required', 'string'], 'any_lineage' => ['sometimes', 'boolean']] : []));
         foreach (array_filter([$data['upload_id'], $data['storage_upload_id'] ?? null]) as $id) {
@@ -147,6 +149,10 @@ class RestoreController extends Controller
                 'any_lineage' => $anyLineage,
             ]);
             InstanceAuditLog::record('warehouse.restore_started', $this->context->current(), ['any_lineage' => $anyLineage]);
+        }
+        $this->restore->clearKeyImport();
+        if (! $this->owning() && filled($data['warehouse_key'] ?? null)) {
+            $this->restore->stageKeyImport($data['warehouse_key']);   // used only if the warehouse is still fresh when the restore runs
         }
         $this->restore->launch($data['upload_id'], $data['storage_upload_id'] ?? null);
 

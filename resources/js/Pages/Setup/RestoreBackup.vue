@@ -47,6 +47,7 @@ const percent = computed(() => current.value.percent.value);
 // idle -> uploading -> restoring -> complete | failed
 const phase = ref('idle');
 const setupCode = ref('');
+const warehouseKey = ref('');
 const file = ref(null);
 const filesFile = ref(null);
 const error = ref('');
@@ -92,7 +93,7 @@ async function uploadFilesThenLaunch() {
 		stage.value = 'files';
 		await extra.start(filesFile.value, { setup_code: setupCode.value || undefined });
 	}
-	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined, ...(props.identity || {}) });
+	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined, warehouse_key: warehouseKey.value.trim() || undefined, ...(props.identity || {}) });
 	phase.value = 'restoring';
 	poll();
 }
@@ -199,6 +200,16 @@ onUnmounted(() => clearInterval(timer));
 				<p v-if="filesFile" class="mt-1 text-xs text-gray-500">{{ filesFile.name }} — {{ human(filesFile.size) }}</p>
 			</details>
 
+			<details v-if="!own" class="rounded border border-gray-200 p-3 text-sm">
+				<summary class="cursor-pointer text-gray-700">Key from the old system (so encrypted settings carry over)</summary>
+				<p class="mt-2 text-xs text-gray-600">
+					A backup never contains the warehouse key. If you wrote it down (Updates &amp; Backups &gt; “Warehouse key” on the old system),
+					paste it here and the settings it encrypted — email password, shared secrets — are restored too. Without it they are cleared
+					and listed afterwards so you can enter them again.
+				</p>
+				<input id="restore_key" type="text" v-model="warehouseKey" autocomplete="off" spellcheck="false" placeholder="base64:…" class="mt-2 block w-full rounded-md border-gray-300 font-mono text-xs shadow-sm" />
+			</details>
+
 			<div v-if="own" class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
 				<p>This <strong>replaces everything in this warehouse</strong> (its data and its uploaded files) with what the backup holds. The warehouse is out of service while it runs and everyone is signed out.</p>
 				<p>
@@ -209,9 +220,9 @@ onUnmounted(() => clearInterval(timer));
 			<div v-else class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
 				<p>This installation must be new and empty — a backup can only be restored onto one that has never been set up.</p>
 				<p>
-					The backup does not contain the application key. Everything works without it, but a few encrypted settings (for
-					example the centralized-feedback shared secret) can't be carried over; they are cleared and listed for you
-					afterwards so you can re-enter them, and everyone signs in again.
+					The backup does not contain the warehouse key. Everything works without it, but a few encrypted settings (for
+					example the centralized-feedback shared secret) can't be carried over unless you give the old key above; they are cleared
+					and listed for you afterwards so you can re-enter them, and everyone signs in again.
 				</p>
 				<p>The software here must be the same version as the one that made the backup, or newer — never older.</p>
 			</div>
