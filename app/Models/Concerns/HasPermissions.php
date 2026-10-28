@@ -69,19 +69,13 @@ trait HasPermissions
             }
         }
 
-        // A Training Mode tap-your-name login is capped to the station permissions, whatever this person's roles
-        // grant — anything else needs a full login (see App\Services\TrainingMode).
-        if (TrainingMode::capApplies((int) $this->id)) {
-            $keys = $keys->intersect(TrainingMode::TRAINING_KEYS);
+        // The class tools belong to training warehouses only (MULTI_WAREHOUSE.md §12): in any other warehouse nobody holds this key,
+        // whatever their role says, so its pages, menu tiles and routes simply aren't there.
+        if (! TrainingMode::active()) {
+            $keys = $keys->reject(fn ($key) => $key === 'manage-training');
         }
 
         return $keys->unique()->values()->all();
-    }
-
-    /** True when the Training Mode cap is the only thing keeping this person from $key. */
-    public function blockedOnlyByTrainingCap(string $key): bool
-    {
-        return TrainingMode::capApplies((int) $this->id) && ! in_array($key, TrainingMode::TRAINING_KEYS, true);
     }
 
     public function hasPermission(string $key): bool

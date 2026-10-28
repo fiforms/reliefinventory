@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\FederationController;
 use App\Models\Category;
+use App\Models\Control\Warehouse;
 use App\Models\County;
 use App\Models\FeedbackAggregationSetting;
 use App\Models\FeedbackReport;
@@ -222,7 +223,13 @@ function urrOrder(Person $partner, string $status, array $lines, string $date = 
     return $order;
 }
 
-// Training Mode's scanned product list — shared by TrainingPreparerTest and TrainingReportTest.
+/** Make the current (default) test warehouse a training warehouse, where the class tools exist (MULTI_WAREHOUSE.md §12). */
+function trainingWarehouse(bool $training = true): void
+{
+    Warehouse::current()->forceFill(['is_training' => $training])->save();
+}
+
+// A training warehouse's scanned product list — shared by TrainingPreparerTest and TrainingReportTest.
 /** $products distinct scanned products over three item types, $each units of each. Returns the item rows. */
 function scannedProducts(int $products = 15, int $each = 8): array
 {

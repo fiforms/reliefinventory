@@ -73,7 +73,7 @@
                 <tr><td>6 {{ $stations[6] }}</td><td>Nothing — each team delivers the load it shipped</td><td class="num">0</td></tr>
             </tbody>
         </table>
-        <p class="note">Tape the table spot labels (Setup &gt; Training Mode &gt; Table Spot Labels) on the tables: {{ implode(', ', $summary['locations']) }}.
+        <p class="note">Tape the table spot labels (Setup &gt; Training Warehouse &gt; Table Spot Labels) on the tables: {{ implode(', ', $summary['locations']) }}.
             Print the pallet labels too, for the Station 4 trays. The contents slips (Stations 3–5) and station signs are at the back of this packet.</p>
     </div>
 

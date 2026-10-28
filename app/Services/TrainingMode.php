@@ -5,24 +5,23 @@
 
 namespace App\Services;
 
-use App\Models\TrainingSetting;
 use App\Models\TrustedDevice;
-use Illuminate\Support\Facades\Auth;
+use App\Services\Warehouses\WarehouseContext;
 
 /**
- * Training Mode: one switch (training_settings.enabled, `admin-system`) that changes only how people log in.
- * While it's on, an approved device (TrustedDevice, the same approval PIN login uses) shows a tap-your-name screen
- * (TrainingLoginController) for people flagged as trainees, with no password. That login is capped to
- * TRAINING_KEYS — HasPermissions::effectivePermissionKeys() intersects with it — so the menu, `permission:`
- * middleware and every hasPermission() check keep working unchanged, and anything outside it needs a full login
- * (CheckPermission shows the "needs a full login" page). Everything else in the system behaves exactly as normal.
+ * Training in a warehouse of its own (MULTI_WAREHOUSE.md §12). A training warehouse is an ordinary warehouse marked
+ * `is_training`: it is the only place the class features exist (trainee tap-login, /join, report cards, certificates, training
+ * products, Prepare Training, the activity log). Nothing here changes how a real warehouse behaves, and there is no mode flag:
+ * the warehouse being reachable is the "on" switch, and an instance admin turns it off by suspending it
+ * (`warehouse:training disable`). Tap-login stays on an approved device (TrustedDevice, the one PIN unlock uses) and gives a
+ * trainee only what the Trainee role grants (TRAINING_KEYS).
  */
 class TrainingMode
 {
     public const ROLE = 'Trainee';
 
     /**
-     * What a tap-your-name login can do: the six stations' work, plus reports and printing. Nothing in Setup, except
+     * What the Trainee role grants: the six stations' work, plus reports and printing. Nothing in Setup, except
      * the catalog keys Sorting's own lookups need (/json/items, itemtypes, units, categories, and adding a new item).
      */
     public const TRAINING_KEYS = [
@@ -30,9 +29,6 @@ class TrainingMode
         'manage-people', 'manage-orders', 'view-reports', 'print-documents',
         'manage-items', 'manage-itemtypes', 'manage-units', 'manage-categories',
     ];
-
-    /** Session key holding the id of the person a training (tap-your-name) login was made for. */
-    public const SESSION_KEY = 'training_login_person_id';
 
     public const TEAMS = [1, 2, 3, 4, 5];
 
@@ -46,29 +42,17 @@ class TrainingMode
         6 => 'Delivery / Ordering',
     ];
 
-    public static function enabled(): bool
+    /** Whether the warehouse this request, job or command works in is a training warehouse. */
+    public static function active(): bool
     {
-        return (bool) TrainingSetting::current()->enabled;
+        $context = app(WarehouseContext::class);
+
+        return $context->has() && (bool) $context->current()->is_training;
     }
 
-    /** True when this request is a training login for that person — the permission cap applies. */
-    public static function capApplies(int $personId): bool
-    {
-        if (! app()->bound('request') || ! request()->hasSession()) {
-            return false;
-        }
-
-        return Auth::id() === $personId && (int) request()->session()->get(self::SESSION_KEY) === $personId;
-    }
-
-    public static function isTrainingSession(): bool
-    {
-        return Auth::check() && self::capApplies((int) Auth::id());
-    }
-
-    /** Training login is offered on this device: training mode is on and the device is approved. */
+    /** Training login is offered on this device: this is a training warehouse and the device is approved. */
     public static function availableOn(?TrustedDevice $device): bool
     {
-        return (bool) $device?->isApproved() && self::enabled();
+        return (bool) $device?->isApproved() && self::active();
     }
 }

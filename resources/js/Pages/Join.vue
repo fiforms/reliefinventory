@@ -4,7 +4,7 @@
 <!-- Join.vue
 
 	Trainee self sign-up (TraineeSignupController), opened on people's own phones from a QR code
-	during the project overview. Public, open only while Training Mode is on. Name is all that's
+	during the project overview. Public, and only in a training warehouse. Name is all that's
 	required; everything else is optional follow-up. Never logs anyone in. Turnstile renders
 	automatically from its class when enabled, the same way PublicForm.vue does.
 -->

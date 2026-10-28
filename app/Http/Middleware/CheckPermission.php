@@ -5,7 +5,6 @@ namespace App\Http\Middleware;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
-use Inertia\Inertia;
 
 /**
  * Route/action gate for the granular permissions model. Replaces CheckRole
@@ -28,15 +27,6 @@ class CheckPermission
 
         foreach ($keys as $key) {
             if (! $user->hasPermission($key)) {
-                // A Training Mode (tap-your-name) login is capped: say it needs a full login, not just "no".
-                if ($user->blockedOnlyByTrainingCap($key)) {
-                    if ($request->expectsJson() && ! $request->header('X-Inertia')) {
-                        abort(403, 'This needs a full login — a training login can only do station work.');
-                    }
-
-                    return Inertia::render('Auth/TrainingFullLogin', ['path' => '/'.ltrim($request->path(), '/')])
-                        ->toResponse($request);
-                }
                 abort(403, "Missing required permission: {$key}");
             }
         }

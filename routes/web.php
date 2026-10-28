@@ -409,7 +409,7 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 // The public/staff submission page — no 'auth' middleware, since the same
 // route serves an anonymous prospective partner and a logged-in staffer.
 // PublicFormController itself enforces the form's access_mode.
-// Trainee self sign-up (TraineeSignupController): public, open only while Training Mode is on. A whole room signs
+// Trainee self sign-up (TraineeSignupController): public, open only in a training warehouse. A whole room signs
 // up at once from one Wi-Fi network (one IP), so the limit (80/min) covers a room of ~55; Turnstile keeps bots out.
 Route::get('/join', [TraineeSignupController::class, 'show'])->name('join');
 Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:80,1');
@@ -459,8 +459,8 @@ Route::get('/setup/signs/fonts/{file}', [SignController::class, 'font'])
     ->whereIn('file', ['LiberationSans-Bold.ttf', 'LiberationSans-Regular.ttf'])->middleware(['auth']);
 Route::get('/report/sign.pdf', [SignController::class, 'pdf'])->name('report.sign')->middleware(['auth']);
 
-// Training Mode (App\Services\TrainingMode). Setup > Training Mode is manage-training; switching the mode on/off
-// is admin-system. The team activity sheets print from /help, for anyone signed in, like the help guides.
+// A training warehouse's class tools (App\Services\TrainingMode): all manage-training, a key only a training warehouse has.
+// The team activity sheets print from /help, for anyone signed in, like the help guides.
 Route::get('/setup/training', function () {
     return Inertia::render('Setup/Training', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/training')]);
 })->middleware(['auth', 'permission:manage-training']);
@@ -487,10 +487,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-tr
     Route::delete('/training/products', [TrainingProductController::class, 'clear']);
     Route::get('/reports/training', [TrainingReportController::class, 'index']);
 });
-Route::put('/json/training/mode', [TrainingAdminController::class, 'setMode'])
-    ->middleware(['auth', 'permission:admin-system']);
 Route::post('/json/training/reset', [TrainingAdminController::class, 'reset'])
-    ->middleware(['auth', 'permission:admin-system']);
+    ->middleware(['auth', 'permission:manage-training']);
 Route::middleware(['auth', 'permission:manage-training'])->group(function () {
     Route::get('/report/training/setup-packet.pdf', [TrainingAdminController::class, 'setupPacket']);
     Route::get('/report/training/signups.csv', [TrainingAdminController::class, 'signupsCsv']);

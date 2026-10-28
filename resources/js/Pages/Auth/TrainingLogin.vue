@@ -1,8 +1,8 @@
 <!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
-	Training Mode's tap-your-name login (TrainingLoginController). Only reached on an approved
-	device while training mode is on. Tap your name, confirm your team, and you're in — no
+	A training warehouse's tap-your-name login (TrainingLoginController). Only reached on an approved
+	device. Tap your name, confirm your team, and you're in — no
 	password; the session can only do station work (App\Services\TrainingMode). "Add New" puts a
 	new trainee on the list. Staff use the PIN / email links at the bottom.
 	A successful login does a real page navigation so the new session's shared props load cleanly.

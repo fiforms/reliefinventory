@@ -8,13 +8,12 @@
 
 use App\Models\Person;
 use App\Models\TrainingRegistration;
-use App\Models\TrainingSetting;
 use App\Services\TrainingMode;
 use Illuminate\Support\Facades\Http;
 
 function signupOpen(): void
 {
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
 }
 
 test('sign-up is closed unless Training Mode is on', function () {

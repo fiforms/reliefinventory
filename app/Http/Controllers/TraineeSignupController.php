@@ -16,7 +16,7 @@ use Inertia\Inertia;
 
 /**
  * Trainee self sign-up: the public /join page people open on their own phones during the project overview (from a
- * QR code on the Training Mode page). Open only while Training Mode is on. It puts them on the training list (a
+ * QR code on the Training Mode page). Open only in a training warehouse. It puts them on the training list (a
  * trainee Person with the Trainee role, as TrainingLoginController::createTrainee makes) and keeps the follow-up
  * answers in training_registrations. It never logs anyone in: station access stays on the approved tablets.
  *
@@ -34,7 +34,7 @@ class TraineeSignupController extends Controller
         $unavailable = $turnstileEnabled && $this->turnstile->misconfigured();
 
         return Inertia::render('Join', [
-            'open' => TrainingMode::enabled(),
+            'open' => TrainingMode::active(),
             'turnstile_enabled' => $turnstileEnabled && ! $unavailable,
             'turnstile_site_key' => $turnstileEnabled && ! $unavailable ? $this->turnstile->siteKey() : null,
             'turnstile_unavailable' => $unavailable,
@@ -43,7 +43,7 @@ class TraineeSignupController extends Controller
 
     public function store(Request $request)
     {
-        if (! TrainingMode::enabled()) {
+        if (! TrainingMode::active()) {
             return response()->json(['message' => 'Sign-up is closed right now.'], 403);
         }
         $turnstileEnabled = $this->turnstile->enabled();

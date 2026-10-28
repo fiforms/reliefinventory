@@ -37,9 +37,8 @@ class AuthenticatedSessionController extends Controller
      */
     public function create(Request $request, PinLoginService $pinLogin): Response|RedirectResponse
     {
-        // Training Mode: an approved device goes to the tap-your-name screen (staff PIN/email links are on it).
-        if (! $request->boolean('email') && TrainingMode::enabled()
-            && TrainingMode::availableOn($pinLogin->currentDevice($request))) {
+        // A training warehouse: an approved device goes to the tap-your-name screen (staff PIN/email links are on it).
+        if (! $request->boolean('email') && TrainingMode::availableOn($pinLogin->currentDevice($request))) {
             return redirect()->route('training-login');
         }
 
@@ -111,7 +110,6 @@ class AuthenticatedSessionController extends Controller
         }
 
         $request->session()->regenerate();
-        $request->session()->forget(TrainingMode::SESSION_KEY);
 
         LoginHistory::record($user->id, 'password', $request->ip(), $request->userAgent());
 

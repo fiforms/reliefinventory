@@ -49,12 +49,9 @@ async function markAllNotificationsRead() {
     <div>
         <div class="min-h-screen bg-gray-100">
             <Banner @open-feedback="showingFeedbackModal = true" />
-            <!-- Training Mode tap-your-name login: station work only (App\Services\TrainingMode) -->
-            <div v-if="$page.props.training?.session" class="bg-amber-100 text-amber-900 text-sm px-4 py-1 flex justify-between items-center">
-                <span>
-                    Training login — {{ $page.props.auth.user.first_name }} {{ $page.props.auth.user.last_name }}<template v-if="$page.props.training.team">, Team {{ $page.props.training.team }}</template>
-                </span>
-                <Link :href="route('training-login.exit')" method="post" as="button" class="underline">Staff login</Link>
+            <!-- A training warehouse (MULTI_WAREHOUSE.md §12): practice data, never real stock -->
+            <div v-if="$page.props.warehouse?.training" class="bg-amber-100 text-amber-900 text-sm px-4 py-1">
+                Training warehouse &mdash; everything here is practice data.
             </div>
             <PrintToast />
 

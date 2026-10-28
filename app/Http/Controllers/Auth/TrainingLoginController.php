@@ -21,11 +21,10 @@ use Inertia\Inertia;
 use Inertia\Response;
 
 /**
- * Training Mode's tap-your-name login (see App\Services\TrainingMode). Offered only while training mode is on and
+ * The tap-your-name login of a training warehouse (see App\Services\TrainingMode). Offered only in a training warehouse and
  * only on an approved TrustedDevice — the same approval PIN unlock needs — so a stranger's browser never sees the
- * name list. A trainee taps their name, confirms their team and is logged in with no password; the session is
- * marked (TrainingMode::SESSION_KEY) and HasPermissions caps it to TrainingMode::TRAINING_KEYS. "Add New" puts a
- * new trainee on the list from the device itself. Staff keep their own PIN unlock / email login beside it.
+ * name list. A trainee taps their name, confirms their team and is logged in with no password, with what the Trainee role
+ * grants. "Add New" puts a new trainee on the list from the device itself. Staff keep their own PIN unlock / email login beside it.
  *
  * A trainee is a Person with `is_trainee` and the Trainee role. Logging in needs a User row, and User only sees
  * people with an email, so a trainee gets a placeholder `trainee-<id>@training.invalid` (.invalid is reserved:
@@ -35,9 +34,6 @@ class TrainingLoginController extends Controller
 {
     public function show(Request $request, PinLoginService $pinLogin): Response|RedirectResponse
     {
-        if (! TrainingMode::enabled()) {
-            return redirect()->route('login', ['email' => 1]);
-        }
         $device = $pinLogin->currentDevice($request);
         if (! TrainingMode::availableOn($device)) {
             return redirect()->route('login', ['email' => 1]);
@@ -95,21 +91,6 @@ class TrainingLoginController extends Controller
         return $this->startSession($request, $person, 201);
     }
 
-    /**
-     * Leave a training login for a full one (the "needs a full login" page, or the menu): log out, then go to
-     * PIN unlock or the email form. Logging out first matters — the login pages are guest-only.
-     */
-    public function exit(Request $request): RedirectResponse
-    {
-        $to = $request->input('to') === 'pin' ? route('unlock') : route('login', ['email' => 1]);
-
-        Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-
-        return redirect($to);
-    }
-
     /** A new trainee: also used by the Training setup page's trainee list. */
     public static function createTrainee(string $first, string $last, ?int $team): Person
     {
@@ -138,7 +119,6 @@ class TrainingLoginController extends Controller
 
         Auth::login($user);
         $request->session()->regenerate();
-        $request->session()->put(TrainingMode::SESSION_KEY, $person->id);
         LoginHistory::record($person->id, 'training', $request->ip(), $request->userAgent());
 
         return response()->json(['redirect' => route('dashboard')], $status);
@@ -146,7 +126,7 @@ class TrainingLoginController extends Controller
 
     private function ensureAvailable(Request $request, PinLoginService $pinLogin): void
     {
-        if (! TrainingMode::enabled() || ! TrainingMode::availableOn($pinLogin->currentDevice($request))) {
+        if (! TrainingMode::availableOn($pinLogin->currentDevice($request))) {
             abort(response()->json(['message' => 'Training login is not available on this device.'], 403));
         }
     }

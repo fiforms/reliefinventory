@@ -3,21 +3,21 @@
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
-// Training Mode's tap-your-name login: only while training mode is on and only on an approved device, capped
-// to TrainingMode::TRAINING_KEYS, and anything else needs a full login.
+// A training warehouse's tap-your-name login (MULTI_WAREHOUSE.md §12): only in a training warehouse and only on an approved
+// device, with what the Trainee role grants (TrainingMode::TRAINING_KEYS). No mode, no cap: the warehouse is disposable.
 
 use App\Http\Controllers\Auth\TrainingLoginController;
 use App\Models\LoginHistory;
 use App\Models\Permission;
 use App\Models\Person;
-use App\Models\TrainingSetting;
 use App\Models\TrustedDevice;
 use App\Models\User;
 use App\Services\TrainingMode;
+use Database\Seeders\PermissionsSeeder;
 
 function trainingOn(bool $on = true): void
 {
-    TrainingSetting::current()->update(['enabled' => $on]);
+    trainingWarehouse($on);
 }
 
 function trainingDevice(string $status = 'approved'): TrustedDevice
@@ -35,7 +35,7 @@ function onDevice(TrustedDevice $device)
     return test()->withCredentials()->withCookie('pin_device_token', $device->device_token);
 }
 
-test('the login page goes to the training login only with training mode on and an approved device', function () {
+test('the login page goes to the training login only in a training warehouse and on an approved device', function () {
     $device = trainingDevice();
     onDevice($device)->get('/login')->assertInertia(fn ($page) => $page->component('Auth/Login'));
 
@@ -106,35 +106,30 @@ test('Add New creates a trainee with the Trainee role and logs them in', functio
     expect(Person::where('first_name', 'Bo')->count())->toBe(1);
 });
 
-test('a training login is capped to station work even for an administrator, and asks for a full login', function () {
+test('a trainee gets what the Trainee role grants and no more, and a person who logs in with a password is no different', function () {
     trainingOn();
-    $device = trainingDevice();
-    $admin = TrainingLoginController::createTrainee('Ada', 'Admin', 1);
-    foreach (['admin-system', 'manage-users', 'adjust-inventory', 'manage-receiving'] as $key) {
-        $admin->person_permissions()->attach(Permission::firstOrCreate(['key' => $key], ['name' => $key])->id, ['granted' => true]);
-    }
+    app(PermissionsSeeder::class)->setContainer(app())->__invoke();   // the Trainee role's bundle, as a real warehouse has it
+    $trainee = TrainingLoginController::createTrainee('Ada', 'Able', 1);
+    onDevice(trainingDevice())->postJson('/training-login', ['person_id' => $trainee->id, 'team' => 1])->assertOk();
 
-    onDevice($device)->postJson('/training-login', ['person_id' => $admin->id, 'team' => 1])->assertOk();
-
-    $user = User::find($admin->id);
+    $user = User::find($trainee->id);
     expect($user->hasPermission('manage-receiving'))->toBeTrue()
         ->and($user->hasPermission('admin-system'))->toBeFalse()
-        ->and($user->hasPermission('adjust-inventory'))->toBeFalse();
-
-    $this->get('/setup/users')->assertOk()->assertInertia(fn ($page) => $page
-        ->component('Auth/TrainingFullLogin')->where('path', '/setup/users')->where('training.session', true));
-    $this->getJson('/json/users')->assertForbidden()->assertJsonFragment(['message' => 'This needs a full login — a training login can only do station work.']);
+        ->and($user->hasPermission('manage-training'))->toBeFalse();
+    $this->getJson('/json/users')->assertForbidden();
     $this->get('/receiving')->assertOk()->assertInertia(fn ($page) => $page->component('Receiving'));
-
-    // Leaving for a full login ends the training session.
-    $this->post('/training-login/exit', ['to' => 'pin'])->assertRedirect(route('unlock'));
-    $this->assertGuest();
 });
 
-test('a password login of the same person is not capped', function () {
-    $user = User::factory()->create();
-    $user->person_permissions()->attach(Permission::firstOrCreate(['key' => 'admin-system'], ['name' => 'admin-system'])->id, ['granted' => true]);
+test('the class tools exist only in a training warehouse', function () {
+    $trainer = User::factory()->create();
+    $trainer->person_permissions()->attach(Permission::firstOrCreate(['key' => 'manage-training'], ['name' => 'manage-training'])->id, ['granted' => true]);
 
-    $this->actingAs($user)->withSession([TrainingMode::SESSION_KEY => $user->id + 1]);
-    expect($user->hasPermission('admin-system'))->toBeTrue();
+    trainingOn(false);
+    expect($trainer->hasPermission('manage-training'))->toBeFalse();
+    $this->actingAs($trainer)->getJson('/json/training/status')->assertForbidden();
+    $this->actingAs($trainer)->get('/setup/training')->assertForbidden();
+
+    trainingOn();
+    expect(User::find($trainer->id)->hasPermission('manage-training'))->toBeTrue();
+    $this->actingAs($trainer)->getJson('/json/training/status')->assertOk();
 });
