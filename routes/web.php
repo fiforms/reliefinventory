@@ -33,6 +33,12 @@ use Inertia\Inertia;
 Route::get('/install', [SetupController::class, 'show'])->name('setup.show');
 Route::post('/install', [SetupController::class, 'store'])->middleware('throttle:10,1')->name('setup.store');
 
+// A new warehouse waiting for its setup code (MULTI_WAREHOUSE.md §7). ResolveWarehouse lets an awaiting-setup warehouse answer
+// only these; the controller refuses anything once the warehouse is active.
+Route::get('/activate', [WarehouseSetupController::class, 'show'])->name('activate.show');
+Route::post('/activate/code', [WarehouseSetupController::class, 'code'])->middleware('throttle:30,1')->name('activate.code');
+Route::post('/activate/setup', [WarehouseSetupController::class, 'setup'])->middleware('throttle:15,1')->name('activate.setup');
+
 // First-run "restore a backup" path. Named setup.* so RedirectToSetup lets it through; the controller
 // itself refuses anything but a never-set-up instance. The status poll skips the session middleware: while
 // the database is being replaced there is no sessions table to read (nor a setup_state table to ask).

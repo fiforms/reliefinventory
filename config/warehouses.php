@@ -15,6 +15,12 @@ return [
     // root or a backup, so neither a file route nor a backup can reach them. Docker: its own volume.
     'secrets_dir' => $path(env('RI_WAREHOUSE_SECRETS_DIR'), base_path('secrets/warehouses')),
 
+    // A new warehouse's setup code (MULTI_WAREHOUSE.md §7): how long it works, and how many wrong tries (a wrong code or a wrong
+    // password at the setup screen) a warehouse allows per `setup_attempt_minutes` before the screen stops answering.
+    'setup_code_days' => (int) env('RI_SETUP_CODE_DAYS', 7),
+    'setup_attempts' => 10,
+    'setup_attempt_minutes' => 15,
+
     // Per-warehouse database users and schemas (MULTI_WAREHOUSE.md §7). Only the provisioner (a separate process holding the
     // administrator credential) ever uses `admin_*`; the web, queue and scheduler containers do not mount it.
     'provisioning' => [

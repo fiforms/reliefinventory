@@ -70,7 +70,9 @@ scheduler, broadcast channels, cookies, emailed links, or anything else that ass
 request names its warehouse (`X-RI-Warehouse`, `GuardWarehouseTab`); emailed links come from `Warehouse::publicUrl()`, never the Host
 header; long-lived cookies use `WarehouseContext::cookieName()`; broadcast channels use `Warehouse::channel()`; commands take
 `--warehouse`; only the `provisioner` container holds the database administrator password (the `admin-secrets` volume) — never read it
-from application code, ask it through `ProvisioningClient`; tests that need a second warehouse use `tests/SecondWarehouse.php`. Restores are untrusted input: they run as the warehouse's own DB user with the `mariadb` client in `--sandbox --local-infile=0`
+from application code, ask it through `ProvisioningClient`; tests that need a second warehouse use `tests/SecondWarehouse.php`. A new warehouse is made with `php artisan warehouse:create` (`WarehouseCreator`) and left `awaiting_setup`: it answers only `/activate`, where the holder of its
+one-time setup code (`SetupCodes`, hash only, 7 days, wrong tries counted per warehouse) makes themselves its Administrator (never an instance admin) and it goes
+`active` (`WarehouseSetup`). Setup-code restore into it isn't built (needs per-warehouse restore folders and invitations). Restores are untrusted input: they run as the warehouse's own DB user with the `mariadb` client in `--sandbox --local-infile=0`
 (`DatabaseTools::clientCommand()`); the grants bound the SQL and the flags bound the client, and the dump is deliberately not parsed
 for keywords — don't add a filter. Rule of thumb: an instance admin is assumed able to run any command in the container or on the
 hardware, so never enforce a rule *against* the instance admin in software (retention periods, read-only access); enforce isolation

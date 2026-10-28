@@ -28,8 +28,9 @@ use Symfony\Component\HttpFoundation\Response;
  *  5. the default warehouse. Unprefixed machine URLs stay there permanently (everything paired before there
  *     were several warehouses uses one); browsers land there until the chooser exists (phase 3).
  *
- * An id that doesn't exist, or a warehouse that isn't active, is treated like no choice at all by `?w=` and
- * the cookie, so neither tells a visitor whether a warehouse exists.
+ * An id that doesn't exist, or a warehouse that is neither active nor awaiting its setup code, is treated like no
+ * choice at all by `?w=` and the cookie, so neither tells a visitor whether a warehouse exists. (A warehouse awaiting
+ * setup is reachable by its id, which is unguessable; it answers only `/activate`.)
  */
 class ResolveWarehouse
 {
@@ -60,13 +61,13 @@ class ResolveWarehouse
         }
 
         if ($request->query->has('w') && $request->isMethodSafe() && ! self::isMachinePath($request->getPathInfo())) {
-            $chosen = Warehouse::findActive((string) $request->query('w'));
+            $chosen = Warehouse::findReachable((string) $request->query('w'));
 
             return $this->redirectWithoutSelector($request, $chosen);
         }
 
         $cookie = $request->cookies->get(WarehouseContext::SELECTOR_COOKIE);
-        $warehouse = (is_string($cookie) ? Warehouse::findActive($cookie) : null) ?? $this->context->defaultWarehouse();
+        $warehouse = (is_string($cookie) ? Warehouse::findReachable($cookie) : null) ?? $this->context->defaultWarehouse();
 
         return $this->run($warehouse, $request, $next);
     }
@@ -79,7 +80,7 @@ class ResolveWarehouse
 
     private function prefixed(Request $request, Closure $next, string $id, string $rest, ?Warehouse $mapped): Response
     {
-        $warehouse = Warehouse::findActive($id);
+        $warehouse = Warehouse::findReachable($id);
         if (! $warehouse || ($mapped && ! $mapped->is($warehouse))) {
             return response()->json(['message' => 'Not found.'], 404);
         }
@@ -118,7 +119,14 @@ class ResolveWarehouse
 
     private function run(Warehouse $warehouse, Request $request, Closure $next, ?Closure $then = null): Response
     {
-        if (! $warehouse->isActive()) {
+        // A warehouse waiting for its setup code answers the setup screen and nothing else (§7).
+        if ($warehouse->isAwaitingSetup()) {
+            if (! $request->is('activate', 'activate/*')) {
+                return $request->isMethodSafe() && ! $request->expectsJson() && ! self::isMachinePath($request->getPathInfo())
+                    ? redirect('/activate')
+                    : $this->unavailable($request);
+            }
+        } elseif (! $warehouse->isActive()) {
             return $this->unavailable($request);
         }
 

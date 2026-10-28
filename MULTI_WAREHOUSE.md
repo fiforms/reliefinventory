@@ -928,7 +928,33 @@ rotation; the provisioner re-syncs a user to its password file, and re-running `
 Slice (a) still open: `create` makes the schema and user but nothing yet migrates or seeds a new warehouse (the next slices do).
 **Slice (b), restore hardening, is built:** the model is in §7 ("Restore security model"): the client runs `--sandbox
 --local-infile=0` as the warehouse's own user, and the dump is not parsed.
-Order of the rest, agreed 2026-10-28: (b) restore hardening; (c) setup codes and the awaiting-setup screen; (d) chooser and domain
+**Slice (c), setup codes and the awaiting-setup screen, is built for the fresh-setup path (2026-10-29); the restore path waits** (below).
+- **Making one:** `php artisan warehouse:create "<name>" [--email=]` (`WarehouseCreator`, the browser console is phase 5) runs the §7 steps:
+  row `provisioning` → schema + user (the provisioner on Docker; elsewhere `Provisioner::fromConfig()`, which needs `RI_DB_ADMIN_PASSWORD`) → key and
+  files folder → `migrate` → seed essentials → `setup_state.completed_at` (so `/install` never runs in it) → setup code → `awaiting_setup`, last.
+  Every step repeats, so `--resume=<id>` finishes one stuck in `provisioning`; `--new-code=<id>` replaces a code. It prints the address
+  (`Warehouse::setupUrl()`: `/activate` on its own hostname, else `/w/<id>/activate`) and the code, shown once. Not built: emailing them (§13 mailer).
+- **Codes** (`SetupCodes`, control table `warehouse_setup_codes`): `ABCDE-FGHJK` (10 characters, 32-letter alphabet), only the SHA-256 stored,
+  7 days (`RI_SETUP_CODE_DAYS`), tied to one warehouse, typed in any case or spacing. Issuing revokes the previous usable one. The instance
+  admin's list of awaiting warehouses and expiry is `SetupCodes::pending()`; the page for it is phase 5.
+- **Reaching it:** `ResolveWarehouse` now treats `awaiting_setup` as reachable (`Warehouse::findReachable`: `?w=`, `/w/<id>`, the cookie, a mapped
+  host) but such a warehouse answers only `/activate` and `/activate/*`: other pages redirect there, JSON/API/unsafe requests get 503. Its id is
+  random, so (like an active one) it is only found by someone who was told it; an id that doesn't exist or isn't active/awaiting still looks like nothing.
+- **The screen** (`WarehouseSetupController`, `Setup/Activate.vue`): the code, then who will run it: a **new login**, or an **existing login proved with
+  its password** (verified, unlocked, a password set; its credentials are never changed; a membership and a person are added). Either becomes the
+  Administrator. **Never an instance admin.** Optional example data. A right code puts a claim in the session; every later step checks the code is
+  still usable, so revoking takes effect at once. Wrong tries are counted **per warehouse** (10 per 15 min, config `warehouses.setup_*`), not per
+  visitor, for the code and the existing-login password alike, plus route throttles.
+- **Finishing** (`WarehouseSetup`): the code row and warehouse row are locked in one control transaction around the administrator's creation
+  (two holders of one code can't both finish; a failure keeps nothing and the code still works), then the code is used up and the warehouse goes `active`.
+- Tests: `WarehouseSetupTest` (13) and `WarehouseCreateTest` (real schema, needs the provisioning test user).
+- **Not built yet — the restore path.** "Restore a backup into it" needs two things first: (1) the restore's upload/status folder
+  (`<backup dir>/restore`, `status.json`, one lock) is instance-wide, so it must become per-warehouse (phase 4, §11), and `RestoreService::launch()`
+  must pass `--warehouse` to the detached `restore:run`; (2) `WarehouseAccounts::relinkAfterRestore()` attaches memberships directly and may mint an instance
+  admin (`ensureInstanceAdmin`), which is only acceptable for an instance-level restore; a code holder's restore must produce invitations (§6) —
+  that is slice (g-lite), so it comes next. Until both exist, an awaiting warehouse can only be set up fresh.
+
+Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
 mapping; (g-lite) invitations, which (c)'s restore needs; (e) training warehouse and removing Training Mode; (f) removal.
 
 ### Remaining work
