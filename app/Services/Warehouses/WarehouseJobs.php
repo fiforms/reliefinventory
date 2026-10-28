@@ -45,6 +45,20 @@ class WarehouseJobs
         );
     }
 
+    /**
+     * Drop every queued, failed and batched job that names the warehouse. The queue tables are in the control schema, shared by all
+     * warehouses, so a restore (or removal) of one must clear its own and nobody else's.
+     */
+    public static function purge(Warehouse $warehouse): void
+    {
+        $connection = $warehouse->getConnection();
+        foreach (['jobs', 'failed_jobs'] as $table) {
+            if ($connection->getSchemaBuilder()->hasTable($table)) {
+                $connection->table($table)->where('payload', 'like', '%"warehouse":"'.$warehouse->id.'"%')->delete();
+            }
+        }
+    }
+
     public function begin(Job $job): void
     {
         $id = $job->payload()['warehouse'] ?? null;

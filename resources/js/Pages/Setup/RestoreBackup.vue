@@ -27,10 +27,15 @@ const props = defineProps({
 	base: { type: String, default: '/install/restore' },
 	// Fields sent with the launch (the person who will run a new warehouse: login, name, email, password).
 	identity: { type: Object, default: null },
+	// A signed-in administrator restoring their own warehouse (WarehouseRestore.vue): progress is read from a URL that still answers
+	// while the warehouse is out of service, and the words differ.
+	statusUrl: { type: String, default: null },
+	own: { type: Boolean, default: false },
 });
 defineEmits(['back']);
 
 const BASE = props.base;
+const STATUS = props.statusUrl || `${BASE}/status`;
 // Two uploads: `main` (has the database) and, optionally, `extra` (the files). `stage` is the one in progress.
 const main = useChunkedUpload(BASE);
 const extra = useChunkedUpload(BASE);
@@ -118,7 +123,7 @@ function poll() {
 	clearInterval(timer);
 	const tick = async () => {
 		try {
-			const { data } = await axios.get(`${BASE}/status`);
+			const { data } = await axios.get(STATUS);
 			status.value = data;
 			if (data.state === 'complete') phase.value = 'complete';
 			else if (data.state === 'failed') phase.value = 'failed';
@@ -147,7 +152,7 @@ function reset() {
 onMounted(async () => {
 	// Page reloaded mid-restore (or the restore finished while away): pick up where the server is.
 	try {
-		const { data } = await axios.get(`${BASE}/status`);
+		const { data } = await axios.get(STATUS);
 		if (data.state === 'running') {
 			phase.value = 'restoring';
 			poll();
@@ -163,12 +168,15 @@ onUnmounted(() => clearInterval(timer));
 	<div>
 		<!-- choose a file -->
 		<div v-if="phase === 'idle'" class="mt-3 space-y-4">
-			<p class="text-sm text-gray-600">
+			<p v-if="own" class="text-sm text-gray-600">
+				Choose a backup file (.zip) of <strong>this warehouse</strong>, made by <strong>Updates &amp; Backups</strong>.
+			</p>
+			<p v-else class="text-sm text-gray-600">
 				Choose a backup file (.zip) made by <strong>Updates &amp; Backups</strong> in Relief Inventory. The whole system — data
 				and, if the backup included them, uploaded photos and documents — is restored onto this new installation.
 			</p>
 
-			<div v-if="codeRequired">
+			<div v-if="codeRequired && !own">
 				<InputLabel for="restore_code" value="Setup code" />
 				<TextInput id="restore_code" type="password" class="mt-1 block w-full" v-model="setupCode" autocomplete="off" />
 				<InputError class="mt-2" :message="codeError" />
@@ -191,7 +199,14 @@ onUnmounted(() => clearInterval(timer));
 				<p v-if="filesFile" class="mt-1 text-xs text-gray-500">{{ filesFile.name }} — {{ human(filesFile.size) }}</p>
 			</details>
 
-			<div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+			<div v-if="own" class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+				<p>This <strong>replaces everything in this warehouse</strong> (its data and its uploaded files) with what the backup holds. The warehouse is out of service while it runs and everyone is signed out.</p>
+				<p>
+					You stay Administrator. Everyone else in the backup who already has a login elsewhere is <em>invited</em> and joins only when they accept;
+					the Users page lets you send those invitations. A few encrypted settings can't be carried over and are listed afterwards.
+				</p>
+			</div>
+			<div v-else class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
 				<p>This installation must be new and empty — a backup can only be restored onto one that has never been set up.</p>
 				<p>
 					The backup does not contain the application key. Everything works without it, but a few encrypted settings (for

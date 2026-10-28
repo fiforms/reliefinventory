@@ -7,10 +7,14 @@ namespace App\Services\Warehouses;
 
 use App\Models\Accounts\Account;
 use App\Models\Accounts\Membership;
+use App\Models\Accounts\MembershipInvitation;
+use App\Models\PeopleRoles;
+use App\Models\User;
 use App\Services\FirstRunService;
 use App\Services\InvitationRefused;
 use App\Services\MembershipInvitations;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 /**
  * The current warehouse's logins in a backup (`database/accounts.json`) and back again after a restore
@@ -24,6 +28,12 @@ use Illuminate\Support\Facades\DB;
 class WarehouseAccounts
 {
     public const FORMAT = 1;
+
+    /** Set by an untrusted restore around its migration step, so the old `move_logins_to_accounts` migration attaches no one. */
+    public static bool $untrustedRestore = false;
+
+    /** What that migration found in an old dump's people table instead: the entries relinkAfterRestore() uses when the backup has no accounts.json. */
+    public static ?array $legacyLogins = null;
 
     public function __construct(private WarehouseContext $context) {}
 
@@ -73,6 +83,10 @@ class WarehouseAccounts
         $warehouse = $this->context->current();
         $this->forgetMemberships();
 
+        if ($export === null && self::$legacyLogins !== null) {
+            $export = ['accounts' => self::$legacyLogins];
+        }
+        self::$legacyLogins = null;
         $entries = $export !== null
             ? collect($export['accounts'] ?? [])->keyBy('person_id')
             : DB::table('people')->whereNotNull('account_id')->get(['id', 'email'])
@@ -125,6 +139,58 @@ class WarehouseAccounts
         }
 
         return $report;
+    }
+
+    /**
+     * The person in a restored backup who is the login's owner (same email, no login yet): linked to the login and made Administrator,
+     * so restoring your own warehouse's backup gives you your old person back. Any invitation the restore made for that person is
+     * closed. Null when the backup has no such person.
+     */
+    public function adoptRestoredPerson(Account $account): ?User
+    {
+        $warehouse = $this->context->current();
+        $row = DB::table('people')->where('email', $account->email)->first(['id', 'account_id', 'is_trainee']);
+        if (! $row) {
+            return null;
+        }
+        if ($row->account_id !== null || $row->is_trainee) {
+            throw new RuntimeException('The backup has a person with your email that cannot be linked to your login. Ask for a new setup code and use "Set up a fresh warehouse", then import people another way.');
+        }
+
+        DB::table('people')->where('id', $row->id)->update(['account_id' => $account->id]);
+        Membership::create([
+            'account_id' => $account->id, 'warehouse_id' => $warehouse->id, 'person_id' => $row->id,
+            'status' => Membership::ACTIVE, 'is_training' => $warehouse->is_training,
+        ]);
+        PeopleRoles::firstOrCreate(['person_id' => $row->id, 'role_id' => FirstRunService::ADMINISTRATOR_ROLE_ID]);
+        MembershipInvitation::where('warehouse_id', $warehouse->id)->where('person_id', $row->id)->update(['status' => 'accepted', 'responded_at' => now(), 'token_hash' => null]);
+
+        return User::findOrFail($row->id);
+    }
+
+    /**
+     * The admin who ran an untrusted restore of their own warehouse stays its Administrator: their person from the backup if it has
+     * one with their email, otherwise a new one. Without this the restore could lock them out (their login becomes an invitation like
+     * everyone else's, or isn't in the backup at all). They proved who they are with their password when they started it.
+     */
+    public function attachRestorer(Account $account, string $firstName, string $lastName): User
+    {
+        if ($user = $this->adoptRestoredPerson($account)) {
+            return $user;
+        }
+        $warehouse = $this->context->current();
+        $user = new User;
+        $user->forceFill([
+            'first_name' => $firstName, 'last_name' => $lastName, 'email' => $account->email,
+            'account_id' => $account->id, 'approved_at' => now(),
+        ])->save();
+        Membership::create([
+            'account_id' => $account->id, 'warehouse_id' => $warehouse->id, 'person_id' => $user->id,
+            'status' => Membership::ACTIVE, 'is_training' => $warehouse->is_training,
+        ]);
+        PeopleRoles::create(['person_id' => $user->id, 'role_id' => FirstRunService::ADMINISTRATOR_ROLE_ID]);
+
+        return $user;
     }
 
     /**

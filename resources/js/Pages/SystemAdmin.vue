@@ -518,7 +518,9 @@ onUnmounted(() => {
 				</div>
 				<p class="text-xs text-gray-500">
 					Treat a downloaded backup like the data itself: it contains every person's information. Store it somewhere private.
-					To restore one, choose “Restore from a backup” on the setup screen of a new installation. To repair a damaged
+					To restore one into <strong>this warehouse</strong>, an administrator can use
+					<a href="/setup/restore" class="underline">Restore this warehouse from a backup</a>; on a new installation, choose “Restore from a backup”
+					on its setup screen. To repair a damaged
 					database on this system, an administrator at the server runs <span class="font-mono">php artisan backup:restore</span>
 					with the latest good database backup and, if you want, a separate backup of the files.
 				</p>

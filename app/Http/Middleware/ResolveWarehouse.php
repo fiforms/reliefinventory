@@ -35,7 +35,7 @@ use Symfony\Component\HttpFoundation\Response;
 class ResolveWarehouse
 {
     /** Machine surfaces a `/w/<id>` prefix is stripped from (§4). */
-    private const MACHINE_PATHS = ['#^/api/#', '#^/up$#', '#^/\.well-known/ri-instance\.json$#'];
+    private const MACHINE_PATHS = ['#^/api/#', '#^/up$#', '#^/\.well-known/ri-instance\.json$#', '#^/restore-status$#'];
 
     public function __construct(private WarehouseContext $context) {}
 
@@ -80,7 +80,8 @@ class ResolveWarehouse
 
     private function prefixed(Request $request, Closure $next, string $id, string $rest, ?Warehouse $mapped): Response
     {
-        $warehouse = Warehouse::findReachable($id);
+        // A restore's progress poll names the warehouse by prefix, since a warehouse being restored isn't reachable by cookie.
+        $warehouse = $rest === '/restore-status' ? Warehouse::whereKey($id)->whereIn('status', ['active', 'restoring'])->first() : Warehouse::findReachable($id);
         if (! $warehouse || ($mapped && ! $mapped->is($warehouse))) {
             return response()->json(['message' => 'Not found.'], 404);
         }
@@ -127,7 +128,10 @@ class ResolveWarehouse
                     : $this->unavailable($request);
             }
         } elseif (! $warehouse->isActive()) {
-            return $this->unavailable($request);
+            // A warehouse being restored from the app still answers its progress poll: the restorer's session is wiped with the database.
+            if (! ($warehouse->status === 'restoring' && $request->is('restore-status'))) {
+                return $this->unavailable($request);
+            }
         }
 
         // Not undone on terminate: terminable middleware still need the request's own warehouse.

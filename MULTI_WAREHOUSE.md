@@ -1072,6 +1072,26 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   migration still attaches memberships when an older backup is migrated after a restore (an untrusted restore of an old backup must not
   reach it that way: part of the restore slice).
 
+**Phase 4, slice (b), a warehouse administrator's restore from the app, is built (2026-10-29):**
+- **Where:** Updates & Backups links to `/setup/restore` (`WarehouseRestore.vue`, `admin-system`, never in a training warehouse), which reuses the first-run
+  wizard's uploader (`RestoreBackup.vue`) against `/json/warehouse-restore/*` (`RestoreController::owning()`). The launch asks for the administrator's password again
+  (the restore signs everyone out). Audited (`warehouse.restore_started`).
+- **The engine** is `RestoreService` with a third mode beside "fresh instance" and "provisioned": `stageOwnRestore()` writes `own.json` (the login, the name, `any_lineage`)
+  in the warehouse's restore folder, because the database replacement wipes the session. In that mode: the **lineage check** first (`manifest.warehouse.uuid`, new in
+  backups from today, else `database/accounts.json`'s; a backup with neither, or with another warehouse's, is refused before anything changes; `any_lineage` is the instance
+  admin's clone, a checkbox only an instance admin sees and the server re-checks); status `restoring` from the moment everything is unpacked and verified until it ends
+  (never `artisan down`; a failure leaves it `restoring`, `warehouse:resume` ends that); this warehouse's queued/failed jobs purged (`WarehouseJobs::purge`, the same
+  function removal uses); the **files folder emptied, then filled** from the backup (only after checking the root is this warehouse's own; the CLI `--force` still merges);
+  accounts relinked `untrusted: true`; and **the administrator who ran it stays Administrator** (`WarehouseAccounts::attachRestorer`: their person from the backup if it has
+  one with their email, else a new one), so a restore can't lock out the person who did it.
+- **Progress** is read from `/w/<id>/restore-status`, the one path a `restoring` warehouse still answers (a machine path in `ResolveWarehouse`, no session, and without the
+  `logins` lines).
+- **The old `move_logins_to_accounts` migration** respects untrusted restores: with `WarehouseAccounts::$untrustedRestore` set it creates no accounts or memberships, only
+  remembers who the old dump's people table says could log in (`$legacyLogins`), which `relinkAfterRestore()` then turns into invitations / unverified new logins.
+- **Deviations / not done:** a backup made before manifests carried the uuid is refused for an administrator (an instance admin's clone path accepts it); the legacy-migration
+  path has no automated test (needs a pre-accounts dump); the audit log records the start, not the outcome.
+- Tests: `WarehouseOwnRestoreTest` (manifest lineage, a real restore end to end, lineage refusal and clone, a backup with no lineage, endpoint gates, the progress poll).
+
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
 mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal ✔.
 

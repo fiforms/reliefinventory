@@ -18,6 +18,7 @@ use App\Services\GitVersionService;
 use App\Services\PinLoginService;
 use App\Services\TrainingMode;
 use App\Services\TurnstileService;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -67,6 +68,23 @@ Route::prefix('activate/restore')->name('activate.restore.')->group(function () 
     Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
     Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
 });
+
+// A warehouse administrator restoring a backup into their own warehouse (RestoreController::owning()). Everything but the status
+// needs a signed-in administrator; the status is open because the warehouse is `restoring` (ResolveWarehouse lets exactly
+// /restore-status through) and the database, with its sessions, is being replaced.
+Route::prefix('json/warehouse-restore')->name('warehouse.restore.')->middleware(['auth', 'permission:admin-system'])->group(function () {
+    Route::post('/', [RestoreController::class, 'start'])->middleware('throttle:20,1')->name('start');
+    Route::post('/launch', [RestoreController::class, 'launch'])->middleware('throttle:5,1')->name('launch');
+    Route::get('/{id}', [RestoreController::class, 'uploadStatus'])->name('upload.status');
+    Route::put('/{id}', [RestoreController::class, 'uploadChunk'])->name('upload.chunk');
+    Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
+    Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
+});
+Route::get('/restore-status', [RestoreController::class, 'status'])->name('restore.status')
+    ->withoutMiddleware([
+        StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
+        RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
+    ]);
 
 // First-run "restore a backup" path. Named setup.* so RedirectToSetup lets it through; the controller
 // itself refuses anything but a never-set-up instance. The status poll skips the session middleware: while
@@ -324,6 +342,18 @@ Route::get('/setup/system', function () {
         'canViewAppKey' => $user->hasPermission('view-app-key'),
     ]);
 })->middleware(['auth']);
+
+// Restore a backup into this warehouse (RestoreController::owning(); the JSON half is the warehouse-restore group above).
+Route::get('/setup/restore', function () {
+    $user = Auth::user();
+    abort_if(app(WarehouseContext::class)->current()->is_training, 404);
+
+    return Inertia::render('Setup/WarehouseRestore', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/restore'),
+        'warehouseName' => app(WarehouseContext::class)->current()->display_name,
+        'instanceAdmin' => (bool) $user->account?->is_instance_admin,
+    ]);
+})->middleware(['auth', 'permission:admin-system']);
 
 // Testing Tools: the warehouse simulator and the slow-query log (JSON half is in the admin-system group below).
 Route::get('/setup/testing', [TestingToolsController::class, 'page'])->middleware(['auth', 'permission:admin-system']);

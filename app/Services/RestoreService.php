@@ -9,6 +9,7 @@ use App\Models\Accounts\Account;
 use App\Models\Control\SetupCode;
 use App\Services\Warehouses\WarehouseAccounts;
 use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseJobs;
 use App\Services\Warehouses\WarehouseSetup;
 use Database\Seeders\PermissionsSeeder;
 use Illuminate\Contracts\Encryption\DecryptException;
@@ -98,6 +99,38 @@ class RestoreService
         $claim = is_file($this->claimPath()) ? json_decode((string) file_get_contents($this->claimPath()), true) : null;
 
         return is_array($claim) && isset($claim['code_id'], $claim['account_id'], $claim['first_name'], $claim['last_name']) ? $claim : null;
+    }
+
+    private function ownPath(): string
+    {
+        return $this->dir().'/own.json';
+    }
+
+    /**
+     * A warehouse admin restoring a backup into their own, set-up warehouse from the app. Like the setup-code restore the backup is
+     * untrusted (accounts become invitations, the files folder is replaced, jobs purged, status `restoring`), and the admin who
+     * started it stays Administrator (their session is wiped with the database, so who they are travels in a file).
+     * `any_lineage` is for an instance admin cloning another warehouse's backup into this one.
+     *
+     * @param  array{account_id:int,first_name:string,last_name:string,any_lineage:bool}  $own
+     */
+    public function stageOwnRestore(array $own): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        file_put_contents($this->ownPath(), json_encode($own), LOCK_EX);
+        chmod($this->ownPath(), 0600);
+    }
+
+    public function clearOwnRestore(): void
+    {
+        @unlink($this->ownPath());
+    }
+
+    private function ownRestore(): ?array
+    {
+        $own = is_file($this->ownPath()) ? json_decode((string) file_get_contents($this->ownPath()), true) : null;
+
+        return is_array($own) && isset($own['account_id'], $own['first_name'], $own['last_name']) ? $own : null;
     }
 
     public function uploads(): ChunkedUpload
@@ -202,6 +235,7 @@ class RestoreService
             }
             $this->removeTree($this->dir().'/'.$uploadId);
             $this->clearClaim();
+            $this->clearOwnRestore();
             flock($lock, LOCK_UN);
             fclose($lock);
         }
@@ -231,6 +265,7 @@ class RestoreService
             throw $e;
         } finally {
             $this->removeTree($this->dir().'/'.$id);
+            $this->clearOwnRestore();
             flock($lock, LOCK_UN);
             fclose($lock);
         }
@@ -246,7 +281,13 @@ class RestoreService
         $plan = $this->plan($databaseZip, $storageZip);
 
         $claim = $this->claim();
+        $own = $claim === null ? $this->ownRestore() : null;
         $this->provisioned = $claim !== null;
+        if ($own) {
+            $force = true;
+            $this->checkLineage($plan, (bool) ($own['any_lineage'] ?? false));
+        }
+        $untrusted = $this->provisioned || $own !== null;
         if ($claim && ! $plan['database']) {
             throw new RuntimeException('Setting up a new warehouse needs a backup that has a database. This one holds only files.');
         }
@@ -256,8 +297,8 @@ class RestoreService
         if (! $fresh && ! $force) {
             throw new RuntimeException('This instance has already been set up. Restoring replaces its data; add --force if that is what you want.');
         }
-        $maintenance = $force && ! $fresh && $plan['database'];
-        $previousStatus = app(WarehouseContext::class)->current()->status;
+        $maintenance = $force && ! $fresh && ($plan['database'] || $own !== null);
+        $previousStatus = app(WarehouseContext::class)->current()->fresh()->status;
 
         // ---- 2. extract + verify ----
         $total = array_sum(array_column($plan['sources'], 'bytes'));
@@ -276,6 +317,14 @@ class RestoreService
             }
         }
 
+        // Everything unpacked and verified: from here on this warehouse is out of service (only this one; never `artisan down`).
+        if ($maintenance) {
+            $this->setStatus('restoring');
+        }
+        if ($own) {
+            WarehouseJobs::purge(app(WarehouseContext::class)->current());
+        }
+
         // ---- 3. database ----
         if ($plan['database']) {
             // Before anything is wiped: a dump cut off part-way would leave a half-empty database. (Its checksum
@@ -283,29 +332,42 @@ class RestoreService
             if (! app(DatabaseTools::class)->dumpIsComplete("{$work}/database/db.sql")) {
                 throw new RuntimeException('The database dump in this backup is incomplete (it has no end-of-dump marker), so nothing was changed. Use an earlier backup.');
             }
-            if ($maintenance) {
-                $this->setStatus('restoring');
-            }
             $this->progress($id, 'Replacing the database', 62);
             $this->replaceDatabase("{$work}/database/db.sql", $fresh);
             // The restored people aren't the ones this warehouse's memberships point at (and an older dump's
             // migration links its own logins, MULTI_WAREHOUSE.md §6).
             app(WarehouseAccounts::class)->forgetMemberships();
             $this->progress($id, 'Updating the database to this version', 78);
-            $this->migrate($fresh);
+            WarehouseAccounts::$untrustedRestore = $untrusted;
+            try {
+                $this->migrate($fresh);
+            } finally {
+                WarehouseAccounts::$untrustedRestore = false;
+            }
             $accountsFile = "{$work}/database/accounts.json";
             $logins = app(WarehouseAccounts::class)->relinkAfterRestore(
                 is_file($accountsFile) ? json_decode((string) file_get_contents($accountsFile), true) : null,
-                untrusted: $this->provisioned,
+                untrusted: $untrusted,
             );
             if ($claim) {
                 $logins[] = $this->finishClaim($claim);
+            }
+            if ($own) {
+                $account = Account::find($own['account_id']);
+                if (! $account) {
+                    throw new RuntimeException('Your login no longer exists, so no one was made Administrator. The data is in place: run "php artisan warehouse:resume" and add an administrator from the command line.');
+                }
+                app(WarehouseAccounts::class)->attachRestorer($account, $own['first_name'], $own['last_name']);
+                $logins[] = "{$account->email}: Administrator of this warehouse (the person who ran the restore)";
             }
         }
 
         // ---- 4. files ----
         if ($plan['files']) {
             $this->progress($id, 'Restoring uploaded files', 85);
+            if ($own) {
+                $this->emptyFilesFolder();   // replaced, not merged: files the backup doesn't have must not survive
+            }
             $this->moveTree("{$work}/files/private", config('filesystems.disks.local.root'));
         }
 
@@ -320,9 +382,9 @@ class RestoreService
             if (! $adminMissing) {
                 app(FirstRunService::class)->markComplete();
             }
-            if ($maintenance) {
-                $this->setStatus($previousStatus);
-            }
+        }
+        if ($maintenance) {
+            $this->setStatus($previousStatus);
         }
 
         $result = [
@@ -469,6 +531,52 @@ class RestoreService
         }
 
         return $manifest;
+    }
+
+    /**
+     * A warehouse admin may restore only backups of this warehouse's own lineage (the uuid in each zip's manifest, or its accounts.json
+     * for a backup made before manifests carried one). It proves nothing about where a zip came from: it catches the wrong file.
+     * Containment is the warehouse's own database user and the sandboxed client. Nothing has changed on the instance when this throws.
+     */
+    private function checkLineage(array $plan, bool $anyLineage): void
+    {
+        if ($anyLineage) {
+            return;
+        }
+        $mine = app(WarehouseContext::class)->current()->uuid;
+        foreach ($plan['sources'] as $source) {
+            $uuid = $source['manifest']['warehouse']['uuid'] ?? $this->uuidFromAccounts($source['zip']);
+            if (! is_string($uuid) || $uuid === '') {
+                throw new RuntimeException(basename($source['path']).' does not say which warehouse it is a backup of (it was made before backups recorded that), so it cannot be restored here by a warehouse administrator. An instance administrator can restore it.');
+            }
+            if (! hash_equals($mine, $uuid)) {
+                throw new RuntimeException(basename($source['path']).' is a backup of a different warehouse. Nothing was changed. Only an instance administrator can restore one warehouse\'s backup into another.');
+            }
+        }
+    }
+
+    private function uuidFromAccounts(ZipArchive $zip): ?string
+    {
+        $stat = $zip->statName('database/accounts.json');
+        if ($stat === false || $stat['size'] > 16 * 1024 * 1024) {
+            return null;
+        }
+        $json = json_decode((string) $zip->getFromName('database/accounts.json'), true);
+
+        return is_array($json) && is_string($json['warehouse']['uuid'] ?? null) ? $json['warehouse']['uuid'] : null;
+    }
+
+    /** Delete everything in this warehouse's files folder (only ever that folder: the path is checked). */
+    private function emptyFilesFolder(): void
+    {
+        $root = rtrim((string) config('filesystems.disks.local.root'), '/');
+        $expected = rtrim(app(WarehouseContext::class)->current()->storagePath(), '/');
+        if ($root === '' || $root !== $expected || ! is_dir($root)) {
+            throw new RuntimeException('Refusing to replace the files folder: it is not this warehouse\'s own.');
+        }
+        foreach (new \FilesystemIterator($root, \FilesystemIterator::SKIP_DOTS) as $entry) {
+            $entry->isDir() && ! $entry->isLink() ? $this->removeTree($entry->getPathname()) : @unlink($entry->getPathname());
+        }
     }
 
     /** @param  bool  $fresh  never set up: a failure resets it to a clean state; otherwise it is left for the operator */

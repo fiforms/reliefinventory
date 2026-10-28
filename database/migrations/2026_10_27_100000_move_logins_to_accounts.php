@@ -5,6 +5,7 @@
 
 use App\Models\Accounts\Account;
 use App\Services\FirstRunService;
+use App\Services\Warehouses\WarehouseAccounts;
 use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
@@ -21,8 +22,10 @@ use Illuminate\Support\Facades\Schema;
 // An email that already has an account keeps that account untouched (keep-what-is-there) and only gains the
 // membership. Who got an account is written to storage/logs/accounts-migration-<schema>-<time>.log.
 //
-// Runs again when an older backup is restored and migrated. TODO (phase 4, restore): there the dump is
-// untrusted, so it must produce invitations, not memberships (§6), and never instance admins.
+// Runs again when an older backup is restored and migrated. When that restore is untrusted (a warehouse admin's, a setup-code
+// holder's: WarehouseAccounts::$untrustedRestore) the dump must not attach anyone's login (§6): this migration then makes no accounts
+// and no memberships, only remembers who the dump says could log in (WarehouseAccounts::$legacyLogins), and the restore's relink turns
+// those into invitations / unverified new logins, never instance admins.
 return new class extends Migration
 {
     public function up(): void
@@ -42,6 +45,13 @@ return new class extends Migration
             ->where(fn ($q) => $q->whereNotNull('password')->orWhereNotNull('email_verified_at'))
             ->orderBy('id')
             ->get(['id', 'email', 'password', 'email_verified_at']);
+
+        if (WarehouseAccounts::$untrustedRestore) {
+            WarehouseAccounts::$legacyLogins = $people->map(fn ($p) => [
+                'person_id' => $p->id, 'email' => $p->email, 'password' => $p->password, 'email_verified_at' => null,
+            ])->all();
+            $people = collect();
+        }
 
         foreach ($people as $person) {
             $existing = Account::findByEmail($person->email);
@@ -86,7 +96,7 @@ return new class extends Migration
         // Reset tokens now live in the accounts schema; any in flight here are simply void.
         Schema::dropIfExists('password_reset_tokens');
 
-        if ($report) {
+        if ($report && ! WarehouseAccounts::$untrustedRestore) {
             $file = storage_path('logs/accounts-migration-'.$warehouse->schema_name.'-'.now()->format('Ymd-His').'.log');
             File::ensureDirectoryExists(dirname($file));
             File::put($file, "Accounts created for warehouse {$warehouse->id} ({$warehouse->schema_name}):\n".implode("\n", $report)."\n");

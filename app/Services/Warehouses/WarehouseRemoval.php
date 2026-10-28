@@ -189,12 +189,7 @@ class WarehouseRemoval
     /** Queued jobs and failed jobs naming it, then the row itself (its domains, setup codes and provisioning commands go with it). */
     private function deleteControlRows(Warehouse $warehouse): void
     {
-        $connection = $warehouse->getConnection();
-        foreach (['jobs', 'failed_jobs'] as $table) {
-            if ($connection->getSchemaBuilder()->hasTable($table)) {
-                $connection->table($table)->where('payload', 'like', '%"warehouse":"'.$warehouse->id.'"%')->delete();
-            }
-        }
+        WarehouseJobs::purge($warehouse);
         $warehouse->delete();
     }
 }

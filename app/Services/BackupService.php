@@ -245,6 +245,9 @@ class BackupService
             'created_at' => now()->toIso8601String(),
             'app' => ['name' => config('app.name'), 'commit' => app(GitVersionService::class)->currentCommit(), 'version' => app(GitVersionService::class)->release()],
             'scope' => $scope,
+            // The lineage: which warehouse this is a backup of. It proves nothing about origin (whoever made the zip chose it);
+            // it only lets a warehouse admin's restore catch the wrong file (MULTI_WAREHOUSE.md §11).
+            'warehouse' => ['id' => app(WarehouseContext::class)->current()->id, 'uuid' => app(WarehouseContext::class)->current()->uuid],
             'database' => [
                 'driver' => config('database.default'),
                 'name' => config('database.connections.'.config('database.default').'.database'),

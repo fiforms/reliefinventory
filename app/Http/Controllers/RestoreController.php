@@ -5,12 +5,15 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Control\InstanceAuditLog;
 use App\Services\FirstRunService;
 use App\Services\RestoreService;
 use App\Services\Warehouses\SetupCodes;
 use App\Services\Warehouses\WarehouseContext;
 use App\Services\Warehouses\WarehouseSetup;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * First-run wizard's "Restore from a backup" path (/install/restore/*). No login exists yet, so the gate is the
@@ -29,8 +32,21 @@ class RestoreController extends Controller
         return request()->routeIs('activate.restore.*');
     }
 
+    /** `/json/warehouse-restore/*`: a signed-in administrator restoring a backup into their own, set-up warehouse (RestoreService::stageOwnRestore). */
+    private function owning(): bool
+    {
+        return request()->routeIs('warehouse.restore.*');
+    }
+
     private function requireFreshInstance(): void
     {
+        if ($this->owning()) {
+            $warehouse = $this->context->current();
+            abort_unless(Auth::user()?->hasPermission('admin-system'), 403, 'Missing required permission: admin-system');
+            abort_unless($warehouse->isActive() && ! $warehouse->is_training, 403, 'This warehouse cannot be restored from here.');
+
+            return;
+        }
         if ($this->activating()) {
             $warehouse = $this->context->current();
             abort_unless($warehouse->isAwaitingSetup() && $this->codes->claimed(request(), $warehouse), 403, 'Enter the setup code first.');
@@ -46,9 +62,9 @@ class RestoreController extends Controller
         $data = $request->validate([
             'filename' => 'required|string|max:255',
             'size' => 'required|integer|min:1|max:'.config('backup.max_restore_bytes'),
-            'setup_code' => [filled(config('app.setup_code')) && ! $this->activating() ? 'required' : 'nullable', 'string'],
+            'setup_code' => [filled(config('app.setup_code')) && ! $this->activating() && ! $this->owning() ? 'required' : 'nullable', 'string'],
         ]);
-        if (! $this->activating() && filled(config('app.setup_code')) && ! hash_equals((string) config('app.setup_code'), (string) $data['setup_code'])) {
+        if (! $this->activating() && ! $this->owning() && filled(config('app.setup_code')) && ! hash_equals((string) config('app.setup_code'), (string) $data['setup_code'])) {
             return response()->json(['message' => 'That setup code is not correct.', 'errors' => ['setup_code' => ['That setup code is not correct.']]], 422);
         }
         if ($this->restore->isRunning()) {
@@ -99,7 +115,8 @@ class RestoreController extends Controller
         $data = $request->validate([
             'upload_id' => 'required|string',
             'storage_upload_id' => 'nullable|string|different:upload_id',
-        ] + ($this->activating() ? WarehouseSetup::personRules($existing) : []));
+        ] + ($this->activating() ? WarehouseSetup::personRules($existing) : [])
+            + ($this->owning() ? ['password' => ['required', 'string'], 'any_lineage' => ['sometimes', 'boolean']] : []));
         foreach (array_filter([$data['upload_id'], $data['storage_upload_id'] ?? null]) as $id) {
             $this->assertFullyUploaded($id);
         }
@@ -114,6 +131,22 @@ class RestoreController extends Controller
                 'code_id' => $this->codes->claimed($request, $warehouse)->id, 'account_id' => $account->id,
                 'first_name' => $data['first_name'], 'last_name' => $data['last_name'],
             ]);
+        }
+        if ($this->owning()) {
+            $user = Auth::user();
+            // The database replacement wipes sessions and people alike; the password proves it is the administrator at the keyboard.
+            if (! $user->password || ! Hash::check($data['password'], $user->password) || ! $user->account) {
+                return response()->json(['message' => 'That password is not correct.', 'errors' => ['password' => ['That password is not correct.']]], 422);
+            }
+            $anyLineage = (bool) ($data['any_lineage'] ?? false);
+            if ($anyLineage && ! $user->account->is_instance_admin) {
+                return response()->json(['message' => 'Only an instance administrator can restore another warehouse\'s backup here.'], 403);
+            }
+            $this->restore->stageOwnRestore([
+                'account_id' => $user->account->id, 'first_name' => (string) $user->first_name, 'last_name' => (string) $user->last_name,
+                'any_lineage' => $anyLineage,
+            ]);
+            InstanceAuditLog::record('warehouse.restore_started', $this->context->current(), ['any_lineage' => $anyLineage]);
         }
         $this->restore->launch($data['upload_id'], $data['storage_upload_id'] ?? null);
 
@@ -143,6 +176,12 @@ class RestoreController extends Controller
     /** Polled by the wizard, including while the database is being replaced (so: no session, no database). */
     public function status()
     {
-        return response()->json($this->restore->status())->header('Cache-Control', 'no-store');
+        $status = $this->restore->status();
+        if (request()->routeIs('restore.status')) {
+            // Open to anyone who can reach a warehouse that is being restored (the restorer's session is gone): progress and the outcome, not who the logins are.
+            $status = array_intersect_key($status, array_flip(['state', 'phase', 'percent', 'error', 'blanked', 'notes', 'database_restored', 'includes_uploads', 'backup_created_at', 'files_created_at']));
+        }
+
+        return response()->json($status)->header('Cache-Control', 'no-store');
     }
 }

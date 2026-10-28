@@ -7,7 +7,6 @@ namespace App\Services\Warehouses;
 
 use App\Models\Accounts\Account;
 use App\Models\Accounts\Membership;
-use App\Models\Accounts\MembershipInvitation;
 use App\Models\Control\SetupCode;
 use App\Models\Control\Warehouse;
 use App\Models\PeopleRoles;
@@ -96,7 +95,7 @@ class WarehouseSetup
     public function withExistingAccount(Warehouse $warehouse, SetupCode $code, Account $account, array $person, bool $restored = false): User
     {
         return $this->complete($warehouse, $code, function () use ($warehouse, $account, $person, $restored) {
-            if ($restored && ($user = $this->personFromBackup($warehouse, $account))) {
+            if ($restored && ($user = app(WarehouseAccounts::class)->adoptRestoredPerson($account))) {
                 return $user;
             }
             $user = new User;
@@ -115,32 +114,6 @@ class WarehouseSetup
 
             return $user;
         }, $restored);
-    }
-
-    /**
-     * The person in a restored backup who is the code holder (same email, no login yet): linked to the holder's account and made
-     * Administrator, so restoring your own warehouse's backup gives you your old person back. Any invitation the restore made for
-     * that person is closed. Null when the backup has no such person.
-     */
-    private function personFromBackup(Warehouse $warehouse, Account $account): ?User
-    {
-        $row = DB::table('people')->where('email', $account->email)->first(['id', 'account_id', 'is_trainee']);
-        if (! $row) {
-            return null;
-        }
-        if ($row->account_id !== null || $row->is_trainee) {
-            throw new RuntimeException('The backup has a person with your email that cannot be linked to your login. Ask for a new setup code and use "Set up a fresh warehouse", then import people another way.');
-        }
-
-        DB::table('people')->where('id', $row->id)->update(['account_id' => $account->id]);
-        Membership::create([
-            'account_id' => $account->id, 'warehouse_id' => $warehouse->id, 'person_id' => $row->id,
-            'status' => Membership::ACTIVE, 'is_training' => $warehouse->is_training,
-        ]);
-        PeopleRoles::firstOrCreate(['person_id' => $row->id, 'role_id' => FirstRunService::ADMINISTRATOR_ROLE_ID]);
-        MembershipInvitation::where('warehouse_id', $warehouse->id)->where('person_id', $row->id)->update(['status' => 'accepted', 'responded_at' => now(), 'token_hash' => null]);
-
-        return User::findOrFail($row->id);
     }
 
     /**
