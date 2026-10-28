@@ -39,6 +39,16 @@ Route::get('/activate', [WarehouseSetupController::class, 'show'])->name('activa
 Route::post('/activate/code', [WarehouseSetupController::class, 'code'])->middleware('throttle:30,1')->name('activate.code');
 Route::post('/activate/setup', [WarehouseSetupController::class, 'setup'])->middleware('throttle:15,1')->name('activate.setup');
 
+// Accepting an invitation to a warehouse with an existing login (MULTI_WAREHOUSE.md §6): the emailed link is public (the invitee
+// can't be signed in to the inviting warehouse yet); the in-app list is for a login signed in anywhere it belongs.
+Route::get('/invitations/{token}', [MembershipInvitationController::class, 'show'])->name('invitations.show');
+Route::post('/invitations/{token}', [MembershipInvitationController::class, 'acceptLink'])->middleware('throttle:15,1')->name('invitations.accept');
+Route::middleware('auth')->group(function () {
+    Route::get('/account/invitations', [MembershipInvitationController::class, 'index'])->name('account.invitations');
+    Route::post('/account/invitations/{id}/accept', [MembershipInvitationController::class, 'accept'])->middleware('throttle:15,1')->name('account.invitations.accept');
+    Route::post('/account/invitations/{id}/decline', [MembershipInvitationController::class, 'decline'])->name('account.invitations.decline');
+});
+
 // First-run "restore a backup" path. Named setup.* so RedirectToSetup lets it through; the controller
 // itself refuses anything but a never-set-up instance. The status poll skips the session middleware: while
 // the database is being replaced there is no sessions table to read (nor a setup_state table to ask).
@@ -663,6 +673,9 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
     Route::get('/users', [UserAdminController::class, 'index']);
     Route::get('/users/export.csv', [UserAdminController::class, 'csv']);
     Route::post('/users', [UserAdminController::class, 'store']);
+    Route::get('/users/invitations', [UserAdminController::class, 'invitations']);
+    Route::post('/users/invitations/{id}/resend', [UserAdminController::class, 'resendInvitation']);
+    Route::delete('/users/invitations/{id}', [UserAdminController::class, 'withdrawInvitation']);
     Route::post('/users/bulk', [UserAdminController::class, 'bulk']);
     Route::put('/users/{id}', [UserAdminController::class, 'update']);
     Route::post('/users/{id}/deactivate', [UserAdminController::class, 'deactivate']);

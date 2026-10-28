@@ -21,6 +21,9 @@ return [
     'setup_attempts' => 10,
     'setup_attempt_minutes' => 15,
 
+    // How long an invitation to join a warehouse (MULTI_WAREHOUSE.md §6) can be accepted, in days.
+    'invitation_days' => (int) env('RI_INVITATION_DAYS', 14),
+
     // Per-warehouse database users and schemas (MULTI_WAREHOUSE.md §7). Only the provisioner (a separate process holding the
     // administrator credential) ever uses `admin_*`; the web, queue and scheduler containers do not mount it.
     'provisioning' => [

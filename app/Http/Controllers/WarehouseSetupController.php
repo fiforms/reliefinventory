@@ -87,7 +87,7 @@ class WarehouseSetupController extends Controller
         try {
             if ($existing) {
                 $this->guardAttempts($warehouse, 'password');
-                $account = $setup->verifiedAccount($data['email'], $data['password']);
+                $account = Account::verified($data['email'], $data['password']);
                 if (! $account) {
                     $this->fail($warehouse);
                     throw ValidationException::withMessages(['password' => 'That email and password do not match a login.']);

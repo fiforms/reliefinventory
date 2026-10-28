@@ -193,6 +193,9 @@ async function markAllNotificationsRead() {
                                         >
                                             Switch User
                                         </DropdownLink>
+                                        <DropdownLink v-if="$page.props.pendingInvitations > 0" :href="route('account.invitations')">
+                                            Invitations ({{ $page.props.pendingInvitations }})
+                                        </DropdownLink>
                                         <DropdownLink href="/this-device">
                                             PIN Login on This Device
                                         </DropdownLink>
@@ -302,6 +305,9 @@ async function markAllNotificationsRead() {
                                 href="/building-safety"
                             >
                                 Who's In The Building
+                            </ResponsiveNavLink>
+                            <ResponsiveNavLink v-if="$page.props.pendingInvitations > 0" :href="route('account.invitations')">
+                                Invitations ({{ $page.props.pendingInvitations }})
                             </ResponsiveNavLink>
                             <ResponsiveNavLink href="/this-device">
                                 PIN Login on This Device

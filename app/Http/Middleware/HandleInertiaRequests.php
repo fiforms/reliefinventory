@@ -5,6 +5,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\Accounts\MembershipInvitation;
 use App\Models\Control\Warehouse;
 use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
@@ -58,6 +59,10 @@ class HandleInertiaRequests extends Middleware
                     ? app(PinLoginService::class)->switchUserAvailable($request)
                     : false,
             ],
+            // How many warehouses have invited this login (MULTI_WAREHOUSE.md §6); the profile menu shows a link only when > 0.
+            'pendingInvitations' => fn () => $request->user()?->account_id
+                ? MembershipInvitation::open()->where('email', $request->user()->email)->count()
+                : 0,
             'banner' => $request->user()
                 ? app(BannerService::class)->propsFor($request->user()->id)
                 : ['active' => false],

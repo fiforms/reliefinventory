@@ -7,6 +7,7 @@ namespace App\Models\Accounts;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\Hash;
 
 /**
  * A login, shared by every warehouse it is a member of (MULTI_WAREHOUSE.md §6). Only credentials live here;
@@ -54,6 +55,21 @@ class Account extends Model
     {
         // The column's collation makes this (and the unique index) case-insensitive.
         return $email === null ? null : self::where('email', trim($email))->first();
+    }
+
+    /**
+     * The account for an email and password, or null: it must exist, be unlocked and verified, and have that password. For
+     * steps that need the owner to prove who they are (accepting an invitation, joining a new warehouse as its administrator).
+     */
+    public static function verified(string $email, string $password): ?self
+    {
+        $account = self::findByEmail($email);
+        if (! $account || $account->isLocked() || ! $account->password || ! $account->email_verified_at
+            || ! Hash::check($password, $account->password)) {
+            return null;
+        }
+
+        return $account;
     }
 
     public function isLocked(): bool

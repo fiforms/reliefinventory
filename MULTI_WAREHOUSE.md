@@ -954,8 +954,32 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   admin (`ensureInstanceAdmin`), which is only acceptable for an instance-level restore; a code holder's restore must produce invitations (§6) —
   that is slice (g-lite), so it comes next. Until both exist, an awaiting warehouse can only be set up fresh.
 
+**Slice (g-lite), invitations, is built (2026-10-29).** One mechanism for every place a warehouse would attach a login it doesn't own (§6):
+- **Model:** `membership_invitations` in the accounts schema (not in a warehouse, so a restored dump can't plant or accept one): one row per
+  (warehouse, person), the invited email, status `pending|accepted|declined|withdrawn`, `source` `admin|restore|import`, an optional emailed
+  link (only the SHA-256 of a 40-character token is stored), 14-day expiry (`RI_INVITATION_DAYS`). `App\Services\MembershipInvitations`:
+  `invite` (renews an earlier offer; refuses a login already in the warehouse), `listFor`, `accept`, `decline`, `withdraw`, `findByToken`.
+- **Accepting needs the login's own password** (`Account::verified`), never a PIN or tap session, both ways in: the **emailed link**
+  `/invitations/{token}` on the inviting warehouse's address (public; the invitee can't be signed in there yet; accepting signs them in) and
+  **`/account/invitations`** for a login signed in anywhere it belongs, which lists every invitation to its email, including ones never emailed
+  (profile menu shows a count). Wrong passwords are counted per invitation / per account (5 per 15 min). Declining and an expired or
+  withdrawn offer change nothing.
+- **What accept does:** in the invited warehouse it links the person (`people.account_id`, `email`), only if that person still has no
+  login and isn't a trainee, then makes the membership; if the second step fails the first is undone. It never changes the account's password,
+  verification or instance-admin flag. The account page says what accepting means and, for a restore's invitation, that no person sent it.
+- **Callers:** (1) **Users page**: adding someone whose email already has a login (it used to fail with "already used to log in") now makes the
+  person without a login, with the roles chosen, and invites the login by email; the roles apply when it accepts, a typed password is ignored,
+  and the page lists invitations still waiting with Resend / Withdraw (`/json/users/invitations`). An email with **no** login anywhere keeps the
+  old path: the account is made and a "set your password" email goes out. (2) **Untrusted restore**: `WarehouseAccounts::relinkAfterRestore($export,
+  untrusted: true)` invites an existing login instead of attaching it (nobody is emailed because a backup said so; the Users page can send it),
+  creates a missing login *unverified*, and never makes an instance admin. Nothing passes `untrusted: true` yet: the setup-code restore does.
+  (3) The people importers carry no login emails today; when one does it must use `invite()`.
+- Tests: `MembershipInvitationTest` (service, link, in-app, Users page, untrusted restore). Not built: the old `move_logins_to_accounts`
+  migration still attaches memberships when an older backup is migrated after a restore (an untrusted restore of an old backup must not
+  reach it that way: part of the restore slice).
+
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
-mapping; (g-lite) invitations, which (c)'s restore needs; (e) training warehouse and removing Training Mode; (f) removal.
+mapping; (g-lite) invitations ✔, the restore path of (c) next; (e) training warehouse and removing Training Mode; (f) removal.
 
 ### Remaining work
 

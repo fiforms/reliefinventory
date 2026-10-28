@@ -8,6 +8,8 @@ namespace App\Services\Warehouses;
 use App\Models\Accounts\Account;
 use App\Models\Accounts\Membership;
 use App\Services\FirstRunService;
+use App\Services\InvitationRefused;
+use App\Services\MembershipInvitations;
 use Illuminate\Support\Facades\DB;
 
 /**
@@ -15,9 +17,9 @@ use Illuminate\Support\Facades\DB;
  * (MULTI_WAREHOUSE.md §6, "Backups"). The accounts schema isn't in a warehouse backup, so without this a
  * backup restored onto a new instance would have no working logins.
  *
- * Restores today come only from the first-run wizard and the CLI, which are instance-level, so a restore
- * attaches memberships directly. TODO (phase 4): a restore by a warehouse admin is untrusted and must turn
- * these into invitations instead, and must never create an instance admin.
+ * An instance-level restore (the first-run wizard, the CLI) attaches memberships directly; an untrusted one (`$untrusted`
+ * in relinkAfterRestore) turns an existing login into an invitation and never creates an instance admin. Which restores are
+ * untrusted is decided by their caller (the setup-code restore, phase 3; a warehouse admin's, phase 4).
  */
 class WarehouseAccounts
 {
@@ -59,9 +61,14 @@ class WarehouseAccounts
      * which people.email mirrors. An account that already exists here is kept exactly as it is
      * (keep-what-is-there); a missing one is created. Returns one line per login, for the restore report.
      *
+     * $untrusted is a restore by someone who is not the instance's operator (a setup-code holder, later a warehouse admin): the
+     * backup is theirs to write, so it must not touch anyone else's login (MULTI_WAREHOUSE.md §6). An email that already has a
+     * login becomes an **invitation** (the owner accepts it; nobody is emailed because a backup said so) instead of a
+     * membership; a login it creates is never marked verified; and nobody is made an instance admin.
+     *
      * @return list<string>
      */
-    public function relinkAfterRestore(?array $export): array
+    public function relinkAfterRestore(?array $export, bool $untrusted = false): array
     {
         $warehouse = $this->context->current();
         $this->forgetMemberships();
@@ -82,13 +89,23 @@ class WarehouseAccounts
             }
 
             $account = Account::findByEmail($email);
+            if ($account && $untrusted) {
+                try {
+                    app(MembershipInvitations::class)->invite($warehouse, (int) $personId, $email, 'restore');
+                    $report[] = "{$email}: already has a login, so it was invited (it joins only if its owner accepts)";
+                } catch (InvitationRefused $e) {
+                    $report[] = "{$email}: {$e->getMessage()}";
+                }
+
+                continue;
+            }
             if ($account) {
                 $report[] = "{$email}: existing login kept";
             } else {
                 $account = new Account(['email' => $email]);
                 $account->forceFill([
                     'password' => $entry['password'] ?? null,
-                    'email_verified_at' => $entry['email_verified_at'] ?? null,
+                    'email_verified_at' => $untrusted ? null : ($entry['email_verified_at'] ?? null),
                 ])->save();
                 $report[] = "{$email}: login created".($account->password ? '' : ' (no password: they set one by email)');
             }
@@ -101,7 +118,9 @@ class WarehouseAccounts
         }
 
         $this->removeOrphans();
-        $this->ensureInstanceAdmin();
+        if (! $untrusted) {
+            $this->ensureInstanceAdmin();
+        }
 
         return $report;
     }

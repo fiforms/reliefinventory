@@ -14,7 +14,6 @@ use App\Models\User;
 use App\Services\FirstRunService;
 use Database\Seeders\PermissionsSeeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Hash;
 use RuntimeException;
 
 /**
@@ -63,18 +62,6 @@ class WarehouseSetup
 
             return $user;
         });
-    }
-
-    /** Check an existing login's password: null unless it is a verified, unlocked account with that password. */
-    public function verifiedAccount(string $email, string $password): ?Account
-    {
-        $account = Account::findByEmail($email);
-        if (! $account || $account->isLocked() || ! $account->password || ! $account->email_verified_at
-            || ! Hash::check($password, $account->password)) {
-            return null;
-        }
-
-        return $account;
     }
 
     /**

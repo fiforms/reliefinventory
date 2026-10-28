@@ -72,7 +72,10 @@ header; long-lived cookies use `WarehouseContext::cookieName()`; broadcast chann
 `--warehouse`; only the `provisioner` container holds the database administrator password (the `admin-secrets` volume) — never read it
 from application code, ask it through `ProvisioningClient`; tests that need a second warehouse use `tests/SecondWarehouse.php`. A new warehouse is made with `php artisan warehouse:create` (`WarehouseCreator`) and left `awaiting_setup`: it answers only `/activate`, where the holder of its
 one-time setup code (`SetupCodes`, hash only, 7 days, wrong tries counted per warehouse) makes themselves its Administrator (never an instance admin) and it goes
-`active` (`WarehouseSetup`). Setup-code restore into it isn't built (needs per-warehouse restore folders and invitations). Restores are untrusted input: they run as the warehouse's own DB user with the `mariadb` client in `--sandbox --local-infile=0`
+`active` (`WarehouseSetup`). Setup-code restore into it isn't built (needs per-warehouse restore folders; its accounts must go through `relinkAfterRestore(..., untrusted: true)`).
+Attaching a login a warehouse doesn't own is an **invitation** the login's owner accepts with its password (`MembershipInvitations`, accounts table
+`membership_invitations`; the emailed link `/invitations/{token}` and `/account/invitations`) — an admin adding an email that already has a login, an untrusted
+restore, a future importer: never write a `memberships` row for someone else's account directly. Restores are untrusted input: they run as the warehouse's own DB user with the `mariadb` client in `--sandbox --local-infile=0`
 (`DatabaseTools::clientCommand()`); the grants bound the SQL and the flags bound the client, and the dump is deliberately not parsed
 for keywords — don't add a filter. Rule of thumb: an instance admin is assumed able to run any command in the container or on the
 hardware, so never enforce a rule *against* the instance admin in software (retention periods, read-only access); enforce isolation
