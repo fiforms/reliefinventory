@@ -2,8 +2,9 @@
 # Make a backup zip (manifest + checksums, the same format as every other backup in the app) by running
 # `php artisan backup:create`. Shared by the scheduler's daily backup and the web container's pre-migration backup.
 #
-#   ri-db-backup            the daily backup: recorded in the app, so it is listed under Updates & Backups
-#                           and deleted by `backup:prune` after RI_BACKUP_KEEP_DAYS
+#   ri-db-backup            the daily backup of EVERY warehouse (warehouse:each backup:scheduled): recorded in the app, so it is listed
+#                           under Updates & Backups, kept in the warehouse's own folder $RI_BACKUP_DIR/warehouses/<id>/, made once a
+#                           day per warehouse, and deleted by `backup:prune` after RI_BACKUP_KEEP_DAYS
 #   ri-db-backup premigrate a label: written to $RI_BACKUP_DIR as relief-backup-<stamp>-<scope>-<label>.zip
 #                           with no database record (the schema may not be ready for one yet); `backup:prune`
 #                           deletes it after RI_BACKUP_KEEP_DAYS too
@@ -25,12 +26,21 @@ log() { echo "[db-backup] $(date '+%F %T') $*" >&2; }
 mkdir -p "$BACKUP_DIR" 2>/dev/null && [ -w "$BACKUP_DIR" ] || { log "cannot write to $BACKUP_DIR — mount a volume there"; exit 1; }
 cd /var/www/html || exit 1
 
-args=(--scope="$SCOPE")
-if [ -n "$LABEL" ]; then
-    args+=(--dest="$BACKUP_DIR" --name="relief-backup-$(date +%Y%m%d-%H%M%S)-$SCOPE-$LABEL")
+if [ -z "$LABEL" ]; then
+    # The scheduler's daily backup: every active warehouse, in turn (the instance-wide lock makes them wait for each other).
+    if php artisan warehouse:each "backup:scheduled --scope=$SCOPE --no-interaction" --no-interaction; then
+        log "daily backups done"
+        find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
+        exit 0
+    fi
+    log "a daily backup FAILED"
+    exit 1
 fi
 
-# The default warehouse only, for now: a backup of every warehouse, each in its own folder, is phase 4 of MULTI_WAREHOUSE.md.
+args=(--scope="$SCOPE" --dest="$BACKUP_DIR" --name="relief-backup-$(date +%Y%m%d-%H%M%S)-$SCOPE-$LABEL")
+
+# A labelled one (the web container's pre-migration backup, before the control schema may exist) is the default warehouse only, for now:
+# a pre-upgrade backup of every warehouse is the hold-all upgrade slice of phase 4 (MULTI_WAREHOUSE.md §10).
 if out="$(php artisan backup:create --warehouse=default --no-interaction "${args[@]}")"; then
     log "backup written: $(printf '%s\n' "$out" | tail -n1) ($(du -h "$(printf '%s\n' "$out" | tail -n1)" | cut -f1))"
     # Dumps from before backups were zipped (RI image <= 2026-10-20): age them out the old way.

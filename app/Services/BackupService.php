@@ -7,6 +7,7 @@ namespace App\Services;
 
 use App\Models\Backup;
 use App\Services\Warehouses\WarehouseAccounts;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
@@ -104,7 +105,13 @@ class BackupService
             return;
         }
 
+        $instance = null;
         try {
+            $backup->update(['progress' => 'Waiting for another backup to finish']);
+            $instance = $this->instanceLock();
+            if (! $instance) {
+                throw new RuntimeException('Another warehouse\'s backup kept the instance busy for too long. Try again later.');
+            }
             $backup->update(['status' => 'running', 'started_at' => now(), 'progress' => 'Starting']);
             $this->prune();
 
@@ -120,6 +127,7 @@ class BackupService
             report($e);
             $this->fail($backup, $e->getMessage());
         } finally {
+            $instance && $this->unlock($instance);
             $this->unlock($lock);
         }
     }
@@ -139,11 +147,14 @@ class BackupService
         if (! $lock) {
             throw new RuntimeException("Another backup is already running in {$dir}.");
         }
+        $instance = null;
         try {
+            $instance = $this->instanceLock() ?? throw new RuntimeException('Another backup kept the instance busy for too long. Try again later.');
             $base = $name ?? sprintf('relief-backup-%s-%s', now()->format('Ymd-His'), $scope);
 
             return $this->write($scope, $dir, $base, $progress ?? fn () => null);
         } finally {
+            $instance && $this->unlock($instance);
             $this->unlock($lock);
         }
     }
@@ -357,6 +368,29 @@ class BackupService
         return ! $free;
     }
 
+    /**
+     * The one lock every backup on the instance takes (MULTI_WAREHOUSE.md §10): N warehouses' backups run one after another, not all at
+     * once on the one database. Waits for it, up to config('backup.lock_wait_seconds').
+     *
+     * @return resource|null
+     */
+    private function instanceLock()
+    {
+        $this->ensureDir($this->rootDir());
+        $handle = fopen($this->rootDir().'/.instance-backup.lock', 'c');
+        $deadline = time() + (int) config('backup.lock_wait_seconds');
+        while (! flock($handle, LOCK_EX | LOCK_NB)) {
+            if (time() >= $deadline) {
+                fclose($handle);
+
+                return null;
+            }
+            sleep(2);
+        }
+
+        return $handle;
+    }
+
     /** @return resource|null the held lock, or null when another backup in $dir holds it */
     private function lock(string $dir)
     {
@@ -416,7 +450,14 @@ class BackupService
         $backup->delete();
     }
 
+    /** This warehouse's own backup folder: its zips, its backup.log, its lock (MULTI_WAREHOUSE.md §11). */
     public function dir(): string
+    {
+        return $this->rootDir().'/warehouses/'.app(WarehouseContext::class)->current()->id;
+    }
+
+    /** The instance's backup directory, above every warehouse's own folder. */
+    public function rootDir(): string
     {
         return rtrim(config('backup.dir'), '/');
     }

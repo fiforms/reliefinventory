@@ -18,6 +18,15 @@ return [
     // gigabytes, and re-uploadable). Never add .app_key or .env here: BackupService refuses them anyway.
     'exclude_dirs' => ['print-jobs', 'device-releases', 'device-uploads'],
 
+    // Backups are one at a time across the whole instance (MULTI_WAREHOUSE.md §10/§11): the scheduler asks every warehouse for its daily
+    // backup, and N dumps at once would all hit the database together. One that finds another running waits up to this many seconds.
+    'lock_wait_seconds' => (int) env('RI_BACKUP_LOCK_WAIT', 3600),
+
+    // Tables that hold only what is live right now, so a warehouse's dump keeps their structure but not their rows (mariadb-dump
+    // --ignore-table-data; a clone of a backup would otherwise start with working copies of the original's logged-in sessions), and a
+    // restore empties them (which also covers backups made before this list). A test fails if one of these doesn't exist.
+    'live_state_tables' => ['sessions', 'cache', 'cache_locks', 'jobs', 'job_batches'],
+
     // The php binary used to start the detached backup process. Not PHP_BINARY: under FPM/FrankenPHP
     // that is the server, not the CLI.
     'php_binary' => env('RI_PHP_BINARY', 'php'),

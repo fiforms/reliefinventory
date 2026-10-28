@@ -193,15 +193,16 @@ php artisan backup:restore DATABASE.zip [--storage=FILES.zip] --force
 php artisan backup:restore --storage=FILES.zip --force      # files only; the database is left alone
 ```
 
-`--force` is required once the instance has been set up, and a database restore then **puts the site in maintenance mode
-first** and lifts it after. If the database load fails, the site is **left in maintenance mode** with a message: a wiped
+`--force` is required once the instance has been set up, and a database restore then **takes that warehouse out of service
+first** (its status becomes `restoring`; the other warehouses keep serving, and Laravel's instance-wide maintenance mode is not used)
+and puts it back after. If the database load fails, the warehouse is **left out of service** with a message: a wiped
 database has no setup-complete record, so resetting it to a clean state (as the wizard does for a never-set-up instance)
 would open the setup wizard to anyone. Run it as the app user (`runuser -u www-data -- php artisan …`) so files it writes
 aren't root-owned. Files are laid over what is there; none are deleted.
 
 ### Starting over: `php artisan setup:reset`
 
-If a forced restore fails and leaves the database empty or half-loaded (the site is then in maintenance mode), or you simply
+If a forced restore fails and leaves the database empty or half-loaded (the warehouse is then out of service), or you simply
 want a brand-new instance, `setup:reset` **erases the entire database** and rebuilds it empty (schema + essential lookup data, no user
 accounts — only the built-in Unknown Donor placeholder — and no setup record). Uploaded files and backup zips on disk are not touched. Afterwards restore a backup with
 `backup:restore` (no `--force` needed — the instance is new again) or set up from scratch in the browser.
@@ -213,7 +214,7 @@ It is built so it cannot be run by accident, from a script, or from something pa
 - it shows what is about to be lost (database name and host, row counts, the newest backup zips found) and then makes you
   **type `YES-DELETE-ALL-MY-DATA` yourself**, exactly (case-sensitive, nothing else accepted). Anything else changes nothing.
 
-Afterwards run `php artisan up` if the site is still in maintenance mode — and, if the server is reachable from the internet,
+Afterwards, if the warehouse is still out of service, `php artisan warehouse:resume <id>` puts it back (`setup:reset` already does for the warehouse it reset) — and, if the server is reachable from the internet,
 set `RI_SETUP_CODE` first, because the new instance's setup wizard is open to whoever reaches it. In Docker:
 `docker compose exec app php artisan setup:reset` (`exec` gives it a terminal; `-T` or a redirected stdin will refuse).
 
@@ -239,3 +240,12 @@ the gates are the wizard's own: the instance must still need setup, `RI_SETUP_CO
 upload id for the chunk calls. An internet-exposed fresh instance should set `RI_SETUP_CODE` — a restore can install any
 administrator the backup holds. Adding an encrypted model cast? Register it in `config/backup.php` (`encrypted_columns`) — a
 test enforces it.
+
+
+### One folder per warehouse, one backup at a time
+
+Each warehouse keeps its zips, its `backup.log` and its restore folder under `<backup dir>/warehouses/<id>/` (the existing warehouse's old zips move
+there the first time `instance:migrate` runs). Backups on the instance run **one at a time**, whichever warehouse asked: a second waits for the first
+(up to `RI_BACKUP_LOCK_WAIT` seconds, default an hour). Dumps keep the structure of the live-state tables (`sessions`, `cache`, `cache_locks`, `jobs`,
+`job_batches`: `config/backup.php`) but not their rows, and a restore empties them. In Docker the scheduler makes every active warehouse's daily backup
+(`backup:scheduled`, once a day each); the pre-migration backup is still the default warehouse's (MULTI_WAREHOUSE.md §10).

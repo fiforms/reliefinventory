@@ -5,6 +5,8 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Control\Warehouse;
+use App\Services\BackupService;
 use App\Services\RestoreService;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -68,13 +70,17 @@ class SetupReset extends Command
             return self::FAILURE;
         }
         @unlink($restore->dir().'/status.json'); // the failed restore's message
+        // A failed forced restore leaves the warehouse out of service on purpose; a rebuilt, brand-new one is fine to serve again.
+        $warehouse = Warehouse::current();
+        if ($warehouse->status === 'restoring') {
+            $warehouse->forceFill(['status' => 'active'])->save();
+        }
 
         $this->info('The database was erased and rebuilt. This instance is now brand new.');
         $this->line('Next, either:');
         $this->line('  • restore a backup:  php artisan backup:restore <database zip> [--storage=<files zip>]');
         $this->line('  • or set it up from scratch in the browser (the /install wizard).');
-        $this->line('If the site is still in maintenance mode, run "php artisan up" when you are ready. If this server is reachable from the');
-        $this->line('internet, set RI_SETUP_CODE first so a stranger cannot claim the new instance.');
+        $this->line('If this server is reachable from the internet, set RI_SETUP_CODE first so a stranger cannot claim the new instance.');
 
         return self::SUCCESS;
     }
@@ -91,10 +97,10 @@ class SetupReset extends Command
 
     private function listBackups(): void
     {
-        $zips = glob(rtrim(config('backup.dir'), '/').'/relief-backup-*.zip') ?: [];
+        $zips = glob(app(BackupService::class)->dir().'/relief-backup-*.zip') ?: [];
         usort($zips, fn ($a, $b) => filemtime($b) <=> filemtime($a));
         if ($zips === []) {
-            $this->line('    (none found in '.config('backup.dir').')');
+            $this->line('    (none found in '.app(BackupService::class)->dir().')');
 
             return;
         }

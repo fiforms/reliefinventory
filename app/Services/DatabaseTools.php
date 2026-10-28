@@ -5,6 +5,7 @@
 
 namespace App\Services;
 
+use Illuminate\Support\Facades\DB;
 use RuntimeException;
 use Symfony\Component\Process\Process;
 
@@ -51,7 +52,27 @@ class DatabaseTools
         $binary = $this->find(['mariadb-dump', 'mysqldump']);
 
         return [$binary, ...$this->common($binary), '--single-transaction', '--no-tablespaces', '--routines', '--triggers',
-            '--result-file='.$resultFile, $this->connection()['database']];
+            ...$this->liveStateArgs($binary), '--result-file='.$resultFile, $this->connection()['database']];
+    }
+
+    /**
+     * Keep the structure of the live-state tables (sessions, cache, ...) but not their rows (config/backup.php). Only mariadb-dump has
+     * --ignore-table-data; mysqldump's --ignore-table would drop the structure too, and a restore would then miss the tables until a migration
+     * happened to recreate them, so with it they are dumped whole and emptied by the restore.
+     */
+    private function liveStateArgs(string $binary): array
+    {
+        if (! str_starts_with(basename($binary), 'mariadb')) {
+            return [];
+        }
+        $database = $this->connection()['database'];
+        try {
+            $existing = collect(DB::select('SHOW TABLES'))->map(fn ($row) => array_values((array) $row)[0]);
+        } catch (\Throwable) {
+            return [];   // the dump itself will say what is wrong with the database
+        }
+
+        return $existing->intersect(config('backup.live_state_tables'))->map(fn ($table) => "--ignore-table-data={$database}.{$table}")->values()->all();
     }
 
     /**

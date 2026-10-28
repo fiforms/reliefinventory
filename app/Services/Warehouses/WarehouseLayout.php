@@ -45,7 +45,35 @@ class WarehouseLayout
         }
         File::ensureDirectoryExists($files);
 
+        if ($warehouse->is_default && $this->moveLegacyBackups($warehouse)) {
+            $done[] = 'moved its backup zips into its own backup folder';
+        }
+
         return $done;
+    }
+
+    /**
+     * Before several warehouses, every backup zip of the one warehouse sat in the backup directory itself. Each warehouse now has a folder
+     * of its own there (MULTI_WAREHOUSE.md §11), so the existing ones move in; their `backups` rows only hold file names, so they stay valid.
+     * Only files this application names (relief-backup-*.zip and backup.log) are touched.
+     */
+    private function moveLegacyBackups(Warehouse $warehouse): bool
+    {
+        $root = rtrim((string) config('backup.dir'), '/');
+        $target = "{$root}/warehouses/{$warehouse->id}";
+        $legacy = [...(glob("{$root}/relief-backup-*.zip") ?: []), ...(is_file("{$root}/backup.log") ? ["{$root}/backup.log"] : [])];
+        if ($legacy === []) {
+            return false;
+        }
+
+        File::ensureDirectoryExists($target);
+        foreach ($legacy as $file) {
+            if (! rename($file, $target.'/'.basename($file))) {
+                throw new \RuntimeException("Could not move {$file} to {$target}.");
+            }
+        }
+
+        return true;
     }
 
     /** Nothing in it but (at most) a .gitignore. */

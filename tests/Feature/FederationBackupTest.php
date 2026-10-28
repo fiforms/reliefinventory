@@ -4,6 +4,7 @@ use App\Models\Backup;
 use App\Models\Trust;
 use App\Models\TrustAuditLog;
 use App\Models\TrustPairingCode;
+use App\Services\BackupService;
 use App\Services\Federation\TrustService;
 use Illuminate\Support\Facades\Process;
 
@@ -22,7 +23,10 @@ const BACKUPS = '/api/federation/v1/backups';
 /** A complete backup row with a real file behind it. */
 function finishedBackup(string $tmp, string $content = 'PK-not-really-a-zip', string $scope = 'database'): Backup
 {
-    file_put_contents("{$tmp}/relief-backup-test-{$scope}.zip", $content);
+    // In the warehouse's own backup folder (BackupService::dir()), which the backup row's path resolves to.
+    $folder = app(BackupService::class)->dir();
+    @mkdir($folder, 0750, true);
+    file_put_contents("{$folder}/relief-backup-test-{$scope}.zip", $content);
 
     return Backup::create([
         'status' => 'complete', 'scope' => $scope, 'filename' => "relief-backup-test-{$scope}.zip",

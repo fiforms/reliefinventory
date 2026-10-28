@@ -48,8 +48,8 @@ use ZipArchive;
  * and the wizard polls that. Like BackupService this runs as a detached process (restore:run), one at a time
  * via an flock. If step 3 fails on a never-set-up instance, it is put back to a clean migrated + seeded state so
  * the wizard is usable again. On an instance that WAS set up (--force) that would be wrong — a wiped database
- * has no setup-complete latch, so the setup wizard would be open to anyone — so the site is put into maintenance
- * mode before the wipe, and left there if the load fails, for the operator to retry or reset.
+ * has no setup-complete latch, so the setup wizard would be open to anyone — so the warehouse is taken out of service (status `restoring`)
+ * before the wipe, and left there if the load fails, for the operator to retry or reset.
  */
 class RestoreService
 {
@@ -257,6 +257,7 @@ class RestoreService
             throw new RuntimeException('This instance has already been set up. Restoring replaces its data; add --force if that is what you want.');
         }
         $maintenance = $force && ! $fresh && $plan['database'];
+        $previousStatus = app(WarehouseContext::class)->current()->status;
 
         // ---- 2. extract + verify ----
         $total = array_sum(array_column($plan['sources'], 'bytes'));
@@ -283,7 +284,7 @@ class RestoreService
                 throw new RuntimeException('The database dump in this backup is incomplete (it has no end-of-dump marker), so nothing was changed. Use an earlier backup.');
             }
             if ($maintenance) {
-                $this->artisan('down', ['--retry' => 60]);
+                $this->setStatus('restoring');
             }
             $this->progress($id, 'Replacing the database', 62);
             $this->replaceDatabase("{$work}/database/db.sql", $fresh);
@@ -320,7 +321,7 @@ class RestoreService
                 app(FirstRunService::class)->markComplete();
             }
             if ($maintenance) {
-                $this->artisan('up');
+                $this->setStatus($previousStatus);
             }
         }
 
@@ -502,6 +503,15 @@ class RestoreService
         }
     }
 
+    /**
+     * Take this warehouse out of service (or put it back) for the length of a restore: only this warehouse, by its status, which
+     * ResolveWarehouse enforces (MULTI_WAREHOUSE.md §10). Not Laravel's instance-wide `artisan down`.
+     */
+    private function setStatus(string $status): void
+    {
+        app(WarehouseContext::class)->current()->forceFill(['status' => $status])->save();
+    }
+
     /** The code holder joins the restored warehouse as its Administrator, the code is used up and it goes active. @return string a report line */
     private function finishClaim(array $claim): string
     {
@@ -529,9 +539,9 @@ class RestoreService
             return 'The instance was reset to a clean state; you can try again.';
         }
 
-        return 'The database may be empty or incomplete and the site has been left in maintenance mode on purpose '
+        return 'The database may be empty or incomplete and this warehouse has been left unavailable (status "restoring") on purpose '
             .'(a database without its setup record would open the setup wizard to anyone). Run the restore again from a good backup, '
-            .'then "php artisan up". If the database cannot be loaded at all, "php artisan setup:reset" erases it and starts clean (it asks for typed confirmation).';
+            .'then "php artisan warehouse:resume". If the database cannot be loaded at all, "php artisan setup:reset" erases it and starts clean (it asks for typed confirmation).';
     }
 
     /**
@@ -637,11 +647,17 @@ class RestoreService
     private function clearMachineLocalState(): void
     {
         if (Schema::hasTable('backups')) {
-            $dir = rtrim(config('backup.dir'), '/');
+            $dir = app(BackupService::class)->dir();
             foreach (DB::table('backups')->get(['id', 'status', 'filename']) as $row) {
                 if ($row->status !== 'complete' || ! $row->filename || ! is_file("{$dir}/{$row->filename}")) {
                     DB::table('backups')->where('id', $row->id)->delete();
                 }
+            }
+        }
+        // What was live when the backup was taken (logged-in sessions, cache, queued jobs) must not come back to life here.
+        foreach (config('backup.live_state_tables') as $table) {
+            if (Schema::hasTable($table)) {
+                DB::table($table)->truncate();
             }
         }
         if (Schema::hasTable('device_releases')) {

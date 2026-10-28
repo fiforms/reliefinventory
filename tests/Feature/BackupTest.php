@@ -1,9 +1,16 @@
 <?php
 
 use App\Models\Backup;
+use App\Models\Control\Warehouse;
 use App\Services\BackupService;
 use App\Services\DatabaseTools;
+use App\Services\RestoreService;
+use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseLayout;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
+use Tests\SecondWarehouse;
 
 beforeEach(function () {
     $this->tmp = sys_get_temp_dir().'/ri-backup-test-'.bin2hex(random_bytes(4));
@@ -169,7 +176,8 @@ test('only one backup can be started at a time', function () {
 });
 
 test('a second runner cannot take the lock while one is running', function () {
-    $lock = fopen($this->tmp.'/out/.backup.lock', 'c');
+    mkdir(app(BackupService::class)->dir(), 0750, true);
+    $lock = fopen(app(BackupService::class)->dir().'/.backup.lock', 'c');
     flock($lock, LOCK_EX);
 
     $backup = runBackup('database');
@@ -188,7 +196,8 @@ test('a running backup whose process died is marked failed instead of blocking f
 
 test('a running backup that still holds the lock is left alone', function () {
     $running = Backup::create(['status' => 'running', 'scope' => 'database']);
-    $lock = fopen($this->tmp.'/out/.backup.lock', 'c');
+    mkdir(app(BackupService::class)->dir(), 0750, true);
+    $lock = fopen(app(BackupService::class)->dir().'/.backup.lock', 'c');
     flock($lock, LOCK_EX);
 
     app(BackupService::class)->reapInterrupted();
@@ -209,7 +218,8 @@ test('expired backups are pruned with their files', function () {
 
 test('old zips with no record are pruned too, but only ones this app names, and only past the retention', function () {
     config(['backup.keep_days' => 14]);
-    $dir = $this->tmp.'/out';
+    $dir = app(BackupService::class)->dir();
+    mkdir($dir, 0750, true);
     $old = fn ($name) => tap("{$dir}/{$name}", fn ($path) => touch($path, now()->subDays(20)->getTimestamp()));
     $orphan = $old('relief-backup-20260101-000000-database-premigrate.zip');   // pre-migration backup: never had a row
     $unrelated = $old('someone-elses-notes.zip');
@@ -331,4 +341,92 @@ test('a scheduled (tier) backup can be downloaded by manage-backups holders, and
     // a Docker install has no tiers to serve
     config(['system.runtime' => 'docker']);
     $get('daily/20260102-030000')->assertNotFound();
+});
+
+// ---- per warehouse, one at a time (MULTI_WAREHOUSE.md §10/§11) ----------------------------------------
+
+test('each warehouse backs up into a folder of its own', function () {
+    $other = SecondWarehouse::make($this, ['display_name' => 'Elsewhere'])->fresh();
+    $here = runBackup('database');
+    $there = app(WarehouseContext::class)->run($other, fn () => runBackup('database'));
+    app(WarehouseContext::class)->switchTo(Warehouse::default());
+
+    expect($here->status)->toBe('complete', $here->error ?? '')->and($there->status)->toBe('complete', $there->error ?? '')
+        ->and($here->path())->toContain('/warehouses/'.Warehouse::default()->id.'/')
+        ->and(is_file($here->path()))->toBeTrue()
+        ->and(app(WarehouseContext::class)->run($other, fn () => $there->path()))->toContain('/warehouses/'.$other->id.'/')
+        ->and(glob($this->tmp.'/out/relief-backup-*.zip'))->toBe([]);
+});
+
+test('backups wait for each other across the whole instance, and give up after the limit', function () {
+    config(['backup.lock_wait_seconds' => 1]);
+    $lock = fopen($this->tmp.'/out/.instance-backup.lock', 'c');
+    flock($lock, LOCK_EX);
+
+    $backup = runBackup('database');
+    expect($backup->status)->toBe('failed')->and($backup->error)->toContain('kept the instance busy');
+    expect(fn () => app(BackupService::class)->createIn($this->tmp.'/elsewhere', 'database'))->toThrow(RuntimeException::class, 'kept the instance busy');
+
+    flock($lock, LOCK_UN);
+    expect(runBackup('database')->status)->toBe('complete');
+});
+
+test('a dump keeps the structure of the live-state tables but not their rows, and every table on the list exists', function () {
+    foreach (config('backup.live_state_tables') as $table) {
+        expect(Schema::hasTable($table))->toBeTrue("{$table} is on backup.live_state_tables but doesn't exist");
+    }
+
+    $db = config('database.connections.'.config('database.default').'.database');
+    $tools = app(DatabaseTools::class);
+    $command = implode(' ', $tools->dumpCommand($this->tmp.'/x.sql'));
+
+    expect($command)->toContain("--ignore-table-data={$db}.sessions")->toContain("--ignore-table-data={$db}.jobs")
+        ->and($command)->not->toContain('--ignore-table=')->not->toContain('--ignore-table-data='.$db.'.people');
+});
+
+test('a restore empties the live-state tables, which also covers older backups', function () {
+    DB::table('sessions')->insert(['id' => 'abc', 'payload' => 'x', 'last_activity' => time()]);
+    DB::table('jobs')->insert(['queue' => 'default', 'payload' => '{}', 'attempts' => 0, 'available_at' => time(), 'created_at' => time()]);
+
+    (fn () => $this->clearMachineLocalState())->call(app(RestoreService::class));
+
+    expect(DB::table('sessions')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+});
+
+test('the daily backup is made once a day per warehouse', function () {
+    $this->artisan('backup:scheduled')->assertSuccessful();
+    expect(Backup::count())->toBe(1);
+
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('already made');
+    expect(Backup::count())->toBe(1);
+
+    $this->travel(1)->days();
+    $this->artisan('backup:scheduled')->assertSuccessful();
+    expect(Backup::count())->toBe(2);
+    $this->travelBack();
+});
+
+test('the zips of the one warehouse that predates per-warehouse folders move into its own', function () {
+    $warehouse = Warehouse::default();
+    file_put_contents($this->tmp.'/out/relief-backup-20260101-000000-database-1.zip', 'zip');
+    file_put_contents($this->tmp.'/out/relief-backup-20260101-000000-database-premigrate.zip', 'zip');
+    file_put_contents($this->tmp.'/out/someone-elses-notes.zip', 'keep me');
+
+    $done = app(WarehouseLayout::class)->ensure($warehouse);
+
+    $folder = $this->tmp.'/out/warehouses/'.$warehouse->id;
+    expect($done)->toContain('moved its backup zips into its own backup folder')
+        ->and(is_file($folder.'/relief-backup-20260101-000000-database-1.zip'))->toBeTrue()
+        ->and(is_file($folder.'/relief-backup-20260101-000000-database-premigrate.zip'))->toBeTrue()
+        ->and(is_file($this->tmp.'/out/someone-elses-notes.zip'))->toBeTrue()
+        ->and(glob($this->tmp.'/out/relief-backup-*.zip'))->toBe([]);
+});
+
+test('warehouse:resume puts a warehouse a failed restore left unavailable back in service', function () {
+    $warehouse = Warehouse::default();
+    $this->artisan('warehouse:resume', ['warehouse' => $warehouse->id])->assertFailed();
+
+    $warehouse->forceFill(['status' => 'restoring'])->save();
+    $this->artisan('warehouse:resume', ['warehouse' => $warehouse->id])->assertSuccessful();
+    expect($warehouse->fresh()->status)->toBe('active');
 });

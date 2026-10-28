@@ -3,7 +3,8 @@
 # (scripts/volunteer-sync.sh, scripts/update.sh --scheduled):
 #   hourly  php artisan volunteers:sync-active-windows and backup:prune (expired on-demand backup zips) in each warehouse
 #           (the slow-log table is pruned by the provisioner, the only process allowed to)
-#   daily   a backup zip (database; RI_BACKUP_SCOPE=full adds the uploaded files) in $RI_BACKUP_DIR (default /backups)
+#   daily   a backup zip of every warehouse (database; RI_BACKUP_SCOPE=full adds the uploaded files), each in its own folder
+#           $RI_BACKUP_DIR/warehouses/<id>/ (default /backups), one warehouse at a time
 #
 #   RI_BACKUP_ENABLED     true|false (default true)
 #   RI_BACKUP_HOUR        0-23 local (TZ) hour for the daily dump (default 2)
@@ -20,16 +21,14 @@ KEEP_DAYS="${RI_BACKUP_KEEP_DAYS:-14}"
 BACKUP_HOUR="${RI_BACKUP_HOUR:-2}"
 log() { echo "[scheduler] $(date '+%F %T') $*" >&2; }
 
-# The daily backup is named ...-<scope>-<id>.zip; a pre-migration one ends -premigrate.zip and doesn't count.
-backup_done_today() { ls "$BACKUP_DIR"/relief-backup-"$(date +%Y%m%d)"-??????-*-[0-9]*.zip >/dev/null 2>&1; }
-
 log "started (volunteer sync hourly; backup ${RI_BACKUP_ENABLED:-true} daily at hour $BACKUP_HOUR (${RI_BACKUP_SCOPE:-database}), keep $KEEP_DAYS days in $BACKUP_DIR)"
 while true; do
     # Per-warehouse work runs once in each warehouse (MULTI_WAREHOUSE.md §9)
     php artisan warehouse:each "volunteers:sync-active-windows --no-interaction" --no-interaction || log "volunteer sync failed"
     php artisan warehouse:each "backup:prune --no-interaction" --no-interaction || log "backup prune failed"
 
-    if [ "${RI_BACKUP_ENABLED:-true}" = true ] && [ "$(date +%-H)" -ge "$BACKUP_HOUR" ] && ! backup_done_today; then
+    # After the backup hour, every warehouse gets its daily backup (once a day each: backup:scheduled remembers), one at a time.
+    if [ "${RI_BACKUP_ENABLED:-true}" = true ] && [ "$(date +%-H)" -ge "$BACKUP_HOUR" ]; then
         ri-db-backup || true
     fi
 

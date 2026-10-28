@@ -4,6 +4,7 @@ use App\Console\Commands\SetupReset;
 use App\Models\Accounts\Account;
 use App\Models\Accounts\Membership;
 use App\Models\Backup;
+use App\Models\Control\Warehouse;
 use App\Models\SetupState;
 use App\Models\User;
 use App\Services\BackupCompatibility;
@@ -439,18 +440,18 @@ test('a damaged database is repaired from a database zip plus the best copy of t
         ->and(User::where('email', 'tuesday@example.com')->exists())->toBeFalse()   // the full zip's newer database was ignored
         ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('tuesday-photo')
         ->and($result['notes'])->toContain('The files backup also contained a database; it was ignored.')
-        ->and(app()->isDownForMaintenance())->toBeFalse()                            // maintenance mode was used and lifted
+        ->and(Warehouse::current()->fresh()->status)->toBe('active')                 // the warehouse was out of service meanwhile, and is back
         ->and(SetupState::current()->completed_at)->not->toBeNull();
 });
 
-test('a failed database load on a set-up instance leaves the site in maintenance mode instead of opening the setup wizard', function () {
+test('a failed database load on a set-up instance leaves the warehouse out of service instead of opening the setup wizard', function () {
     $GLOBALS['restore_test_dirtied_db'] = true;
     craftZip($this->tmp.'/broken.zip', ['database/db.sql' => 'THIS IS NOT SQL;'.DUMP_END]);
 
     $this->artisan('backup:restore', ['database' => $this->tmp.'/broken.zip', '--force' => true, '--no-interaction' => true])->assertFailed();
 
-    expect(app()->isDownForMaintenance())->toBeTrue();
-    @unlink(storage_path('framework/down'));
+    expect(Warehouse::current()->fresh()->status)->toBe('restoring')
+        ->and(file_exists(storage_path('framework/down')))->toBeFalse();   // never Laravel's instance-wide maintenance mode
 });
 
 test('a truncated database dump is refused before anything is wiped', function () {
