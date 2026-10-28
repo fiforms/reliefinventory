@@ -7,6 +7,9 @@ namespace App\Services\Warehouses;
 
 use App\Models\Control\SetupCode;
 use App\Models\Control\Warehouse;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Validation\ValidationException;
 
 /**
  * Issuing and checking the setup code of a new warehouse (MULTI_WAREHOUSE.md §7). A warehouse has at most one usable
@@ -37,6 +40,42 @@ class SetupCodes
         });
 
         return [substr($plain, 0, 5).'-'.substr($plain, 5), $row];
+    }
+
+    /** The session key that remembers a visitor typed this warehouse's code (WarehouseSetupController). */
+    public const CLAIM = 'setup_claim';
+
+    /** The code this session proved it holds, if it is still usable: revoking a code ends a claim at once. */
+    public function claimed(Request $request, Warehouse $warehouse): ?SetupCode
+    {
+        $id = $request->session()->get(self::CLAIM);
+
+        return $id ? SetupCode::usable()->where('warehouse_id', $warehouse->id)->whereKey($id)->first() : null;
+    }
+
+    /** Wrong tries (a wrong code, a wrong password at the setup screen) are counted for the whole warehouse, not per visitor. */
+    private function attemptKey(Warehouse $warehouse): string
+    {
+        return "warehouse-setup:{$warehouse->id}";
+    }
+
+    public function locked(Warehouse $warehouse): bool
+    {
+        return RateLimiter::tooManyAttempts($this->attemptKey($warehouse), (int) config('warehouses.setup_attempts'));
+    }
+
+    /** @throws ValidationException when the warehouse has had too many wrong tries; the message goes on $field */
+    public function guardAttempts(Warehouse $warehouse, string $field): void
+    {
+        if ($this->locked($warehouse)) {
+            $minutes = (int) ceil(RateLimiter::availableIn($this->attemptKey($warehouse)) / 60);
+            throw ValidationException::withMessages([$field => "Too many wrong tries. Wait {$minutes} minute(s) and try again."]);
+        }
+    }
+
+    public function fail(Warehouse $warehouse): void
+    {
+        RateLimiter::hit($this->attemptKey($warehouse), (int) config('warehouses.setup_attempt_minutes') * 60);
     }
 
     /** The usable code row for what was typed, or null (wrong, used, revoked, expired, or another warehouse's: alike). */

@@ -14,7 +14,9 @@ import InputError from '@/Components/InputError.vue';
 import InputLabel from '@/Components/InputLabel.vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import TextInput from '@/Components/TextInput.vue';
+import RestoreBackup from '@/Pages/Setup/RestoreBackup.vue';
 import { Head, useForm } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 
 defineProps({
 	warehouseName: { type: String, default: '' },
@@ -22,6 +24,8 @@ defineProps({
 	locked: { type: Boolean, default: false },
 });
 
+// 'fresh' (set the warehouse up empty) or 'restore' (load a backup into it)
+const mode = ref('fresh');
 const codeForm = useForm({ code: '' });
 const form = useForm({
 	login: 'new',
@@ -32,6 +36,21 @@ const form = useForm({
 	password_confirmation: '',
 	example_data: false,
 });
+
+// The person who will run the warehouse, sent along when a restore is launched (the restore replaces the database, which holds the
+// session, so the server settles who they are first).
+const identity = computed(() => ({
+	login: form.login,
+	first_name: form.first_name,
+	last_name: form.last_name,
+	email: form.email,
+	password: form.password,
+	password_confirmation: form.password_confirmation,
+}));
+const identityReady = computed(() =>
+	form.first_name.trim() && form.last_name.trim() && /^\S+@\S+\.\S+$/.test(form.email) && form.password
+	&& (form.login === 'existing' || form.password === form.password_confirmation),
+);
 
 const submitCode = () => codeForm.post(route('activate.code'), { onFinish: () => codeForm.reset() });
 const submit = () => form.post(route('activate.setup'), { onFinish: () => form.reset('password', 'password_confirmation') });
@@ -58,10 +77,15 @@ const submit = () => form.post(route('activate.setup'), { onFinish: () => form.r
 			</div>
 		</form>
 
-		<form v-else @submit.prevent="submit">
+		<form v-else @submit.prevent="mode === 'fresh' ? submit() : null">
 			<p class="mt-1 text-sm text-gray-600">
 				Code accepted. Who will run this warehouse? They become its Administrator and add everyone else from inside the app.
 			</p>
+
+			<div class="mt-3 flex gap-4 text-sm">
+				<label class="flex items-center gap-2"><input type="radio" value="fresh" v-model="mode" /> Start empty</label>
+				<label class="flex items-center gap-2"><input type="radio" value="restore" v-model="mode" /> Restore a backup into it</label>
+			</div>
 
 			<div class="mt-4 flex gap-4 text-sm">
 				<label class="flex items-center gap-2"><input type="radio" value="new" v-model="form.login" /> I need a new login</label>
@@ -98,17 +122,22 @@ const submit = () => form.post(route('activate.setup'), { onFinish: () => form.r
 				<TextInput id="password_confirmation" type="password" class="mt-1 block w-full" v-model="form.password_confirmation" autocomplete="new-password" />
 			</div>
 
-			<label class="mt-4 flex items-start gap-2 text-sm text-gray-700">
+			<label v-if="mode === 'fresh'" class="mt-4 flex items-start gap-2 text-sm text-gray-700">
 				<input type="checkbox" class="mt-1" v-model="form.example_data" />
 				<span>Load example data (fictional donors, partners, stock and requests, for trying things out; it can't be removed later)</span>
 			</label>
 
 			<InputError class="mt-2" :message="form.errors.code" />
 
-			<div class="mt-6 flex justify-end">
+			<div v-if="mode === 'fresh'" class="mt-6 flex justify-end">
 				<PrimaryButton :class="{ 'opacity-25': form.processing }" :disabled="form.processing">
 					{{ form.processing ? 'Setting up…' : 'Finish setup' }}
 				</PrimaryButton>
+			</div>
+
+			<div v-else class="mt-6">
+				<p v-if="!identityReady" class="text-sm text-amber-800">Fill in who will run this warehouse above, then choose the backup.</p>
+				<RestoreBackup v-else base="/activate/restore" :identity="identity" @back="mode = 'fresh'" />
 			</div>
 		</form>
 	</GuestLayout>

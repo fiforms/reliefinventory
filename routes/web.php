@@ -49,6 +49,22 @@ Route::middleware('auth')->group(function () {
     Route::post('/account/invitations/{id}/decline', [MembershipInvitationController::class, 'decline'])->name('account.invitations.decline');
 });
 
+// Restoring a backup into a warehouse awaiting its setup code: the same controller as the first-run restore below, gated by the
+// setup code instead of "never set up" (RestoreController::activating()).
+Route::prefix('activate/restore')->name('activate.restore.')->group(function () {
+    Route::post('/', [RestoreController::class, 'start'])->middleware('throttle:20,1')->name('start');
+    Route::get('/status', [RestoreController::class, 'status'])->name('status')
+        ->withoutMiddleware([
+            StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
+            RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
+        ]);
+    Route::post('/launch', [RestoreController::class, 'launch'])->middleware('throttle:20,1')->name('launch');
+    Route::get('/{id}', [RestoreController::class, 'uploadStatus'])->name('upload.status');
+    Route::put('/{id}', [RestoreController::class, 'uploadChunk'])->name('upload.chunk');
+    Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
+    Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
+});
+
 // First-run "restore a backup" path. Named setup.* so RedirectToSetup lets it through; the controller
 // itself refuses anything but a never-set-up instance. The status poll skips the session middleware: while
 // the database is being replaced there is no sessions table to read (nor a setup_state table to ask).

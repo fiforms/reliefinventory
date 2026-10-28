@@ -948,11 +948,26 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
 - **Finishing** (`WarehouseSetup`): the code row and warehouse row are locked in one control transaction around the administrator's creation
   (two holders of one code can't both finish; a failure keeps nothing and the code still works), then the code is used up and the warehouse goes `active`.
 - Tests: `WarehouseSetupTest` (13) and `WarehouseCreateTest` (real schema, needs the provisioning test user).
-- **Not built yet — the restore path.** "Restore a backup into it" needs two things first: (1) the restore's upload/status folder
-  (`<backup dir>/restore`, `status.json`, one lock) is instance-wide, so it must become per-warehouse (phase 4, §11), and `RestoreService::launch()`
-  must pass `--warehouse` to the detached `restore:run`; (2) `WarehouseAccounts::relinkAfterRestore()` attaches memberships directly and may mint an instance
-  admin (`ensureInstanceAdmin`), which is only acceptable for an instance-level restore; a code holder's restore must produce invitations (§6) —
-  that is slice (g-lite), so it comes next. Until both exist, an awaiting warehouse can only be set up fresh.
+- **The restore path (built 2026-10-29).** At `/activate` the code holder can choose "Restore a backup into it" instead of starting empty. They say who
+  they are first (a new login, or an existing one proved with its password; wrong tries count against the warehouse) because replacing the database
+  wipes the session. `RestoreController` serves `/activate/restore/*` too, gated by the code claim instead of "never set up". Launching stages a
+  **claim file** (`<backup dir>/warehouses/<id>/restore/claim.json`: code id, account id, name; no secrets) whose presence makes the restore
+  *provisioned* (`RestoreService`): the backup is untrusted (`relinkAfterRestore(untrusted: true)`: its existing logins become invitations,
+  new ones unverified, no instance admin, **no orphan-login sweep**: the sweep deleted the holder's own new login, found by the test); no
+  instance-wide `artisan down`; a backup without a database is refused; a failed load returns *this* warehouse to empty + essentials + latch
+  (`recoverProvisionedState`, never `resetInstance()`, which deletes membership-less logins, instance admins included) with the code still usable;
+  and on success the holder is added as Administrator (`WarehouseSetup::withExistingAccount(..., restored: true)`: the person in the backup with
+  their email *is* them, otherwise a new person; nothing is seeded over the backup's roles), the code is used up and the warehouse goes `active`.
+- **Per-warehouse restore folders:** `RestoreService::dir()` is now `<backup dir>/warehouses/<id>/restore` (uploads, work, status, lock, claim), and
+  `launch()` starts `restore:run … --warehouse=<id>`, so warehouses can restore at once and one's progress never shows in another's browser. The
+  first-run wizard restore (warehouse 1, `/install/restore`) uses the same folder scheme. Backup zips and their status files stay in the shared
+  backup dir until phase 4.
+- Tests: `WarehouseRestoreSetupTest` (real schema: the restore, the failure recovery, the gates).
+- **Backup and restore, the whole picture (confirmed 2026-10-29).** Two kinds, both required: (1) **per warehouse**, the normal flow
+  (that warehouse's database and files; a warehouse admin's own restore is the same engine plus the lineage check, phase 4); (2) **whole
+  instance** (instance admin only): control + accounts + every warehouse's database and files, restoring them all onto a new instance.
+  Not built: the first-run wizard's restore still restores only warehouse 1, so it needs an instance-level path once the whole-instance
+  backup exists. Both are phase 4 (§11).
 
 **Slice (g-lite), invitations, is built (2026-10-29).** One mechanism for every place a warehouse would attach a login it doesn't own (§6):
 - **Model:** `membership_invitations` in the accounts schema (not in a warehouse, so a restored dump can't plant or accept one): one row per
@@ -979,7 +994,7 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   reach it that way: part of the restore slice).
 
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
-mapping; (g-lite) invitations ✔, the restore path of (c) next; (e) training warehouse and removing Training Mode; (f) removal.
+mapping; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode; (f) removal.
 
 ### Remaining work
 

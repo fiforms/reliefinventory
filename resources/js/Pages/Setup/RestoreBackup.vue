@@ -21,12 +21,16 @@ import { useChunkedUpload } from '@/composables/chunkedUpload';
 import axios from 'axios';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
 	codeRequired: { type: Boolean, default: false },
+	// Where the restore endpoints are: the first-run wizard's, or a warehouse awaiting its setup code's (Activate.vue).
+	base: { type: String, default: '/install/restore' },
+	// Fields sent with the launch (the person who will run a new warehouse: login, name, email, password).
+	identity: { type: Object, default: null },
 });
 defineEmits(['back']);
 
-const BASE = '/install/restore';
+const BASE = props.base;
 // Two uploads: `main` (has the database) and, optionally, `extra` (the files). `stage` is the one in progress.
 const main = useChunkedUpload(BASE);
 const extra = useChunkedUpload(BASE);
@@ -83,7 +87,7 @@ async function uploadFilesThenLaunch() {
 		stage.value = 'files';
 		await extra.start(filesFile.value, { setup_code: setupCode.value || undefined });
 	}
-	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined });
+	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined, ...(props.identity || {}) });
 	phase.value = 'restoring';
 	poll();
 }

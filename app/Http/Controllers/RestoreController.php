@@ -7,6 +7,9 @@ namespace App\Http\Controllers;
 
 use App\Services\FirstRunService;
 use App\Services\RestoreService;
+use App\Services\Warehouses\SetupCodes;
+use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseSetup;
 use Illuminate\Http\Request;
 
 /**
@@ -18,10 +21,22 @@ use Illuminate\Http\Request;
  */
 class RestoreController extends Controller
 {
-    public function __construct(private RestoreService $restore, private FirstRunService $firstRun) {}
+    public function __construct(private RestoreService $restore, private FirstRunService $firstRun, private SetupCodes $codes, private WarehouseContext $context, private WarehouseSetup $setup) {}
+
+    /** The same endpoints also serve `/activate/restore/*`: a warehouse awaiting its setup code, for the holder of the code (MULTI_WAREHOUSE.md §7). */
+    private function activating(): bool
+    {
+        return request()->routeIs('activate.restore.*');
+    }
 
     private function requireFreshInstance(): void
     {
+        if ($this->activating()) {
+            $warehouse = $this->context->current();
+            abort_unless($warehouse->isAwaitingSetup() && $this->codes->claimed(request(), $warehouse), 403, 'Enter the setup code first.');
+
+            return;
+        }
         abort_unless($this->firstRun->needsSetup(), 403, 'This instance has already been set up; a backup can only be restored onto a new one.');
     }
 
@@ -31,9 +46,9 @@ class RestoreController extends Controller
         $data = $request->validate([
             'filename' => 'required|string|max:255',
             'size' => 'required|integer|min:1|max:'.config('backup.max_restore_bytes'),
-            'setup_code' => [filled(config('app.setup_code')) ? 'required' : 'nullable', 'string'],
+            'setup_code' => [filled(config('app.setup_code')) && ! $this->activating() ? 'required' : 'nullable', 'string'],
         ]);
-        if (filled(config('app.setup_code')) && ! hash_equals((string) config('app.setup_code'), (string) $data['setup_code'])) {
+        if (! $this->activating() && filled(config('app.setup_code')) && ! hash_equals((string) config('app.setup_code'), (string) $data['setup_code'])) {
             return response()->json(['message' => 'That setup code is not correct.', 'errors' => ['setup_code' => ['That setup code is not correct.']]], 422);
         }
         if ($this->restore->isRunning()) {
@@ -41,6 +56,7 @@ class RestoreController extends Controller
         }
 
         @unlink($this->restore->dir().'/status.json'); // a previous failed attempt's message
+        $this->restore->clearClaim();
         $id = $this->restore->uploads()->create(['filename' => $data['filename'], 'size' => $data['size']]);
 
         return response()->json(['upload_id' => $id, 'chunk_size' => config('backup.upload_chunk_bytes'), 'received' => 0], 201);
@@ -79,15 +95,25 @@ class RestoreController extends Controller
     public function launch(Request $request)
     {
         $this->requireFreshInstance();
+        $existing = $request->input('login') === 'existing';
         $data = $request->validate([
             'upload_id' => 'required|string',
             'storage_upload_id' => 'nullable|string|different:upload_id',
-        ]);
+        ] + ($this->activating() ? WarehouseSetup::personRules($existing) : []));
         foreach (array_filter([$data['upload_id'], $data['storage_upload_id'] ?? null]) as $id) {
             $this->assertFullyUploaded($id);
         }
         if ($this->restore->isRunning()) {
             return response()->json(['message' => 'A restore is already running.'], 409);
+        }
+        if ($this->activating()) {
+            // Who the new warehouse is for: settled now, because the database replacement that follows wipes the session.
+            $warehouse = $this->context->current();
+            $account = $this->setup->identity($warehouse, $data);
+            $this->restore->stageClaim([
+                'code_id' => $this->codes->claimed($request, $warehouse)->id, 'account_id' => $account->id,
+                'first_name' => $data['first_name'], 'last_name' => $data['last_name'],
+            ]);
         }
         $this->restore->launch($data['upload_id'], $data['storage_upload_id'] ?? null);
 

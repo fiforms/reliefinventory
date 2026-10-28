@@ -117,8 +117,10 @@ class WarehouseAccounts
             DB::table('people')->where('id', $personId)->update(['account_id' => $account->id, 'email' => $account->email]);
         }
 
-        $this->removeOrphans();
+        // Sweeping up logins that belong nowhere is for an instance-level restore. An untrusted one must not delete anyone's login: with
+        // several warehouses an account with no membership may be someone about to join (the code holder's own, made a moment ago).
         if (! $untrusted) {
+            $this->removeOrphans();
             $this->ensureInstanceAdmin();
         }
 
