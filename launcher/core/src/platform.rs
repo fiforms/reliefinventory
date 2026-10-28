@@ -79,6 +79,11 @@ pub trait Platform: Send + Sync {
     async fn pull(&self, remote: &str, local: &Path) -> Result<()>;
     /// Copy `local` into the Linux layer at `remote` (only while it is running), replacing what is there.
     async fn push(&self, local: &Path, remote: &str) -> Result<()>;
+    /// Open a terminal window on this computer in the folder with the compose file, where `docker compose …` works.
+    /// Returns once the window has been asked for.
+    async fn open_terminal(&self) -> Result<()> {
+        fail("RI Launcher does not support this operating system yet.")
+    }
     /// How this backend's compose file differs from the shared one (see `StackOptions`).
     fn stack_options(&self) -> crate::compose::StackOptions {
         crate::compose::StackOptions::default()

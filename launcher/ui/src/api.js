@@ -61,6 +61,7 @@ export const applySettings = (s) =>
     inTauri ? invoke('apply_settings', { mode: s.mode, hostname: s.hostname || null, port: s.port, timezone: s.timezone || null }) : unavailable('Changing settings')
 export const shareableLink = () => call('shareable_link', {}, () => mockSummary().share_urls[0] || Promise.reject('Turn on "Run as a LAN service" first.'))
 export const openApp = () => call('open_app', {}, () => window.open('http://localhost:8080', '_blank'))
+export const openTerminal = () => (inTauri ? invoke('open_terminal') : unavailable('Opening a terminal'))
 export const backupsList = () => call('backups_list', {}, () => mock.backups)
 export const backupCreate = (scope) => (inTauri ? invoke('backup_create', { scope }) : unavailable('Backing up'))
 export const backupExport = (name) => (inTauri ? invoke('backup_export', { name }) : unavailable('Saving a copy'))
