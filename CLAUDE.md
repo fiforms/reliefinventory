@@ -55,7 +55,7 @@ There is effectively no frontend test suite (no JS unit tests configured); rely 
 in the browser for Vue changes.
 
 Useful artisan commands specific to this project: `php artisan user:create`, `php artisan user:promote`,
-`php artisan user:import-banned <file>`, `php artisan counties:import <file>`.
+`php artisan user:import-banned <file>`, `php artisan counties:import <file>`. Managing the instance itself (logins, warehouses, maintenance, the audit log) is the `account:*`, `warehouse:*` and `instance:*` command set: `php artisan instance:status` is the overview, and MULTI_WAREHOUSE.md §18 has the table.
 
 ## Architecture
 

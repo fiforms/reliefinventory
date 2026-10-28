@@ -1133,6 +1133,35 @@ warehouse-only (the whole-instance restore is CLI-only), and recovering **one** 
 - The "set `APP_KEY` before first start" route still works for the default warehouse but is no longer the documented way.
 - Tests: `RestoreTest` (key given at the restore step; refused on a set-up warehouse), `InstanceBackupTest` (`--keys-dir`, `warehouse:key`), `BackupTest` (the panel shows the warehouse key).
 
+**The operator's command set (2026-10-30)** — everything an instance admin needs from the shell, until the instance console (phase 5) offers it in the browser. All take the
+global `--warehouse=<id>` where they work inside a warehouse; the ones that change something write to `instance_audit_log`; none needs a permission check (an instance admin can
+run anything on the host). Passwords are never arguments: `--password-file=` or asked for twice.
+
+| Area | Command | What it does |
+|---|---|---|
+| Overview | `instance:status` | maintenance mode, every warehouse's status and migration state, instance admins, the provisioner's queue (warns if stuck), last instance backup, free disk |
+| | `instance:audit [--limit] [--for=<id>] [--action=<prefix>]` | the audit log |
+| | `instance:maintenance on\|off\|status [--secret] [--retry]` | **instance-wide** maintenance (Laravel `down`/`up`, audited); web only |
+| | `instance:migrate`, `instance:backup`, `restore:instance`, `instance:rotate-app-key` | migrate everything; whole-instance backup/restore (provisioner container) |
+| Logins | `account:list [--admins] [--locked]`, `account:show <email>` | who exists, who is an instance admin / locked, which warehouses, pending invitations |
+| | `account:create <email> [--instance-admin]` | a verified login with a password, belonging to no warehouse yet |
+| | `account:instance-admin <email> [--revoke]` | grant/remove instance-admin (never the last one) |
+| | `account:password <email>` | set a password; ends the login's sessions everywhere |
+| | `account:lock <email> [--unlock]` | lock/unlock (never the last unlocked instance admin) |
+| Warehouses | `warehouse:list`, `warehouse:show <id>` | the list; one warehouse in full, including its Administrators |
+| | `warehouse:create <name> [--email] [--training]` (`--resume`, `--new-code`) | a new empty warehouse and its setup code |
+| | `warehouse:setup-code <id> [--revoke\|--status]` | issue/revoke/see the code of a warehouse awaiting setup |
+| | `warehouse:suspend <id> [--maintenance] [--reason]` / `warehouse:activate <id>` | take **one** warehouse out of / back into service (others untouched); activate points to the right command for any other status |
+| | `warehouse:set <id> [--name] [--email] [--listed=yes\|no] [--notes]` | rename (unique), contact, chooser listing |
+| | `warehouse:admin <id> <email> [--first --last]` | make an existing login an Administrator of a set-up warehouse, joining it directly (the operator's own act; the invitation rule is for backups and warehouse admins) |
+| | `warehouse:domain`, `warehouse:key`, `warehouse:resume`, `warehouse:training` | hostnames; keys; end a failed restore; training on/off/reset |
+| | `warehouse:archive <id> [--undo]`, `warehouse:remove <id>` | the two-step removal |
+
+Notes: `instance:maintenance` and `warehouse:suspend --maintenance` are different on purpose — the first stops everyone (the software update), the second only the named warehouse. The
+default warehouse's suspension also stops the unprefixed machine URLs, which the command says. The older warehouse-level commands (`user:create`, `user:promote`, `user:list`,
+`user:update-password`, …) still work inside one warehouse with `--warehouse`. Tests: `InstanceCommandsTest`. Not built: deleting a login from the CLI (the removal rules cover logins that
+belong nowhere), `warehouse:domain`-style subcommands for mail/Turnstile settings (phase 5).
+
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
 mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal ✔.
 
