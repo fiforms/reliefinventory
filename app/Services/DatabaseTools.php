@@ -74,12 +74,21 @@ class DatabaseTools
         return preg_match('/^-- Dump completed on .+\s*\z/m', $tail) === 1;
     }
 
-    /** The interactive client; give it the SQL on stdin. */
+    /**
+     * The client for loading a dump; give it the SQL on stdin.
+     *
+     * A restored zip is untrusted input (a warehouse admin supplies it). What it can do in SQL is limited by the
+     * database user's grants (its own schema only, no FILE). What the grants can't limit is the *client program*:
+     * it runs inside the app container and has `system`/`\!`, `source`/`\.`, `tee`/`pager` and LOAD DATA LOCAL INFILE,
+     * which would read or write the container's files. --sandbox turns off every client command that touches the
+     * file system, and --local-infile=0 the client side of LOAD DATA LOCAL. That is the whole restore security
+     * model; the SQL itself is not parsed or filtered.
+     */
     public function clientCommand(): array
     {
-        $binary = $this->find(['mariadb', 'mysql']);
+        $binary = $this->find(['mariadb']);
 
-        return [$binary, ...$this->common($binary), $this->connection()['database']];
+        return [$binary, ...$this->common($binary), '--sandbox', '--local-infile=0', $this->connection()['database']];
     }
 
     /** A Process for one of the commands above. Symfony's directly, so Process::fake() in tests never intercepts it. */
