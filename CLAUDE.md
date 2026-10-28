@@ -1028,3 +1028,35 @@ Function ends access immediately. Pages: chrome-free `/display/sitrep` and `/dis
 `DisplayLayout.vue` with a small bottom-left "Log in" link — the Pi's on-screen Settings button is bottom-right; self-refreshing from
 `/json/display/*`; the dashboard variant drops `donor_quality`). To add a page for devices: add a Function in `config/devices.php`, a
 `display-access` route pair, and nothing else. Tests: `DeviceSessionTest`; Pi side `product/backend/test_browser_session_api.py`.
+
+## Working together: bugs, suggestions, proposals (read before planning anything)
+
+Two developers (Mark Kent and Daniel McFeeters) build this, each with Claude Code. Agree on direction before building.
+Classify every request first:
+- **Bug** (clearly not working: an error, a wrong result, UI that blocks or covers other things): fix it, no discussion.
+- **Suggestion** (a change to something already built, including preference-level UI such as button placement, wording or
+  field order): don't build it until the other developer agrees. Draft a GitHub Issue labeled `suggestion` (what, where, why).
+- **Idea** (something new) or anything needing a proposal (a schema/migration change, a warehouse operational flow or status
+  lifecycle, the permission model, big infrastructure, shared components such as RIForm, the backup format or the print/device
+  protocols): build only from an **agreed proposal**, and link it in the PR. If none exists, add a line to `IDEAS.md` and
+  draft a GitHub Issue labeled `proposal` instead of building. Agreed = the other developer said so on the issue; then add
+  a line to `ROADMAP.md`. Proposals live in Issues, not in files in the repo. Rejected ones are closed with the reason.
+
+**Design lanes:** database schema and data model are Daniel's; warehouse operational flows are Mark's; UX is shared once the
+direction is agreed; everything else has no lane. Check `git config user.name`: a session working for Mark must not design
+schemas or migrations (write the operational requirement and leave the storage question to Daniel), and a session working for
+Daniel must not design warehouse flows (state the data model and leave the flow to Mark). The lane owner has the final say
+after hearing the other. Once a proposal is agreed, either may build any of it. Keep it lean: the smallest thing that works,
+with no new table, dependency or service without a stated reason.
+
+### Keeping planning docs short
+
+`ROADMAP.md`, `IDEAS.md` and `TODO.md` are for navigating and deciding, not for recording implementation. Long ones go stale and
+get ignored, so:
+- One entry = a title plus one or two sentences of *what and why*. No schemas, file lists, step plans or code paths; those go
+  in the GitHub issue, or in `CLAUDE.md` once built.
+- No dated progress notes, "update" paragraphs or struck-through history. Done means delete the entry (git history keeps it).
+- Never copy an entry's detail into a second file. Link instead.
+- When you add to one of these files, also delete or shorten any entry you notice is built, abandoned or over three sentences.
+  If a file passes about 100 lines, say so and propose a trim rather than adding more.
+- Don't create new planning, analysis or work-in-progress `.md` files in the repo; use an Issue or the team's chat.
