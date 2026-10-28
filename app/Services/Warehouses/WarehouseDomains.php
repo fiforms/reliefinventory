@@ -5,6 +5,7 @@
 
 namespace App\Services\Warehouses;
 
+use App\Models\Control\InstanceAuditLog;
 use App\Models\Control\Warehouse;
 use App\Models\Control\WarehouseDomain;
 use App\Services\TurnstileService;
@@ -56,6 +57,8 @@ class WarehouseDomains
             $this->makePrimary($domain);
         }
 
+        InstanceAuditLog::record('domain.added', $warehouse, ['hostname' => $host, 'primary' => $domain->fresh()->is_primary]);
+
         return $domain->fresh();
     }
 
@@ -72,6 +75,7 @@ class WarehouseDomains
             ?? throw new InvalidArgumentException("{$hostname} is not mapped to this warehouse.");
         $wasPrimary = $domain->is_primary;
         $domain->delete();
+        InstanceAuditLog::record('domain.removed', $warehouse, ['hostname' => $domain->hostname]);
 
         if ($wasPrimary && $next = $warehouse->domains()->orderBy('id')->first()) {
             $this->makePrimary($next);

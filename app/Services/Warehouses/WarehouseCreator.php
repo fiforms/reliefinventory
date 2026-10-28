@@ -5,6 +5,7 @@
 
 namespace App\Services\Warehouses;
 
+use App\Models\Control\InstanceAuditLog;
 use App\Models\Control\Warehouse;
 use App\Services\FirstRunService;
 use Database\Seeders\PermissionsSeeder;
@@ -73,6 +74,7 @@ class WarehouseCreator
 
         [$code] = $this->codes->issue($warehouse, $createdBy);
         $warehouse->forceFill(['status' => 'awaiting_setup'])->save();
+        InstanceAuditLog::record('warehouse.created', $warehouse, ['training' => (bool) $warehouse->is_training], $createdBy);
 
         return $code;
     }

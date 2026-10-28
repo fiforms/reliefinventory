@@ -32,6 +32,7 @@ class Warehouse extends Model
     protected $fillable = ['schema_name', 'display_name', 'admin_email', 'status', 'listed', 'is_training', 'notes'];
 
     protected $casts = [
+        'archived_at' => 'datetime',
         'is_default' => 'boolean',
         'listed' => 'boolean',
         'is_training' => 'boolean',

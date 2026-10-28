@@ -5,6 +5,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Control\InstanceAuditLog;
 use App\Models\Control\Warehouse;
 use App\Services\TrainingReset;
 use App\Services\Warehouses\WarehouseContext;
@@ -39,6 +40,7 @@ class WarehouseTraining extends Command
                     return self::FAILURE;
                 }
                 $warehouse->forceFill(['status' => 'active'])->save();
+                InstanceAuditLog::record('training.enabled', $warehouse);
                 $this->components->info("{$warehouse->display_name} is on.");
 
                 return self::SUCCESS;
@@ -49,6 +51,7 @@ class WarehouseTraining extends Command
                     return self::FAILURE;
                 }
                 $warehouse->forceFill(['status' => 'suspended'])->save();
+                InstanceAuditLog::record('training.disabled', $warehouse);
                 $this->components->info("{$warehouse->display_name} is off. Its data is kept; `enable` turns it back on, `reset` clears it first.");
 
                 return self::SUCCESS;
@@ -73,6 +76,7 @@ class WarehouseTraining extends Command
         return $context->run($warehouse, function () use ($reset) {
             $stamp = $reset->archive();
             $reset->run($stamp);
+            InstanceAuditLog::record('training.reset', $warehouse, ['archive' => $stamp]);
             $status = $reset->status();
             if ($status['state'] !== 'complete') {
                 $this->components->error('The reset failed: '.($status['error'] ?? 'unknown error').' The warehouse is left unavailable; run the reset again to finish it.');
