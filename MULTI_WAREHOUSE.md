@@ -1007,6 +1007,25 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
 - Tests: `TrainingResetTest` (gates; archive + launch; a real rebuild against a provisioned training warehouse; `warehouse:training`), `TrainingLoginTest` (no cap, no
   mode; the class tools exist only in a training warehouse), and the other training tests now run in a training warehouse (`trainingWarehouse()` in `tests/Pest.php`).
 
+**Slice (f), warehouse removal, is built (2026-10-29)** as §6 describes it, by command (the instance console, phase 5, will offer the same):
+- **`php artisan warehouse:archive <id> [--undo]`** (`WarehouseRemoval`): the undoable step. The warehouse becomes `archived` (it already served nobody and left the
+  chooser, as any non-active warehouse does), remembering what it was (`status_before_archive`, `archived_at`); `--undo` restores that status. Never the default warehouse.
+- **`php artisan warehouse:remove <id> [--confirm="<name>"] [--no-backup]`**: only an archived warehouse, only with its name typed exactly (the prompt, or `--confirm`);
+  **no waiting period** (decided 2026-10-28). In order: a **final full backup** (`<backup dir>/removed-warehouses/<id>/`, kept until someone deletes it; if it fails,
+  nothing is removed; `--no-backup` is only for a warehouse with no database left) → the schema and database user dropped (the provisioner's `drop`, which re-checks the
+  warehouse is archived with a standard name; elsewhere `Provisioner::fromConfig()`) → its files folder and secrets (the key) deleted → **the accounts rule** → its queued
+  and failed jobs, then the control row (its domains, setup codes and provisioning commands cascade). The row goes last, so a half-removed warehouse stays `archived`
+  and running the command again finishes it. Everything is repeatable.
+- **The accounts rule** (`forgetAccounts`): a login stays if it is an instance admin or has a membership in another **real** warehouse (training memberships don't count);
+  otherwise it is deleted (its memberships go with it, training ones too) and its person's `account_id` copy in any training warehouse is cleared. A login that stays loses
+  only this membership. Invitations from this warehouse, and offers to a login that was removed, are deleted. Removing a training warehouse follows the same rule, so
+  it never removes a login that has a real home.
+- **Instance audit log** (`instance_audit_log` in the control schema, `InstanceAuditLog::record`): append-only, names the warehouse by id and by the name it had then, so an
+  entry still reads after the row is gone. Written for `warehouse.created`, `.archived`, `.unarchived`, `.removed` (with the backup path and the logins removed and kept),
+  `domain.added/.removed` and `training.enabled/.disabled/.reset`. The actor is a label (the signed-in login once the console exists, else "command line"). No page shows it yet.
+- Tests: `WarehouseRemovalTest` (archive and undo, the default is protected, the guards, the account matrix with a training warehouse, and a real warehouse removed end to end).
+- **Not built:** the console buttons and a page for the audit log (phase 5); a global-backup option to include removed warehouses' backups (phase 4).
+
 - **Backup and restore, the whole picture (confirmed 2026-10-29).** Two kinds, both required: (1) **per warehouse**, the normal flow
   (that warehouse's database and files; a warehouse admin's own restore is the same engine plus the lineage check, phase 4); (2) **whole
   instance** (instance admin only): control + accounts + every warehouse's database and files, restoring them all onto a new instance.
@@ -1038,7 +1057,7 @@ Slice (a) still open: `create` makes the schema and user but nothing yet migrate
   reach it that way: part of the restore slice).
 
 Order of the rest, agreed 2026-10-28: (b) restore hardening ✔; (c) setup codes and the awaiting-setup screen ✔ (restore path pending); (d) chooser and domain
-mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal.
+mapping ✔; (g-lite) invitations ✔; the restore path of (c) ✔; (e) training warehouse and removing Training Mode ✔; (f) removal ✔.
 
 ### Remaining work
 
