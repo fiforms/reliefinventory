@@ -161,6 +161,8 @@ function pollRollback() {
 	rollbackTimer = setInterval(tick, 2000);
 }
 
+const when = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+
 // ---- Application key (view-app-key) ----
 const keyPassword = ref('');
 const revealedKey = ref('');
