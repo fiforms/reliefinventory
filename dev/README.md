@@ -48,5 +48,6 @@ Read the one for the area you're changing.
 - [FIRST_RUN.md](notes/FIRST_RUN.md): setup wizard and its latch
 - [REPORTS.md](notes/REPORTS.md): report structure and definitions
 - [TRAINING_WAREHOUSE.md](notes/TRAINING_WAREHOUSE.md): class tooling
+- [ROUTES.md](notes/ROUTES.md): how `routes/web.php` is split into `routes/web/*.php`; where to add a route, which gate to use
 - [FRONTEND.md](notes/FRONTEND.md): RIForm, autosave screens, help guides
 - [SCANNING_INTERFACE_NOTES.md](notes/SCANNING_INTERFACE_NOTES.md): scanner UX rules and checklist

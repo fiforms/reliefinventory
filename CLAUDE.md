@@ -68,7 +68,8 @@ management commands: `instance:status` is the overview; the table is in `dev/not
 
 ## Outline
 
-- **Backend:** Laravel + Inertia. Page routes (`routes/web.php`) render Vue pages; data comes from `/json/*` endpoints gated by
+- **Backend:** Laravel + Inertia. Page routes (`routes/web/<area>.php`, indexed by `routes/web.php`; **read
+  `dev/notes/ROUTES.md` before adding or moving a route**) render Vue pages; data comes from `/json/*` endpoints gated by
   `permission:<key>` middleware. A page and its `/json` endpoints must use the same key. Permissions: `HasPermissions`,
   `PermissionsSeeder`.
 - **Frontend:** `resources/js/Pages` (1:1 with routes), shared `Components/RIForm.vue` for CRUD pages (read its header comment),

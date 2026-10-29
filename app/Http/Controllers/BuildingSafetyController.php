@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\RateLimiter;
  * building closeout, and fire-safety roll call.
  *
  * startRollCall()/closeRollCall() are deliberately guest-accessible (no
- * `auth` middleware, see routes/web.php) and PIN-verified internally
+ * `auth` middleware, see routes/web/kiosk.php) and PIN-verified internally
  * instead — these are meant to work from a locked kiosk with nobody
  * logged in. They never touch login state — unlike PIN *unlock*
  * (UnlockController), which logs someone in, this only resolves "who is
@@ -31,7 +31,7 @@ use Illuminate\Support\Facades\RateLimiter;
  * closeout() is different: "Confirm Building Empty" is never actually
  * reached from a locked/guest kiosk (VolunteerKiosk.vue only shows it once
  * someone's logged in), so it stays plain auth+permission:
- * operate-kiosk (see routes/web.php) and uses Auth::id() — a
+ * operate-kiosk (see routes/web/kiosk.php) and uses Auth::id() — a
  * PIN re-check on top of an already-authenticated session was pure
  * redundancy, not an extra safety measure.
  */

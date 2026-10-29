@@ -7,7 +7,7 @@ use Illuminate\Database\Migrations\Migration;
  * /order-filling already has a real menu_items row (2025_02_07_032546), sat
  * on 'general-access' since 2026_08_14_021841 while served by the generic
  * ComingSoon placeholder. Repoint it now that the real page exists, rather
- * than inserting a second row — see routes/web.php's OrderFillingController
+ * than inserting a second row — see routes/web/orders.php's OrderFillingController
  * registration in the same deploy.
  */
 return new class extends Migration

@@ -3,7 +3,7 @@
 
 <!-- AppAbout.vue
 
-	Reached from "About" in the profile menu (AuthenticatedLayout.vue); route /about-this-install in routes/web.php.
+	Reached from "About" in the profile menu (AuthenticatedLayout.vue); route /about-this-install in routes/web/account.php.
 	The version is the release tag (GitVersionService::release()) — null means an unversioned source install.
 -->
 

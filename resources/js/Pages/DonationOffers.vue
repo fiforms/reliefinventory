@@ -39,7 +39,7 @@ defineProps({
 	breadcrumb: {
 		type: Array,
 	},
-	// Whether to show the decision buttons at all — see routes/web.php.
+	// Whether to show the decision buttons at all — see routes/web/receiving.php.
 	// The endpoints are still independently gated server-side either way;
 	// this just avoids offering an action already known to 403.
 	canDecide: {

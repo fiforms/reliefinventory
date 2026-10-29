@@ -22,6 +22,9 @@ ideas go in [ROADMAP.md](ROADMAP.md). Don't record dates or build history here. 
   `scripts/systemd/reliefinventory-update.service`, its line in `reliefinventory-sudoers`, `config/system.php` `update_unit`/`update_status_file`, and the update tests in
   `SystemAdminTest`. **`scripts/update.sh` and `dev/CONVERT_TO_GIT.md` stay for now**, documented as deprecated (run from a shell only; its `--scheduled` backup mode is
   not deprecated). The `/json/system/*` update and offline-mode routes also duplicate `/json/instance/*`.
+- **Delete `/setup/design-votes`** and its supporting features and data structures (controllers, routes, pages, models, tables via a new migration, permissions, menu
+  entries, tests); this moved to a different app.
+- **Remove the Setup menu button linking to `/setup/firmware`**: it is already reached from `/setup/devices`.
 - Naming nits: `subrecord.packagetypes_id` in `ItemEntry.vue`; the `Transaction`-on-`orderdonations` and `UseModel` names; a migration with a hyphenated filename.
 - Index endpoints need pagination and server-side search (`PalletController::index` has a limit; most others return everything).
 

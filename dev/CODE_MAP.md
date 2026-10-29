@@ -6,7 +6,7 @@ subsystem rules read the matching file in [notes/](notes/); the doc map is [READ
 
 ## How the layers fit
 
-- **Page route** (`routes/web.php`, ~1,450 lines, grouped by `permission:<key>` middleware) renders an Inertia page in
+- **Page route** (`routes/web/<area>.php`, indexed by `routes/web.php`; rules in [notes/ROUTES.md](notes/ROUTES.md)) renders an Inertia page in
   `resources/js/Pages/<Name>.vue`; the page loads its data from `/json/*` routes in the same file. A page and its `/json` endpoints
   use the same permission key (`Models/Permission.php`, `database/seeders/PermissionsSeeder.php`, `Models/Concerns/HasPermissions`).
 - **Menu tiles** are `MenuItem` rows (seeded), each with a `permission_key`.
