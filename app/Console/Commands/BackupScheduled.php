@@ -13,7 +13,8 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * This warehouse's rollback snapshots, for the Docker scheduler (`warehouse:each "backup:scheduled"`, every hour): asks the warehouse's
+ * This warehouse's rollback snapshots, for the Docker scheduler (`warehouse:each "backup:scheduled"`, every hour) and a bare-metal install's
+ * hourly systemd timer (scripts/update.sh --scheduled runs the same command): asks the warehouse's
  * BackupSchedule what is due now and makes ONE recorded zip carrying every tier it satisfies (BackupSchedule::due()). Asking every hour
  * is safe: nothing due means no dump, and a warehouse that was suspended at its hour still gets its backup when it comes back. A
  * failed attempt leaves the tier due, so the next hour tries again. The backup itself waits its turn behind other warehouses'
@@ -30,6 +31,12 @@ class BackupScheduled extends Command
     {
         if (app(WarehouseContext::class)->current()->is_training) {
             $this->line('A training warehouse is not backed up on a schedule.');
+
+            return self::SUCCESS;
+        }
+        // RI_BACKUP_ENABLED=false: the whole installation's switch (Docker: the scheduler script also checks it; bare metal has only this).
+        if (! config('backup.container.enabled')) {
+            $this->line('Scheduled backups are turned off for this installation (RI_BACKUP_ENABLED).');
 
             return self::SUCCESS;
         }

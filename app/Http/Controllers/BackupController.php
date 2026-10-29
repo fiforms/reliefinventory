@@ -43,6 +43,8 @@ class BackupController extends Controller
     {
         return BackupSchedule::current()->toArray() + [
             'scheduler_enabled' => (bool) config('backup.container.enabled'),
+            // The schedule's hours are in the server's timezone (what now() is); the page says which, so nobody has to guess.
+            'timezone' => config('app.timezone'),
             'last_size_bytes' => Backup::where('status', 'complete')->orderByDesc('id')->value('size_bytes'),
         ];
     }
@@ -129,23 +131,6 @@ class BackupController extends Controller
 
         // BinaryFileResponse streams from disk and honours Range requests, so a multi-GB download can resume.
         return response()->download($backup->path(), $backup->filename, ['Cache-Control' => 'no-store']);
-    }
-
-    /**
-     * Download a scheduled (tiered) backup of a bare-metal install: /var/backups/.../<tier>/<stamp>.zip, made by
-     * scripts/update.sh and readable by the web user for exactly this. Same permission and logging as an on-demand
-     * zip. Tier and stamp are matched against fixed patterns, so nothing from the URL ever reaches the filesystem
-     * unchecked, and a Docker install (no tiers) has nothing to serve.
-     */
-    public function downloadTier(string $tier, string $stamp)
-    {
-        abort_if(config('system.runtime') === 'docker', 404);
-        abort_unless(in_array($tier, ['hourly', 'daily', 'monthly', 'yearly'], true) && preg_match('/^\d{8}-\d{6}$/', $stamp) === 1, 404);
-        $path = rtrim(config('system.backup_dir'), '/')."/{$tier}/{$stamp}.zip";
-        abort_unless(is_file($path) && is_readable($path), 404);
-        Log::notice('Scheduled backup downloaded', ['tier' => $tier, 'stamp' => $stamp, 'person' => Auth::id()]);
-
-        return response()->download($path, "relief-backup-{$tier}-{$stamp}.zip", ['Cache-Control' => 'no-store']);
     }
 
     public function destroy(int $id)

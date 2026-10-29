@@ -1,5 +1,6 @@
 <?php
 
+use App\Support\LegacyBackupSettings;
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
@@ -39,6 +40,14 @@ return new class extends Migration
             $table->string('last_status', 20)->nullable();   // complete | failed
             $table->timestamps();
         });
+
+        // A bare-metal install with the old panel's settings file keeps that schedule.
+        $legacy = LegacyBackupSettings::scheduleRow((string) config('system.settings_file'), (string) config('app.timezone'));
+        if ($legacy !== null) {
+            DB::table('backup_schedule')->insert(['id' => 1, 'created_at' => now(), 'updated_at' => now()] + $legacy);
+
+            return;
+        }
 
         $withFiles = config('backup.container.scope') === 'full';
         DB::table('backup_schedule')->insert([

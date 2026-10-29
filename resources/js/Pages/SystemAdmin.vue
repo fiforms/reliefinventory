@@ -5,18 +5,18 @@
 
 	Warehouse Backups (/setup/system) — backups and keys for the current warehouse. (Software updates, offline mode and
 	whole-instance backups are on Instance Admin, /setup/instance, InstanceAdmin.vue.) Each section is shown only when
-	the person holds its permission AND the platform can do it:
+	the person holds its permission:
 
-	  admin-system     Scheduled backups (systemd: the tiered backups, their schedule and retention, from
-	                   backup-settings.conf read by the hourly timer — see scripts/BACKUPS.md), and rolling the warehouse
-	                   back to a listed backup (password re-entry; the progress shows on /setup/restore).
-	  manage-backups   Create a backup zip (database, or database + uploaded files), list / download / delete them, and
-	                   (Docker) this warehouse's snapshot schedule: hourly / daily / weekly / monthly tiers and how many of
-	                   each to keep (BackupController::schedule / updateSchedule, BackupSchedule).
+	  manage-backups   Create a backup zip (database, or database + uploaded files), list / download / delete them, and this
+	                   warehouse's snapshot schedule: hourly / daily / weekly / monthly tiers and how many of each to keep
+	                   (BackupController::schedule / updateSchedule, BackupSchedule). The same page and schedule serve a Docker
+	                   install (the scheduler container asks every hour) and a bare-metal one (its systemd timer runs
+	                   scripts/update.sh --scheduled, which asks the same command).
+	  admin-system     Rolling the warehouse back to a listed backup (password re-entry; progress shows here, polled from
+	                   /w/<id>/restore-status).
 	  view-app-key     Reveal the warehouse key (password re-entry).
 
-	`runtime` ('systemd' | 'docker') comes from config('system.runtime'). Server halves: SystemController
-	(status, schedule), BackupController (zips, key).
+	Server half: BackupController (zips, schedule, rollback, key).
 -->
 
 <script setup>
@@ -25,107 +25,22 @@ import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import { currentWarehouseId } from '@/bootstrap';
 import axios from 'axios';
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, ref } from 'vue';
 
 const props = defineProps({
 	breadcrumb: { type: Array },
-	runtime: { type: String, default: 'systemd' },
 	canAdminSystem: { type: Boolean, default: false },
 	canManageBackups: { type: Boolean, default: false },
 	canViewAppKey: { type: Boolean, default: false },
 });
 
-const docker = computed(() => props.runtime === 'docker');
-
-const status = ref(null);
 const error = ref('');
 const notice = ref('');
-const backingUp = ref(false);
-const savingSettings = ref(false);
-const settingsSavedAt = ref(null);
-
-const settings = reactive({
-	frequency: 'daily',
-	hourly: false,
-	hour: 2,
-	dow: 7,
-	tz: 'America/Los_Angeles',
-	keep_hourly: 48,
-	keep_daily: 14,
-	keep_monthly: 12,
-	keep_yearly: 3,
-});
-
-const dayNames = { 1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday' };
 
 function fail(e, fallback) {
 	error.value = e.response?.data?.errors
 		? Object.values(e.response.data.errors).flat().join(' ')
 		: e.response?.data?.message || fallback;
-}
-
-async function fetchStatus(applySettings = true) {
-	const response = await axios.get('/json/system/status');
-	status.value = response.data;
-	if (applySettings && response.data.backup_settings) {
-		Object.assign(settings, response.data.backup_settings);
-	}
-	return response.data;
-}
-
-// Systemd only: a scheduled-style backup right now, filed into the Hourly tier.
-async function backupNow() {
-	backingUp.value = true;
-	error.value = '';
-	notice.value = '';
-	try {
-		await axios.post('/json/system/backup');
-		notice.value = 'Backup started — the list below will refresh shortly.';
-		setTimeout(() => fetchStatus(false).catch(() => {}), 8000);
-		setTimeout(() => {
-			fetchStatus(false).catch(() => {});
-			backingUp.value = false;
-		}, 25000);
-	} catch (e) {
-		backingUp.value = false;
-		error.value = e.response?.data?.message || 'Could not start the backup.';
-	}
-}
-
-async function saveSettings() {
-	savingSettings.value = true;
-	error.value = '';
-	try {
-		const response = await axios.put('/json/system/backup-settings', settings);
-		Object.assign(settings, response.data.backup_settings);
-		settingsSavedAt.value = new Date();
-	} catch (e) {
-		error.value = e.response?.data?.message || 'Could not save backup settings.';
-	} finally {
-		savingSettings.value = false;
-	}
-}
-
-function formatStamp(stamp) {
-	// 20260814-112703 -> 2026-08-14 11:27, already in the configured backup
-	// timezone (settings.tz below) — update.sh stamps backups with TZ="$BACKUP_TZ",
-	// not server-local time, specifically so this matches what's configured on
-	// the Scheduled Backups section.
-	const m = stamp?.match(/^(\d{4})(\d{2})(\d{2})-(\d{2})(\d{2})/);
-	return m ? `${m[1]}-${m[2]}-${m[3]} ${m[4]}:${m[5]}` : stamp;
-}
-
-function formatMarkerDate(marker) {
-	const m = marker?.match(/^(\d{4})(\d{2})(\d{2})$/);
-	return m ? `${m[1]}-${m[2]}-${m[3]}` : marker;
-}
-
-function formatBytes(bytes) {
-	if (bytes == null) return 'unknown';
-	const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-	let i = 0;
-	while (bytes >= 1024 && i < units.length - 1) { bytes /= 1024; i++; }
-	return `${bytes.toFixed(1)} ${units[i]}`;
 }
 
 // ---- Backup zips (manage-backups) ----
@@ -282,9 +197,6 @@ async function copyKey() {
 }
 
 onMounted(async () => {
-	if (props.canAdminSystem) {
-		fetchStatus().catch(() => { error.value = 'Could not load system status.'; });
-	}
 	if (props.canManageBackups) {
 		await loadBackups();
 		// Poll while a backup runs (and keep polling so a second admin's backup shows up).
@@ -327,8 +239,6 @@ onUnmounted(() => {
 					backup folder (named “before-rollback”) for {{ keepDays }} days.
 				</p>
 			</section>
-
-			<div v-if="canAdminSystem && !status" class="text-gray-500">Loading system status…</div>
 
 			<!-- The key is not in any backup: say so, loudly, wherever backups are made or listed -->
 			<section v-if="canAdminSystem || canManageBackups" class="rounded-lg border-2 border-red-400 bg-red-50 p-5 space-y-2 text-sm text-red-900">
@@ -450,8 +360,8 @@ onUnmounted(() => {
 				</p>
 			</section>
 
-			<!-- Snapshot schedule: Docker / R Station — the scheduler container asks this warehouse every hour -->
-			<section v-if="canManageBackups && docker && form" class="bg-white shadow rounded-lg p-6 space-y-4">
+			<!-- Snapshot schedule: the scheduler (Docker) or the systemd timer (bare metal) asks this warehouse every hour -->
+			<section v-if="canManageBackups && form" class="bg-white shadow rounded-lg p-6 space-y-4">
 				<h2 class="text-lg font-semibold">Snapshot Schedule</h2>
 				<p class="text-sm text-gray-700">
 					Snapshots are ordinary backups made automatically, so this warehouse can be rolled back to how it was an hour, a day or a week ago
@@ -460,7 +370,7 @@ onUnmounted(() => {
 					(the RI Launcher can do that for you).
 				</p>
 				<p v-if="!schedule.scheduler_enabled" class="rounded bg-amber-100 border border-amber-400 text-amber-900 px-3 py-2 text-sm">
-					Scheduled backups are turned off for this whole installation (<span class="font-mono">RI_BACKUP_ENABLED=false</span> in its compose file), so nothing below runs.
+					Scheduled backups are turned off for this whole installation (<span class="font-mono">RI_BACKUP_ENABLED=false</span> in its settings), so nothing below runs.
 				</p>
 				<form @submit.prevent="saveSchedule" class="space-y-3 text-sm">
 					<div class="border rounded p-3 flex flex-wrap items-center gap-x-6 gap-y-2">
@@ -470,7 +380,7 @@ onUnmounted(() => {
 					</div>
 					<div class="border rounded p-3 flex flex-wrap items-center gap-x-6 gap-y-2">
 						<label class="flex items-center gap-2 w-28 font-medium"><input type="checkbox" v-model="form.daily_enabled" class="rounded border-gray-300" /> Daily</label>
-						<label class="flex items-center gap-2">After <select v-model.number="form.daily_hour" class="rounded-md border-gray-300 text-sm"><option v-for="h in 24" :key="h" :value="h - 1">{{ String(h - 1).padStart(2, '0') }}:00</option></select> server time</label>
+						<label class="flex items-center gap-2">After <select v-model.number="form.daily_hour" class="rounded-md border-gray-300 text-sm"><option v-for="h in 24" :key="h" :value="h - 1">{{ String(h - 1).padStart(2, '0') }}:00</option></select> ({{ schedule.timezone }})</label>
 						<label class="flex items-center gap-2">Keep the newest <input type="number" min="1" max="90" v-model.number="form.daily_keep" class="w-20 rounded-md border-gray-300 text-sm" /></label>
 						<label class="flex items-center gap-2"><input type="checkbox" v-model="form.daily_with_files" class="rounded border-gray-300" /> include uploaded files</label>
 					</div>
@@ -505,107 +415,6 @@ onUnmounted(() => {
 						above are deleted after {{ keepDays }} days.
 					</li>
 				</ul>
-			</section>
-
-			<!-- Scheduled backups: systemd — tiers, run now, schedule -->
-			<section v-if="canAdminSystem && status && !docker && status.backups" class="bg-white shadow rounded-lg p-6 space-y-4">
-				<h2 class="text-lg font-semibold">Scheduled Backups</h2>
-				<p class="text-xs text-gray-500">Times below are in the configured backup timezone ({{ settings.tz }}), not your browser's local time.</p>
-				<p class="text-xs text-gray-500">
-					Hourly holds every scheduled backup (hourly, daily/weekly, or run from here) for short-term
-					rollback; only the day's scheduled backup is promoted into Daily, and only that promotion can
-					reach Monthly/Yearly — so hourly backups or clicking "Run a Scheduled Backup Now" repeatedly can never crowd
-					out that history. Every backup is a full copy of the database, not incremental, and is the same
-					.zip format as the backups above, and can be downloaded from the lists here (if you may manage backups).
-					<strong>Uploaded files are not part of the scheduled backups</strong> — make a
-					“Database + uploaded files” backup above when they need protecting too.
-				</p>
-				<div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-					<div v-for="tier in ['hourly', 'daily', 'monthly', 'yearly']" :key="tier" class="border rounded p-3">
-						<h3 class="font-medium capitalize">{{ tier }} <span class="text-gray-400 font-normal">({{ status.backups.tiers[tier].count }})</span></h3>
-						<ul class="text-xs font-mono text-gray-600 mt-1 space-y-0.5 max-h-48 overflow-y-auto">
-							<li v-for="entry in status.backups.tiers[tier].entries" :key="entry.name">
-								{{ formatStamp(entry.name) }}<span v-if="entry.size" class="text-gray-400"> · {{ formatBytes(entry.size) }}</span>
-								<a v-if="canManageBackups && entry.downloadable" :href="$withWarehouse(`/json/backups/tier/${tier}/${entry.name}/download`)"
-									class="font-sans text-blue-700 underline ml-1" title="Download this backup (.zip)">download</a>
-							</li>
-							<li v-if="status.backups.tiers[tier].count === 0" class="text-gray-400 font-sans">none yet</li>
-						</ul>
-					</div>
-				</div>
-				<p class="text-sm text-gray-600">
-					Last scheduled backup: {{ formatMarkerDate(status.backups.last_scheduled) || 'never' }}
-					· Disk free: {{ formatBytes(status.backups.disk_free_bytes) }}
-				</p>
-				<PrimaryButton :disabled="backingUp" @click="backupNow">
-					{{ backingUp ? 'Backing up…' : 'Run a Scheduled Backup Now' }}
-				</PrimaryButton>
-
-				<h3 class="text-base font-semibold pt-2">Schedule</h3>
-				<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-					<label class="block">
-						<span class="text-gray-700">Frequency</span>
-						<select v-model="settings.frequency" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-							<option value="daily">Daily</option>
-							<option value="weekly">Weekly</option>
-						</select>
-					</label>
-					<label class="block" v-if="settings.frequency === 'weekly'">
-						<span class="text-gray-700">Day of week</span>
-						<select v-model.number="settings.dow" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-							<option v-for="(name, num) in dayNames" :key="num" :value="Number(num)">{{ name }}</option>
-						</select>
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Time of day</span>
-						<select v-model.number="settings.hour" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-							<option v-for="h in 24" :key="h - 1" :value="h - 1">{{ String(h - 1).padStart(2, '0') }}:00</option>
-						</select>
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Timezone</span>
-						<select v-model="settings.tz" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm">
-							<option v-for="tz in status.timezones" :key="tz" :value="tz">{{ tz }}</option>
-						</select>
-					</label>
-					<label class="flex items-start gap-2 sm:col-span-2">
-						<input type="checkbox" v-model="settings.hourly" class="mt-1 rounded border-gray-300" />
-						<span>
-							<span class="text-gray-700">Also back up every hour</span>
-							<span class="block text-xs text-gray-500">
-								In addition to the {{ settings.frequency }} backup above. Hourly backups are kept in the
-								Hourly tier only (see "Hourly backups to keep" — 48 is two days of hourly backups).
-							</span>
-						</span>
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Hourly backups to keep</span>
-						<input type="number" min="1" max="500" v-model.number="settings.keep_hourly" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Daily backups to keep</span>
-						<input type="number" min="1" max="365" v-model.number="settings.keep_daily" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Monthly backups to keep</span>
-						<input type="number" min="0" max="120" v-model.number="settings.keep_monthly" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-					<label class="block">
-						<span class="text-gray-700">Yearly backups to keep</span>
-						<input type="number" min="0" max="50" v-model.number="settings.keep_yearly" class="mt-1 block w-full border-gray-300 rounded-md shadow-sm" />
-					</label>
-				</div>
-				<div class="flex gap-3 items-center">
-					<PrimaryButton :disabled="savingSettings" @click="saveSettings">
-						{{ savingSettings ? 'Saving…' : 'Save Schedule' }}
-					</PrimaryButton>
-					<span v-if="settingsSavedAt" class="text-sm text-green-700">Saved {{ settingsSavedAt.toLocaleTimeString() }}</span>
-				</div>
-				<p class="text-xs text-gray-500">
-					Changes take effect at the next hourly check — no server restart needed. "Hourly backups to
-					keep" counts every raw backup — hourly, scheduled, or run from here; Daily/Monthly/Yearly are space-free
-					copies of the day's/month's/year's first scheduled backup.
-				</p>
 			</section>
 
 			<!-- Application key -->

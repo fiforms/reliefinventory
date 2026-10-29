@@ -219,24 +219,21 @@ Issues identified October 8, 2026
    its `id` on the real `<input>` (labels don't link, app-wide); decide whether Docker should print a setup code in
    the log by default instead of leaving the wizard open to the first visitor.
 
-14. Backup tiers: Docker done, bare-metal duplicate still to retire
+14. Backup tiers: one scheduler for Docker and bare metal
  - **Done:** every platform now makes the same zip (`php artisan backup:create`, scope database | full | storage), restores
    through the same pipeline (`backup:restore`, first-run wizard with an optional second files zip), and shows one merged
    Updates & Backups page that hides what the platform can't do. See `scripts/BACKUPS.md`.
  - **Done (branch `scheduled-backups`):** the Docker / R Station path now has per-warehouse hourly/daily/weekly/monthly tiers with a
    schedule form on Warehouse Backups, roll back to a listed snapshot, scheduled whole-instance backups on Instance Admin, and an
    instance-level trust so the RI Launcher can pull them (`scripts/BACKUPS.md`).
- - **Open — decide:** bare metal still has its own, older tier system (`update.sh` promote/prune, `backup-settings.conf`, the systemd
-   timer units, the `/json/system/backup*` endpoints, `BackupController::downloadTier` and the systemd branch of `SystemAdmin.vue`).
-   It duplicates the Docker one and MULTI_WAREHOUSE.md marks it for review/removal, but `demo` and `wa26` (above) run those units today:
-   deleting the code stops their scheduled backups at the next `git pull`. Removing it needs those two moved to Docker (or their units
-   disabled on purpose) first. Also the `/json/system/*` update and offline-mode routes duplicate `/json/instance/*`.
- - **Also open:** the bare-metal tiered backups no longer keep a copy of `.env` beside each backup (a zip never holds the
-   application key) — decide whether the key's only copy being "write it down from the admin page" is enough. The tiers are now
-   **database only** (decided 2026-10-20): uploaded files get no scheduled backup on bare metal — only the admin page's
-   "Database + uploaded files" zips (manual) or a filesystem backup — so consider a scheduled `--scope=full` job or a setting.
-   Tier backups are downloadable from the page (group-readable by the web user). `setup:reset` exists for starting over
-   after a failed forced restore (typed-phrase, terminal-only).
+ - **Done:** bare metal no longer has a backup system of its own. Its hourly systemd timer runs `update.sh --scheduled`, which only
+   delegates to the app's `backup:scheduled` (same schedule table, tiers, form and roll-back as Docker); the old tier logic in
+   `update.sh`, `backup-settings.conf` (migrated once by `LegacyBackupSettings`), the `/json/system/backup*` endpoints, the tier download
+   route and the systemd branch of the page are gone. Moving `demo` and `wa26`: `scripts/BACKUPS.md` "Moving an existing bare-metal install".
+ - **Still open:** the yearly tier is not carried over (there is none; up to 36 monthlies instead). Zips are now written by the web user
+   rather than root-owned folders, so anything that compromises the web app can delete them: keep an off-box copy (the RI Launcher).
+   A scheduled `--scope=full` is now just a tier's "include uploaded files" box. The `/json/system/*` update and offline-mode routes
+   still duplicate `/json/instance/*`. `setup:reset` exists for starting over after a failed forced restore (typed-phrase, terminal-only).
 
 15. Barcode (UPC) lookup — built 2026-10-21 (branch `upc-lookup`), see CLAUDE.md "Barcode scan → item"
  - **Scanning interface playbook:** `SCANNING_INTERFACE_NOTES.md` (repo root) records what we learned making Donation Sorting

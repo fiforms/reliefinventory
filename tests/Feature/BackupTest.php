@@ -8,6 +8,7 @@ use App\Services\DatabaseTools;
 use App\Services\RestoreService;
 use App\Services\Warehouses\WarehouseContext;
 use App\Services\Warehouses\WarehouseLayout;
+use App\Support\LegacyBackupSettings;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
@@ -291,7 +292,7 @@ test('the merged page opens for either permission and tells each person what the
     $this->actingAs(userWithPermissions('manage-backups', 'view-app-key'))->get('/setup/system')
         ->assertInertia(fn ($page) => $page->where('canViewAppKey', true));
     $this->actingAs(userWithPermissions('admin-system'))->get('/setup/system')
-        ->assertInertia(fn ($page) => $page->where('canAdminSystem', true)->where('canManageBackups', false)->where('runtime', 'systemd'));
+        ->assertInertia(fn ($page) => $page->where('canAdminSystem', true)->where('canManageBackups', false));
     $this->actingAs(userWithPermissions('general-access'))->get('/setup/system')->assertForbidden();
 });
 
@@ -315,35 +316,6 @@ test('only a dump that ends with the end-of-dump marker counts as complete', fun
     $process = $tools->process($tools->dumpCommand($real));
     $process->run();
     expect($tools->dumpIsComplete($real))->toBeTrue();
-});
-
-test('a scheduled (tier) backup can be downloaded by manage-backups holders, and nothing else is reachable', function () {
-    $dir = $this->tmp.'/tiers';
-    config(['system.backup_dir' => $dir]);
-    mkdir("$dir/daily", 0777, true);
-    mkdir("$dir/hourly/20260101-010000", 0777, true);               // an old-style directory
-    file_put_contents("$dir/daily/20260102-030000.zip", 'zip-bytes');
-    file_put_contents("$dir/secret.zip", 'not in a tier');
-
-    $admin = userWithPermissions('manage-backups');
-    $get = fn ($path) => test()->actingAs($admin)->get("/json/backups/tier/{$path}/download");
-
-    $ok = $get('daily/20260102-030000')->assertOk()->assertDownload('relief-backup-daily-20260102-030000.zip');
-    expect($ok->headers->get('Cache-Control'))->toContain('no-store');
-
-    $get('daily/20260109-030000')->assertNotFound();                // no such backup
-    $get('hourly/20260101-010000')->assertNotFound();               // a directory, not a zip
-    $get('weekly/20260102-030000')->assertNotFound();               // not a tier
-    $get('daily/..%2Fsecret')->assertNotFound();                    // the stamp is a fixed pattern
-    $get('daily/20260102-030000.zip')->assertNotFound();
-
-    // the same permission as an on-demand zip, not admin-system's
-    $this->actingAs(userWithPermissions('admin-system'))->get('/json/backups/tier/daily/20260102-030000/download')->assertForbidden();
-    $this->actingAs(userWithPermissions('general-access'))->get('/json/backups/tier/daily/20260102-030000/download')->assertForbidden();
-
-    // a Docker install has no tiers to serve
-    config(['system.runtime' => 'docker']);
-    $get('daily/20260102-030000')->assertNotFound();
 });
 
 // ---- per warehouse, one at a time (MULTI_WAREHOUSE.md §10/§11) ----------------------------------------
@@ -473,6 +445,36 @@ test('backup:scheduled makes one zip for what is due, tags its tiers, and makes 
         ->and(is_file($latest->path()))->toBeTrue()
         ->and(BackupSchedule::current()->last_status)->toBe('complete');
     $this->travelBack();
+});
+
+test('RI_BACKUP_ENABLED=false stops every scheduled snapshot, whatever a warehouse chose', function () {
+    BackupSchedule::current()->update(['daily_enabled' => true, 'daily_hour' => 0, 'hourly_enabled' => true]);
+    config(['backup.container.enabled' => false]);
+
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('turned off');
+    expect(Backup::count())->toBe(0);
+
+    config(['backup.container.enabled' => true]);
+    $this->artisan('backup:scheduled')->assertSuccessful();
+    expect(Backup::count())->toBe(1);
+});
+
+test('a legacy schedule row names only columns the table has, and the migration can insert it', function () {
+    $path = sys_get_temp_dir().'/ri-legacy-feature-'.bin2hex(random_bytes(4)).'.conf';
+    file_put_contents($path, "BACKUP_FREQUENCY=weekly\nBACKUP_DOW=7\nHOURLY_BACKUPS=1\nBACKUP_TZ=America/Los_Angeles\n");
+    $row = LegacyBackupSettings::scheduleRow($path, 'UTC');
+    unlink($path);
+
+    expect(array_diff(array_keys($row), Schema::getColumnListing('backup_schedule')))->toBe([]);
+    DB::table('backup_schedule')->where('id', 1)->update($row);
+    $schedule = BackupSchedule::current();
+    expect($schedule->weekly_enabled)->toBeTrue()->and($schedule->weekly_dow)->toBe(0)->and($schedule->hourly_enabled)->toBeTrue();
+});
+
+test('the schedule says which timezone its hours are in', function () {
+    config(['app.timezone' => 'America/New_York']);
+
+    $this->actingAs(userWithPermissions('manage-backups'))->getJson('/json/backups/schedule')->assertOk()->assertJsonPath('timezone', 'America/New_York');
 });
 
 test('a training warehouse and a running backup both stop a scheduled snapshot', function () {

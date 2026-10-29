@@ -8,7 +8,7 @@ php artisan backup:create [--scope=database|full|storage] [--dest=DIR [--name=NA
 
 | scope | holds | used for |
 |---|---|---|
-| `database` (default) | the database dump | the bare-metal tiered backups, the Docker daily and pre-migration dumps, everyday backups |
+| `database` (default) | the database dump | scheduled snapshots, the pre-update and pre-migration backups, everyday backups |
 | `full` | the dump **and** the uploaded files | "Database + uploaded files" on the admin page; `RI_BACKUP_SCOPE=full` in Docker |
 | `storage` | the uploaded files only | disaster recovery — a good copy of the files to pair with a database zip. CLI only; the admin page doesn't offer it |
 
@@ -65,95 +65,84 @@ fallback):
 
 | section | permission | systemd (bare metal) | docker (incl. R Station local server) |
 |---|---|---|---|
-| Software update | `admin-system` | check for / install updates (`update.sh`) | version only; upgrade by pulling an image |
+| Software update | `admin-system` | check for / install updates (`update.sh`, deprecated) | version only; upgrade by pulling an image |
 | Offline mode | `admin-system` | ✔ | ✔ |
 | Create a backup + Backups list | `manage-backups` | ✔ | ✔ |
-| Scheduled backups | `admin-system` | tiers, "Run a Scheduled Backup Now", schedule + retention form | the snapshot schedule (`manage-backups`, below) |
+| Snapshot schedule + roll back | `manage-backups` (roll back: `admin-system`) | ✔ the same | ✔ |
 | Application key | `view-app-key` | ✔ | ✔ |
 
-The systemd-only endpoints (`/json/system/update`, `check-updates`, `backup`, `backup-settings`) answer **409** in a
-container, so hiding them in the page isn't the only guard. The page opens for `admin-system` **or** `manage-backups`;
+The systemd-only update endpoints (`/json/system/update`, `check-updates`) answer **409** in a container, so hiding them in the page
+isn't the only guard. (Backups are the same on both: the page has no per-platform backup section.) The page opens for `admin-system` **or** `manage-backups`;
 the nav entry is still gated on `admin-system`.
 
-## Bare metal (systemd): tiered scheduled backups
+## Bare metal (systemd): the same scheduler, started by a timer
 
-Made by `scripts/update.sh` (every full update backs up first; `--backup-only` and `--scheduled` back up without
-updating). It runs `backup:create --scope=database --dest=<staging> --name=<stamp>` as the app user (so no root-owned files
-appear under `storage/`), moves the zip beside the tiers (same filesystem — a rename) and files it under
-`/var/backups/reliefinventory/`. The zips are `root:<app user>` mode `640` (and the tier directories `750`), re-applied on every
-run: the **web user can read them**, which is what lets the admin page offer them for download
-(`GET /json/backups/tier/{tier}/{stamp}/download`, permission `manage-backups`, logged — the same gate as an on-demand zip;
-tier and stamp are matched against fixed patterns). Nobody else on the box can. A zip holds the data but never the application key:
+A bare-metal install has **no backup logic of its own any more**. It uses the schedule, tiers, retention, form and roll-back described in
+the next section; the only bare-metal piece is the thing that asks every hour:
 
-```
-hourly/<YYYYmmdd-HHMMSS>.zip   every backup: hourly, scheduled, or on-demand   keep KEEP_HOURLY (48)
-daily/<stamp>.zip              that day's scheduled backup                     keep KEEP_DAILY   (14)
-monthly/<stamp>.zip            first daily promotion of the month              keep KEEP_MONTHLY (12)
-yearly/<stamp>.zip             first daily promotion of the year               keep KEEP_YEARLY  (3)
-```
+- `reliefinventory-backup.timer` fires **hourly** (`Persistent=true`, so downtime over the hour is caught up) and runs
+  `update.sh --scheduled`. That takes the server-wide lock (`/var/lock/reliefinventory-update.lock`, so a snapshot never runs in the middle
+  of an update, or another instance's), then runs `warehouse:each "backup:scheduled"` and `warehouse:each "backup:prune"` as the app user and
+  exits. No log file per tick (it fires 24 times a day and usually does nothing; `journalctl -u reliefinventory-backup.service` has it).
+  `backup:scheduled` decides whether a snapshot is due from the warehouse's `backup_schedule` row — exactly as in Docker.
+- **A full update (`update.sh`) and `--backup-only`** take an ordinary recorded backup first: `backup:create --scope=database` as the app
+  user, the same as the admin page's *Back Up Now*. It is the roll-back point the failure message names, is listed on **Warehouse Backups**, and
+  expires after `RI_BACKUP_KEEP_DAYS` like any backup made by hand.
+- **Where zips go:** `backup.dir` (`RI_BACKUP_DIR`; default `storage/backups` under the app), in the warehouse's own folder
+  `<dir>/warehouses/<id>/`, written by the app user. Set `RI_BACKUP_DIR` in `.env` to put them elsewhere (a bigger disk, a mount) — the folder
+  must be writable by the app user. *Unlike the old tiers (root-owned, which the web app could only read), these can be deleted by anything
+  running as the web user*; the roll-back safety net is only as safe as the web app, so keep an off-box copy too (the RI Launcher pulls them).
+- **Schedule:** the **Snapshot Schedule** on `/setup/system` (`manage-backups`): hourly / daily / weekly / monthly tiers, how many of each to
+  keep, and whether a tier includes the uploaded files. Hours are in the server's timezone (`APP_TIMEZONE`; the form says which).
+  `RI_BACKUP_ENABLED=false` in `.env` stops every scheduled snapshot on the installation.
+- **On-demand backups** are the admin page's *Back Up Now* (a detached `backup:run` as the web user). There is no `backup-now` systemd unit or
+  sudoers rule any more; only `reliefinventory-update.service` (deprecated) is still started by the web app.
 
-(Backups made before the zip format are `<stamp>/` directories holding `db.sql.gz` + `storage-app.tar.gz` + `env.backup`;
-they stay listed and age out through the same tiers. Restore one by hand: `gunzip < db.sql.gz | mysql <db>`.)
+### Moving an existing bare-metal install (demo, wa26, …)
 
-`hourly/` is a flat, undeduplicated recent-backups tier — its job is to let you roll back to whichever attempt preceded a
-bad one (three "Run a Scheduled Backup Now" clicks or update attempts in the same hour each get their own entry). Only the
-once-a-day **scheduled** backup (never an on-demand one) is promoted into `daily/` — as a **hard link**, so promotion costs
-no disk space — and only that promotion can promote into `monthly/`/`yearly/`. An on-demand backup can therefore never
-crowd out the daily/monthly/yearly history (`promote()`/`prune_tier()` in `update.sh`; pruning is by file mtime, not name).
-
-The stamp is generated in `BACKUP_TZ` (`TZ="$BACKUP_TZ" date ...`), not server-local time — the panel displays it verbatim.
-Every backup is a full copy of the database, not incremental: simple to restore from any single file, which matters more here than disk space.
-**The tiers hold the database only — uploaded files are not in them** (an update never touches uploads, so a rollback point
-doesn't need them). Protect the files with a "Database + uploaded files" backup from the admin page (or
-`backup:create --scope=full` from a cron/script), or back up `storage/app` at the filesystem level.
-
-**Hourly backups (optional):** with `HOURLY_BACKUPS=1` each firing of the hourly timer also takes a backup if none has been
-taken that hour (`.last-hourly`). These are ordinary `hourly/` entries, never promoted; `KEEP_HOURLY` decides how far back
-they reach (48 = two days). Off by default.
-
-**Schedule settings:** `storage/app/backup-settings.conf` (copy `scripts/backup-settings.conf.example` to start; keys and
-valid values are documented there). Defaults: 2am `America/Los_Angeles`, daily, keeping 48/14/12/3. The timer
-(`reliefinventory-backup.timer`) fires **hourly**; each firing runs `update.sh --scheduled`, which exits at once unless a
-backup is due: at/past `BACKUP_HOUR` in `BACKUP_TZ` (past, not exactly at — downtime over the hour self-heals the same
-day, helped by `Persistent=true`), the right `BACKUP_DOW` in weekly mode, and none recorded yet that day (`.last-scheduled`).
-The panel rewrites the file (`www-data` owns it; no root, no systemd) and `update.sh` **never sources** it — each key is
-extracted and checked against a strict pattern, bad values fall back to defaults.
-
-"Run a Scheduled Backup Now" and "Install Update" start `reliefinventory-backup-now.service` / `reliefinventory-update.service`
-through the sudoers rule in `scripts/systemd/reliefinventory-sudoers`, which allows exactly those two
-`systemctl start --no-block` commands. The panel follows a running update through `storage/app/system-update-status.json`
-(written by `update.sh`); during the maintenance window its polls get 503s and it shows that as progress, not an error.
-Only one update or backup runs at a time on a server, across all its instances (`/var/lock/reliefinventory-update.lock`):
-a run that finds it taken — e.g. updating two instances at once, or an update during another instance's hourly
-backup — waits its turn (up to `LOCK_WAIT_SECONDS`, default 1 hour) and shows "Waiting for another update or backup on
-this server to finish" in the panel meanwhile. Logs are `/var/log/reliefinventory/update-<instance>-<stamp>.log`.
+1. **Update as usual.** `migrate` creates `backup_schedule` and fills it from the old `storage/app/backup-settings.conf` (`LegacyBackupSettings`):
+   daily → the daily tier; weekly → the weekly tier on `BACKUP_DOW`; `HOURLY_BACKUPS=1` → the hourly tier; the monthly tier it always made →
+   monthly; the keep counts carry over (clamped to what the form allows). `BACKUP_HOUR` was in `BACKUP_TZ`; it is converted once into the
+   server's timezone (so it will not follow daylight saving; adjust it in the form if you want a fixed local hour). **`KEEP_YEARLY` has no
+   equivalent** (there is no yearly tier): keep up to 36 monthlies instead, or copy a yearly zip off the box yourself. Check the result on
+   `/setup/system`.
+2. **The timer needs no change**: the unit already runs `update.sh --scheduled`, which now delegates. (Re-copying
+   `scripts/systemd/reliefinventory-backup.{service,timer}` only updates their descriptions.)
+3. **Decide where new zips go.** To keep them beside the old tiers, set `RI_BACKUP_DIR=/var/backups/reliefinventory` (wa26:
+   `…-wa26`) in `.env` and `chown www-data` that folder; they land in `<dir>/warehouses/<id>/`, next to (not in) `hourly/ daily/ monthly/ yearly/`.
+4. **The old tier folders stay as they are**: no longer listed on the page, no longer pruned, nothing deletes them. Delete them when you no
+   longer need them (they are plain zips; `backup:restore` still restores any of them).
+5. Tidy up, none of it urgent: `systemctl disable --now` and remove `reliefinventory[-<instance>]-backup-now.service` and its line in
+   `/etc/sudoers.d/reliefinventory`; `SYSTEM_BACKUP_NOW_UNIT` and `SYSTEM_BACKUP_DIR` in `.env` are ignored now; `backup-settings.conf` is
+   no longer read (delete it after the migration has run).
 
 ### One-time install (per server)
 
 ```bash
 cd /var/www/reliefinventory-demo
-runuser -u www-data -- cp scripts/backup-settings.conf.example storage/app/backup-settings.conf
 cp scripts/systemd/reliefinventory-backup.service \
    scripts/systemd/reliefinventory-backup.timer \
-   scripts/systemd/reliefinventory-update.service \
-   scripts/systemd/reliefinventory-backup-now.service /etc/systemd/system/
+   scripts/systemd/reliefinventory-update.service /etc/systemd/system/
 systemctl daemon-reload
 systemctl enable --now reliefinventory-backup.timer
 systemctl list-timers reliefinventory-backup.timer   # verify next firing
 
-# Sudoers rule so the admin panel can trigger updates/backups (see file header)
+# Sudoers rule so the admin panel can start the (deprecated) update unit (see file header)
 cp scripts/systemd/reliefinventory-sudoers /etc/sudoers.d/reliefinventory
 chmod 440 /etc/sudoers.d/reliefinventory
 visudo -c
 ```
 
-After changing the unit files in the repo, re-copy them and `systemctl daemon-reload` (settings-file changes need nothing).
-`journalctl -u reliefinventory-backup.service` shows scheduled-run history.
+After changing the unit files in the repo, re-copy them and `systemctl daemon-reload`. The service's `ExecStart` names the app directory
+(`/var/www/reliefinventory-demo`); a second instance on the same server has its own copy of both units with its own path.
+The panel follows a running update through `storage/app/system-update-status.json` (written by `update.sh`); during the maintenance window its
+polls get 503s and it shows that as progress, not an error. Updates and backups of every instance on a server take turns (the lock above, up to
+`LOCK_WAIT_SECONDS`, default 1 hour). Update logs are `/var/log/reliefinventory/update-<instance>-<stamp>.log`.
 
-## Docker / R Station local server: per-warehouse snapshot tiers
+## Snapshot tiers, per warehouse (Docker, and bare metal through its timer)
 
-The `scheduler` container (`docker/scheduler.sh` → `docker/db-backup.sh` → `warehouse:each "backup:scheduled"`) asks **every active warehouse
-every hour** for a snapshot, and each warehouse's own schedule decides whether one is due (`App\Models\BackupSchedule::due()`). The schedule is the
+In Docker the `scheduler` container (`docker/scheduler.sh` → `docker/db-backup.sh` → `warehouse:each "backup:scheduled"`), and on bare metal the
+systemd timer (`update.sh --scheduled`, above), asks **every active warehouse every hour** for a snapshot, and each warehouse's own schedule decides whether one is due (`App\Models\BackupSchedule::due()`). The schedule is the
 single-row `backup_schedule` table, edited by `manage-backups` holders on **Warehouse Backups → Snapshot Schedule**:
 
 | Tier | Made | Kept |

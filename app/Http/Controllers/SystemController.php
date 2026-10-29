@@ -17,24 +17,19 @@ use Illuminate\Support\Facades\Process;
 
 /**
  * Backs the System Administration panel (/setup/system): software version /
- * update triggering, the tiered backup inventory and schedule, and offline mode.
- * (The backup-zip list and the app-key panel on the same page are BackupController's.)
+ * update triggering and offline mode.
+ * (Backups — the zip list, the snapshot schedule, rolling back, the app-key panel — are BackupController's.)
  *
- * Platform: config('system.runtime') is 'systemd' (bare metal) or 'docker'. The tiered backup timer and its
- * settings only exist on systemd; a container's schedule lives in compose.yaml. A container is upgraded by the
+ * Platform: config('system.runtime') is 'systemd' (bare metal) or 'docker'. A container is upgraded by the
  * host-side updater (docker/updater/), which this controller only asks (InstanceUpdate); the bare-metal web
  * updater is deprecated. status() says which one this is and leaves out what doesn't apply, and the
  * systemd-only actions refuse in a container (the page doesn't offer them there either).
  *
  * Design notes (see scripts/BACKUPS.md):
- * - Backup settings live in a www-data-writable conf file that
- *   scripts/update.sh parses with strict validation; this controller is the
- *   writer, the script is the reader. Validation here mirrors the script's.
- * - Updates and on-demand backups are NOT run in-process (composer/npm take
- *   minutes and a full update puts the site into maintenance mode). They are
- *   dedicated systemd oneshot units started via a sudoers rule scoped to
- *   exactly those two commands. update.sh reports progress through a status
- *   JSON file this controller reads back.
+ * - A software update is NOT run in-process (composer/npm take minutes and it puts the site into maintenance mode). It is a
+ *   dedicated systemd oneshot unit started via a sudoers rule scoped to exactly that command. update.sh reports progress through
+ *   a status JSON file this controller reads back.
+ * - Backups are not here: bare metal and Docker share one scheduler (BackupSchedule) and one page (Warehouse Backups).
  */
 class SystemController extends Controller
 {
@@ -53,30 +48,6 @@ class SystemController extends Controller
      */
     private const RUNNING_STALE_AFTER_SECONDS = 300;
 
-    private const SETTINGS_DEFAULTS = [
-        'frequency' => 'daily',
-        'hour' => 2,
-        'dow' => 7,
-        'hourly' => false,
-        'tz' => 'America/Los_Angeles',
-        'keep_hourly' => 48,
-        'keep_daily' => 14,
-        'keep_monthly' => 12,
-        'keep_yearly' => 3,
-    ];
-
-    private const SETTINGS_FILE_KEYS = [
-        'frequency' => 'BACKUP_FREQUENCY',
-        'hour' => 'BACKUP_HOUR',
-        'dow' => 'BACKUP_DOW',
-        'hourly' => 'HOURLY_BACKUPS',
-        'tz' => 'BACKUP_TZ',
-        'keep_hourly' => 'KEEP_HOURLY',
-        'keep_daily' => 'KEEP_DAILY',
-        'keep_monthly' => 'KEEP_MONTHLY',
-        'keep_yearly' => 'KEEP_YEARLY',
-    ];
-
     private function isDocker(): bool
     {
         return config('system.runtime') === 'docker';
@@ -86,7 +57,7 @@ class SystemController extends Controller
     private function requireSystemd(): ?JsonResponse
     {
         return $this->isDocker()
-            ? response()->json(['message' => 'Not available in a Docker install: set the backup schedule in compose.yaml.'], 409)
+            ? response()->json(['message' => 'Not available in a Docker install: it is upgraded by the host-side updater.'], 409)
             : null;
     }
 
@@ -97,16 +68,11 @@ class SystemController extends Controller
         return response()->json([
             'runtime' => $docker ? 'docker' : 'systemd',
             'version' => $this->versionInfo(),
-            'backup_settings' => $docker ? null : $this->readBackupSettings(),
-            'backups' => $docker ? null : $this->backupInventory(),
-            // What the compose file configured for the scheduler container (read-only here).
-            'container_backups' => $docker ? config('backup.container') + ['keep_days' => (int) config('backup.keep_days')] : null,
             'update_status' => $docker ? null : $this->readUpdateStatus(),
             // Docker: the self-update flag the host-side updater works from (InstanceUpdate). Only instance admins may use it.
             'docker_update' => $docker ? InstanceUpdate::current()->payload() + ['can_request' => $this->isInstanceAdmin()] : null,
             // The bare-metal web updater is deprecated (see update()); the page says so.
             'updater_deprecated' => ! $docker,
-            'timezones' => $docker ? [] : \DateTimeZone::listIdentifiers(),
             'offline_mode' => OfflineModeSetting::current()->enabled,
         ]);
     }
@@ -175,47 +141,6 @@ class SystemController extends Controller
         return $this->startUnit(config('system.update_unit'));
     }
 
-    public function backupNow(): JsonResponse
-    {
-        if ($refused = $this->requireSystemd()) {
-            return $refused;
-        }
-        Log::info('On-demand backup triggered from admin panel', ['person_id_user' => Auth::id()]);
-
-        return $this->startUnit(config('system.backup_now_unit'));
-    }
-
-    public function saveBackupSettings(Request $request): JsonResponse
-    {
-        if ($refused = $this->requireSystemd()) {
-            return $refused;
-        }
-        $data = $request->validate([
-            'frequency' => 'required|in:daily,weekly',
-            'hour' => 'required|integer|between:0,23',
-            'dow' => 'required|integer|between:1,7',
-            'hourly' => 'sometimes|boolean',
-            'tz' => 'required|timezone:all',
-            'keep_hourly' => 'required|integer|between:1,500',
-            'keep_daily' => 'required|integer|between:1,365',
-            'keep_monthly' => 'required|integer|between:0,120',
-            'keep_yearly' => 'required|integer|between:0,50',
-        ]);
-
-        $lines = ['# Relief Inventory backup settings — managed by the System Administration panel.',
-            '# Format reference: scripts/backup-settings.conf.example'];
-        $data['hourly'] = (bool) ($data['hourly'] ?? false);
-        foreach (self::SETTINGS_FILE_KEYS as $field => $fileKey) {
-            $value = $data[$field];
-            $lines[] = $fileKey.'='.(is_bool($value) ? (int) $value : $value);
-        }
-        file_put_contents(config('system.settings_file'), implode("\n", $lines)."\n");
-
-        Log::info('Backup settings changed from admin panel', ['person_id_user' => Auth::id()] + $data);
-
-        return response()->json(['backup_settings' => $this->readBackupSettings()]);
-    }
-
     private function isInstanceAdmin(): bool
     {
         return (bool) Auth::user()?->account?->is_instance_admin;
@@ -282,71 +207,6 @@ class SystemController extends Controller
             // Relative to the last fetch — "Check for updates" refreshes this.
             'behind' => $behind === null ? null : (int) $behind,
             'pending_commits' => $pending ? explode("\n", $pending) : [],
-        ];
-    }
-
-    private function readBackupSettings(): array
-    {
-        $values = self::SETTINGS_DEFAULTS;
-        $path = config('system.settings_file');
-        if (is_file($path)) {
-            $byFileKey = array_flip(self::SETTINGS_FILE_KEYS);
-            foreach (file($path) as $line) {
-                if (preg_match('/^([A-Z_]+)=(.*)$/', trim($line), $m) && isset($byFileKey[$m[1]])) {
-                    $values[$byFileKey[$m[1]]] = trim($m[2], " \t\"'");
-                }
-            }
-        }
-        foreach (['hour', 'dow', 'keep_hourly', 'keep_daily', 'keep_monthly', 'keep_yearly'] as $intField) {
-            $values[$intField] = (int) $values[$intField];
-        }
-        $values['hourly'] = $values['hourly'] === true || $values['hourly'] === '1';
-
-        return $values;
-    }
-
-    /**
-     * Backup directory contents are root-only (they hold credentials), but the
-     * tier directories themselves are listable, which is all the panel needs.
-     */
-    private function backupInventory(): array
-    {
-        $dir = config('system.backup_dir');
-        $tiers = [];
-        foreach (['hourly', 'daily', 'monthly', 'yearly'] as $tier) {
-            $path = "$dir/$tier";
-            // Sorted by actual directory mtime, not the stamp name itself — the
-            // stamp is generated in BACKUP_TZ (see update.sh), so a name-only
-            // sort briefly goes wrong whenever that setting changes: an older
-            // backup made under the previous BACKUP_TZ can sort as "newer" than
-            // one made minutes later under the new one, purely from the string
-            // comparison, for as long as both remain in the retention window.
-            $entries = is_dir($path)
-                ? collect(scandir($path))
-                    // <stamp>.zip, or a bare <stamp> directory from before backups were zipped
-                    ->filter(fn ($n) => preg_match('/^\d{8}-\d{6}(\.zip)?$/', $n))
-                    ->sortBy(fn ($n) => filemtime("$path/$n"))
-                    ->values()
-                : collect();
-            $tiers[$tier] = [
-                'count' => $entries->count(),
-                // All of them (the page scrolls): the one you want to download is often an old monthly/yearly.
-                'entries' => $entries->reverse()->map(fn ($n) => [
-                    'name' => preg_replace('/\.zip$/', '', $n),
-                    'size' => is_file("$path/$n") ? @filesize("$path/$n") : null,
-                    // Only a zip the web user can read; old-style <stamp>/ directories can't be downloaded.
-                    'downloadable' => is_file("$path/$n") && is_readable("$path/$n"),
-                ])->values(),
-            ];
-        }
-
-        $lastScheduled = @file_get_contents("$dir/.last-scheduled");
-        $freeBytes = is_dir($dir) ? @disk_free_space($dir) : null;
-
-        return [
-            'tiers' => $tiers,
-            'last_scheduled' => $lastScheduled ? trim($lastScheduled) : null,
-            'disk_free_bytes' => $freeBytes === false ? null : $freeBytes,
         ];
     }
 

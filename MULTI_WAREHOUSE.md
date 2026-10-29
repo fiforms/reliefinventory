@@ -57,7 +57,7 @@ Cross-warehouse reporting, per-warehouse quotas, self-service warehouse creation
 operation (the backup/restore design supports it, the UI doesn't), shared data between warehouses.
 
 **Which installs get it (decided 2026-10-27):** every install that runs the Docker image, which includes the **RI Launcher** and
-the **R Station local server** (both run the same image). Only **bare metal** (systemd, `update.sh` tiered backups) stays
+the **R Station local server** (both run the same image). Only **bare metal** (systemd; its backups are the same scheduler, started by an hourly timer) stays
 single-warehouse. One thing to keep in step: the image is shared, but the compose files aren't. The Launcher embeds
 `docker/compose.yaml` (`launcher/core/src/compose.rs`) and regenerates it on every start, while the R Station has its own
 `rstation/product/offline/compose.yaml`. So any compose change this plan needs (the secrets volume, the provisioner credential, the
@@ -473,7 +473,7 @@ The database stores paths *relative to the disk root* (`receiving-photos/abc.jpg
 | Secrets (`warehouse.key`, DB password) | `/secrets/warehouses/<id>/` (§2) | Must never be in a backup or reachable by a file route |
 | That warehouse's backup zips | `<backup dir>/warehouses/<id>/` | Otherwise every full backup would include all earlier backups, and restoring files would delete them |
 | Restore and backup status files | next to that warehouse's backups | Must survive the restore that replaces the files folder |
-| Logs, slow log, update status, `backup-settings.conf`, compiled views | instance `storage/` as today | Instance-wide (§13); never in a warehouse backup |
+| Logs, slow log, update status, compiled views | instance `storage/` as today | Instance-wide (§13); never in a warehouse backup |
 | Simulator status (`simulator-status.json`) | the warehouse's files folder | Per warehouse; today hard-coded with `storage_path()`, so it moves to the helper |
 
 **Things to settle while building it:**
@@ -724,8 +724,8 @@ Decided while building (2026-10-27):
 - **One code path, separate schemas everywhere.** The control and accounts schemas are always their own schemas, named after the
   default warehouse's (`<DB_DATABASE>_control`, `<DB_DATABASE>_accounts`; `RI_CONTROL_DATABASE` / `RI_ACCOUNTS_DATABASE` override),
   so instances sharing a database server don't collide. Bare metal is slated for deprecation: it gets nothing beyond the two schemas
-  (created by hand once, `BUILDING.md`) and stays single-warehouse. Don't build or maintain elaborate bare-metal paths; the bare-metal
-  backup system (`scripts/update.sh` tiers) is to be reviewed and possibly deleted in favour of one Docker-focused backup path.
+  (created by hand once, `BUILDING.md`) and stays single-warehouse. Don't build or maintain elaborate bare-metal paths. (Its backups were reviewed
+  and folded into the one path, 2026-11: the systemd timer only calls `update.sh --scheduled`, which runs the same `backup:scheduled` as Docker.)
 - **Naming:** the hosted-warehouse model is `App\Models\Control\Warehouse` (control schema). `App\Models\Warehouse` is still the
   physical building that locations belong to, inside each warehouse's schema.
 - **Tests** use `<test db>_control` / `_accounts` (`tests/InstanceSchemas.php`, one-time grant in `scripts/TESTING.md`).
