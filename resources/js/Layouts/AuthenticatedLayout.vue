@@ -53,6 +53,18 @@ async function markAllNotificationsRead() {
             <div v-if="$page.props.warehouse?.training" class="bg-amber-100 text-amber-900 text-sm px-4 py-1">
                 Training warehouse &mdash; everything here is practice data.
             </div>
+            <!-- Instance administrators, until the instance has a recovery key and they have confirmed storing it (HandleInertiaRequests::recoveryKeyProps) -->
+            <div v-if="$page.props.recoveryKey" class="bg-red-100 text-red-900 text-sm px-4 py-2 border-b border-red-300">
+                <template v-if="$page.props.recoveryKey.state === 'none'">
+                    <strong>Set up your recovery key.</strong>
+                    Without it, an automatic backup can't restore the warehouses' encrypted settings after a disaster.
+                </template>
+                <template v-else>
+                    <strong>Confirm your recovery key is stored.</strong>
+                    It was made but never confirmed. If the printout wasn't kept, make a new one.
+                </template>
+                <a href="/setup/instance?tab=backups" class="underline font-semibold ml-1">Open Instance Admin</a>
+            </div>
             <PrintToast />
 
             <nav

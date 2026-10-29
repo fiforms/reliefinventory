@@ -171,6 +171,43 @@ backup folder can be named. The snapshot is never consumed. The restore replaces
 newer zips are no longer *listed*; they stay on disk and `backup:prune` removes `relief-backup-*.zip` files with no record after `RI_BACKUP_KEEP_DAYS`.
 Snapshots sit on the same machine: they guard against mistakes, not hardware loss — see the Launcher section for off-box copies.
 
+### Recovery key: how a disaster restore gets the warehouse keys back
+
+A warehouse key encrypts that warehouse's secret values (mail passwords, the federation private key; `config/backup.php` `encrypted_columns`) and lives in the
+`warehouse-secrets` volume, **never in a warehouse backup**. A whole-instance zip needs them too, or a restore onto a new machine comes back with those values
+unreadable. They can't go in plainly and an unattended backup has nobody to type a passphrase, so the instance has a **recovery key pair**
+(`App\Support\RecoveryKey`, libsodium):
+
+- The **public** half is kept on the instance (control table `instance_recovery_key`; or `RI_RECOVERY_PUBLIC_KEY` from an installer that made the pair itself).
+  Every whole-instance backup, scheduled ones included, seals all the warehouse keys to it (a sealed box, `keys/sealed.bin` in the zip; the manifest names the
+  key's fingerprint). Nothing on the server can open that entry back up: the unattended backup can lock, only the private half can unlock, so a compromised
+  server or a stolen zip gives away nothing it didn't already.
+- The **private** half is shown **once** and kept nowhere on the server (not in the database, the audit log, a file or a log). It is 32 random bytes in a form made to be printed
+  and typed back: `RK1-` and eleven groups of five letters and digits, with check characters, so a typing mistake is caught before anything is tried
+  (`O`/`I`/`L` are read as `0`/`1`). It is a generated key, not a passphrase, so there is nothing to guess.
+
+**Making it** (an instance administrator; once per instance):
+- **Web:** until it exists, every instance administrator sees a red banner on every page; it opens **Instance Admin → Full Instance Backups → Recovery key → Make the recovery
+  key** (password re-entered). The key appears in a dialog that has **Print**, **Download as a file** and **Copy**, says *"Print this key and store it somewhere
+  safe"*, and cannot be closed until the person ticks that they have stored it. This is the first-run path for Docker, the RI Launcher and the R Station: the first
+  account made by the setup wizard is an instance administrator, so the banner is the first thing they see.
+- **CLI:** `php artisan instance:recovery-key generate` (in the app or provisioner container) prints it with the same instructions and asks for the confirmation.
+  `generate --json` prints `{private_key, public_key, fingerprint}` for an installer or the Launcher to show a person and then `acknowledge`. `keypair` makes a pair and
+  stores nothing, for an installer that keeps the private half itself and hands the instance only `adopt --public-key=…` / `RI_RECOVERY_PUBLIC_KEY`, so the private
+  key never touches the server at all. `status`, `verify` (check a printout against the instance's key, now rather than in a disaster) and `acknowledge` are the rest.
+- **Not made yet:** `instance:status` says so, the provisioner logs a reminder at start, and every scheduled/requested backup's answer says its zips cannot restore the
+  encrypted settings. A key shown but never confirmed stays flagged (if the page was closed, the private half is gone and a new one must be made: *Make a new recovery key*).
+
+**Restoring:** `restore:instance <zip> --recovery-key-file <file>`: the file can be the downloaded one as it is (the key is found among the text), or type it at the
+prompt. The zip names the fingerprint it needs, a wrong or mistyped key is refused **before anything on the instance is touched**, and a sealed zip with no way to open it is refused
+too, unless you say `--without-keys` (each warehouse's encrypted settings are then entered again) or give `--keys-dir` (a copy of the old `warehouse-secrets` volume). The
+restored instance keeps sealing to the same key: its public half comes back with the control schema, so the same printout keeps working.
+
+**Replacing it** (*Make a new recovery key*, or `generate --replace`) seals later backups to the new key; backups made before still need the **old** printout, so keep it until they
+are gone. If the private key leaks, anyone holding an older zip can open that zip's sealed keys: replace the key, and treat the warehouse keys themselves as exposed for those zips.
+**Keep the printout away from the server and from the backups**: someone holding both can read those settings, which is the one thing the separation is for. Bare-metal installs
+have no instance backups, so no recovery key.
+
 ### Whole-instance backups (Docker): schedule, list, back up now
 
 **Instance Admin → Full Instance Backups** (`/setup/instance`, instance administrators; `InstanceBackupController`) is the schedule, the list, *Back up now*
@@ -188,8 +225,8 @@ The scheduler container runs `instance:backup --scheduled` every hour: it reads 
 (`SnapshotRules`, shared with the warehouse snapshots, decides). The provisioner re-checks, writes `relief-instance-<stamp>-<database|full>-scheduled-daily|weekly.zip`
 into `<backup dir>/instance/`, records the outcome and the last *success* on the row (a failure leaves the backup due, so the next hour tries again), and prunes:
 the newest `daily_keep` scheduled zips (a weekly one is also that day's daily) plus the newest `weekly_keep` weekly ones. Zips made by hand, before an upgrade
-(`premigrate`, aged out after `RI_BACKUP_KEEP_DAYS`) or named by an operator are never pruned by the schedule. **Scheduled and requested zips never hold the
-warehouse keys** (that needs a passphrase typed at the server: `instance:backup --files --with-keys`). The provisioner works on one request at a time, so creating a
+(`premigrate`, aged out after `RI_BACKUP_KEEP_DAYS`) or named by an operator are never pruned by the schedule. **Scheduled and requested zips hold the
+warehouse keys only sealed to the recovery key** (next section; the passphrase route, `instance:backup --files --with-keys`, still works too). The provisioner works on one request at a time, so creating a
 warehouse waits while a big backup runs. The list is read from file names, so it works even when the web container can't read the zips (they are `0600`); the Download
 button appears only for a zip it can read, and deleting one is done at the server. Every change on that page re-asks for the signed-in person's password and is
 written to `instance_audit_log`.
@@ -211,7 +248,7 @@ personal data, which is why the grant is rated high risk — pair only a compute
 warehouse and of every warehouse's Trust Console; the same computer can hold both kinds, as separate entries with their own schedule and folder. The
 endpoints are `/api/instance/v1/…` (`InstanceBackupApiController`, spec in `rstation/FEDERATION_AUTH.md`), and asking for a backup writes the fixed
 `backup-now` request the provisioner answers. Pairings are listed and revoked on the same Instance Admin tab; every pairing, request and download is
-in `instance_audit_log`. These zips never hold the warehouse keys, so keep those separately (see "Whole-instance backups" above).
+in `instance_audit_log`. The warehouse keys in these zips are sealed to the recovery key (see "Recovery key" above), so the Launcher's copies carry them without being able to read them.
 
 ## Restoring
 

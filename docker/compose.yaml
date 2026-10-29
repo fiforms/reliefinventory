@@ -117,6 +117,12 @@ x-settings: &settings
   # Keep the application key stable if you manage secrets yourself; by default
   # one is generated and stored in the `storage` volume.
   # APP_KEY: base64:...
+
+  # The instance's backup RECOVERY key (scripts/BACKUPS.md): normally you make it from the web page the first time an
+  # administrator signs in (Instance Admin > Full Instance Backups), or with `instance:recovery-key generate`. If your own
+  # tooling made the key pair instead (`php artisan instance:recovery-key keypair`), put ONLY THE PUBLIC KEY here and keep
+  # the private one yourself; the instance then never sees it. Never put the private key (RK1-...) in this file.
+  # RI_RECOVERY_PUBLIC_KEY: ...
 # ============================================================================
 
 x-app: &app

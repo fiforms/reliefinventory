@@ -124,10 +124,11 @@ from before warehouses had their own keys gives its warehouse the old `APP_KEY` 
 in again). If you set `APP_KEY` in this file, change it yourself afterwards; the app log says so.
 
 **Restoring** one onto a brand-new install: open the new server, choose **Restore from a backup** on the first-run
-screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. If you
-want the encrypted settings (the mail passwords, and the instance's federation key — without it every paired instance and client must approve this one again) to survive, set `APP_KEY` in `compose.yaml` to the old
-warehouse's key *before* the first start (the first warehouse takes its key from there); otherwise they are cleared and
-listed for you to re-enter. To recover a damaged
+screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. A warehouse backup never
+holds the warehouse's key, so to keep its encrypted settings (the mail passwords, and the instance's federation key — without it every paired instance and client must approve this one
+again) give the restore step the old key (**Key from the old system**; Setup > Warehouse Backups shows it); otherwise they are cleared and listed for you to re-enter.
+A **whole-instance** backup (`restore:instance`) carries every warehouse's key sealed to your **recovery key**: the printout you made on first sign-in
+(Instance Admin > Full Instance Backups) is all it needs, `--recovery-key-file`. To recover a damaged
 database, the restore screen also takes a second zip that supplies just the uploaded files (any database inside it is
 ignored); on a system that is already set up, an administrator runs
 `docker compose exec app php artisan backup:restore backups/<database zip> --storage=backups/<files zip> --force`.

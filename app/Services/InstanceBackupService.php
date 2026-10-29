@@ -9,6 +9,7 @@ use App\Models\Control\InstanceAuditLog;
 use App\Models\Control\InstanceBackupSchedule;
 use App\Models\Control\Warehouse;
 use App\Services\Warehouses\Provisioner;
+use App\Support\RecoveryKey;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
@@ -28,6 +29,9 @@ use ZipArchive;
  *   files/<warehouse id>/...   each warehouse's files folder (optional; the excluded directories are left out as in a warehouse backup)
  *   keys/<warehouse id>/warehouse.key   each warehouse's encryption key, AES-256 encrypted with a passphrase (optional; without a
  *                              passphrase no key is written, and the manifest says so)
+ *   keys/sealed.bin            every warehouse's key sealed (libsodium sealed box) to the instance's recovery PUBLIC key, whenever the instance has
+ *                              one (InstanceRecoveryKeys). Made by every backup, scheduled ones included, because it needs no secret on the
+ *                              server: only the private half, which the administrator holds on paper, can open it. The manifest names the key's fingerprint.
  *   manifest.json              `kind: instance`, the entries and their SHA-256s
  *
  * Both halves need the database administrator's password, so they run only in the provisioner container (the one process that has it),
@@ -41,6 +45,9 @@ use ZipArchive;
 class InstanceBackupService
 {
     public const KIND = 'instance';
+
+    /** The zip entry holding every warehouse's key sealed to the recovery public key. */
+    public const SEALED = 'keys/sealed.bin';
 
     private const CHUNK = 1024 * 1024;
 
@@ -137,7 +144,7 @@ class InstanceBackupService
         $this->pruneScheduled($schedule);
         InstanceAuditLog::record('instance.backup_made', null, ['kind' => 'scheduled', 'tiers' => $due, 'file' => basename($result['path'])], 'scheduler');
 
-        return ["scheduled instance backup written: {$result['path']}"];
+        return ["scheduled instance backup written: {$result['path']}", ...$this->recoveryNote()];
     }
 
     /**
@@ -149,7 +156,18 @@ class InstanceBackupService
         $result = $this->create($this->dir(), 'manual', $withFiles, null);
         InstanceAuditLog::record('instance.backup_made', null, ['kind' => 'manual', 'files' => $withFiles, 'file' => basename($result['path'])], 'provisioner');
 
-        return ["instance backup written: {$result['path']}"];
+        return ["instance backup written: {$result['path']}", ...$this->recoveryNote()];
+    }
+
+    /** Said in the answer to every scheduled or requested backup (and so on Instance Admin) until the instance has a recovery key. @return list<string> */
+    private function recoveryNote(): array
+    {
+        $state = app(InstanceRecoveryKeys::class)->state();
+
+        return match ($state) {
+            'none' => ['NOTE: this instance has no recovery key, so this backup cannot restore the warehouses\' encrypted settings (mail passwords, the federation key). Make one on Instance Admin > Full Instance Backups, or `php artisan instance:recovery-key generate`.'],
+            default => [],
+        };
     }
 
     /**
@@ -246,6 +264,23 @@ class InstanceBackupService
                 }
             }
 
+            // The keys again, sealed to the recovery public key: no passphrase, nothing secret on this machine, so unattended backups carry them too.
+            $sealedTo = null;
+            $recovery = app(InstanceRecoveryKeys::class)->row();
+            if ($recovery) {
+                $keys = [];
+                foreach ($warehouses as $warehouse) {
+                    if ($warehouse->hasKey()) {
+                        $keys[$warehouse->id] = trim((string) file_get_contents($warehouse->secretsPath('warehouse.key')));
+                    }
+                }
+                if ($keys !== []) {
+                    file_put_contents("{$work}/sealed.bin", RecoveryKey::seal(json_encode(['format' => 1, 'keys' => $keys], JSON_UNESCAPED_SLASHES), $recovery->public_key));
+                    $entries[] = ['path' => self::SEALED, 'source' => "{$work}/sealed.bin"];
+                    $sealedTo = $recovery->fingerprint;
+                }
+            }
+
             $zip = new ZipArchive;
             if ($zip->open($partial, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
                 throw new RuntimeException('Could not create the zip file (is the backup directory writable and not full?).');
@@ -269,8 +304,10 @@ class InstanceBackupService
                 'schemas' => $schemas,
                 'includes_files' => $withFiles,
                 'includes_keys' => $encrypted !== [],
+                'keys_sealed' => $sealedTo !== null,
+                'recovery_key' => $sealedTo !== null ? ['fingerprint' => $sealedTo] : null,
                 'contains_app_key' => false,
-                'contains_warehouse_keys' => $encrypted !== [],
+                'contains_warehouse_keys' => $encrypted !== [] || $sealedTo !== null,
                 'entries' => $manifestEntries,
             ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
 
@@ -323,9 +360,11 @@ class InstanceBackupService
      *
      * @param  ?string  $keysDir  for a backup made without keys: a folder holding `<warehouse id>/warehouse.key` (the layout of the warehouse-secrets
      *                            volume, so a copy of it will do); used for any warehouse the zip has no key for
+     * @param  ?string  $recoveryKey  the printed private recovery key (any text it appears in) that opens keys/sealed.bin
+     * @param  bool  $withoutKeys  restore a zip whose keys are sealed without opening them: the warehouses' encrypted settings then have to be entered again
      * @return array{warehouses: int, files: bool, keys: bool, notes: list<string>}
      */
-    public function restore(string $zipPath, ?string $passphrase, bool $force, ?callable $log = null, ?string $keysDir = null): array
+    public function restore(string $zipPath, ?string $passphrase, bool $force, ?callable $log = null, ?string $keysDir = null, ?string $recoveryKey = null, bool $withoutKeys = false): array
     {
         $log ??= fn (string $m) => null;
         $zip = $this->open($zipPath);
@@ -341,6 +380,8 @@ class InstanceBackupService
                 throw new RuntimeException('The backup has no readable instance.json.');
             }
             $this->checkSchemaNames($info);
+            // Before anything on this instance is touched: a zip with sealed keys and no way to open them is refused rather than restored without them.
+            $sealedNote = $this->openSealedKeys($work, $manifest, $recoveryKey, $keysDir, $withoutKeys);
 
             $admin = Provisioner::fromConfig()->pdo();
             $this->checkTarget($admin, $force);
@@ -358,7 +399,7 @@ class InstanceBackupService
                 'control' => config('database.connections.control'), 'accounts' => config('database.connections.accounts'),
             ], false);
 
-            $notes = [];
+            $notes = array_filter([$sealedNote]);
             $keys = false;
             $files = (bool) ($manifest['includes_files'] ?? false);
             foreach (Warehouse::orderBy('id')->get() as $warehouse) {
@@ -387,6 +428,73 @@ class InstanceBackupService
             File::deleteDirectory($work);
             $zip->close();
         }
+    }
+
+    /**
+     * What a zip says about its keys, without unpacking it (so a command can ask for the right thing before it starts).
+     *
+     * @return array{sealed: bool, fingerprint: ?string, passphrase: bool}
+     */
+    public function inspect(string $zipPath): array
+    {
+        $zip = $this->open($zipPath);
+        try {
+            $manifest = $this->manifest($zip);
+        } finally {
+            $zip->close();
+        }
+
+        return [
+            'sealed' => (bool) ($manifest['keys_sealed'] ?? false),
+            'fingerprint' => $manifest['recovery_key']['fingerprint'] ?? null,
+            'passphrase' => (bool) ($manifest['includes_keys'] ?? false),
+        ];
+    }
+
+    /**
+     * If the zip holds sealed keys, open them with the recovery key and put each warehouse's key where the restore loop looks for it
+     * ({$work}/keys/<id>/warehouse.key), unless a passphrase-encrypted copy already did. Returns a note to show afterwards, or null.
+     *
+     * @throws RuntimeException before anything is changed: no way to open the keys was given, or the key given is wrong
+     */
+    private function openSealedKeys(string $work, array $manifest, ?string $recoveryKey, ?string $keysDir, bool $withoutKeys): ?string
+    {
+        if (! is_file("{$work}/".self::SEALED)) {
+            return null;
+        }
+        $fingerprint = $manifest['recovery_key']['fingerprint'] ?? null;
+        $named = $fingerprint ? " (recovery key {$fingerprint})" : '';
+
+        if ($recoveryKey === null || trim($recoveryKey) === '') {
+            $haveOthers = $keysDir !== null || glob("{$work}/keys/*/warehouse.key") !== [];
+            if ($haveOthers || $withoutKeys) {
+                return $withoutKeys && ! $haveOthers
+                    ? "The warehouse keys in this backup were left sealed{$named}, as asked: each warehouse's encrypted settings (mail passwords, the federation key) must be entered again."
+                    : null;
+            }
+            throw new RuntimeException("This backup holds the warehouse keys, sealed{$named}. Give the printed recovery key (--recovery-key-file), or a copy of the old warehouse-secrets folder (--keys-dir), or --without-keys to restore without them. Nothing was changed.");
+        }
+
+        $secret = RecoveryKey::parse($recoveryKey);   // a typing mistake is reported here, with its own message
+        if ($fingerprint && RecoveryKey::fingerprint(RecoveryKey::publicFor($secret)) !== $fingerprint) {
+            throw new RuntimeException("That recovery key is not the one this backup was sealed to. It needs the key whose fingerprint is {$fingerprint}. Nothing was changed.");
+        }
+        $payload = json_decode(RecoveryKey::open((string) file_get_contents("{$work}/".self::SEALED), $secret), true);
+        if (! is_array($payload) || ! is_array($payload['keys'] ?? null)) {
+            throw new RuntimeException('The sealed keys in this backup could not be read. Nothing was changed.');
+        }
+        foreach ($payload['keys'] as $id => $key) {
+            if (! preg_match('/^[A-Za-z0-9]{8}$/', (string) $id) || ! is_string($key) || ! Warehouse::validKey($key)) {
+                continue;
+            }
+            $dest = "{$work}/keys/{$id}/warehouse.key";
+            if (! is_file($dest)) {
+                File::ensureDirectoryExists(dirname($dest), 0700);
+                file_put_contents($dest, $key);
+            }
+        }
+
+        return null;
     }
 
     private function open(string $path): ZipArchive
@@ -428,10 +536,10 @@ class InstanceBackupService
         }
         foreach ($manifest['entries'] ?? [] as $entry) {
             $path = $entry['path'] ?? '';
-            if (! is_string($path) || ! preg_match('#^(instance/(dump\.sql|instance\.json)|files/[A-Za-z0-9]{8}/[^\0]+|keys/[A-Za-z0-9]{8}/warehouse\.key)$#', $path) || str_contains($path, '..')) {
+            if (! is_string($path) || ! preg_match('#^(instance/(dump\.sql|instance\.json)|files/[A-Za-z0-9]{8}/[^\0]+|keys/[A-Za-z0-9]{8}/warehouse\.key|keys/sealed\.bin)$#', $path) || str_contains($path, '..')) {
                 throw new RuntimeException('The backup lists an unexpected file path: '.substr((string) $path, 0, 80));
             }
-            $encrypted = str_starts_with($path, 'keys/');
+            $encrypted = str_starts_with($path, 'keys/') && $path !== self::SEALED;   // the sealed entry is a box, not a zip-encrypted file
             if ($encrypted) {
                 if ($passphrase === null || $passphrase === '') {
                     throw new RuntimeException('This backup holds the warehouse keys, encrypted: give the passphrase it was made with.');

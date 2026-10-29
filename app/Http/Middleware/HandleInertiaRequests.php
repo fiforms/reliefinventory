@@ -10,10 +10,13 @@ use App\Models\Control\Warehouse;
 use App\Models\LabelSetting;
 use App\Models\OfflineModeSetting;
 use App\Services\BannerService;
+use App\Services\InstanceRecoveryKeys;
 use App\Services\PinLoginService;
+use App\Services\Warehouses\ProvisioningClient;
 use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
+use Throwable;
 
 class HandleInertiaRequests extends Middleware
 {
@@ -79,6 +82,9 @@ class HandleInertiaRequests extends Middleware
             'notifications' => [
                 'unreadCount' => $request->user()?->unreadNotifications()->count() ?? 0,
             ],
+            // For instance administrators on a Docker install: the instance has no recovery key yet (or nobody confirmed storing it), so the layout
+            // shows a banner until it does. Null for everyone else, so no one else pays a query or sees it.
+            'recoveryKey' => fn () => self::recoveryKeyProps($request),
             // A single instance-wide flag for "this warehouse has no
             // reliable internet right now" — pages that call out to
             // Turnstile/geocod.io check this before even attempting the
@@ -86,6 +92,21 @@ class HandleInertiaRequests extends Middleware
             // a 503. See OfflineModeSetting.
             'offlineMode' => OfflineModeSetting::isOffline(),
         ];
+    }
+
+    /** @return array{state: string}|null */
+    public static function recoveryKeyProps(Request $request): ?array
+    {
+        if (! ProvisioningClient::applies() || ! $request->user()?->account?->is_instance_admin) {
+            return null;
+        }
+        try {
+            $state = app(InstanceRecoveryKeys::class)->state();
+        } catch (Throwable) {
+            return null;   // the control schema is not ready: nothing to say
+        }
+
+        return $state === 'ok' ? null : ['state' => $state];
     }
 
     /** @return array{id: string, name: string, multiple: bool, storageSuffix: string} */

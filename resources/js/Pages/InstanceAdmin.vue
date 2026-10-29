@@ -12,7 +12,8 @@
 	  Full Instance Backups    One zip of every warehouse plus the control and accounts schemas: the schedule (off until turned
 	                           on), the list, Back up now and download (InstanceBackupController). The provisioner container
 	                           makes them, since it alone holds the database administrator's password; this page only writes
-	                           fixed requests for it. Warehouse keys are never in these (only `instance:backup --with-keys`).
+	                           fixed requests for it. Each zip holds the warehouse keys sealed to the instance's recovery key
+	                           (the panel at the top of the tab makes it and shows the private half once; see scripts/BACKUPS.md).
 	  Warehouses               The warehouse:* commands as buttons (InstanceWarehouseController): list, create, edit, suspend /
 	                           maintenance / activate / resume, archive, remove, setup codes, hostnames. Every change asks for
 	                           the person's password again. Removal waits 30 days after archiving here (the artisan command
@@ -36,7 +37,8 @@ const props = defineProps({
 
 const docker = computed(() => props.runtime === 'docker');
 
-const tab = ref('updates');
+// ?tab=backups opens that tab directly (the recovery-key banner links there).
+const tab = ref(['updates', 'warehouses', 'backups'].includes(new URLSearchParams(location.search).get('tab')) ? new URLSearchParams(location.search).get('tab') : 'updates');
 const status = ref(null);
 const error = ref('');
 const notice = ref('');
@@ -263,7 +265,8 @@ async function submitDialog() {
 	try {
 		const { data } = await dialog.value.run(dialog.value.values, dialogPassword.value);
 		notice.value = data.message || 'Done.';
-		if (data.code && data.address) pairCode.value = data;
+		if (data.private_key) recoveryShown.value = data;   // the one time it exists outside the person's hands: shown in the dialog below
+		else if (data.code && data.address) pairCode.value = data;
 		else if (data.setup_code) result.value = { code: data.setup_code, url: data.setup_url, note: data.message };
 		else if (data.backup !== undefined) result.value = { removed: data };
 		else if (data.note) notice.value += ` ${data.note}`;
@@ -435,6 +438,103 @@ function backUpInstanceNow(files) {
 const sizeOf = (bytes) => (bytes > 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GB` : bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
 const labelNames = { 'scheduled-daily': 'Scheduled (daily)', 'scheduled-weekly': 'Scheduled (weekly)', manual: 'Made by hand', premigrate: 'Before an upgrade' };
 const instWhen = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+
+// ---- Recovery key ----
+// The server keeps only the public half. The private half arrives once, here, in the response to "Make a recovery key", and is gone from the
+// server the moment it is sent. The person must print or save it before closing; if the page is closed first the key is lost and a new one is made.
+const recoveryShown = ref(null);   // { private_key, fingerprint, instance, address, made_at } while the dialog is open
+const recoveryStored = ref(false);
+const recoveryCopied = ref(false);
+const recoveryBusy = ref(false);
+const recoveryState = computed(() => instBackups.value?.recovery_key ?? { state: 'none' });
+
+function makeRecoveryKey(replace = false) {
+	recoveryShown.value = null;
+	openDialog({
+		title: replace ? 'Make a NEW recovery key' : 'Make the recovery key', button: replace ? 'Replace the key' : 'Make the key', danger: replace,
+		text: replace
+			? 'Backups made from now on are sealed to the new key and need it to be restored. Backups made before still need the OLD printout, so keep it until they are gone. The new key is shown once.'
+			: 'Makes the key that seals every warehouse\'s encryption key into your instance backups. It is shown once, on the next screen: have a printer or somewhere safe ready.',
+		run: (v, password) => axios.post('/json/instance/backups/recovery-key', { replace, password }),
+	});
+}
+
+function recoveryText() {
+	const k = recoveryShown.value;
+	return [
+		`RELIEF INVENTORY — RECOVERY KEY (${k.instance})`,
+		'',
+		`Instance:     ${k.address}`,
+		`Made:         ${new Date(k.made_at).toLocaleString()}`,
+		`Fingerprint:  ${k.fingerprint}`,
+		'',
+		'Recovery key:',
+		`  ${k.private_key}`,
+		'',
+		'WHAT THIS IS',
+		'Every whole-instance backup of this server (including the automatic ones) holds each warehouse\'s encryption key, sealed so that only this key',
+		'can open it. After a disaster, restore with:  restore:instance <backup.zip> --recovery-key-file <a file containing the line above>',
+		'and every warehouse\'s encrypted settings (mail passwords, the federation key) come back.',
+		'',
+		'KEEP IT SAFE',
+		'Store this away from this server and away from your backups (a safe, a sealed envelope, a password manager). Anyone who holds both this',
+		'key and a backup can read those settings. The server does NOT keep this key and cannot show it again: if it is lost, make a new one on',
+		'Instance Admin > Full Instance Backups (backups made before then still need this one).',
+		'',
+	].join('\n');
+}
+
+function printRecoveryKey() {
+	const k = recoveryShown.value;
+	const w = window.open('', '_blank', 'width=720,height=900');
+	if (!w) { error.value = 'Your browser blocked the print window. Use Download instead.'; return; }
+	const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+	w.document.write(`<!doctype html><title>Recovery key</title><style>body{font-family:sans-serif;margin:2rem;color:#000}h1{font-size:1.3rem}
+		.key{font:700 1.25rem/1.6 monospace;letter-spacing:.05em;border:2px solid #000;padding:1rem;margin:1rem 0;word-break:break-all}
+		pre{white-space:pre-wrap;font:0.85rem/1.5 sans-serif}</style>
+		<h1>Relief Inventory &mdash; recovery key (${esc(k.instance)})</h1>
+		<div>Instance: ${esc(k.address)}<br>Made: ${esc(new Date(k.made_at).toLocaleString())}<br>Fingerprint: <b>${esc(k.fingerprint)}</b></div>
+		<div class="key">${esc(k.private_key)}</div>
+		<pre>${esc(recoveryText().split('WHAT THIS IS')[1] ? 'WHAT THIS IS' + recoveryText().split('WHAT THIS IS')[1] : '')}</pre>`);
+	w.document.close();
+	w.focus();
+	w.print();
+}
+
+function downloadRecoveryKey() {
+	const k = recoveryShown.value;
+	const url = URL.createObjectURL(new Blob([recoveryText()], { type: 'text/plain' }));
+	const a = document.createElement('a');
+	a.href = url;
+	a.download = `recovery-key-${k.fingerprint}.txt`;
+	a.click();
+	URL.revokeObjectURL(url);
+}
+
+async function copyRecoveryKey() {
+	try {
+		await navigator.clipboard.writeText(recoveryShown.value.private_key);
+		recoveryCopied.value = true;
+	} catch {
+		recoveryCopied.value = false;
+	}
+}
+
+async function finishRecoveryKey() {
+	recoveryBusy.value = true;
+	try {
+		await axios.post('/json/instance/backups/recovery-key/confirm');
+		recoveryShown.value = null;
+		recoveryStored.value = false;
+		recoveryCopied.value = false;
+		notice.value = 'Recovery key confirmed. Every instance backup from now on is sealed to it.';
+		await loadInstanceBackups();
+	} catch (e) {
+		error.value = e.response?.data?.message || 'Could not confirm the recovery key.';
+	} finally {
+		recoveryBusy.value = false;
+	}
+}
 
 // Computers (the RI Launcher) paired to the instance so they can take whole-instance backups. A new code is shown once.
 const pairCode = ref(null);   // { code, expires_at, address }
@@ -728,8 +828,8 @@ onUnmounted(() => {
 						A full instance backup is one zip holding the control and accounts databases and <strong>every</strong> warehouse's database,
 						optionally with every warehouse's files. It is also what the automatic backup before an upgrade is. It is for the person who runs the
 						server, to move or recover the whole installation: to back up or restore a single warehouse, use
-						<a href="/setup/system" class="underline">Warehouse Backups</a>. <strong>These zips never contain the warehouse keys</strong> (that needs a
-						passphrase typed at the server: <span class="font-mono">instance:backup --files --with-keys</span>), so write each warehouse's key down too.
+						<a href="/setup/system" class="underline">Warehouse Backups</a>. Each zip holds every warehouse's encryption key <strong>sealed to your recovery key</strong> (below),
+						so an automatic backup can be restored, keys and all, with the printout and nothing else.
 					</p>
 					<p v-if="instBackups && !instBackups.available" class="rounded bg-amber-100 border border-amber-400 text-amber-900 px-3 py-2 text-sm">
 						This needs the Docker install: the backup is made by its <span class="font-mono">provisioner</span> container. On a standard server install, use
@@ -739,6 +839,43 @@ onUnmounted(() => {
 				</section>
 
 				<template v-if="instBackups?.available && instForm">
+					<!-- The recovery key: public half on the server, private half on paper -->
+					<section class="rounded-lg border-2 p-6 space-y-3"
+						:class="recoveryState.state === 'ok' ? 'bg-white border-green-400' : 'bg-red-50 border-red-400'">
+						<h2 class="text-lg font-semibold">Recovery key</h2>
+						<template v-if="recoveryState.state === 'none'">
+							<p class="text-sm text-red-900">
+								<strong>This instance has no recovery key.</strong> Its backups hold everything except the warehouses' encryption keys, so after a disaster
+								the mail passwords and the federation key could not be read and would have to be entered again, and every paired instance and client would have to approve this one again.
+							</p>
+						</template>
+						<template v-else-if="recoveryState.state === 'unconfirmed'">
+							<p class="text-sm text-red-900">
+								<strong>Nobody confirmed that the recovery key {{ recoveryState.fingerprint }} was stored.</strong> The private half was shown once and the server does not
+								keep it. If you did not print or save it, make a new key.
+							</p>
+						</template>
+						<template v-else>
+							<p class="text-sm text-gray-700">
+								Every instance backup is sealed to recovery key <span class="font-mono font-semibold">{{ recoveryState.fingerprint }}</span>
+								<span class="text-gray-500">(made by {{ recoveryState.created_by }}{{ recoveryState.source === 'generated' ? '' : `, ${recoveryState.source}` }})</span>.
+								Keep the printout away from this server and away from your backups.
+							</p>
+						</template>
+						<p class="text-xs text-gray-600">
+							How it works: each backup locks the warehouses' keys with a <em>public</em> key kept here, so the unattended backup can do it but nothing on this server can unlock them.
+							Only the <em>private</em> key, which you print once, can. To restore after a disaster:
+							<span class="font-mono">restore:instance &lt;zip&gt; --recovery-key-file &lt;file&gt;</span>. Check a printout at any time with
+							<span class="font-mono">instance:recovery-key verify</span>.
+						</p>
+						<div class="flex flex-wrap gap-3">
+							<PrimaryButton v-if="recoveryState.state === 'none'" type="button" @click="makeRecoveryKey(false)">Make the recovery key…</PrimaryButton>
+							<PrimaryButton v-else type="button" @click="makeRecoveryKey(true)" :class="recoveryState.state === 'ok' ? 'bg-gray-600 hover:bg-gray-500' : ''">
+								Make a new recovery key…
+							</PrimaryButton>
+						</div>
+					</section>
+
 					<section class="bg-white shadow rounded-lg p-6 space-y-4">
 						<h2 class="text-lg font-semibold">Backup now</h2>
 						<div class="flex flex-wrap items-center gap-3">
@@ -829,6 +966,38 @@ onUnmounted(() => {
 						</p>
 					</section>
 				</template>
+			</div>
+		</div>
+
+		<!-- The recovery key, shown once. No way to dismiss it until the person says it is stored. -->
+		<div v-if="recoveryShown" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4" role="dialog" aria-modal="true" aria-labelledby="recovery-title">
+			<div class="max-h-full w-full max-w-2xl overflow-y-auto rounded-lg bg-white p-6 shadow-xl space-y-4">
+				<h2 id="recovery-title" class="text-xl font-bold text-red-800">Print this key and store it somewhere safe</h2>
+				<p class="text-sm text-gray-800">
+					This is your instance's <strong>recovery key</strong>. It is shown <strong>only now</strong>: the server does not keep it and cannot show it again.
+					It is what lets an automatic backup restore every warehouse's encrypted settings after a disaster.
+				</p>
+				<div class="rounded border-2 border-gray-800 bg-gray-50 p-4">
+					<div class="text-xs text-gray-500">Fingerprint {{ recoveryShown.fingerprint }}</div>
+					<div class="mt-1 break-all font-mono text-lg font-bold leading-relaxed tracking-wide" data-testid="recovery-key">{{ recoveryShown.private_key }}</div>
+				</div>
+				<div class="flex flex-wrap gap-3">
+					<button type="button" class="rounded-md bg-gray-800 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white hover:bg-gray-700" @click="printRecoveryKey">Print</button>
+					<button type="button" class="rounded-md bg-gray-800 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-white hover:bg-gray-700" @click="downloadRecoveryKey">Download as a file</button>
+					<button type="button" class="rounded-md bg-gray-200 px-4 py-2 text-xs font-semibold uppercase tracking-widest text-gray-800 hover:bg-gray-300" @click="copyRecoveryKey">{{ recoveryCopied ? 'Copied' : 'Copy' }}</button>
+				</div>
+				<ul class="list-disc space-y-1 pl-5 text-sm text-gray-700">
+					<li>Keep it <strong>away from this server and away from your backups</strong>: a safe, a sealed envelope, a password manager. Anyone with both this key and a backup can read the warehouses' encrypted settings.</li>
+					<li>Check a printout later with <span class="font-mono">instance:recovery-key verify</span>. The key has check characters, so a typing mistake is caught.</li>
+					<li>If it is lost, make a new one here. Backups made before then still need this one.</li>
+				</ul>
+				<label class="flex items-start gap-2 text-sm font-medium text-gray-900">
+					<input type="checkbox" v-model="recoveryStored" class="mt-1 rounded border-gray-400" />
+					<span>I have printed or saved this key somewhere safe, away from this server and my backups.</span>
+				</label>
+				<div class="flex justify-end">
+					<PrimaryButton type="button" :disabled="!recoveryStored || recoveryBusy" @click="finishRecoveryKey">{{ recoveryBusy ? 'Saving…' : 'Done' }}</PrimaryButton>
+				</div>
 			</div>
 		</div>
 	</AuthenticatedLayout>

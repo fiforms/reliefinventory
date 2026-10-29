@@ -6,12 +6,15 @@
 
 use App\Models\Accounts\Account;
 use App\Models\Control\InstanceAuditLog;
+use App\Models\Control\InstanceRecoveryKey;
 use App\Models\Control\Warehouse;
 use App\Services\BackupCompatibility;
 use App\Services\BackupService;
 use App\Services\InstanceBackupService;
+use App\Services\InstanceRecoveryKeys;
 use App\Services\Warehouses\WarehouseContext;
 use App\Services\Warehouses\WarehouseCreator;
+use App\Support\RecoveryKey;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -37,6 +40,7 @@ beforeEach(function () {
         'backup.dir' => $this->tmp.'/out',
     ]);
     $this->created = [];
+    InstanceRecoveryKey::query()->delete();
 });
 
 afterEach(function () {
@@ -190,6 +194,121 @@ test('a backup made without keys is restored with the keys from a folder laid ou
 
     expect($result['keys'])->toBeTrue()->and($result['notes'])->toBeEmpty()
         ->and(trim(file_get_contents(Warehouse::find($one->id)->secretsPath('warehouse.key'))))->toBe($oneKey);
+});
+
+test('every instance backup, with no passphrase, carries the warehouse keys sealed to the recovery key, and says which key', function () {
+    [$one, $two, $oneKey] = isolatedInstance($this);
+    $pair = app(InstanceRecoveryKeys::class)->generate('admin@example.org');
+
+    $result = app(InstanceBackupService::class)->create($this->tmp.'/zips', 'scheduled-daily', false, null);   // what the provisioner does unattended
+    $zip = new ZipArchive;
+    $zip->open($result['path']);
+    $manifest = json_decode($zip->getFromName('manifest.json'), true);
+    $names = collect(range(0, $zip->numFiles - 1))->map(fn ($i) => $zip->getNameIndex($i));
+
+    expect($names)->toContain('keys/sealed.bin')
+        ->and($names->filter(fn ($n) => preg_match('#^keys/[A-Za-z0-9]{8}/#', $n))->all())->toBe([])   // no passphrase entries, no plain keys
+        ->and($manifest['keys_sealed'])->toBeTrue()->and($manifest['includes_keys'])->toBeFalse()
+        ->and($manifest['contains_warehouse_keys'])->toBeTrue()->and($manifest['recovery_key'])->toBe(['fingerprint' => $pair['fingerprint']])
+        ->and($manifest['contains_app_key'])->toBeFalse();
+
+    // sealed: neither warehouse key, nor the private key, is readable anywhere in the zip file
+    $raw = file_get_contents($result['path']);
+    $twoKey = trim(file_get_contents($two->secretsPath('warehouse.key')));
+    expect($raw)->not->toContain($oneKey)->not->toContain($twoKey)->not->toContain(substr($oneKey, 7, 20))
+        ->and(app(InstanceBackupService::class)->inspect($result['path']))->toBe(['sealed' => true, 'fingerprint' => $pair['fingerprint'], 'passphrase' => false]);
+    $payload = json_decode(RecoveryKey::open($zip->getFromName('keys/sealed.bin'), RecoveryKey::parse($pair['private'])), true);
+    expect($payload['keys'])->toMatchArray([$one->id => $oneKey, $two->id => $twoKey]);
+});
+
+test('without a recovery key a backup has no sealed entry, and says so in the answer to the provisioner', function () {
+    [$one, $two] = isolatedInstance($this);
+
+    $result = app(InstanceBackupService::class)->create($this->tmp.'/zips', null, false, null);
+    $zip = new ZipArchive;
+    $zip->open($result['path']);
+    $manifest = json_decode($zip->getFromName('manifest.json'), true);
+
+    expect($zip->getFromName('keys/sealed.bin'))->toBeFalse()->and($manifest['keys_sealed'])->toBeFalse()->and($manifest['recovery_key'])->toBeNull()
+        ->and(app(InstanceBackupService::class)->inspect($result['path'])['sealed'])->toBeFalse();
+
+    $lines = app(InstanceBackupService::class)->manual(false);
+    expect(implode("\n", $lines))->toContain('no recovery key');
+    app(InstanceRecoveryKeys::class)->generate('admin@example.org');
+    expect(implode("\n", app(InstanceBackupService::class)->manual(false)))->not->toContain('no recovery key');
+});
+
+test('a disaster restore from an automatic zip needs only the printed recovery key, and brings every warehouse key back', function () {
+    [$one, $two, $oneKey] = isolatedInstance($this);
+    $twoKey = trim(file_get_contents($two->secretsPath('warehouse.key')));
+    $pair = app(InstanceRecoveryKeys::class)->generate('admin@example.org');
+    $zip = app(InstanceBackupService::class)->create($this->tmp.'/zips', 'scheduled-daily', true, null)['path'];
+    $file = $this->tmp.'/recovery-key.txt';
+    file_put_contents($file, "RELIEF INVENTORY — RECOVERY KEY\n\nRecovery key:\n  {$pair['private']}\n\nKeep it safe.\n");   // the downloaded file, as it is
+
+    wipeInstance($this, [$one, $two]);
+    $result = app(InstanceBackupService::class)->restore($zip, null, false, null, null, file_get_contents($file));
+
+    $one = Warehouse::find($one->id);
+    $two = Warehouse::find($two->id);
+    expect($result)->toMatchArray(['warehouses' => 2, 'files' => true, 'keys' => true])->and($result['notes'])->toBeEmpty()
+        ->and(trim(file_get_contents($one->secretsPath('warehouse.key'))))->toBe($oneKey)
+        ->and(trim(file_get_contents($two->secretsPath('warehouse.key'))))->toBe($twoKey)
+        ->and(file_get_contents($one->storagePath('receiving-photos/p.jpg')))->toBe('one-photo')
+        // and the restored instance goes on sealing to the same key: the public half came back with the control schema
+        ->and(InstanceRecoveryKey::find(1)->fingerprint)->toBe($pair['fingerprint']);
+});
+
+test('a zip with sealed keys is refused before anything is touched when no way to open them is given, or the wrong one is', function () {
+    [$one, $two] = isolatedInstance($this);
+    $pair = app(InstanceRecoveryKeys::class)->generate('admin@example.org');
+    $zip = app(InstanceBackupService::class)->create($this->tmp.'/zips', null, false, null)['path'];
+    $other = RecoveryKey::generate();
+    $typo = $pair['private'];
+    $typo[8] = $typo[8] === 'A' ? 'B' : 'A';
+
+    // The instance is still whole after each refusal: nothing was dropped.
+    $before = Warehouse::count();
+    expect(fn () => app(InstanceBackupService::class)->restore($zip, null, true))->toThrow(RuntimeException::class, 'sealed')
+        ->and(fn () => app(InstanceBackupService::class)->restore($zip, null, true, null, null, $other['private']))->toThrow(RuntimeException::class, $pair['fingerprint'])
+        ->and(fn () => app(InstanceBackupService::class)->restore($zip, null, true, null, null, $typo))->toThrow(RuntimeException::class, 'typing mistake')
+        ->and(fn () => app(InstanceBackupService::class)->restore($zip, null, true, null, null, 'not a key'))->toThrow(RuntimeException::class);
+    expect(Warehouse::count())->toBe($before)->and(Warehouse::find($one->id))->not->toBeNull();
+});
+
+test('--without-keys and a keys folder are the other ways to restore a zip with sealed keys', function () {
+    [$one, $two, $oneKey] = isolatedInstance($this);
+    app(InstanceRecoveryKeys::class)->generate('admin@example.org');
+    $zip = app(InstanceBackupService::class)->create($this->tmp.'/zips', null, false, null)['path'];
+    foreach ([$one, $two] as $w) {
+        File::ensureDirectoryExists($this->tmp."/keys/{$w->id}");
+        copy($w->secretsPath('warehouse.key'), $this->tmp."/keys/{$w->id}/warehouse.key");
+    }
+
+    wipeInstance($this, [$one, $two]);
+    $without = app(InstanceBackupService::class)->restore($zip, null, false, null, null, null, true);
+    expect($without['keys'])->toBeFalse()->and(implode(' ', $without['notes']))->toContain('left sealed')->and(Warehouse::find($one->id)->hasKey())->toBeFalse();
+
+    wipeInstance($this, [Warehouse::find($one->id), Warehouse::find($two->id)]);
+    $fromFolder = app(InstanceBackupService::class)->restore($zip, null, false, null, $this->tmp.'/keys');
+    expect($fromFolder['keys'])->toBeTrue()->and(trim(file_get_contents(Warehouse::find($one->id)->secretsPath('warehouse.key'))))->toBe($oneKey);
+});
+
+test('restore:instance asks for the recovery key, reads it from the downloaded file, and refuses a bad one', function () {
+    [$one, $two, $oneKey] = isolatedInstance($this);
+    $pair = app(InstanceRecoveryKeys::class)->generate('admin@example.org');
+    $zip = app(InstanceBackupService::class)->create($this->tmp.'/zips', null, false, null)['path'];
+    $file = $this->tmp.'/key.txt';
+    file_put_contents($file, "Recovery key:\n  {$pair['private']}\n");
+    file_put_contents($this->tmp.'/bad.txt', 'RK1-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA-AAAAA');
+    wipeInstance($this, [$one, $two]);
+
+    $this->artisan('restore:instance', ['zip' => $zip, '--no-interaction' => true])->expectsOutputToContain('sealed')->assertFailed();
+    $this->artisan('restore:instance', ['zip' => $zip, '--recovery-key-file' => $this->tmp.'/bad.txt', '--no-interaction' => true])->assertFailed();
+    $this->artisan('restore:instance', ['zip' => $zip, '--recovery-key-file' => $this->tmp.'/missing.txt', '--no-interaction' => true])->expectsOutputToContain('not readable')->assertFailed();
+
+    $this->artisan('restore:instance', ['zip' => $zip, '--recovery-key-file' => $file, '--no-interaction' => true])->expectsOutputToContain('and keys')->assertSuccessful();
+    expect(trim(file_get_contents(Warehouse::find($one->id)->secretsPath('warehouse.key'))))->toBe($oneKey);
 });
 
 test('warehouse:key shows a key, refuses a bad one, and replaces the key of a warehouse in use only with --force', function () {

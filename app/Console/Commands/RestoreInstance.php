@@ -20,6 +20,8 @@ class RestoreInstance extends Command
         {zip : The whole-instance backup zip}
         {--passphrase-file= : A file holding the passphrase the keys were encrypted with (otherwise asked for when the backup has keys)}
         {--keys-dir= : For a backup made without keys: a folder with <warehouse id>/warehouse.key files (a copy of the old warehouse-secrets volume)}
+        {--recovery-key-file= : A file holding the printed recovery key (RK1-…) that opens the sealed warehouse keys; the downloaded recovery-key file works as it is (otherwise asked for when the backup has sealed keys)}
+        {--without-keys : Restore a backup with sealed keys without opening them (each warehouse\'s encrypted settings must then be entered again)}
         {--force : Replace an instance that is already in use}';
 
     protected $description = 'Restore a whole-instance backup onto this (new) instance; run in the provisioner container';
@@ -39,8 +41,30 @@ class RestoreInstance extends Command
             return self::FAILURE;
         }
 
+        $recoveryKey = null;
         try {
-            $result = $backups->restore($this->argument('zip'), $passphrase, (bool) $this->option('force'), fn ($m) => $this->line($m), $this->option('keys-dir') ?: null);
+            $about = $backups->inspect($this->argument('zip'));
+            if ($about['sealed'] && ! $this->option('without-keys')) {
+                if ($file = $this->option('recovery-key-file')) {
+                    $recoveryKey = is_readable($file) ? (string) file_get_contents($file) : null;
+                    if ($recoveryKey === null) {
+                        $this->error("{$file} is not readable.");
+
+                        return self::FAILURE;
+                    }
+                } elseif (! $this->option('keys-dir') && $this->input->isInteractive()) {
+                    $this->line('This backup holds the warehouse keys, sealed to recovery key '.($about['fingerprint'] ?? '(unnamed)').'.');
+                    $recoveryKey = (string) $this->secret('Recovery key (RK1-…, from the printout)') ?: null;
+                }
+            }
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+
+        try {
+            $result = $backups->restore($this->argument('zip'), $passphrase, (bool) $this->option('force'), fn ($m) => $this->line($m), $this->option('keys-dir') ?: null, $recoveryKey, (bool) $this->option('without-keys'));
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 
