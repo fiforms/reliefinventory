@@ -24,9 +24,23 @@ the multi-warehouse features; don't build or maintain elaborate bare-metal paths
 
 `dev/notes/PROJECT_ANALYSIS.md` is a stale collection of project notes (defects, a phased plan). It can help with detailed
 work, but verify anything in it against the code before relying on it. Future ideas: `dev/ROADMAP.md`; open work: `dev/TODO.md`.
-**Doc map: `dev/README.md`.** Conventions: commit only when asked; GitHub workflows are manual-only; document non-obvious things
+**Doc map: `dev/README.md`.** Conventions: GitHub workflows are manual-only; document non-obvious things
 (in a comment next to the code, or the matching `dev/notes/` file). Markdown files are named `ALL_UPPERCASE_WITH_UNDERSCORES.md`
 (`README.md` too); `dev/notes/` files are named for their topic, e.g. `PRINT_QUEUE.md`.
+
+## Editing docs
+
+Keep persistent docs (CLAUDE.md, TODO, ROADMAP, README) brief: a short summary, plus a link to a file in `dev/` (project-wide,
+persistent topics) or `dev/notes/` (implementation-specific notes) when detail is needed. Don't paste implementation detail or dated
+history into them. New detail goes in the matching `dev/` file; add a pointer in `dev/README.md` if you create one.
+
+## Committing
+
+Other agents may be working here at the same time.
+- Never commit to `master`: use a branch and open a PR. Don't push unless asked.
+- Commit only when asked; confirm once per session before committing to an existing branch.
+- Check `git branch --show-current` right before every commit (it can change under you).
+- Stage only your own files by name, never `git add -A`.
 
 ## Database schema reference
 
