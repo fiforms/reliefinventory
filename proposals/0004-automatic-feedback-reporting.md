@@ -1,94 +1,100 @@
 # 0004 — Automatic feedback reporting to a central instance
 
 - **Status:** Under discussion
-- **Lane:** Shared (feedback aggregation, an admin setting). How the settings, failure count and alert are stored is
-  Daniel's call.
-- **Author:** Mark
+- **Lane:** Shared (feedback aggregation). No schema change, so nothing for the data-model lane to decide.
+- **Author:** Mark (original); simplified by Daniel
 - **Idea:** none in ROADMAP.md; raised directly by Mark on 2026-10-26. The sending-side companion to proposal 0002
   (digest on the receiving side).
 
 ## Problem
 
 An instance linked to a central instance (Feedback page > Send reports to) sends a report **once, at the moment it's
-saved**. That happens only when Offline Mode is off (`FeedbackPushService::pushOne`). If that one attempt fails, the
-report sits unsent until someone opens `/setup/feedback` and presses **Send Unsent Reports**. Nothing retries it.
-Nobody is told it failed, and there's no way to choose *how* reports are sent.
+saved**, and only when Offline Mode is off (`FeedbackPushService::pushOne`). If that one attempt fails, the report sits
+unsent until someone opens `/setup/feedback` and presses **Send Unsent Reports**. Nothing retries it, and nobody is told.
 
 That's a poor fit for where this software runs. A field site's connection comes and goes, so the reports that matter
-most, urgent ones, are the likeliest to be lost until someone remembers the button. Equally, an instance in a busy
-class sends every report the instant it's filed, and nobody local can change that.
+most are the likeliest to be lost until someone remembers the button.
 
 ## Proposed direction
 
-### One setting, chosen by whoever runs the instance
+**Keep trying, backing off between attempts, and show the state on the Feedback page.** No new settings, no new tables.
 
-On the Feedback page, next to **Send reports to**, an **Automatic reporting** section that the person managing the
-instance (`manage-feedback`, like the rest of that page) sets once:
+- **Automatic means what it already means.** `FeedbackPushService::autoPushEnabled()` is true when a central instance is
+  linked and Offline Mode is off. That is the switch. There is no separate On/Off setting.
+- **One periodic command**, `feedback:push-unsent`, runs every few minutes. If automatic reporting is enabled and any
+  report is unsent, it calls the existing `pushUnsent()`. Otherwise it exits without touching the network. A report is
+  unsent when `submitted_at` and `instance_identifier` are both null, which is already how `pushUnsent()` finds them.
+- **Backoff lives in the cache.** One key holds "don't try before T". A failure doubles the wait (start about 5 minutes,
+  cap about 1 hour); a success deletes the key. A cache flush just causes one early retry. Saving a new report still
+  attempts at once, as today, and respects the same key.
+- **Offline Mode still wins.** While it's on, nothing is sent automatically. **Send Unsent Reports** still works, as today,
+  ignores the backoff, and clears it.
+- **The Feedback page shows the state, computed when it's loaded:** how many reports are waiting, the age of the oldest,
+  the last error in plain words (the existing `pushUnsent()['error']` messages: revoked, not granted, clock off, couldn't
+  reach it) and when sending last succeeded. The notice turns red when the oldest waiting report is more than a day old.
+  Reports the central instance refuses as malformed are counted separately ("N not accepted by the other instance"), so
+  that isn't mistaken for a connection problem.
+- **A permanent failure** (the link was revoked, or sending isn't granted) retries at the capped rate, about one small
+  request an hour, and the page says so in the error. Waiting won't fix it and the page makes that clear.
+- **Every report is sent as soon as it can be.** No urgent/non-urgent split and no daily mode. Reducing email noise is
+  proposal 0002's job on the receiving side.
 
-- **Automatic reporting: On / Off.**
-  - **Off:** reports are only sent when someone presses **Send Unsent Reports**.
-  - **On:** reports are sent without anyone doing anything, by the rules below.
-- **Urgent reports** (the reporter ticked Urgent / blocking) are **always sent immediately** while automatic reporting is
-  on. If that fails, they're retried until they get through or the failure rule below turns automatic reporting off.
-- **Everything else** (non-urgent bugs and feature requests), one of:
-  - **Immediately:** as today.
-  - **Daily, at a set time:** everything waiting is sent together, once a day at the hour chosen.
-- **Offline Mode still wins.** While an instance is in Offline Mode nothing is sent automatically, urgent included,
-  because Offline Mode is the admin's decision not to use the connection. Reports wait, and go on the next automatic
-  attempt after Offline Mode is turned off. **Send Unsent Reports** still works in Offline Mode, as today.
-
-### When sending keeps failing
-
-- An **attempt** is one automatic try to send. It's the first send of a report, a retry of urgent reports, or the
-  daily batch.
-- **After 3 automatic attempts in a row fail, whatever the reason, automatic reporting turns itself Off.** Reports stay
-  saved and queued. Nothing is lost, and **Send Unsent Reports** still works.
-- At the same moment an **alert** is raised:
-  - It's shown to anyone with `manage-feedback`: in the notification bell, and as a red notice at the top of the
-    Feedback page.
-  - It says what happened, when, and the last error in plain words (for example: "the other instance revoked this
-    link", "this instance isn't allowed to send feedback there", "couldn't reach the other instance"). These messages
-    already exist (`pushUnsent()['error']`).
-- **The alert stays until an administrator or developer acknowledges it.** Acknowledging records who did it and when,
-  and clears the notice for everyone.
-- Turning automatic reporting back on is a separate, deliberate step. Re-enabling it resets the failure count.
-- A successful attempt, automatic or **Send Unsent Reports**, resets the count to zero.
-
-### Retrying
-
-The app has no Laravel scheduler. Hourly jobs run from `docker/scheduler.sh` (Docker, R Station, Launcher) and systemd
-timers on bare metal. Automatic reporting needs a periodic job for urgent retries and the daily batch, added in both
-places like the volunteer-sync timer. Between runs, a new report being saved is also an attempt, so an instance in use
-retries sooner.
+The periodic command goes in `docker/scheduler.sh` and a systemd timer, like `volunteers:sync-active-windows`. If the
+shared hourly entry point suggested for proposal 0002 is built first, this can hang off it, at the cost of slower recovery.
 
 ## Rejected alternatives
 
-- **Treat "can't connect" differently from "refused"** (keep retrying through an outage, and turn off only when the other
-  instance refuses). Raised during discussion. Mark chose a single rule: three failures in a row, whatever the cause,
-  turn it off and alert. It's simpler to explain and makes a person look at it every time. The trade-off is written
-  down here: at a site with a patchy connection, an outage alone will turn automatic reporting off. Urgent reports then
-  wait until someone acknowledges the alert and turns it back on, or presses **Send Unsent Reports**.
-- **Retry forever with no alert.** A site could go weeks without reporting anything and nobody would know.
-- **Make this per reporter.** It's a site decision. The reporter's choice is already the Urgent checkbox.
+### Mark's original design
+
+Mark's first version had these parts:
+
+- an **Automatic reporting On/Off** setting;
+- **urgent reports sent immediately and always**, and everything else either immediately or **daily at a chosen hour**;
+- a rule that **three failed attempts in a row turn automatic reporting off**, whatever the cause;
+- an **alert** raised at that moment, shown in the bell and as a red notice, which **stays until an administrator
+  acknowledges it**, recording who and when;
+- re-enabling as a separate, deliberate step that resets the failure count.
+
+Mark chose the three-strikes rule on purpose: it's easy to explain and makes a person look every time. The cost was
+written into the proposal: an outage alone turns reporting off, so at a patchy site urgent reports wait until someone
+acknowledges the alert and switches it back on.
+
+**Why that is more than the problem needs:**
+
+- **It adds state that has to be kept consistent.** The mode setting, the failure count, the last error and the
+  alert with its acknowledger needed a home, which is a new table or several new columns. Each one is a way to end up
+  with a count that disagrees with reality, such as an alert that never clears or reporting stuck Off after the cause is gone.
+- **It fails the case it was written for.** The point is that reports from a flaky field site get through. A rule that
+  switches sending off after three tries is switched off by the first outage, which is the thing it needed to survive.
+  Retrying with a growing wait handles the outage with no one's help.
+- **The daily mode and the urgent split solve the wrong problem.** Batching on the sending side was meant to cut email
+  noise, but email is sent by the receiving side, and 0002 gives that a digest and an urgent path. Sending a report to
+  central promptly costs one small request, and central decides who is emailed.
+- **The alert can be derived.** "Something has been stuck for a day" is visible from the reports themselves. A status line
+  computed from them can't get out of step, needs no acknowledgement and shows the same information.
+- **The one thing it adds is a forced look.** An alert someone must acknowledge is a stronger prompt than a red status line
+  that someone must open the page to see. If that matters, a small step in this proposal's direction is to also show the
+  red state in the existing site banner, with no new storage.
+
+### Other alternatives
+
+- **Retry forever with no visible state.** A site could go weeks without reporting and nobody would know. The status line
+  is what prevents that.
+- **Make this per reporter.** It's a site decision, and the reporter's own choice is already the Urgent checkbox.
 
 ## Open questions
 
-- **Spacing of attempts.** With an hourly job, three failed attempts on an urgent report take about two to three hours.
-  Is that right, or should urgent retries run more often (say every 10 minutes), which needs a more frequent job than the
-  current hourly one?
-- **Who may acknowledge.** "Administrator or developer": holders of `manage-feedback`, or a narrower permission? If
-  proposal 0002's Developer role is accepted, developers hold everything anyway.
-- **Does acknowledging also offer "turn it back on"** in the same step, or stay separate as above?
-- **Should the central instance be told** that a remote stopped reporting? It can't be told over a broken link, but it
-  could notice a remote it hasn't heard from in a long time. That's probably a later idea.
-- **Storage (Daniel).** The on/off and mode settings sit naturally beside the existing `FeedbackAggregationSetting`. The
-  failure count, last error and the alert with its acknowledgement need a home. Could the alert reuse the existing
-  `notifications` table and the bell, or does it need its own record so "acknowledged by whom" is kept?
+- **The numbers.** Start at 5 minutes, cap at 1 hour, and the command ticks every few minutes. Right for a site that
+  comes back online mid-day?
+- **Should the red state also use the site banner**, so someone sees it without opening `/setup/feedback`? (Uses
+  `BannerSetting`, so the banner would have to be set and cleared by the job. Probably a later step.)
+- **Should the central instance notice** that a remote it expects hasn't been heard from in a long time? It can't be told
+  over a broken link. This is a separate, later idea.
 
 ## What it touches
 
-- `FeedbackPushService` (it attempts on save today; this adds retries, the daily batch and the failure rule),
-  `FeedbackReportController::store`, and `FeedbackAggregationSetting`.
-- The Feedback page (`/setup/feedback`): the Automatic reporting section and the alert notice. The notification bell.
+- `FeedbackPushService` (one backoff key; `pushOne` and `pushUnsent` consult and update it), a new `feedback:push-unsent`
+  command, and the Feedback page's status line (`/setup/feedback`, `manage-feedback`).
 - `docker/scheduler.sh` and a systemd timer.
+- No migrations, no new settings, no changes to who may see the page.
 - Related: proposal 0002 (digest and Developer role, the receiving side); Offline Mode.
