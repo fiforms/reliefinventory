@@ -18,6 +18,7 @@ use App\Services\GitVersionService;
 use App\Services\PinLoginService;
 use App\Services\TrainingMode;
 use App\Services\TurnstileService;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Foundation\Http\Middleware\VerifyCsrfToken;
@@ -32,6 +33,58 @@ use Inertia\Inertia;
 // FirstRunService / RedirectToSetup); afterwards both just redirect to /login.
 Route::get('/install', [SetupController::class, 'show'])->name('setup.show');
 Route::post('/install', [SetupController::class, 'store'])->middleware('throttle:10,1')->name('setup.store');
+
+// A new warehouse waiting for its setup code (MULTI_WAREHOUSE.md §7). ResolveWarehouse lets an awaiting-setup warehouse answer
+// only these; the controller refuses anything once the warehouse is active.
+Route::get('/activate', [WarehouseSetupController::class, 'show'])->name('activate.show');
+Route::post('/activate/code', [WarehouseSetupController::class, 'code'])->middleware('throttle:30,1')->name('activate.code');
+Route::post('/activate/setup', [WarehouseSetupController::class, 'setup'])->middleware('throttle:15,1')->name('activate.setup');
+
+// The login page's "enter a warehouse code" (MULTI_WAREHOUSE.md §3): a typed code is a warehouse's id, rate-limited and answered plainly.
+Route::post('/choose-warehouse', [WarehouseChooserController::class, 'choose'])->middleware('throttle:10,1')->name('warehouse.choose');
+
+// Accepting an invitation to a warehouse with an existing login (MULTI_WAREHOUSE.md §6): the emailed link is public (the invitee
+// can't be signed in to the inviting warehouse yet); the in-app list is for a login signed in anywhere it belongs.
+Route::get('/invitations/{token}', [MembershipInvitationController::class, 'show'])->name('invitations.show');
+Route::post('/invitations/{token}', [MembershipInvitationController::class, 'acceptLink'])->middleware('throttle:15,1')->name('invitations.accept');
+Route::middleware('auth')->group(function () {
+    Route::get('/account/invitations', [MembershipInvitationController::class, 'index'])->name('account.invitations');
+    Route::post('/account/invitations/{id}/accept', [MembershipInvitationController::class, 'accept'])->middleware('throttle:15,1')->name('account.invitations.accept');
+    Route::post('/account/invitations/{id}/decline', [MembershipInvitationController::class, 'decline'])->name('account.invitations.decline');
+});
+
+// Restoring a backup into a warehouse awaiting its setup code: the same controller as the first-run restore below, gated by the
+// setup code instead of "never set up" (RestoreController::activating()).
+Route::prefix('activate/restore')->name('activate.restore.')->group(function () {
+    Route::post('/', [RestoreController::class, 'start'])->middleware('throttle:20,1')->name('start');
+    Route::get('/status', [RestoreController::class, 'status'])->name('status')
+        ->withoutMiddleware([
+            StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
+            RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
+        ]);
+    Route::post('/launch', [RestoreController::class, 'launch'])->middleware('throttle:20,1')->name('launch');
+    Route::get('/{id}', [RestoreController::class, 'uploadStatus'])->name('upload.status');
+    Route::put('/{id}', [RestoreController::class, 'uploadChunk'])->name('upload.chunk');
+    Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
+    Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
+});
+
+// A warehouse administrator restoring a backup into their own warehouse (RestoreController::owning()). Everything but the status
+// needs a signed-in administrator; the status is open because the warehouse is `restoring` (ResolveWarehouse lets exactly
+// /restore-status through) and the database, with its sessions, is being replaced.
+Route::prefix('json/warehouse-restore')->name('warehouse.restore.')->middleware(['auth', 'permission:admin-system'])->group(function () {
+    Route::post('/', [RestoreController::class, 'start'])->middleware('throttle:20,1')->name('start');
+    Route::post('/launch', [RestoreController::class, 'launch'])->middleware('throttle:5,1')->name('launch');
+    Route::get('/{id}', [RestoreController::class, 'uploadStatus'])->name('upload.status');
+    Route::put('/{id}', [RestoreController::class, 'uploadChunk'])->name('upload.chunk');
+    Route::post('/{id}/complete', [RestoreController::class, 'complete'])->name('upload.complete');
+    Route::delete('/{id}', [RestoreController::class, 'cancel'])->name('upload.cancel');
+});
+Route::get('/restore-status', [RestoreController::class, 'status'])->name('restore.status')
+    ->withoutMiddleware([
+        StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class, VerifyCsrfToken::class,
+        RedirectToSetup::class, HandleInertiaRequests::class, TrackSessionActivity::class, EnsureAccountApproved::class,
+    ]);
 
 // First-run "restore a backup" path. Named setup.* so RedirectToSetup lets it through; the controller
 // itself refuses anything but a never-set-up instance. The status poll skips the session middleware: while
@@ -91,6 +144,9 @@ Route::get('/', function () {
 Route::get('/about', function () {
     return Inertia::render('About');
 });
+
+// Where the tab guard (GuardWarehouseTab) sends a tab left on a warehouse the browser no longer uses.
+Route::get('/warehouse-switched', fn () => Inertia::render('WarehouseSwitched'))->name('warehouse.switched');
 
 Route::get('/dashboard', function () {
     return Inertia::render('Dashboard');
@@ -269,9 +325,53 @@ Route::get('/setup/package-types', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/package-types')]);
 })->middleware(['auth', 'permission:manage-packagetypes']);
 
-// Updates & Backups: one page for software updates, offline mode, backup zips, the tiered backup schedule and
-// the app key. Each section is gated by its own permission (the JSON endpoints below enforce the same), so the
-// page opens for anyone holding admin-system or manage-backups.
+// Instance Admin: what belongs to the whole instance rather than one warehouse — software updates, offline mode,
+// whole-instance backups (and later warehouse management). Instance administrators only; the JSON half is
+// /json/instance/*, which reuses SystemController's actions behind the same gate.
+Route::get('/setup/instance', function () {
+    return Inertia::render('InstanceAdmin', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/instance'),
+        'runtime' => config('system.runtime') === 'docker' ? 'docker' : 'systemd',
+    ]);
+})->middleware(['auth', 'instance-admin']);
+
+Route::group(['prefix' => 'json/instance', 'middleware' => ['auth', 'instance-admin']], function () {
+    Route::get('/status', [SystemController::class, 'status']);
+    Route::post('/check-updates', [SystemController::class, 'checkUpdates']);
+    Route::post('/update', [SystemController::class, 'update']);
+    Route::put('/offline-mode', [SystemController::class, 'saveOfflineMode']);
+
+    // Full Instance Backups: the schedule, the list, "back up now" (a request to the provisioner) and download. Writes re-ask for the password.
+    Route::get('/backups', [InstanceBackupController::class, 'index']);
+    Route::get('/backups/{name}/download', [InstanceBackupController::class, 'download'])->where('name', '[A-Za-z0-9._-]+');
+    Route::middleware('throttle:20,1')->group(function () {
+        Route::put('/backups/schedule', [InstanceBackupController::class, 'updateSchedule']);
+        Route::post('/backups', [InstanceBackupController::class, 'store']);
+        Route::post('/backups/recovery-key', [InstanceBackupController::class, 'recoveryKey']);
+        Route::post('/backups/recovery-key/confirm', [InstanceBackupController::class, 'confirmRecoveryKey']);
+        Route::post('/backups/clients/code', [InstanceBackupController::class, 'pairingCode']);
+        Route::delete('/backups/clients/{id}', [InstanceBackupController::class, 'revokeClient'])->whereNumber('id');
+    });
+
+    // Warehouse management. Every write re-asks for the signed-in person's password (InstanceWarehouseController::guarded).
+    Route::get('/warehouses', [InstanceWarehouseController::class, 'index']);
+    Route::middleware('throttle:20,1')->group(function () {
+        Route::post('/warehouses', [InstanceWarehouseController::class, 'store']);
+        Route::put('/warehouses/{id}', [InstanceWarehouseController::class, 'update']);
+        Route::post('/warehouses/{id}/suspend', [InstanceWarehouseController::class, 'suspend']);
+        Route::post('/warehouses/{id}/activate', [InstanceWarehouseController::class, 'activate']);
+        Route::post('/warehouses/{id}/resume', [InstanceWarehouseController::class, 'resume']);
+        Route::post('/warehouses/{id}/archive', [InstanceWarehouseController::class, 'archive']);
+        Route::post('/warehouses/{id}/setup-code', [InstanceWarehouseController::class, 'setupCode']);
+        Route::post('/warehouses/{id}/domains', [InstanceWarehouseController::class, 'addDomain']);
+        Route::delete('/warehouses/{id}/domains', [InstanceWarehouseController::class, 'removeDomain']);
+        Route::delete('/warehouses/{id}', [InstanceWarehouseController::class, 'destroy']);
+    });
+});
+
+// Warehouse Backups (/setup/system): backup zips, the backup schedule and the warehouse key. Each section is gated
+// by its own permission (the JSON endpoints below enforce the same), so the page opens for anyone holding
+// admin-system or manage-backups.
 Route::get('/setup/system', function () {
     $user = Auth::user();
     $canAdmin = $user->hasPermission('admin-system');
@@ -280,12 +380,23 @@ Route::get('/setup/system', function () {
 
     return Inertia::render('SystemAdmin', [
         'breadcrumb' => MenuItem::getBreadcrumb('/setup/system'),
-        'runtime' => config('system.runtime') === 'docker' ? 'docker' : 'systemd',
         'canAdminSystem' => $canAdmin,
         'canManageBackups' => $canBackups,
         'canViewAppKey' => $user->hasPermission('view-app-key'),
     ]);
 })->middleware(['auth']);
+
+// Restore a backup into this warehouse (RestoreController::owning(); the JSON half is the warehouse-restore group above).
+Route::get('/setup/restore', function () {
+    $user = Auth::user();
+    abort_if(app(WarehouseContext::class)->current()->is_training, 404);
+
+    return Inertia::render('Setup/WarehouseRestore', [
+        'breadcrumb' => MenuItem::getBreadcrumb('/setup/restore'),
+        'warehouseName' => app(WarehouseContext::class)->current()->display_name,
+        'instanceAdmin' => (bool) $user->account?->is_instance_admin,
+    ]);
+})->middleware(['auth', 'permission:admin-system']);
 
 // Testing Tools: the warehouse simulator and the slow-query log (JSON half is in the admin-system group below).
 Route::get('/setup/testing', [TestingToolsController::class, 'page'])->middleware(['auth', 'permission:admin-system']);
@@ -371,7 +482,7 @@ Route::get('/setup/forms/{id}/submissions', function ($id) {
 // The public/staff submission page — no 'auth' middleware, since the same
 // route serves an anonymous prospective partner and a logged-in staffer.
 // PublicFormController itself enforces the form's access_mode.
-// Trainee self sign-up (TraineeSignupController): public, open only while Training Mode is on. A whole room signs
+// Trainee self sign-up (TraineeSignupController): public, open only in a training warehouse. A whole room signs
 // up at once from one Wi-Fi network (one IP), so the limit (80/min) covers a room of ~55; Turnstile keeps bots out.
 Route::get('/join', [TraineeSignupController::class, 'show'])->name('join');
 Route::post('/join', [TraineeSignupController::class, 'store'])->middleware('throttle:80,1');
@@ -421,8 +532,8 @@ Route::get('/setup/signs/fonts/{file}', [SignController::class, 'font'])
     ->whereIn('file', ['LiberationSans-Bold.ttf', 'LiberationSans-Regular.ttf'])->middleware(['auth']);
 Route::get('/report/sign.pdf', [SignController::class, 'pdf'])->name('report.sign')->middleware(['auth']);
 
-// Training Mode (App\Services\TrainingMode). Setup > Training Mode is manage-training; switching the mode on/off
-// is admin-system. The team activity sheets print from /help, for anyone signed in, like the help guides.
+// A training warehouse's class tools (App\Services\TrainingMode): all manage-training, a key only a training warehouse has.
+// The team activity sheets print from /help, for anyone signed in, like the help guides.
 Route::get('/setup/training', function () {
     return Inertia::render('Setup/Training', ['breadcrumb' => MenuItem::getBreadcrumb('/setup/training')]);
 })->middleware(['auth', 'permission:manage-training']);
@@ -449,10 +560,8 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-tr
     Route::delete('/training/products', [TrainingProductController::class, 'clear']);
     Route::get('/reports/training', [TrainingReportController::class, 'index']);
 });
-Route::put('/json/training/mode', [TrainingAdminController::class, 'setMode'])
-    ->middleware(['auth', 'permission:admin-system']);
 Route::post('/json/training/reset', [TrainingAdminController::class, 'reset'])
-    ->middleware(['auth', 'permission:admin-system']);
+    ->middleware(['auth', 'permission:manage-training']);
 Route::middleware(['auth', 'permission:manage-training'])->group(function () {
     Route::get('/report/training/setup-packet.pdf', [TrainingAdminController::class, 'setupPacket']);
     Route::get('/report/training/signups.csv', [TrainingAdminController::class, 'signupsCsv']);
@@ -654,6 +763,9 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-us
     Route::get('/users', [UserAdminController::class, 'index']);
     Route::get('/users/export.csv', [UserAdminController::class, 'csv']);
     Route::post('/users', [UserAdminController::class, 'store']);
+    Route::get('/users/invitations', [UserAdminController::class, 'invitations']);
+    Route::post('/users/invitations/{id}/resend', [UserAdminController::class, 'resendInvitation']);
+    Route::delete('/users/invitations/{id}', [UserAdminController::class, 'withdrawInvitation']);
     Route::post('/users/bulk', [UserAdminController::class, 'bulk']);
     Route::put('/users/{id}', [UserAdminController::class, 'update']);
     Route::post('/users/{id}/deactivate', [UserAdminController::class, 'deactivate']);
@@ -1188,8 +1300,6 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::get('/system/status', [SystemController::class, 'status']);
     Route::post('/system/check-updates', [SystemController::class, 'checkUpdates']);
     Route::post('/system/update', [SystemController::class, 'update']);
-    Route::post('/system/backup', [SystemController::class, 'backupNow']);
-    Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
     Route::put('/system/offline-mode', [SystemController::class, 'saveOfflineMode']);
 
     Route::get('/testing/status', [TestingToolsController::class, 'status']);
@@ -1209,8 +1319,10 @@ Route::redirect('/setup/backups', '/setup/system')->middleware('auth');
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-backups']], function () {
     Route::get('/backups', [BackupController::class, 'index']);
     Route::post('/backups', [BackupController::class, 'store']);
+    Route::get('/backups/schedule', [BackupController::class, 'schedule']);
+    Route::put('/backups/schedule', [BackupController::class, 'updateSchedule']);
+    Route::post('/backups/{id}/restore', [BackupController::class, 'restoreSnapshot'])->whereNumber('id')->middleware('throttle:5,1');
     Route::get('/backups/{id}/download', [BackupController::class, 'download'])->whereNumber('id');
-    Route::get('/backups/tier/{tier}/{stamp}/download', [BackupController::class, 'downloadTier']);
     Route::delete('/backups/{id}', [BackupController::class, 'destroy']);
 });
 Route::post('/json/backups/app-key', [BackupController::class, 'appKey'])

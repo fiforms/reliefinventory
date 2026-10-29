@@ -126,21 +126,21 @@ EXPOSE 8080
 COPY docker/entrypoint.sh /usr/local/bin/ri-entrypoint
 COPY docker/scheduler.sh /usr/local/bin/ri-scheduler
 COPY docker/db-backup.sh /usr/local/bin/ri-db-backup
-COPY docker/Caddyfile /etc/caddy/Caddyfile
+COPY docker/Caddyfile docker/Caddyfile.app docker/Caddyfile.https docker/tls-auto.caddy docker/tls-internal.caddy /etc/caddy/
 COPY docker/php.ini /usr/local/etc/php/conf.d/zz-reliefinventory.ini
 RUN chmod +x /usr/local/bin/ri-entrypoint /usr/local/bin/ri-scheduler /usr/local/bin/ri-db-backup
 
 WORKDIR /var/www/html
 COPY --from=app-build /app /var/www/html
 
-# storage/ is a volume at runtime (private uploads, logs, caches, the generated
-# APP_KEY), so the skeleton below is only what the entrypoint re-creates anyway.
-# public/storage is the usual storage:link, created now so public/ can stay
-# read-only at runtime. public/fonts/NotoColorEmoji.ttf links the image's own emoji font so
-# every browser draws the same emoji (see @font-face in resources/css/app.css).
-RUN mkdir -p storage/app/public storage/app/private storage/framework/cache storage/framework/sessions \
+# storage/ is a volume at runtime (each warehouse's uploads, logs, caches, the generated
+# APP_KEY), so the skeleton below is only what the entrypoint re-creates anyway. There is
+# no public/storage link: nothing is served from storage directly, since one web path can't
+# serve several warehouses' files (MULTI_WAREHOUSE.md §11). public/fonts/NotoColorEmoji.ttf
+# links the image's own emoji font so every browser draws the same emoji (see @font-face in
+# resources/css/app.css).
+RUN mkdir -p storage/app/private storage/framework/cache storage/framework/sessions \
         storage/framework/views storage/logs bootstrap/cache \
-    && ln -s ../storage/app/public public/storage \
     && mkdir public/fonts \
     && ln -s /usr/share/fonts/truetype/noto/NotoColorEmoji.ttf public/fonts/NotoColorEmoji.ttf \
     && chown -R www-data:www-data storage bootstrap/cache
@@ -171,7 +171,7 @@ ENV APP_ENV=production \
     # the admin page hides systemd/git-only options and shows the compose-managed backup settings instead
     RI_RUNTIME=docker
 
-EXPOSE 8080
+EXPOSE 8080 4430
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${RI_HTTP_PORT}/up" >/dev/null || exit 1
 

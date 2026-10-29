@@ -8,7 +8,7 @@
 </p>
 
 <p>
-    <strong>Log in at:</strong> <a href="{{ route('login') }}">{{ route('login') }}</a><br>
+    <strong>Log in at:</strong> <a href="{{ \App\Models\Control\Warehouse::current()->publicUrl('/login') }}">{{ \App\Models\Control\Warehouse::current()->publicUrl('/login') }}</a><br>
     <strong>Email:</strong> {{ $person->email }}
 </p>
 
@@ -22,5 +22,5 @@
 
 <p>
     If you never receive your password, use
-    <a href="{{ route('password.request') }}">Forgot your password?</a> on the login page to set one of your own.
+    <a href="{{ \App\Models\Control\Warehouse::current()->publicUrl('/forgot-password') }}">Forgot your password?</a> on the login page to set one of your own.
 </p>

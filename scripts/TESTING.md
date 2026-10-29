@@ -17,6 +17,23 @@ on the next run; deleting the file is always safe. A full `pest --parallel` run 
 that needs a clean schema mid-test, call `Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions())`,
 not a bare `migrate:fresh`.
 
+**Control and accounts schemas (2026-10-27, multi-warehouse).** Besides the main test database, the suite uses
+`<test db>_control` and `<test db>_accounts` (`tests/InstanceSchemas.php`), named after the test database in use, so
+each `pest --parallel` worker gets its own. They are created if missing and migrated from scratch once per process,
+and every test runs inside a transaction on all three. The test user needs to be able to create them, and the
+provisioning tests need a separate user that can create database users. One-time setup, as MariaDB root:
+
+```sql
+GRANT ALL PRIVILEGES ON `test\_reliefinventory%`.* TO 'reliefinventory'@'localhost';
+CREATE USER IF NOT EXISTS 'ri_test_provisioner'@'localhost' IDENTIFIED BY 'ri_test_provisioner';
+GRANT CREATE USER ON *.* TO 'ri_test_provisioner'@'localhost';
+GRANT ALL PRIVILEGES ON `test\_reliefinventory%`.* TO 'ri_test_provisioner'@'localhost' WITH GRANT OPTION;
+```
+
+The pattern grant covers every schema whose name starts with `test_reliefinventory`. When granting on one
+exact schema name, escape its underscores (`` `test\_reliefinventory\_ab12` ``): MariaDB refuses a `GRANT` on a
+name that only a wildcard pattern matches. `InstanceSchemas` refuses any schema name without "test" in it.
+
 ## Why a real MariaDB test database, not SQLite
 
 `phpunit.xml` points tests at a **real MariaDB database**, not SQLite in-memory. This app has

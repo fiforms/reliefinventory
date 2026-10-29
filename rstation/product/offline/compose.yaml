@@ -32,10 +32,13 @@ x-app: &app
     # entrypoint refuses to migrate without one), backups made from Updates & Backups in the app, and the scheduler's nightly dump.
     RI_BACKUP_DIR: /backups
     RI_BACKUP_KEEP_DAYS: 14
+    # Each warehouse's key file (MULTI_WAREHOUSE.md §2): outside storage, so never in a backup.
+    RI_WAREHOUSE_SECRETS_DIR: /warehouse-secrets
   volumes:
     - ${RI_DATA}/storage:/var/www/html/storage
     - ${RI_DATA}/secrets:/secrets:ro
     - ${RI_DATA}/backups:/backups
+    - ${RI_DATA}/warehouse-secrets:/warehouse-secrets:ro
 
 services:
   init:
@@ -46,6 +49,7 @@ services:
       disable: true
     volumes:
       - ${RI_DATA}/secrets:/secrets
+      - ${RI_DATA}/admin-secrets:/admin-secrets
 
   db:
     image: ${RI_DB_IMAGE}
@@ -57,11 +61,12 @@ services:
       MARIADB_DATABASE: reliefinventory
       MARIADB_USER: reliefinventory
       MARIADB_PASSWORD_FILE: /secrets/db_password
-      MARIADB_ROOT_PASSWORD_FILE: /secrets/db_root_password
+      MARIADB_ROOT_PASSWORD_FILE: /admin-secrets/db_root_password
       MARIADB_AUTO_UPGRADE: "1"
     volumes:
       - ${RI_DATA}/db:/var/lib/mysql
       - ${RI_DATA}/secrets:/secrets:ro
+      - ${RI_DATA}/admin-secrets:/admin-secrets:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -72,14 +77,39 @@ services:
       retries: 18
       start_period: 60s
 
+  # The only container with the database administrator password (docker/compose.yaml, MULTI_WAREHOUSE.md §7).
+  provisioner:
+    <<: *app
+    command: ["provisioner"]
+    healthcheck:
+      disable: true
+    environment:
+      <<: *app-env
+      RI_DB_ROOT_PASSWORD_FILE: /admin-secrets/db_root_password
+    volumes:
+      - ${RI_DATA}/secrets:/secrets:ro
+      - ${RI_DATA}/admin-secrets:/admin-secrets:ro
+      - ${RI_DATA}/warehouse-secrets:/warehouse-secrets
+    depends_on:
+      db:
+        condition: service_healthy
+
   app:
     <<: *app
     command: ["web"]
     ports:
       - "${RI_PORT:-8080}:8080"
+    # As above, except that only this container may write the warehouse key files.
+    volumes:
+      - ${RI_DATA}/storage:/var/www/html/storage
+      - ${RI_DATA}/secrets:/secrets:ro
+      - ${RI_DATA}/backups:/backups
+      - ${RI_DATA}/warehouse-secrets:/warehouse-secrets
     depends_on:
       db:
         condition: service_healthy
+      provisioner:
+        condition: service_started
 
   queue:
     <<: *app

@@ -69,4 +69,4 @@ Switch the app-side recording on with `RI_SLOW_QUERY_MS=250` (milliseconds; 0 = 
 sort pallets -> create requests -> fill -> complete filling -> assign driver -> ship -> deliver -> BOL review -> re-slot
 pallets, each phase starting no earlier than its usual hour and the clock never running backwards, so stock is always
 sorted before it is picked. Slow-query side: `SlowQueryLog`, `config/slowlog.php`, `TestingToolsController`,
-`TestingTools.vue`, `slowlog:show`, `slowlog:maintain` (Docker only). Tests: `WarehouseSimulatorTest`, `SlowQueryLogTest`.
+`TestingTools.vue`, `slowlog:show`, the Docker provisioner (grants read access to, and prunes, the slow-log table). Tests: `WarehouseSimulatorTest`, `SlowQueryLogTest`.

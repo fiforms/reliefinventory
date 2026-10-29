@@ -10,6 +10,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import { computed, onMounted, ref } from 'vue';
 import axios from 'axios';
+import { withWarehouse } from '@/bootstrap';
 
 defineProps({ breadcrumb: { type: Array } });
 
@@ -34,7 +35,7 @@ async function load() {
 }
 
 const rows = computed(() => (report.value?.items || []).filter((r) => !onlyWaiting.value || r.in_area > 0));
-const csvHref = computed(() => '/report/sorting-area.csv?' + new URLSearchParams({ from: from.value, to: to.value || from.value }));
+const csvHref = computed(() => withWarehouse('/report/sorting-area.csv?' + new URLSearchParams({ from: from.value, to: to.value || from.value })));
 // Sorted in the range but not (yet) on a pallet: the "left behind" signal an end-of-day check is looking for.
 const leftBehind = (r) => r.in_area > 0 && r.sorted > r.moved;
 

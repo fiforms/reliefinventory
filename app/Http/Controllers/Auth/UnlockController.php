@@ -10,7 +10,6 @@ use App\Models\LoginHistory;
 use App\Models\Person;
 use App\Models\User;
 use App\Services\PinLoginService;
-use App\Services\TrainingMode;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -134,7 +133,6 @@ class UnlockController extends Controller
 
         Auth::login(User::findOrFail($person->id));
         $request->session()->regenerate();
-        $request->session()->forget(TrainingMode::SESSION_KEY);
 
         LoginHistory::record($person->id, 'pin', $request->ip(), $request->userAgent());
 

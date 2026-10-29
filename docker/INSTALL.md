@@ -1,147 +1,210 @@
-# Installing Relief Inventory with Docker
+# Installing Relief Inventory
 
-This guide walks you through installing Relief Inventory on a Windows, Mac or Linux computer using Docker. You don't
-need to know anything about Docker first, and you don't need to install PHP, a database or anything else. It takes
-about 15 minutes, most of it waiting for downloads.
+There are two ways to install Relief Inventory, depending on what you are putting it on:
 
-**What is Docker?** Docker runs Relief Inventory and its database in a sealed box on your computer, so nothing
-else on the machine gets changed. **Docker Desktop** is the free app that runs Docker with buttons and menus. You
-install it once, like any other program.
+- **A Windows PC, a Mac, or a Linux desktop:** use **RI Launcher**. It is a normal app with buttons; you don't
+  need to know anything about Docker. See [On a Windows, Mac or Linux desktop](#on-a-windows-mac-or-linux-desktop).
+- **A Linux server** (no desktop, always on, maybe on the internet): install it with Docker Compose. See
+  [On a Linux server](#on-a-linux-server).
 
-> This guide gets you a working copy you can open on that computer, or from other computers on the same network.
-> If you are putting Relief Inventory on the internet, also read [the Docker README](README.md) first. It
+> Either way, if you are putting Relief Inventory on the internet, also read [the Docker README](README.md). It
 > covers HTTPS, email, backups and security.
 
-## What you need
+## On a Windows, Mac or Linux desktop
 
-- A computer running **Windows 10 or 11, macOS, or Linux** that can stay switched on while people use the system.
-- An internet connection for the install (the downloads are large).
-- Several gigabytes of free disk space, plus room for your own data.
-- Permission to install software on that computer.
+**RI Launcher** installs and runs Relief Inventory for you. On Windows and Mac it sets up the small Linux layer
+Docker needs by itself, so you don't install Docker Desktop. On Linux it uses the Docker you already have.
 
-## Step 1: Install Docker Desktop
+1. Download RI Launcher for your computer from the
+   [Releases page](https://github.com/fiforms/reliefinventory/releases):
+   - **Windows:** the `.exe` installer.
+   - **Mac:** the `.dmg` (works on Apple silicon and Intel).
+   - **Linux:** the `.deb` (Debian, Ubuntu, Mint) or the `.AppImage` (any distribution).
+2. Install it and open it. Press **Install** and wait. The first time it downloads several gigabytes, and on
+   Windows it may ask you to restart the computer, then it carries on by itself when you sign back in.
+3. Press **Start**, then open the address it shows (by default <http://localhost:8080>).
+4. A setup page asks for the administrator's name, email address and password, and whether to load **example
+   data**. Choose example data if you just want to look around, but not for a real warehouse, because it can't be
+   removed later. When you finish you are signed in and ready to go.
+5. **Make your recovery key.** The first page you see has a red banner: *Set up your recovery key*. Follow it (Instance Admin →
+   Full Instance Backups → **Make the recovery key**) and **print the key it shows, or save the file, and keep it somewhere safe, away
+   from this computer and your backups**. It is shown only once. It is what lets an automatic backup bring back every warehouse's
+   encrypted settings after a disaster; without it the backups still restore your data, but the mail passwords and the like would
+   have to be entered again.
 
-Download Docker Desktop from **<https://www.docker.com/products/docker-desktop/>** and run the installer.
+Things the launcher window can do: stop and start the system, **Run as a LAN service** (so other computers and phones
+on your network can use it), **Copy shareable link** (to give to those people), update to a new version, and make,
+save and restore backups. For others to connect, the launcher has to stay running (it lives in your tray or menu
+bar). The launcher's own notes are in [launcher/README.md](../launcher/README.md).
 
-- **Windows:** choose the installer for your processor (most computers are "AMD64"; a few newer ones are
-  "ARM64"). Leave "Use WSL 2" ticked if you are asked. Restart the computer if the installer asks you to.
-- **Mac:** choose "Apple Silicon" for Macs from late 2020 onward (M1, M2, M3, M4) or "Intel chip" for older ones.
-  Open the downloaded file and drag Docker into Applications.
-- **Linux:** follow the Docker Desktop instructions for your distribution at
-  <https://docs.docker.com/desktop/setup/install/linux/>. Server installs without a desktop can use plain Docker
-  Engine instead: <https://docs.docker.com/engine/install/>. Install the Docker Compose plugin too.
+## On a Linux server
 
-Then **open Docker Desktop** and wait until it says Docker is running (usually a green indicator at the bottom left).
-You can skip creating a Docker account or signing in; you don't need one.
+These steps take a bare Linux server or VM (Debian or Ubuntu are shown; other distributions are similar) to a running
+Relief Inventory that an administrator can update from the web page. You need `sudo` access and an internet
+connection. It takes about 15 minutes, most of it waiting for downloads.
 
-Docker Desktop is free for personal use, education and small businesses. Larger companies need a paid
-subscription. Check [Docker's terms](https://www.docker.com/pricing/) if you aren't sure. (The free Docker Engine on
-Linux has no such limit.)
+### 1. Install Docker and Python
 
-## Step 2: Download the Relief Inventory settings file
+You need Docker Engine **with the Compose plugin** (`docker compose`, two words). Pick one:
 
-1. Make a new folder for Relief Inventory, for example `ReliefInventory` in your Documents folder.
-2. Download the file **compose.yaml** into it: open
-   <https://raw.githubusercontent.com/fiforms/reliefinventory/master/docker/compose.yaml>
-   in your browser, right-click the page, choose **Save as**, and save it in your new folder.
-   Make sure the file is named exactly `compose.yaml` and your computer hasn't added `.txt` to the end.
-
-This one small file is everything you need. It tells Docker which pieces to download and how to connect them.
-
-## Step 3: Tell it your address (usually optional)
-
-Open `compose.yaml` in any text editor (Notepad, TextEdit or similar) and find this line near the top:
-
-```
-APP_URL: http://localhost:8080
-```
-
-- **Using it only on this computer?** Leave it as it is.
-- **Want other computers or phones on your network to use it?** Replace `localhost` with this computer's address
-  on your network, for example `APP_URL: http://192.168.1.50:8080`. Ask whoever manages your network if you don't
-  know it. On Windows, allow Docker through the firewall if Windows asks.
-
-Save the file. Everything else already has a working default.
-
-## Step 4: Start it
-
-Open a terminal in your folder:
-
-- **Windows:** open the folder in File Explorer, click the address bar, type `cmd`, and press Enter.
-- **Mac:** right-click the folder and choose **New Terminal at Folder**. (If you don't see it, open Terminal and type
-  `cd ` followed by dragging the folder into the window, then press Enter.)
-- **Linux:** open a terminal in the folder.
-
-Type this and press Enter:
+**Option A: from your distribution's own repository (simplest on Debian and Ubuntu).**
 
 ```
-docker compose up -d
+sudo apt-get update
+sudo apt-get install -y docker.io docker-compose-v2
 ```
 
-The first time, Docker downloads Relief Inventory and its database. This takes several minutes, and you'll see
-progress bars. When it returns to the prompt, give it another minute to set itself up.
+The Compose package name varies: `docker-compose-v2` on Ubuntu 24.04 and newer, `docker-compose` on Debian 13. If
+`apt` can't find one, use Option B. (Don't use the old standalone `docker-compose` 1.x command; it won't work with
+this file.)
 
-## Step 5: Open it and create your administrator account
+**Option B: Docker's own packages**, which are newer and include Compose. Follow Docker's instructions for your
+distribution at <https://docs.docker.com/engine/install/>. On a typical Debian or Ubuntu server, Docker's
+convenience script does all of it:
 
-Open a web browser and go to the address you set as `APP_URL` (by default **<http://localhost:8080>**).
+```
+curl -fsSL https://get.docker.com | sudo sh
+```
 
-A setup page asks for the administrator's name, email address and password, and whether to load **example data**.
-Choose example data if you just want to look around, and don't choose it for a real warehouse, because it can't be
-removed later. When you finish you are signed in and ready to go.
+Then, either way, check that Docker works and install the other tools used below if they are missing:
 
-If the page doesn't load straight away, wait a minute and refresh. The first start does a lot of setup.
+```
+sudo docker compose version
+sudo apt-get install -y python3 curl openssl
+```
 
-## Everyday use
+`python3` runs the update helper in step 6, and `curl` and `openssl` are used in the next steps. Most servers
+already have all three.
 
-Run these in the same folder as `compose.yaml`:
+### 2. Make a folder and download the settings file
+
+```
+sudo mkdir -p /opt/relief && cd /opt/relief
+sudo curl -fsSLO https://raw.githubusercontent.com/fiforms/reliefinventory/master/docker/compose.yaml
+```
+
+Use any folder you like (`/opt/relief` is only an example). Keep `compose.yaml` there: backups are written in a
+`backups` folder next to it, and the rest of this guide assumes you run every command from this folder.
+
+### 3. Edit the settings
+
+```
+sudo nano compose.yaml
+```
+
+Near the top, in the **YOUR SETTINGS** block, set `APP_URL` to the address people will type into their browser,
+including `http://` or `https://` (and the port if it isn't 80 or 443), for example:
+
+```
+APP_URL: http://relief.example.org:8080
+```
+
+If you change the port, change the `"8080:8080"` line under `app` to match. If the server is reachable from the
+internet before you have finished the setup wizard, also uncomment `RI_SETUP_CODE` and choose a code, so a stranger
+who opens the page first can't make themselves the administrator. Everything else has a working default.
+
+Then make the secret the update helper uses to talk to the app (step 6) and put it in the file. This finds the
+`RI_UPDATE_SECRET` line, uncomments it and gives it a random value:
+
+```
+sudo sed -i "s|^\( *\)#* *RI_UPDATE_SECRET:.*|\1RI_UPDATE_SECRET: $(openssl rand -hex 32)|" compose.yaml
+```
+
+**Want HTTPS on this server?** Instead of the port-8080 address above, set `APP_URL` to the public name with
+`https://` and no port, uncomment `RI_HTTPS: auto`, and switch the two port lines under `app` (`"80:8080"` and
+`"443:4430"` instead of `"8080:8080"`). Let's Encrypt needs a public DNS name for the server and ports 80 and 443
+open to the internet. For a LAN server with no public name use `RI_HTTPS: internal` (browsers will warn). Details:
+[the Docker README](README.md#https). If you do this, give the updater in step 6 the address
+`http://127.0.0.1:80` as its second argument.
+
+### 4. Download and start it
+
+```
+sudo docker compose pull
+sudo docker compose up -d
+```
+
+The first time, Docker downloads Relief Inventory and its database. When it returns to the prompt, give it another
+minute to set itself up. `sudo docker compose ps` should show the services running. It starts again by itself
+whenever the server restarts.
+
+### 5. Create your administrator account
+
+Open the `APP_URL` address in a browser. A setup page asks for the administrator's name, email address and password,
+and whether to load **example data** (don't, for a real warehouse: it can't be removed later). If the page doesn't
+load straight away, wait a minute and refresh.
+
+### 6. Install the update helper
+
+The web app can't restart its own containers, so a small helper service runs on the server itself. When an
+administrator presses **Install Update** in the web page, the page leaves the helper a note, and the helper downloads
+the new release and restarts Relief Inventory. Install it from the same folder as `compose.yaml`:
+
+```
+cd /opt/relief
+mkdir ri-updater && cd ri-updater
+for f in install.sh ri-updater.py ri-updater.service; do
+  curl -fsSLO https://raw.githubusercontent.com/fiforms/reliefinventory/master/docker/updater/$f
+done
+chmod +x install.sh
+sudo ./install.sh ../compose.yaml
+```
+
+If people reach the app at an address other than `http://127.0.0.1:8080` *from the server itself* (you changed the
+port), add it as the second argument: `sudo ./install.sh ../compose.yaml http://127.0.0.1:8090`.
+
+Check that it is running: `systemctl status ri-updater` should say *active (running)*, and
+`journalctl -u ri-updater -f` shows what it is doing. Then sign in as an **instance administrator**, open
+**Instance Admin** and press **Check for Updates**. Within about 30 seconds it should report either a new version or
+"nothing newer". **Install Update** restarts the system for a few minutes (the page comes back on its own).
+
+If a request sits at "Waiting for the updater…", the helper isn't running or can't read the secret: check
+`systemctl status ri-updater`. You can also ask from the command line:
+`sudo docker compose exec app php artisan instance:update check` (or `apply`, or `status`).
+
+To remove the helper: `sudo systemctl disable --now ri-updater && sudo rm /etc/systemd/system/ri-updater.service`,
+and delete the `RI_UPDATE_SECRET` line from `compose.yaml`.
+
+## Everyday use on a server
+
+Run these in the folder with `compose.yaml`:
 
 | What you want to do | Command |
 |---|---|
-| Stop it (your data is kept) | `docker compose stop` |
-| Start it again | `docker compose start` |
-| See what's running | `docker compose ps` |
-| See messages if something is wrong | `docker compose logs app` |
+| Stop it (your data is kept) | `sudo docker compose stop` |
+| Start it again | `sudo docker compose start` |
+| See what's running | `sudo docker compose ps` |
+| See messages if something is wrong | `sudo docker compose logs app` |
+| Update by hand instead of from the web page | `sudo docker compose pull && sudo docker compose up -d` |
 
-It also starts again by itself when the computer restarts, as long as Docker Desktop starts when you sign in.
-In Docker Desktop's settings, turn on **Start Docker Desktop when you sign in**.
-
-You can also start and stop it from the Docker Desktop window by clicking the **reliefinventory** entry.
+Release notes are on the [Releases page](https://github.com/fiforms/reliefinventory/releases). The database is backed
+up automatically before any update changes it.
 
 ## Your data and backups
 
 Your data is stored by Docker in the background, not in your folder, so deleting the folder doesn't delete it.
-**Backups** are written automatically every day into a `backups` folder next to `compose.yaml`.
+**Backups** are written automatically every day into the `backups` folder next to `compose.yaml` (on a desktop
+install, use the launcher's backup tools).
 
 - Copy those backup files to another computer or a USB drive regularly. A backup on the same machine won't help if
   the machine fails.
 - Uploaded photos are not in the daily backups by default. See "Data and backups" in [the Docker README](README.md) to
   include them.
 
-## Updating to a new version
-
-When a new release comes out, run these in your folder:
-
-```
-docker compose pull
-docker compose up -d
-```
-
-Your data is kept, and the database is backed up automatically before any update changes it.
-Release notes are on the [Releases page](https://github.com/fiforms/reliefinventory/releases).
-
 ## Troubleshooting
 
-- **"docker: command not found" or "Cannot connect to the Docker daemon":** Docker Desktop isn't running. Open it and
-  wait for the green indicator, then try again.
+- **"docker: command not found" or "Cannot connect to the Docker daemon":** Docker isn't installed or isn't running.
+  On a server, `sudo systemctl start docker`. In RI Launcher, press **Start**.
 - **"port is already allocated":** something else on the computer is using port 8080. In `compose.yaml` change both
   `8080` in `APP_URL` and the `"8080:8080"` line under `app` to a free port such as `8090`.
-  Save and run `docker compose up -d` again.
-- **The browser says it can't connect:** run `docker compose ps` and check that the `app` line says it's running.
-  If it keeps restarting, `docker compose logs app` shows why.
+  Save and run `sudo docker compose up -d` again. (In RI Launcher, change the port in its settings.)
+- **The browser says it can't connect:** run `sudo docker compose ps` and check that the `app` line says it's
+  running. If it keeps restarting, `sudo docker compose logs app` shows why. Also check the server's firewall allows
+  the port.
 - **Phone camera scanning doesn't work:** phones only allow camera access on secure (HTTPS) addresses. Put
   Relief Inventory behind HTTPS (see [the Docker README](README.md)), or use a USB or Bluetooth barcode scanner.
-- **Start completely over:** `docker compose down -v` stops Relief Inventory and **permanently deletes all its data**.
-  Only do this on a test copy.
+- **Start completely over:** `sudo docker compose down -v` stops Relief Inventory and **permanently deletes all its
+  data**. Only do this on a test copy.
 
 ## Taking it further
 

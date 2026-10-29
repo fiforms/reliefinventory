@@ -1,6 +1,8 @@
 <?php
 
+use App\Models\Control\Warehouse;
 use App\Models\User;
+use App\Support\InstanceSignedUrl;
 use Illuminate\Auth\Events\Verified;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Support\Facades\Event;
@@ -20,7 +22,7 @@ test('email can be verified', function () {
 
     Event::fake();
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->addMinutes(60),
         ['id' => $user->id, 'hash' => sha1($user->email)]
@@ -36,7 +38,7 @@ test('email can be verified', function () {
 test('verifying redirects straight to pending once a track was already chosen', function () {
     $user = User::factory()->unverified()->create(['requested_track' => 'volunteer']);
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->addMinutes(60),
         ['id' => $user->id, 'hash' => sha1($user->email)]
@@ -56,7 +58,7 @@ test('verifying goes to the track picker even with a stale intended URL in sessi
 
     $this->withSession(['url.intended' => route('dashboard', absolute: false)]);
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->addMinutes(60),
         ['id' => $user->id, 'hash' => sha1($user->email)]
@@ -70,7 +72,7 @@ test('verifying goes to the track picker even with a stale intended URL in sessi
 test('email is not verified with invalid hash', function () {
     $user = User::factory()->unverified()->create();
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->addMinutes(60),
         ['id' => $user->id, 'hash' => sha1('wrong-email')]
@@ -86,7 +88,7 @@ test('the emailed link verifies without being logged in, then sends them to log 
     // unverified account can't log in, so new users looped back to /login.
     $user = User::factory()->unverified()->create(['disabled_at' => now()]);
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->addMinutes(60),
         ['id' => $user->id, 'hash' => sha1($user->email)]
@@ -109,7 +111,7 @@ test('the emailed link verifies without being logged in, then sends them to log 
 test('an expired link sends them to log in instead of a bare 403', function () {
     $user = User::factory()->unverified()->create();
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->subMinute(),
         ['id' => $user->id, 'hash' => sha1($user->email)]
@@ -126,7 +128,7 @@ test('the link does not verify another account while someone else is logged in',
     $user = User::factory()->unverified()->create();
     $other = User::factory()->create();
 
-    $verificationUrl = URL::temporarySignedRoute(
+    $verificationUrl = InstanceSignedUrl::generator()->temporarySignedRoute(
         'verification.verify',
         now()->addMinutes(60),
         ['id' => $user->id, 'hash' => sha1($user->email)]
@@ -150,4 +152,15 @@ test('logging in unverified stays on the login page and emails a fresh link, at 
     $this->post('/login', ['email' => $user->email, 'password' => 'password'])
         ->assertRedirect(route('login'));
     Notification::assertSentToTimes($user, VerifyEmail::class, 1);
+});
+
+test('a link signed with the warehouse key is refused: verification is signed with APP_KEY', function () {
+    // A warehouse admin can read their WAREHOUSE_KEY, so a link it signs could be forged (MULTI_WAREHOUSE.md §5).
+    $user = User::factory()->unverified()->create();
+    expect(Warehouse::default()->key())->not->toBe(config('app.key'));
+
+    $forged = URL::temporarySignedRoute('verification.verify', now()->addMinutes(60), ['id' => $user->id, 'hash' => sha1($user->email)]);
+    $this->get($forged)->assertRedirect(route('login'));
+
+    expect($user->fresh()->hasVerifiedEmail())->toBeFalse();
 });

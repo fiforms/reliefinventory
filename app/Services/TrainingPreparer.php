@@ -44,7 +44,7 @@ use RuntimeException;
  *
  * Writes go through the real models in one transaction, recorded as the person who pressed the button, tagged
  * source_system = 'training', with ActivityRecorder paused (starter data isn't anyone's training work). Running it
- * again adds another set. Refused unless training mode is on, so it can't be pressed on a live instance by accident.
+ * again adds another set. Refused outside a training warehouse, so it can't be pressed on a real one by accident.
  */
 class TrainingPreparer
 {
@@ -105,8 +105,8 @@ class TrainingPreparer
 
     public function run(): array
     {
-        if (! TrainingMode::enabled()) {
-            throw new RuntimeException('Turn Training Mode on before preparing training data.');
+        if (! TrainingMode::active()) {
+            throw new RuntimeException('Only a training warehouse can prepare training data.');
         }
         $this->actorId = (int) Auth::id();
         $this->batch = now()->format('YmdHis');

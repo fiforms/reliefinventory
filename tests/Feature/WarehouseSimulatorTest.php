@@ -3,6 +3,7 @@
 use App\Models\SetupState;
 use App\Models\User;
 use App\Services\FirstRunService;
+use App\Services\PalletStock;
 use App\Services\Simulator\NameBank;
 use App\Services\Simulator\SimRandom;
 use App\Services\Simulator\SimulationRun;
@@ -21,7 +22,7 @@ function setUpEmptyInstance(): void
     SetupState::current()->update(['demo_data_seeded_at' => null]);
 }
 
-afterEach(fn () => File::delete(storage_path('app/simulator-status.json')));
+afterEach(fn () => File::delete(SimulationRun::statusPath()));
 
 /** Running usable-stock balance per item, replayed in the order the rows were written. */
 function itemsEverNegative(): array
@@ -53,7 +54,7 @@ test('a simulated period is realistic and only the injected errors ever go negat
 
     $this->artisan('simulate:warehouse', ['--days' => 30, '--orders' => 100, '--errors' => 2, '--seed' => 11, '--yes' => true])->assertSuccessful();
 
-    $status = json_decode(File::get(storage_path('app/simulator-status.json')), true);
+    $status = json_decode(File::get(SimulationRun::statusPath()), true);
     $summary = $status['summary'];
 
     expect($status['state'])->toBe('done')
@@ -80,7 +81,7 @@ test('a simulated period is realistic and only the injected errors ever go negat
 
     // Pallet-level stock is simulated too: many multi-item warehouse pallets, some stock left in the sorting area, and
     // no pallet is ever recorded as holding less than nothing (over-picks hit the sorting-area pool, never a pallet).
-    $quantities = \App\Services\PalletStock::quantities();
+    $quantities = PalletStock::quantities();
     expect($summary['counts']['warehouse_pallets'])->toBeGreaterThan(20)
         ->and($summary['counts']['pallet_stock_assignments'])->toBeGreaterThan($summary['counts']['warehouse_pallets'])
         ->and($summary['counts']['stock_still_in_sorting_area'])->toBeGreaterThan(0)
@@ -101,6 +102,7 @@ test('the same seed produces the same simulation', function () {
 
     $run = function () {
         DB::beginTransaction();
+        DB::connection('accounts')->beginTransaction();   // the simulated logins
         try {
             $s = app(WarehouseSimulator::class)->run(14, 40, 99, 1);
             unset($s['seconds']);
@@ -110,6 +112,7 @@ test('the same seed produces the same simulation', function () {
 
             return $s;
         } finally {
+            DB::connection('accounts')->rollBack();
             DB::rollBack();
         }
     };
@@ -165,7 +168,7 @@ test('the wizard can start the simulation and lands on its progress page', funct
     Process::assertRan(fn ($p) => str_contains($p->command, 'simulate:warehouse') && str_contains($p->command, '--yes'));
     // the data itself comes from the detached process, so the wizard added none
     expect(DB::table('orderdonations')->exists())->toBeFalse()
-        ->and(json_decode(File::get(storage_path('app/simulator-status.json')), true)['state'])->toBe('running');
+        ->and(json_decode(File::get(SimulationRun::statusPath()), true)['state'])->toBe('running');
 });
 
 test('testing tools are for system administrators only', function () {
@@ -190,7 +193,7 @@ test('the testing tools status offers the simulator only while the instance is e
 });
 
 test('a simulation process that died does not read as running forever', function () {
-    File::put(storage_path('app/simulator-status.json'), json_encode(['state' => 'running', 'pid' => 999999999, 'started_at' => now()->subMinute()->toIso8601String()]));
+    File::put(SimulationRun::statusPath(), json_encode(['state' => 'running', 'pid' => 999999999, 'started_at' => now()->subMinute()->toIso8601String()]));
 
     expect(app(SimulationRun::class)->status()['state'])->toBe('failed');
 });
@@ -199,7 +202,7 @@ test('a detached run that is refused at the door says why instead of staying at 
     setUpEmptyInstance();
     DB::table('drivers')->insert(['name' => 'Real Driver', 'created_at' => now(), 'updated_at' => now()]);
     // what SimulationRun::start() leaves behind before it launches the process
-    File::put(storage_path('app/simulator-status.json'), json_encode(['state' => 'running', 'pid' => null, 'started_at' => now()->toIso8601String()]));
+    File::put(SimulationRun::statusPath(), json_encode(['state' => 'running', 'pid' => null, 'started_at' => now()->toIso8601String()]));
 
     $this->artisan('simulate:warehouse', ['--days' => 10, '--orders' => 5, '--yes' => true])->assertFailed();
 
@@ -212,7 +215,7 @@ test('the detached run is started with the configured php binary, not the web se
     config(['backup.php_binary' => '/usr/local/bin/php-cli-test']);
     Process::fake();
 
-    expect(app(App\Services\Simulator\SimulationRun::class)->start(30, 50, 1, 0))->toBeTrue();
+    expect(app(SimulationRun::class)->start(30, 50, 1, 0))->toBeTrue();
 
     Process::assertRan(fn ($p) => str_contains($p->command, "'/usr/local/bin/php-cli-test' artisan simulate:warehouse") && ! str_contains($p->command, PHP_BINARY.' artisan'));
 });

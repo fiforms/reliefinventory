@@ -5,7 +5,9 @@
 
 namespace App\Services;
 
+use App\Models\Control\WarehouseDomain;
 use App\Models\OfflineModeSetting;
+use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
@@ -51,7 +53,7 @@ class TurnstileService
      * What a page shows when misconfigured() is true: a plain 503 that tells
      * the administrator which settings to change, instead of a bare 500.
      */
-    public function misconfiguredResponse(): \Illuminate\Http\Response
+    public function misconfiguredResponse(): Response
     {
         return response()->view('errors.turnstile-misconfigured', [], 503);
     }
@@ -77,6 +79,23 @@ class TurnstileService
             throw ValidationException::withMessages([
                 'cf-turnstile-response' => ['Failed Turnstile verification. Please try again.'],
             ]);
+        }
+
+        $this->confirmHost($response);
+    }
+
+    /**
+     * Cloudflare names the hostname a passed check came from. When it is a mapped warehouse hostname, remember that it works
+     * (MULTI_WAREHOUSE.md §13), so the domain list can stop warning that the host may not be on the widget. Never throws.
+     */
+    private function confirmHost(array $response): void
+    {
+        try {
+            $host = strtolower((string) ($response['hostname'] ?? ''));
+            if ($host !== '' && $host === strtolower(request()->getHost())) {
+                WarehouseDomain::where('hostname', $host)->whereNull('turnstile_confirmed_at')->update(['turnstile_confirmed_at' => now()]);
+            }
+        } catch (\Throwable) {
         }
     }
 }

@@ -1,0 +1,14 @@
+# Relief Inventory host-side updater (docker/updater/ri-updater.py). install.sh fills in the two paths.
+[Unit]
+Description=Relief Inventory updater
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/lib/ri-updater/ri-updater.py --compose-file @COMPOSE_FILE@ --url @URL@
+Restart=always
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

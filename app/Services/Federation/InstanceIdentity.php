@@ -5,7 +5,9 @@
 
 namespace App\Services\Federation;
 
+use App\Models\Control\Warehouse;
 use App\Models\FederationIdentity;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Support\Str;
 use Throwable;
 
@@ -54,6 +56,10 @@ class InstanceIdentity
             'url' => $identity->base_url,
             'public_key' => $identity->public_key,
             'fingerprint' => RequestSigner::fingerprint($identity->public_key),
+            // Which warehouse this is, and whether its address is shared with other warehouses: then the domain
+            // proves only that the hosting party controls it, not this warehouse's organization (§4, DomainVerifier).
+            'warehouse' => Warehouse::current()->id,
+            'shared_host' => app(WarehouseContext::class)->multiple() && ! Warehouse::current()->ownsHost(request()->getHost()),
         ];
     }
 
@@ -74,7 +80,7 @@ class InstanceIdentity
         return FederationIdentity::create([
             'uuid' => (string) Str::uuid(),
             'name' => (string) config('app.name'),
-            'base_url' => rtrim((string) config('app.url'), '/') ?: null,
+            'base_url' => Warehouse::current()->machineUrl() ?: null,
             'public_key' => $public,
             'private_key' => $secret,
         ]);

@@ -3,8 +3,7 @@
 
 <!-- Setup/Training.vue
 
-	Setup > Training Mode (TrainingAdminController, manage-training; the on/off switch needs
-	admin-system). While Training Mode is on, approved devices offer a tap-your-name login for the
+	Setup > Training Warehouse (TrainingAdminController, manage-training, a key only a training warehouse has). Approved devices offer a tap-your-name login for the
 	trainees listed here, capped to station work (App\Services\TrainingMode). Prepare Training loads
 	starter work for every station and the setup packet tells trainers how to stage the floor.
 -->
@@ -31,7 +30,6 @@ const newTrainee = ref({ first_name: '', last_name: '', team: null });
 const showInactive = ref(false);
 const event = ref({ event_title: '', event_location: '', trainer1_name: '', trainer2_name: '' });
 const uploadingSlot = ref(null);
-const resetPointFailed = ref(false);
 const confirmingReset = ref(false);
 const resetText = ref('');
 const resetting = ref(false);
@@ -49,7 +47,7 @@ async function load() {
 			trainer2_name: status.value.trainers[1].name || '',
 		};
 	} catch (e) {
-		error.value = e.response?.data?.message || 'Could not load Training Mode settings.';
+		error.value = e.response?.data?.message || 'Could not load the training warehouse settings.';
 	}
 }
 
@@ -66,25 +64,6 @@ async function saveEvent() {
 	}
 }
 
-// Turning on takes a reset point first (a database backup); if that fails the mode stays off and the person may turn it
-// on without one. Turning off here keeps everything; startReset() is the other way off.
-async function setMode(enabled, resetPoint = true) {
-	error.value = notice.value = null;
-	resetPointFailed.value = false;
-	busy.value = true;
-	try {
-		status.value = (await axios.put('/json/training/mode', { enabled, reset_point: resetPoint })).data;
-		notice.value = enabled
-			? 'Training Mode is on.' + (status.value.reset_point ? ' A reset point was saved.' : '')
-			: 'Training Mode is off — approved devices show the normal login again. Everything entered during training was kept.';
-	} catch (e) {
-		error.value = e.response?.data?.message || 'Could not change Training Mode.';
-		resetPointFailed.value = !!e.response?.data?.reset_point_failed;
-	} finally {
-		busy.value = false;
-	}
-}
-
 async function startReset() {
 	error.value = notice.value = null;
 	resetting.value = true;
@@ -98,8 +77,8 @@ async function startReset() {
 	}
 }
 
-// The reset runs in the background: the site goes into maintenance mode (503) and the restored database has none of
-// today's logins (401/419), so keep asking until the answer says how it ended.
+// The reset runs in the background: this warehouse answers 503 while it is rebuilt and, rebuilt, has none of today's
+// sessions (401/419), so keep asking until the answer says how it ended.
 function watchReset() {
 	const timer = setInterval(async () => {
 		try {
@@ -115,13 +94,9 @@ function watchReset() {
 			if (code === 401 || code === 419) {
 				clearInterval(timer);
 				window.location.href = '/login';
-			} // 503 (maintenance) or a dropped connection: still going
+			} // 503 (being rebuilt) or a dropped connection: still going
 		}
 	}, 3000);
-}
-
-function formatBytes(n) {
-	return n > 1048576 ? (n / 1048576).toFixed(1) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB';
 }
 
 function archiveTime(stamp) {
@@ -210,28 +185,26 @@ onMounted(async () => {
 </script>
 
 <template>
-	<Head title="Training Mode" />
+	<Head title="Training Warehouse" />
 	<AuthenticatedLayout :breadcrumb="breadcrumb">
 		<div class="max-w-4xl mx-auto p-4 space-y-6">
-			<h1 class="text-2xl font-bold">Training Mode</h1>
+			<h1 class="text-2xl font-bold">Training Warehouse</h1>
 
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>
 			<div v-if="notice" class="rounded bg-green-100 border border-green-400 text-green-800 px-4 py-3">{{ notice }}</div>
-			<p v-if="!status && !error" class="text-gray-500">Loading Training Mode…</p>
+			<p v-if="!status && !error" class="text-gray-500">Loading…</p>
 
 			<template v-if="status">
-				<!-- ======================= THE SWITCH ======================= -->
+				<!-- ======================= THIS WAREHOUSE ======================= -->
 				<section class="bg-white shadow rounded-lg p-6 space-y-4">
-					<h2 class="text-lg font-semibold">Training Mode is {{ status.enabled ? 'on' : 'off' }}</h2>
+					<h2 class="text-lg font-semibold">This is a training warehouse</h2>
 					<p class="text-sm text-gray-700">
-						While it's on, an approved device shows a <strong>tap-your-name</strong> login for trainees
-						— no password. That login can only do station work (Receiving, Sorting, Inventory
-						Movement, Order Filling, Shipping, Order Entry, and reports); anything in Setup, user
-						changes or inventory adjustments still need a staff member's full login. Everything else
-						in the system works exactly as usual, so every practice donation, pallet and order is real
-						data in this instance.
+						Everything entered here is practice data and never mixes with a real warehouse. An approved device shows a
+						<strong>tap-your-name</strong> login for trainees &mdash; no password &mdash; and a trainee can do what the Trainee
+						role grants (station work and reports; nothing in Setup). To close this warehouse after the class, ask the person who runs the
+						instance to turn it off (<span class="font-mono">php artisan warehouse:training disable</span>); its data is kept until it is reset.
 					</p>
-					<div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
+					<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
 						<div class="border rounded p-3">
 							<div class="text-gray-500">Approved devices</div>
 							<div class="text-lg font-semibold">{{ status.approved_devices }}</div>
@@ -240,69 +213,39 @@ onMounted(async () => {
 							<div class="text-gray-500">Trainees on the list</div>
 							<div class="text-lg font-semibold">{{ status.trainees.filter((t) => t.active).length }}</div>
 						</div>
-						<div class="border rounded p-3">
-							<div class="text-gray-500">On since</div>
-							<div class="font-mono text-gray-600 text-xs mt-1">{{ status.enabled ? formatTime(status.enabled_at) : 'off' }}</div>
-						</div>
 					</div>
 					<div v-if="resetting" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">
-						Resetting to before training… The site is unavailable for a minute or two, and everyone is logged out
-						when it finishes. This page goes to the login screen by itself.
+						Resetting this warehouse… It is unavailable for a minute or two, and everyone is logged out when it finishes.
+						This page goes to the login screen by itself.
 					</div>
-					<div v-else-if="status.can_toggle" class="space-y-3">
-						<template v-if="!status.enabled">
-							<PrimaryButton :disabled="busy" @click="setMode(true)">{{ busy ? 'Saving a reset point…' : 'Turn Training Mode on' }}</PrimaryButton>
-							<p class="text-xs text-gray-500">
-								Turning it on first saves a <strong>reset point</strong> (a backup of the database), so the
-								instance can be put back the way it is now after the class. Approve the tablets, scan the training
-								products and fill in the certificate details <em>before</em> turning it on, so they are kept.
+					<div v-else class="space-y-3">
+						<button v-if="!confirmingReset" type="button"
+							class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-red-600 hover:bg-red-500"
+							@click="confirmingReset = true; resetText = ''">Reset this warehouse…</button>
+						<div v-if="confirmingReset" class="border border-red-300 bg-red-50 rounded p-4 space-y-2 text-sm">
+							<p class="font-semibold text-red-800">This erases everything entered in this warehouse and starts it again from its seed.</p>
+							<p>
+								Practice donations, orders, pallets and stock, trainees and sign-ups, report cards, items added to the Master Item
+								List, uploaded photos and approved devices are erased. <strong>Kept:</strong> the people who log in here (with their
+								roles), the certificate details and signatures, and the class archives. Nothing outside this warehouse is touched.
 							</p>
-							<div v-if="resetPointFailed">
-								<button type="button" class="text-sm underline text-red-700" :disabled="busy" @click="setMode(true, false)">
-									Turn it on without a reset point (it can't be reset afterwards)
-								</button>
-							</div>
-						</template>
-						<template v-else>
-							<p class="text-sm">
-								<template v-if="status.reset_point">Reset point saved {{ formatTime(status.reset_point.at) }} ({{ formatBytes(status.reset_point.bytes) }}).</template>
-								<template v-else>No reset point — Training Mode was turned on without one, so it can't be reset.</template>
+							<p>
+								First, a <strong>class archive</strong> is saved: the sign-up follow-up list, report cards (PDF and CSV) and
+								certificates. Download it below afterwards.
 							</p>
-							<div class="flex flex-wrap gap-3">
-								<PrimaryButton :disabled="busy" @click="setMode(false)">{{ busy ? 'Saving…' : 'Turn off and keep everything' }}</PrimaryButton>
-								<button v-if="status.reset_point && !confirmingReset" type="button"
-									class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-red-600 hover:bg-red-500"
-									@click="confirmingReset = true; resetText = ''">Turn off and reset to before training…</button>
+							<label class="block">Type <strong>RESET</strong> to confirm:
+								<input v-model="resetText" class="ml-2 border-gray-300 rounded-md shadow-sm text-sm py-1 w-32" autocomplete="off" />
+							</label>
+							<div class="flex gap-3">
+								<button type="button" :disabled="resetText.trim() !== 'RESET'" @click="startReset"
+									class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-red-600 hover:bg-red-500 disabled:opacity-50">
+									Reset now</button>
+								<button type="button" class="text-sm underline" @click="confirmingReset = false">Cancel</button>
 							</div>
-							<div v-if="confirmingReset" class="border border-red-300 bg-red-50 rounded p-4 space-y-2 text-sm">
-								<p class="font-semibold text-red-800">This puts the database back to {{ formatTime(status.reset_point.at) }}.</p>
-								<p>
-									Everything entered since then is erased: practice donations, orders, pallets and stock, trainees and
-									sign-ups, report cards, items added to the Master Item List, and devices approved since. Uploaded files
-									(photos, signatures) stay. Everyone is logged out, and the site is unavailable for a minute or two.
-								</p>
-								<p>
-									First, a <strong>class archive</strong> is saved: the sign-up follow-up list, report cards (PDF and CSV)
-									and certificates. Download it below afterwards.
-								</p>
-								<label class="block">Type <strong>RESET</strong> to confirm:
-									<input v-model="resetText" class="ml-2 border-gray-300 rounded-md shadow-sm text-sm py-1 w-32" autocomplete="off" />
-								</label>
-								<div class="flex gap-3">
-									<button type="button" :disabled="resetText.trim() !== 'RESET'" @click="startReset"
-										class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-red-600 hover:bg-red-500 disabled:opacity-50">
-										Reset now</button>
-									<button type="button" class="text-sm underline" @click="confirmingReset = false">Cancel</button>
-								</div>
-							</div>
-						</template>
+						</div>
 					</div>
-					<p v-else class="text-sm text-gray-500">Turning Training Mode on or off needs the System Administration permission.</p>
 					<div v-if="status.reset_status?.state === 'failed' && !resetting" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3 text-sm">
 						The last reset failed: {{ status.reset_status.error }}
-						<span v-if="status.reset_status.reset_point"> The reset point is still at
-							<span class="font-mono">{{ status.reset_status.reset_point }}</span>; an administrator can restore it on the server with
-							<span class="font-mono">php artisan backup:restore &lt;that file&gt; --force</span>.</span>
 					</div>
 					<p class="text-xs text-gray-500">
 						To approve a tablet, log in on it and choose <strong>PIN Login on This Device</strong> from the
@@ -338,7 +281,7 @@ onMounted(async () => {
 							<div class="flex flex-wrap gap-2">
 								<PrintMenu document-key="training-signup-poster" media="report" variant="form" label="QR Poster"
 									download-href="/report/training/signup-poster.pdf" />
-								<a href="/report/training/signups.csv" class="ri_formbutton">Follow-up List (CSV)</a>
+								<a :href="$withWarehouse('/report/training/signups.csv')" class="ri_formbutton">Follow-up List (CSV)</a>
 								<button type="button" class="ri_formbutton" @click="load">Refresh</button>
 							</div>
 						</div>
@@ -368,7 +311,7 @@ onMounted(async () => {
 					</div>
 					<div v-if="preparing" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-4 py-3 text-sm">Preparing training data…</div>
 					<div class="flex flex-wrap items-center gap-3">
-						<button type="button" :disabled="!status.enabled || preparing || status.products.units < status.products.plan.target" @click="prepare"
+						<button type="button" :disabled="preparing || status.products.units < status.products.plan.target" @click="prepare"
 							class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white disabled:opacity-50"
 							:class="confirmingPrepare ? 'bg-red-600 hover:bg-red-500' : 'bg-amber-600 hover:bg-amber-500'">
 							{{ confirmingPrepare ? 'Confirm — adds a full set of training records' : 'Prepare Training' }}
@@ -383,8 +326,7 @@ onMounted(async () => {
 						<PrintMenu document-key="training-spot-labels" :media="$page.props.printing.palletLabelMedia" variant="form"
 							label="Table Spot Labels" download-href="/report/training/spot-labels.pdf" />
 					</div>
-					<p v-if="!status.enabled" class="text-sm text-gray-500">Turn Training Mode on first.</p>
-					<p v-else-if="status.products.units < status.products.plan.target" class="text-sm text-gray-500">
+					<p v-if="status.products.units < status.products.plan.target" class="text-sm text-gray-500">
 						Scan at least {{ status.products.plan.target }} items first ({{ status.products.plan.target - status.products.units }} more).
 					</p>
 					<p class="text-xs text-gray-500">
@@ -461,7 +403,7 @@ onMounted(async () => {
 							<tr v-for="a in status.archives" :key="a.stamp">
 								<td>{{ archiveTime(a.stamp) }}</td>
 								<td>
-									<a v-for="f in a.files" :key="f.name" :href="'/report/training/archives/' + a.stamp + '/' + f.name"
+									<a v-for="f in a.files" :key="f.name" :href="$withWarehouse('/report/training/archives/' + a.stamp + '/' + f.name)"
 										class="underline text-blue-700 mr-4">{{ f.label }}</a>
 								</td>
 							</tr>

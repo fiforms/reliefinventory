@@ -3,7 +3,7 @@
 
 <!-- Setup/TrainingProducts.vue
 
-	Setup > Training Mode > Scan Training Products (TrainingProductController, manage-training): the trainer scans
+	Setup > Training Warehouse > Scan Training Products (TrainingProductController, manage-training): the trainer scans
 	the real goods that start out "already in the warehouse" — Stations 3–5 (sorting area, table-spot trays, loads to
 	ship) — one unit per scan. Receiving's goods are the trainer's own and are not scanned. A barcode the catalog already knows just counts; an
 	unknown one opens the shared Add New Item box (NewItemModal) and counts once saved. The list is not stock —
@@ -196,7 +196,7 @@ onBeforeUnmount(() => document.removeEventListener('click', onPageClick));
 		<div class="max-w-4xl mx-auto p-4 space-y-6">
 			<div class="flex flex-wrap items-center justify-between gap-2">
 				<h1 class="text-2xl font-bold">Scan Training Products</h1>
-				<Link href="/setup/training" class="ri_formbutton">Back to Training Mode</Link>
+				<Link href="/setup/training" class="ri_formbutton">Back to Training Warehouse</Link>
 			</div>
 
 			<div v-if="error" class="rounded bg-red-100 border border-red-400 text-red-800 px-4 py-3">{{ error }}</div>

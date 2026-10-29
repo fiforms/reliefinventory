@@ -6,6 +6,7 @@
 namespace App\Services\Simulator;
 
 use App\Models\SetupState;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Process;
 use Throwable;
@@ -21,9 +22,10 @@ use Throwable;
  */
 class SimulationRun
 {
+    /** In the warehouse's own files folder: a simulation is of one warehouse (MULTI_WAREHOUSE.md §11). */
     public static function statusPath(): string
     {
-        return storage_path('app/simulator-status.json');
+        return app(WarehouseContext::class)->current()->storagePath('simulator-status.json');
     }
 
     /** @return array<string, mixed> state: none|running|done|failed */
@@ -59,7 +61,9 @@ class SimulationRun
 
         $php = escapeshellarg(config('backup.php_binary')); // not PHP_BINARY: under FrankenPHP that is the frankenphp server binary
         $log = escapeshellarg(storage_path('logs/simulator.log'));
-        $args = "--yes --days={$days} --orders={$orders} --errors={$errors}".($seed !== null ? " --seed={$seed}" : '');
+        // --warehouse: with more than one warehouse, a console command won't guess which one it is for.
+        $warehouse = escapeshellarg('--warehouse='.app(WarehouseContext::class)->current()->id);
+        $args = "--yes --days={$days} --orders={$orders} --errors={$errors} {$warehouse}".($seed !== null ? " --seed={$seed}" : '');
         Process::path(base_path())->run("setsid -f {$php} artisan simulate:warehouse {$args} >> {$log} 2>&1 < /dev/null");
 
         return true;

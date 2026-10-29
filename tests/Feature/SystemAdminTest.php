@@ -4,6 +4,7 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 
 test('the system admin page requires admin-system or manage-backups', function () {
     $this->actingAs(User::factory()->create())
@@ -22,139 +23,43 @@ test('system json endpoints require the admin-system permission', function () {
 
     $this->actingAs($user)->get('/json/system/status')->assertForbidden();
     $this->actingAs($user)->post('/json/system/update')->assertForbidden();
-    $this->actingAs($user)->post('/json/system/backup')->assertForbidden();
-    $this->actingAs($user)->put('/json/system/backup-settings')->assertForbidden();
 });
 
-test('status returns version, backups, and settings for a system admin', function () {
-    config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings.conf']);
-    @unlink(config('system.settings_file'));
+test('status returns the version and update state, and nothing about backups (they are BackupController\'s now)', function () {
+    $response = $this->actingAs(userWithPermissions('admin-system'))->get('/json/system/status');
 
-    $response = $this->actingAs(userWithPermissions('admin-system'))
-        ->get('/json/system/status');
-
-    $response->assertOk()->assertJsonPath('runtime', 'systemd')->assertJsonPath('container_backups', null)->assertJsonStructure([
-        'version' => ['current', 'behind', 'pending_commits'],
-        'backup_settings' => ['frequency', 'hour', 'tz', 'keep_hourly', 'keep_daily', 'keep_monthly', 'keep_yearly'],
-        'backups' => ['tiers' => ['hourly', 'daily', 'monthly', 'yearly'], 'last_scheduled'],
-        'timezones',
+    $response->assertOk()->assertJsonPath('runtime', 'systemd')->assertJsonStructure([
+        'version' => ['current', 'behind', 'pending_commits'], 'update_status', 'offline_mode',
     ]);
-    // No settings file yet -> defaults
-    expect($response->json('backup_settings.frequency'))->toBe('daily')
-        ->and($response->json('backup_settings.hour'))->toBe(2);
+    foreach (['backup_settings', 'backups', 'container_backups', 'timezones'] as $gone) {
+        expect($response->json())->not->toHaveKey($gone);
+    }
 });
 
-test('backup entries are ordered by actual mtime, not by stamp-name sort order', function () {
-    // Simulates the exact scenario a BACKUP_TZ change produces: an
-    // older-named directory that was actually touched more recently than a
-    // newer-named one. A name-only sort would report the wrong one as latest.
-    $dir = sys_get_temp_dir().'/ri-test-backups-'.uniqid();
-    config(['system.backup_dir' => $dir]);
-    mkdir("$dir/daily", 0777, true);
-    mkdir("$dir/daily/20260827-070910");
-    mkdir("$dir/daily/20260827-001538");
-    touch("$dir/daily/20260827-070910", strtotime('2026-08-27 07:09:11 UTC'));
-    touch("$dir/daily/20260827-001538", strtotime('2026-08-27 07:15:38 UTC'));
+test('the bare-metal backup panel\'s own endpoints are gone: one schedule, one page', function () {
+    $admin = userWithPermissions('admin-system', 'manage-backups');
 
-    $response = $this->actingAs(userWithPermissions('admin-system'))
-        ->get('/json/system/status');
-
-    $response->assertOk()
-        ->assertJsonPath('backups.tiers.daily.entries.0.name', '20260827-001538')
-        ->assertJsonPath('backups.tiers.daily.entries.1.name', '20260827-070910');
+    $this->actingAs($admin)->postJson('/json/system/backup')->assertNotFound();
+    $this->actingAs($admin)->putJson('/json/system/backup-settings', [])->assertNotFound();
+    $this->actingAs($admin)->get('/json/backups/tier/daily/20260102-030000/download')->assertNotFound();
+    // what replaced them
+    $this->actingAs($admin)->getJson('/json/backups/schedule')->assertOk();
 });
 
-test('tier entries are zips (with their size) or old-style directories, newest first', function () {
-    $dir = sys_get_temp_dir().'/ri-test-backups-'.uniqid();
-    config(['system.backup_dir' => $dir]);
-    mkdir("$dir/hourly", 0777, true);
-    mkdir("$dir/hourly/20260101-010000");
-    file_put_contents("$dir/hourly/20260102-010000.zip", str_repeat('z', 2048));
-    file_put_contents("$dir/hourly/notes.txt", 'ignored');
-    touch("$dir/hourly/20260101-010000", strtotime('2026-01-01 01:00:00 UTC'));
-    touch("$dir/hourly/20260102-010000.zip", strtotime('2026-01-02 01:00:00 UTC'));
-
-    $this->actingAs(userWithPermissions('admin-system'))->get('/json/system/status')->assertOk()
-        ->assertJsonPath('backups.tiers.hourly.count', 2)
-        ->assertJsonPath('backups.tiers.hourly.entries.0', ['name' => '20260102-010000', 'size' => 2048, 'downloadable' => true])
-        ->assertJsonPath('backups.tiers.hourly.entries.1.name', '20260101-010000')
-        ->assertJsonPath('backups.tiers.hourly.entries.1.downloadable', false);   // an old-style directory can't be downloaded
-});
-
-test('a Docker install shows what compose configured and refuses the systemd-only actions', function () {
-    config(['system.runtime' => 'docker', 'backup.keep_days' => 9, 'backup.container' => ['enabled' => true, 'hour' => 3, 'premigrate' => false, 'scope' => 'full']]);
+test('a Docker install says so, has no web updater for a warehouse admin, and still has what applies everywhere', function () {
+    config(['system.runtime' => 'docker']);
     $admin = userWithPermissions('admin-system');
 
     $this->actingAs($admin)->get('/json/system/status')->assertOk()
         ->assertJsonPath('runtime', 'docker')
-        ->assertJsonPath('backups', null)
-        ->assertJsonPath('backup_settings', null)
         ->assertJsonPath('update_status', null)
-        ->assertJsonPath('container_backups', ['enabled' => true, 'hour' => 3, 'premigrate' => false, 'scope' => 'full', 'keep_days' => 9])
         ->assertJsonPath('version.behind', null);
 
-    $this->actingAs($admin)->post('/json/system/update')->assertStatus(409);
-    $this->actingAs($admin)->post('/json/system/check-updates')->assertStatus(409);
-    $this->actingAs($admin)->post('/json/system/backup')->assertStatus(409);
-    $this->actingAs($admin)->putJson('/json/system/backup-settings', [])->assertStatus(409);
+    // Updating is the host-side updater's (InstanceUpdateTest); a warehouse admin who isn't an instance admin may not ask for it.
+    $this->actingAs($admin)->post('/json/system/update')->assertStatus(403);
+    $this->actingAs($admin)->post('/json/system/check-updates')->assertStatus(403);
     // what applies everywhere still works
     $this->actingAs($admin)->putJson('/json/system/offline-mode', ['enabled' => false])->assertOk();
-    $this->actingAs($admin)->get('/setup/system')->assertInertia(fn ($page) => $page->where('runtime', 'docker'));
-});
-
-test('backup settings round-trip through the conf file', function () {
-    config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings.conf']);
-    @unlink(config('system.settings_file'));
-
-    $admin = userWithPermissions('admin-system');
-
-    $this->actingAs($admin)->put('/json/system/backup-settings', [
-        'frequency' => 'weekly',
-        'hour' => 3,
-        'dow' => 1,
-        'tz' => 'America/New_York',
-        'keep_hourly' => 48,
-        'keep_daily' => 7,
-        'keep_monthly' => 6,
-        'keep_yearly' => 2,
-    ])->assertOk()->assertJsonPath('backup_settings.frequency', 'weekly');
-
-    // The file matches the KEY=value format scripts/update.sh parses
-    $contents = file_get_contents(config('system.settings_file'));
-    expect($contents)->toContain('BACKUP_FREQUENCY=weekly')
-        ->toContain('BACKUP_HOUR=3')
-        ->toContain('BACKUP_TZ=America/New_York')
-        ->toContain('KEEP_HOURLY=48')
-        ->toContain('KEEP_DAILY=7');
-
-    // And reads back through the status endpoint
-    $this->actingAs($admin)->get('/json/system/status')
-        ->assertJsonPath('backup_settings.dow', 1)
-        ->assertJsonPath('backup_settings.keep_yearly', 2);
-
-    @unlink(config('system.settings_file'));
-});
-
-test('the hourly backup switch round-trips as HOURLY_BACKUPS=0/1 and defaults to off', function () {
-    config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings-hourly.conf']);
-    @unlink(config('system.settings_file'));
-    $admin = userWithPermissions('admin-system');
-
-    $this->actingAs($admin)->get('/json/system/status')->assertJsonPath('backup_settings.hourly', false);
-
-    $settings = ['frequency' => 'daily', 'hour' => 2, 'dow' => 7, 'tz' => 'America/Los_Angeles',
-        'keep_hourly' => 48, 'keep_daily' => 14, 'keep_monthly' => 12, 'keep_yearly' => 3];
-
-    $this->actingAs($admin)->put('/json/system/backup-settings', $settings + ['hourly' => true])
-        ->assertOk()->assertJsonPath('backup_settings.hourly', true);
-    expect(file_get_contents(config('system.settings_file')))->toContain('HOURLY_BACKUPS=1');
-
-    // omitting it (an older client) turns it off rather than erroring
-    $this->actingAs($admin)->put('/json/system/backup-settings', $settings)
-        ->assertOk()->assertJsonPath('backup_settings.hourly', false);
-    expect(file_get_contents(config('system.settings_file')))->toContain('HOURLY_BACKUPS=0');
-
-    @unlink(config('system.settings_file'));
 });
 
 test('a stale running status is surfaced as stalled instead of blocking retry forever', function () {
@@ -221,20 +126,13 @@ test('saving offline mode requires the admin-system permission', function () {
         ->assertForbidden();
 });
 
-test('invalid backup settings are rejected', function () {
-    config(['system.settings_file' => sys_get_temp_dir().'/ri-test-backup-settings.conf']);
+test('the deprecated bare-metal web updater still runs but logs a deprecation warning', function () {
+    config(['system.update_status_file' => sys_get_temp_dir().'/ri-test-update-status-'.bin2hex(random_bytes(3)).'.json']);
+    Log::spy();
 
-    $this->actingAs(userWithPermissions('admin-system'))
-        ->putJson('/json/system/backup-settings', [
-            'frequency' => 'hourly',       // not offered
-            'hour' => 25,                  // out of range
-            'dow' => 7,
-            'tz' => 'Not/AZone',
-            'keep_hourly' => 0,            // must keep at least one hourly
-            'keep_daily' => 0,             // must keep at least one daily
-            'keep_monthly' => 12,
-            'keep_yearly' => 3,
-        ])
-        ->assertStatus(422)
-        ->assertJsonValidationErrors(['frequency', 'hour', 'tz', 'keep_hourly', 'keep_daily']);
+    // No sudoers rule in the test environment, so starting the unit fails — the point is that the path is still taken.
+    $this->actingAs(userWithPermissions('admin-system'))->post('/json/system/update');
+
+    Log::shouldHaveReceived('warning')->withArgs(fn ($message) => str_contains($message, 'Deprecated bare-metal web update'))->once();
+    @unlink(config('system.update_status_file'));
 });

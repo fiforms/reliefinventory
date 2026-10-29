@@ -8,20 +8,17 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Storage;
 
-/** Singleton (always id = 1), same pattern as PinLoginSetting — see App\Services\TrainingMode. */
+/** Singleton (always id = 1), same pattern as PinLoginSetting — see App\Services\TrainingMode. Event details, trainers and what Prepare Training loaded; whether the warehouse is on is its status, not a flag here. */
 class TrainingSetting extends Model
 {
     protected $table = 'training_settings';
 
-    protected $fillable = ['enabled', 'enabled_at', 'enabled_by', 'prepared_at', 'prepared_by', 'prepared_summary', 'event_title', 'event_location',
-        'trainer1_name', 'trainer1_signature', 'trainer2_name', 'trainer2_signature', 'reset_point_file', 'reset_point_at'];
+    protected $fillable = ['prepared_at', 'prepared_by', 'prepared_summary', 'event_title', 'event_location',
+        'trainer1_name', 'trainer1_signature', 'trainer2_name', 'trainer2_signature'];
 
     protected $casts = [
-        'enabled' => 'boolean',
-        'enabled_at' => 'datetime',
         'prepared_at' => 'datetime',
         'prepared_summary' => 'array',
-        'reset_point_at' => 'datetime',
     ];
 
     /** The two trainers who sign the certificates. */

@@ -21,12 +21,21 @@ import { useChunkedUpload } from '@/composables/chunkedUpload';
 import axios from 'axios';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 
-defineProps({
+const props = defineProps({
 	codeRequired: { type: Boolean, default: false },
+	// Where the restore endpoints are: the first-run wizard's, or a warehouse awaiting its setup code's (Activate.vue).
+	base: { type: String, default: '/install/restore' },
+	// Fields sent with the launch (the person who will run a new warehouse: login, name, email, password).
+	identity: { type: Object, default: null },
+	// A signed-in administrator restoring their own warehouse (WarehouseRestore.vue): progress is read from a URL that still answers
+	// while the warehouse is out of service, and the words differ.
+	statusUrl: { type: String, default: null },
+	own: { type: Boolean, default: false },
 });
 defineEmits(['back']);
 
-const BASE = '/install/restore';
+const BASE = props.base;
+const STATUS = props.statusUrl || `${BASE}/status`;
 // Two uploads: `main` (has the database) and, optionally, `extra` (the files). `stage` is the one in progress.
 const main = useChunkedUpload(BASE);
 const extra = useChunkedUpload(BASE);
@@ -38,6 +47,7 @@ const percent = computed(() => current.value.percent.value);
 // idle -> uploading -> restoring -> complete | failed
 const phase = ref('idle');
 const setupCode = ref('');
+const warehouseKey = ref('');
 const file = ref(null);
 const filesFile = ref(null);
 const error = ref('');
@@ -83,7 +93,7 @@ async function uploadFilesThenLaunch() {
 		stage.value = 'files';
 		await extra.start(filesFile.value, { setup_code: setupCode.value || undefined });
 	}
-	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined });
+	await axios.post(`${BASE}/launch`, { upload_id: main.task.id, storage_upload_id: extra.task.id || undefined, warehouse_key: warehouseKey.value.trim() || undefined, ...(props.identity || {}) });
 	phase.value = 'restoring';
 	poll();
 }
@@ -114,7 +124,7 @@ function poll() {
 	clearInterval(timer);
 	const tick = async () => {
 		try {
-			const { data } = await axios.get(`${BASE}/status`);
+			const { data } = await axios.get(STATUS);
 			status.value = data;
 			if (data.state === 'complete') phase.value = 'complete';
 			else if (data.state === 'failed') phase.value = 'failed';
@@ -143,7 +153,7 @@ function reset() {
 onMounted(async () => {
 	// Page reloaded mid-restore (or the restore finished while away): pick up where the server is.
 	try {
-		const { data } = await axios.get(`${BASE}/status`);
+		const { data } = await axios.get(STATUS);
 		if (data.state === 'running') {
 			phase.value = 'restoring';
 			poll();
@@ -159,12 +169,15 @@ onUnmounted(() => clearInterval(timer));
 	<div>
 		<!-- choose a file -->
 		<div v-if="phase === 'idle'" class="mt-3 space-y-4">
-			<p class="text-sm text-gray-600">
+			<p v-if="own" class="text-sm text-gray-600">
+				Choose a backup file (.zip) of <strong>this warehouse</strong>, made by <strong>Updates &amp; Backups</strong>.
+			</p>
+			<p v-else class="text-sm text-gray-600">
 				Choose a backup file (.zip) made by <strong>Updates &amp; Backups</strong> in Relief Inventory. The whole system — data
 				and, if the backup included them, uploaded photos and documents — is restored onto this new installation.
 			</p>
 
-			<div v-if="codeRequired">
+			<div v-if="codeRequired && !own">
 				<InputLabel for="restore_code" value="Setup code" />
 				<TextInput id="restore_code" type="password" class="mt-1 block w-full" v-model="setupCode" autocomplete="off" />
 				<InputError class="mt-2" :message="codeError" />
@@ -187,12 +200,29 @@ onUnmounted(() => clearInterval(timer));
 				<p v-if="filesFile" class="mt-1 text-xs text-gray-500">{{ filesFile.name }} — {{ human(filesFile.size) }}</p>
 			</details>
 
-			<div class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+			<details v-if="!own" class="rounded border border-gray-200 p-3 text-sm">
+				<summary class="cursor-pointer text-gray-700">Key from the old system (so encrypted settings carry over)</summary>
+				<p class="mt-2 text-xs text-gray-600">
+					A backup never contains the warehouse key. If you wrote it down (Updates &amp; Backups &gt; “Warehouse key” on the old system),
+					paste it here and the settings it encrypted — email password, shared secrets — are restored too. Without it they are cleared
+					and listed afterwards so you can enter them again.
+				</p>
+				<input id="restore_key" type="text" v-model="warehouseKey" autocomplete="off" spellcheck="false" placeholder="base64:…" class="mt-2 block w-full rounded-md border-gray-300 font-mono text-xs shadow-sm" />
+			</details>
+
+			<div v-if="own" class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
+				<p>This <strong>replaces everything in this warehouse</strong> (its data and its uploaded files) with what the backup holds. The warehouse is out of service while it runs and everyone is signed out.</p>
+				<p>
+					You stay Administrator. Everyone else in the backup who already has a login elsewhere is <em>invited</em> and joins only when they accept;
+					the Users page lets you send those invitations. A few encrypted settings can't be carried over and are listed afterwards.
+				</p>
+			</div>
+			<div v-else class="rounded border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900 space-y-1">
 				<p>This installation must be new and empty — a backup can only be restored onto one that has never been set up.</p>
 				<p>
-					The backup does not contain the application key. Everything works without it, but a few encrypted settings (for
-					example the centralized-feedback shared secret) can't be carried over; they are cleared and listed for you
-					afterwards so you can re-enter them, and everyone signs in again.
+					The backup does not contain the warehouse key. Everything works without it, but a few encrypted settings (for
+					example the centralized-feedback shared secret) can't be carried over unless you give the old key above; they are cleared
+					and listed for you afterwards so you can re-enter them, and everyone signs in again.
 				</p>
 				<p>The software here must be the same version as the one that made the backup, or newer — never older.</p>
 			</div>

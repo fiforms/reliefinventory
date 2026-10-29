@@ -219,21 +219,21 @@ Issues identified October 8, 2026
    its `id` on the real `<input>` (labels don't link, app-wide); decide whether Docker should print a setup code in
    the log by default instead of leaving the wizard open to the first visitor.
 
-14. Tiered backup retention for Docker / R Station — the one thing the 2026-10-20 backup unification left uneven
+14. Backup tiers: one scheduler for Docker and bare metal
  - **Done:** every platform now makes the same zip (`php artisan backup:create`, scope database | full | storage), restores
    through the same pipeline (`backup:restore`, first-run wizard with an optional second files zip), and shows one merged
    Updates & Backups page that hides what the platform can't do. See `scripts/BACKUPS.md`.
- - **Open:** bare metal keeps hourly/daily/monthly/yearly tiers (`update.sh` promotes by hard link and prunes per tier);
-   the Docker scheduler and the R Station local server keep **one flat `RI_BACKUP_KEEP_DAYS`** (default 14). Parity means
-   porting `promote()`/`prune_tier()` into `BackupService::prune()` plus `RI_BACKUP_KEEP_*` settings, and showing the tiers
-   in the container branch of the page. Until then the page and `docker/README.md` tell operators to copy a backup off the
-   machine to keep it longer.
- - **Also open:** the bare-metal tiered backups no longer keep a copy of `.env` beside each backup (a zip never holds the
-   application key) — decide whether the key's only copy being "write it down from the admin page" is enough. The tiers are now
-   **database only** (decided 2026-10-20): uploaded files get no scheduled backup on bare metal — only the admin page's
-   "Database + uploaded files" zips (manual) or a filesystem backup — so consider a scheduled `--scope=full` job or a setting.
-   Tier backups are downloadable from the page (group-readable by the web user). `setup:reset` exists for starting over
-   after a failed forced restore (typed-phrase, terminal-only).
+ - **Done (branch `scheduled-backups`):** the Docker / R Station path now has per-warehouse hourly/daily/weekly/monthly tiers with a
+   schedule form on Warehouse Backups, roll back to a listed snapshot, scheduled whole-instance backups on Instance Admin, and an
+   instance-level trust so the RI Launcher can pull them (`scripts/BACKUPS.md`).
+ - **Done:** bare metal no longer has a backup system of its own. Its hourly systemd timer runs `update.sh --scheduled`, which only
+   delegates to the app's `backup:scheduled` (same schedule table, tiers, form and roll-back as Docker); the old tier logic in
+   `update.sh`, `backup-settings.conf` (migrated once by `LegacyBackupSettings`), the `/json/system/backup*` endpoints, the tier download
+   route and the systemd branch of the page are gone. Moving `demo` and `wa26`: `scripts/BACKUPS.md` "Moving an existing bare-metal install".
+ - **Still open:** the yearly tier is not carried over (there is none; up to 36 monthlies instead). Zips are now written by the web user
+   rather than root-owned folders, so anything that compromises the web app can delete them: keep an off-box copy (the RI Launcher).
+   A scheduled `--scope=full` is now just a tier's "include uploaded files" box. The `/json/system/*` update and offline-mode routes
+   still duplicate `/json/instance/*`. `setup:reset` exists for starting over after a failed forced restore (typed-phrase, terminal-only).
 
 15. Barcode (UPC) lookup — built 2026-10-21 (branch `upc-lookup`), see CLAUDE.md "Barcode scan → item"
  - **Scanning interface playbook:** `SCANNING_INTERFACE_NOTES.md` (repo root) records what we learned making Donation Sorting
@@ -283,3 +283,16 @@ Issues identified October 8, 2026
    - Ask the slideannouncer maintainers for a `Product.pair` hook and a bearer-provider hook, so the Pi product can drop the `pairing.pair` module-attribute
      swap and the credential file (`rstation/FEDERATION_AUTH.md`, "The Raspberry Pi", lists what it depends on today).
    - The Docker image now names `sodium` explicitly and `composer.json` requires `ext-sodium`; not rebuilt here, so confirm the image builds.
+
+- **Remove the deprecated bare-metal web updater.** Marked deprecated when the Docker host-side updater (`docker/updater/`, `InstanceUpdate`) was added:
+  it runs `git pull`, `artisan migrate` and `npm run build` from a web request and can leave a broken system. To delete in one go:
+  `SystemController::checkUpdates()` / `update()` / `startUnit()` / `readUpdateStatus()` / `versionInfo()`'s git branch / `requireSystemd()` for update, the
+  `/json/system/check-updates` and `/json/system/update` routes, the systemd branch of the Software Update section in `SystemAdmin.vue` (and its polling),
+  `scripts/update.sh`'s update path (its `--scheduled` backup mode is a separate thing and stays), `scripts/systemd/reliefinventory-update.service`,
+  its line in `reliefinventory-sudoers`, `config/system.php` `update_unit`/`update_status_file`, and the update tests in `SystemAdminTest`.
+  Still to do for the Docker updater itself: R Station / RI-Launcher monitors that speak the same two calls (`launcher/core/src/compose.rs`).
+
+- **Verify the Docker self-updater for real.** Built and unit-tested against a fake docker (`docker/updater/test_ri_updater.py`, `InstanceUpdateTest`), but not yet:
+  run against a live compose stack (pull, `down`, `up -d`, health wait, the page recovering afterwards), installed with `docker/updater/install.sh` on a clean Linux host, or looked at in a
+  browser (the new Docker section and the bare-metal "Deprecated" banner on Updates & Backups). Also: the suite now uses `APP_MAINTENANCE_DRIVER=cache` with the `array` store
+  (`phpunit.xml`; the shared `storage/framework/down` file made `pest --parallel` flaky), so the real `file` driver, including `down --secret`, is no longer exercised by any test.

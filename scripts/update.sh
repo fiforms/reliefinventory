@@ -2,6 +2,10 @@
 #
 # update.sh — backup, update, and rebuild the Relief Inventory app in place.
 #
+# DEPRECATED (bare-metal installs only): running this from the web page (System Administration > Install Update, via
+# reliefinventory-update.service) is deprecated and will be removed — git pull + migrate + npm build from a web request can leave a
+# half-updated system. Run it from a shell if you must; Docker installs use the host-side updater (docker/updater/) instead.
+#
 # This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 # Licensed under the GNU GPL v. 3. See LICENSE.md for details
 #
@@ -9,28 +13,18 @@
 #
 #   bash scripts/update.sh                     full update
 #   bash scripts/update.sh --backup-only       backup now, nothing else
-#   bash scripts/update.sh --scheduled         backup only if one is due (hourly systemd timer)
+#   bash scripts/update.sh --scheduled         the hourly systemd timer's tick: ask the app whether a snapshot is due (and prune)
 #   bash scripts/update.sh --seed-permissions  full update + PermissionsSeeder
 #
-# Every backup is one zip (the database, with a manifest of checksums) made by
-# `php artisan backup:create --scope=database --dest=...` — the same command and
-# format as every other backup in the app (scripts/BACKUPS.md). It never contains
-# the application key or .env. Uploaded files are NOT part of the tiers (an update
-# never touches them): take a "Database + uploaded files" backup from the admin
-# page, or `backup:create --scope=full`, when they need protecting too.
+# Every backup is one zip (the database, with a manifest of checksums) made by `php artisan backup:create --scope=database` — the same
+# command, format and folder (config backup.dir, RI_BACKUP_DIR) as every other backup in the app (scripts/BACKUPS.md). It never contains
+# the application key or .env. Uploaded files are NOT in it (an update never touches them): take a "Database + uploaded files" backup
+# from the admin page, or `backup:create --scope=full`, when they need protecting too. The backup a full update takes first is an
+# ordinary recorded backup (listed on Warehouse Backups, deleted after RI_BACKUP_KEEP_DAYS).
 #
-# Backups are tiered: every backup (scheduled, hourly if HOURLY_BACKUPS=1, or
-# on-demand — a full update's pre-update backup, or "Run a Scheduled Backup Now"
-# from the admin panel) lands in hourly/,
-# kept a short while so a bad update can be rolled back to whichever attempt
-# preceded it. Only the once-a-day *scheduled* backup is also promoted (as a
-# hardlink, so promotion costs no space) into daily/, and the first such
-# promotion of a month/year further promotes into monthly/ and yearly/ — an
-# on-demand backup never enters daily/monthly/yearly directly, so it can never
-# crowd out that history no matter how many times it's triggered in a day.
-# Retention, schedule time, and frequency come from
-# storage/app/backup-settings.conf — a www-data-writable file, so the admin
-# panel can later manage the schedule without root. See scripts/BACKUPS.md.
+# The SCHEDULE is not here any more: hourly/daily/weekly/monthly snapshots, their retention and their settings form are the app's own
+# (App\Models\BackupSchedule, Warehouse Backups page). `--scheduled` only hands the hourly timer's tick to it — `backup:scheduled` decides
+# whether anything is due — while holding this server's update lock, so a snapshot never runs in the middle of an update.
 #
 # Sequence: backup (zip: DB dump + manifest with the git commit) -> maintenance
 # mode -> git reset to origin -> composer/npm only if lock files changed -> asset
@@ -75,15 +69,8 @@ trap cleanup EXIT
 APP_DIR="${APP_DIR:-$(dirname "${RI_UPDATE_SCRIPT_DIR:-/var/www/reliefinventory-demo/scripts}")}"
 APP_USER="${APP_USER:-www-data}"
 APP_USER_HOME="${APP_USER_HOME:-/var/www}"
-# Mirrors the systemd units' explicit overrides (BACKUP_DIR=.../reliefinventory
-# for demo, .../reliefinventory-wa26 for wa26) so a manual run without an
-# explicit override doesn't comingle backups from two instances in one folder.
+# Used for the log file name below; several instances (demo, wa26, ...) share one server.
 _instance_suffix="$(basename "$APP_DIR" | sed 's/^reliefinventory-//')"
-if [ "$_instance_suffix" = "demo" ]; then
-    BACKUP_DIR="${BACKUP_DIR:-/var/backups/reliefinventory}"
-else
-    BACKUP_DIR="${BACKUP_DIR:-/var/backups/reliefinventory-$_instance_suffix}"
-fi
 LOG_DIR="${LOG_DIR:-/var/log/reliefinventory}"
 PHP="${PHP:-php8.4}"
 BRANCH="${BRANCH:-master}"
@@ -109,69 +96,28 @@ done
 [ "$(id -u)" -eq 0 ] || { echo "Run as root (app steps drop to $APP_USER)." >&2; exit 2; }
 [ -f "$APP_DIR/artisan" ] || { echo "No artisan found in $APP_DIR" >&2; exit 2; }
 
-# ------------------------------------------------- backup schedule + retention
-# Settings live in a www-data-writable file so the admin panel can manage them
-# without root. The file is parsed key-by-key with strict validation and is
-# NEVER sourced — a value that fails validation silently falls back to the
-# default, so a garbled (or malicious) file can't break backups or inject shell.
-SETTINGS_FILE="${SETTINGS_FILE:-$APP_DIR/storage/app/backup-settings.conf}"
-setting() { # setting <key> <default> <valid-regex>
-    local raw
-    raw="$(sed -n "s/^$1=//p" "$SETTINGS_FILE" 2>/dev/null | head -n1 | tr -d "[:space:]\"'")"
-    if printf '%s' "$raw" | grep -Eqx "$3"; then printf '%s' "$raw"; else printf '%s' "$2"; fi
-}
-BACKUP_FREQUENCY="$(setting BACKUP_FREQUENCY daily 'daily|weekly')"
-BACKUP_HOUR="$(setting BACKUP_HOUR 2 '[0-9]|1[0-9]|2[0-3]')"          # 0-23, in BACKUP_TZ
-BACKUP_DOW="$(setting BACKUP_DOW 7 '[1-7]')"                          # weekly only: 1=Mon..7=Sun
-HOURLY_BACKUPS="$(setting HOURLY_BACKUPS 0 '0|1')"                    # 1 = also back up every hour
-BACKUP_TZ="$(setting BACKUP_TZ America/Los_Angeles '[A-Za-z0-9_/+-]+')"
-KEEP_HOURLY="$(setting KEEP_HOURLY 48 '[0-9]{1,4}')"          # every raw backup, scheduled or on-demand
-KEEP_DAILY="$(setting KEEP_DAILY 14 '[0-9]{1,3}')"
-KEEP_MONTHLY="$(setting KEEP_MONTHLY 12 '[0-9]{1,3}')"
-KEEP_YEARLY="$(setting KEEP_YEARLY 3 '[0-9]{1,2}')"
-
-# --scheduled (the hourly systemd timer) only proceeds when a backup is due.
-# Two independent reasons a run can be due:
-#  - the daily/weekly backup: we're at/past the configured hour in the
-#    configured timezone (>= rather than ==, so a reboot that skips the exact
-#    hour still catches up later that day), on the right weekday for weekly
-#    mode, and none has run yet that day. Only this one is promoted into
-#    daily/ (and from there monthly/ and yearly/).
-#  - an hourly backup, when HOURLY_BACKUPS=1: none has run yet this hour.
-#    These only ever land in hourly/ (kept KEEP_HOURLY deep), same as an
-#    on-demand backup.
-MARKER="$BACKUP_DIR/.last-scheduled"
-HOURLY_MARKER="$BACKUP_DIR/.last-hourly"
-DAILY_DUE=0
-if [ "$SCHEDULED" -eq 1 ]; then
-    NOW_HOUR=$((10#$(TZ="$BACKUP_TZ" date +%H)))
-    TODAY="$(TZ="$BACKUP_TZ" date +%Y%m%d)"
-    THIS_HOUR="$(TZ="$BACKUP_TZ" date +%Y%m%d%H)"
-    NOW_DOW="$(TZ="$BACKUP_TZ" date +%u)"
-    if [ "$NOW_HOUR" -lt "$BACKUP_HOUR" ]; then
-        echo "Scheduled check: daily backup not due yet (before $BACKUP_HOUR:00 $BACKUP_TZ)"
-    elif [ "$BACKUP_FREQUENCY" = "weekly" ] && [ "$NOW_DOW" -ne "$BACKUP_DOW" ]; then
-        echo "Scheduled check: daily backup not due (weekly, day $BACKUP_DOW)"
-    elif [ -f "$MARKER" ] && [ "$(cat "$MARKER")" = "$TODAY" ]; then
-        echo "Scheduled check: already backed up today"
-    else
-        DAILY_DUE=1
-    fi
-
-    if [ "$DAILY_DUE" -eq 1 ]; then
-        echo "Scheduled backup due ($BACKUP_FREQUENCY at $BACKUP_HOUR:00 $BACKUP_TZ)"
-    elif [ "$HOURLY_BACKUPS" -eq 1 ] && ! { [ -f "$HOURLY_MARKER" ] && [ "$(cat "$HOURLY_MARKER")" = "$THIS_HOUR" ]; }; then
-        echo "Hourly backup due"
-    else
-        exit 0
-    fi
-fi
-
 # Run a command as the app user, in the app dir, with the app user's HOME so
 # composer/npm caches land under $APP_USER_HOME and never as root.
 as_app() {
     runuser -u "$APP_USER" -- env HOME="$APP_USER_HOME" "$@"
 }
+
+# The one lock for this whole server: updates and backups of every instance on it take turns (they share the box's CPU, memory and
+# php-fpm). Full updates and --backup-only take it below, after their log is open; the timer's tick takes it here, before anything.
+UPDATE_LOCK="/var/lock/reliefinventory-update.lock"
+LOCK_WAIT_SECONDS="${LOCK_WAIT_SECONDS:-3600}"
+
+# --scheduled: the hourly timer's tick. No log file (it fires every hour and usually does nothing; the journal has the output), no status
+# file. The app decides whether a snapshot is due (backup:scheduled, per warehouse) and prunes what has expired (backup:prune).
+if [ "$SCHEDULED" -eq 1 ]; then
+    exec 200>"$UPDATE_LOCK"
+    flock -w "$LOCK_WAIT_SECONDS" 200 || { echo "Another update or backup ran for over $((LOCK_WAIT_SECONDS / 60)) minutes; skipping this tick." >&2; exit 3; }
+    cd "$APP_DIR"
+    rc=0
+    as_app "$PHP" artisan warehouse:each "backup:scheduled --no-interaction" --no-interaction || rc=$?
+    as_app "$PHP" artisan warehouse:each "backup:prune --no-interaction" --no-interaction || rc=$?   # a failed snapshot must not stop expired ones being removed
+    exit "$rc"
+fi
 
 # Progress reporting for the admin panel (full updates only): a small JSON
 # file the app can read back while this script runs outside the request cycle.
@@ -183,13 +129,9 @@ write_status() { # write_status <state> <message>
     chown "$APP_USER" "$STATUS_FILE" 2>/dev/null || true
 }
 
-mkdir -p "$BACKUP_DIR" "$LOG_DIR"
-# In BACKUP_TZ, not server-local time — the admin panel displays these stamps
-# verbatim (SystemAdmin.vue's formatStamp) as if they were already in the
-# configured backup timezone, so the stamp actually has to be in it.
-STAMP="$(TZ="$BACKUP_TZ" date +%Y%m%d-%H%M%S)"
-# Instance name in the file name: several instances share LOG_DIR, and two started in the same second (in the same
-# BACKUP_TZ) would otherwise write into one log.
+mkdir -p "$LOG_DIR"
+STAMP="$(date +%Y%m%d-%H%M%S)"
+# Instance name in the file name: several instances share LOG_DIR, and two started in the same second would otherwise write into one log.
 LOG_NAME="update-$_instance_suffix-$STAMP.log"
 LOG_FILE="$LOG_DIR/$LOG_NAME"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -200,8 +142,7 @@ echo "== Relief Inventory update $STAMP (log: $LOG_FILE) =="
 # lock taken waits its turn (up to LOCK_WAIT_SECONDS) instead of giving up — giving up used to leave the admin
 # panel showing "waiting for the updater to start" until it timed out as "stalled". While waiting it refreshes the
 # status every 15 s, so the panel says what it's waiting for and never mistakes the wait for a stall.
-LOCK_WAIT_SECONDS="${LOCK_WAIT_SECONDS:-3600}"
-exec 200>"/var/lock/reliefinventory-update.lock"
+exec 200>"$UPDATE_LOCK"
 if ! flock -n 200; then
     echo "-- Another update or backup is running on this server; waiting for it to finish..."
     write_status running "Waiting for another update or backup on this server to finish"
@@ -243,87 +184,12 @@ trap 'on_error $LINENO' ERR
 write_status running "Update running (started $STAMP)"
 
 # -------------------------------------------------------------------- 1. backup
-# Every backup lands here first, scheduled or on-demand — see the tiering
-# note at the top of the file for why only the scheduled one gets promoted
-# further, into daily/ and beyond.
-#
-# The zip is written by the app user (artisan needs .env and the database
-# credentials, and must not create root-owned files under storage/), which
-# cannot write the root-owned tier directories — so it is built in a staging
-# directory beside them (same filesystem, so the move is a rename) and moved in.
-BACKUP_PATH="$BACKUP_DIR/hourly/$STAMP.zip"
-STAGING="$BACKUP_DIR/.staging"
-mkdir -p "$BACKUP_DIR/hourly" "$STAGING"
-find "$STAGING" -mindepth 1 -delete   # leftovers of an interrupted run (the update lock is held, so nothing else is using it)
-chown "$APP_USER" "$STAGING"
-echo "-- Backing up to $BACKUP_PATH"
-
-as_app "$PHP" artisan backup:create --scope=database --dest="$STAGING" --name="$STAMP"
-[ -s "$STAGING/$STAMP.zip" ] || { echo "Backup did not produce $STAGING/$STAMP.zip" >&2; exit 2; }
-mv "$STAGING/$STAMP.zip" "$BACKUP_PATH"
-chown root:"$APP_USER" "$BACKUP_PATH"   # group-readable below, once the tier directories are sorted out
-echo "-- Backup complete: $(du -sh "$BACKUP_PATH" | cut -f1)"
-
-# Promotion: only the once-a-day *scheduled* backup (never an on-demand one —
-# see the tiering note at the top of the file) is linked into daily/, and the
-# first such promotion of a month/year is further linked into monthly/ or
-# yearly/. A hard link, so a promoted backup costs no extra space until the
-# hourly copy it shares data with is pruned.
-promote() { # promote <tier> <stamp-prefix>
-    local tier="$1" prefix="$2" existing
-    mkdir -p "$BACKUP_DIR/$tier"
-    existing=( "$BACKUP_DIR/$tier/$prefix"* )
-    if [ ! -e "${existing[0]}" ]; then
-        echo "-- Promoting this backup to $tier/ (first of $prefix)"
-        ln "$BACKUP_PATH" "$BACKUP_DIR/$tier/$STAMP.zip"
-    fi
-}
-if [ "$DAILY_DUE" -eq 1 ]; then
-    promote daily "$TODAY"
-    promote monthly "$(TZ="$BACKUP_TZ" date +%Y%m)"
-    promote yearly "$(TZ="$BACKUP_TZ" date +%Y)"
-fi
-
-# Per-tier rotation, oldest first by actual mtime — NOT by glob/name order.
-# Stamp names only sort chronologically as long as every stamp was generated
-# under the same BACKUP_TZ; right after that setting changes, a backup made
-# under the old TZ can sort as "newer" than one made minutes later under the
-# new one purely from the string comparison, which would prune the wrong one.
-# An entry is a <stamp>.zip, or a <stamp>/ directory made before backups were zipped.
-prune_tier() { # prune_tier <dir> <keep-count>
-    local dir="$1" keep="$2"
-    [ -d "$dir" ] || return 0
-    local entries=()
-    mapfile -t entries < <(find "$dir" -mindepth 1 -maxdepth 1 \( -type d -o -name '*.zip' \) -printf '%T@\t%p\n' | sort -n | cut -f2-)
-    [ "${#entries[@]}" -gt 0 ] || return 0
-    while [ "${#entries[@]}" -gt "$keep" ]; do
-        echo "-- Pruning old backup ${entries[0]}"
-        rm -rf "${entries[0]}"
-        entries=( "${entries[@]:1}" )
-    done
-}
-# The admin page lists the tiers and offers each zip for download (to manage-backups holders, exactly like an
-# on-demand backup), so the web user must be able to read them: group-readable by the app user, nobody else.
-# The zips hold no secrets beyond the data itself — never the application key or .env. Done on every run so a
-# directory or zip made before this existed (or by an older umask) is brought in line.
-chgrp "$APP_USER" "$BACKUP_DIR" 2>/dev/null && chmod 750 "$BACKUP_DIR"
-for tier in hourly daily monthly yearly; do
-    [ -d "$BACKUP_DIR/$tier" ] || continue
-    chgrp "$APP_USER" "$BACKUP_DIR/$tier" && chmod 750 "$BACKUP_DIR/$tier"
-    find "$BACKUP_DIR/$tier" -maxdepth 1 -name '*.zip' -exec chgrp "$APP_USER" {} + -exec chmod 640 {} +
-done
-
-prune_tier "$BACKUP_DIR/hourly" "$KEEP_HOURLY"
-prune_tier "$BACKUP_DIR/daily" "$KEEP_DAILY"
-prune_tier "$BACKUP_DIR/monthly" "$KEEP_MONTHLY"
-prune_tier "$BACKUP_DIR/yearly" "$KEEP_YEARLY"
-
-if [ "$DAILY_DUE" -eq 1 ]; then
-    echo "$TODAY" > "$MARKER"
-fi
-if [ "$SCHEDULED" -eq 1 ]; then
-    echo "$THIS_HOUR" > "$HOURLY_MARKER"
-fi
+# An ordinary recorded backup, made by the app user exactly as the admin page's "Back Up Now" makes one (backup:create prints the zip's path
+# as its last line). It is the roll-back point named in the failure message below, and is listed on Warehouse Backups until it expires.
+echo "-- Backing up the database"
+BACKUP_PATH="$(as_app "$PHP" artisan backup:create --scope=database | tail -n1)"
+[ -s "$BACKUP_PATH" ] || { echo "Backup did not produce a file (got '$BACKUP_PATH')" >&2; exit 2; }
+echo "-- Backup complete: $BACKUP_PATH ($(du -sh "$BACKUP_PATH" | cut -f1))"
 
 if [ "$BACKUP_ONLY" -eq 1 ]; then
     echo "== Backup-only run finished OK =="
@@ -364,7 +230,9 @@ fi
 as_app npm run build --prefix "$APP_DIR"
 
 # ------------------------------------------------------------------ 5. database
-as_app "$PHP" artisan migrate --force
+# Needs the <db>_control and <db>_accounts schemas beside the app database (BUILDING.md, MULTI_WAREHOUSE.md):
+# create them once, by hand, as MariaDB root. Bare metal is single-warehouse and slated for deprecation.
+as_app "$PHP" artisan instance:migrate --force
 if [ "$SEED_PERMISSIONS" -eq 1 ]; then
     echo "-- Seeding permissions (PermissionsSeeder only)"
     as_app "$PHP" artisan db:seed --class=PermissionsSeeder --force

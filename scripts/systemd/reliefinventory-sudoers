@@ -1,9 +1,8 @@
-# Lets the web app (www-data) trigger the self-update and on-demand backup
-# systemd units — exactly those two commands, nothing else. The units run
-# scripts/update.sh as root outside the request cycle.
+# Lets the web app (www-data) trigger the (deprecated) self-update systemd unit — exactly that command, nothing
+# else. The unit runs scripts/update.sh as root outside the request cycle. (Backups need no rule: the app makes
+# them itself, as www-data, and the timer's hourly tick is scripts/update.sh --scheduled.)
 #
 # Install:  cp scripts/systemd/reliefinventory-sudoers /etc/sudoers.d/reliefinventory
 #           chmod 440 /etc/sudoers.d/reliefinventory
 #           visudo -c   # must report "parsed OK" before you log out!
 www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block reliefinventory-update.service
-www-data ALL=(root) NOPASSWD: /usr/bin/systemctl start --no-block reliefinventory-backup-now.service

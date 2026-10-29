@@ -5,9 +5,10 @@
 
 namespace App\Models;
 
+use App\Services\BackupService;
 use Illuminate\Database\Eloquent\Model;
 
-/** One on-demand backup zip. The file lives in config('backup.dir'); this row is its record. */
+/** One on-demand backup zip. The file lives in this warehouse's own folder (BackupService::dir()); this row is its record. */
 class Backup extends Model
 {
     public const ACTIVE = ['queued', 'running'];
@@ -28,6 +29,6 @@ class Backup extends Model
 
     public function path(): string
     {
-        return rtrim(config('backup.dir'), '/').'/'.$this->filename;
+        return app(BackupService::class)->dir().'/'.$this->filename;
     }
 }

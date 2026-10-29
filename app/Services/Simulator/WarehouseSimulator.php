@@ -225,7 +225,10 @@ class WarehouseSimulator
         $started = microtime(true);
 
         try {
-            $summary = Model::unguarded(fn () => DB::transaction(fn () => $this->simulate($days, $orders, $seed, $errors)));
+            // Simulated logins go to the accounts schema (MULTI_WAREHOUSE.md §6): a failure must undo them too.
+            $summary = Model::unguarded(fn () => DB::connection('accounts')->transaction(
+                fn () => DB::transaction(fn () => $this->simulate($days, $orders, $seed, $errors))
+            ));
         } finally {
             Carbon::setTestNow();
         }

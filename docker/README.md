@@ -62,38 +62,73 @@ Example data can also be loaded later from the command line (**never** on a real
 
 ## HTTPS
 
-The container speaks plain HTTP on 8080 and expects a reverse proxy (Caddy, nginx, Traefik, your cloud's load
-balancer) to provide TLS. Set `APP_URL: https://...` and `TRUSTED_PROXIES` to the proxy's address (or `*` if only
-the proxy can reach the app port) so generated links and redirects use `https`.
+Two ways to get HTTPS. Pick one.
+
+**Built in (`RI_HTTPS`).** The container serves HTTPS itself, with no reverse proxy. In `compose.yaml`:
+
+1. Set `APP_URL: https://your.host.name` (no port) and `RI_HTTPS: auto` (or `internal`, below).
+2. Under `app`, replace the `"8080:8080"` line with the two lines below it, `"80:8080"` and `"443:4430"`.
+3. `docker compose up -d`.
+
+| `RI_HTTPS` | Certificate | Needs |
+|---|---|---|
+| `auto` | A real one from Let's Encrypt, renewed automatically | A **public DNS name** pointing at this server, and ports **80 and 443 reachable from the internet** |
+| `internal` | One from Caddy's own local CA | Nothing public. Browsers show a warning until each one trusts the CA (`root.crt`, in the `caddy-data` volume under `pki/authorities/local/`) |
+| unset | None: plain HTTP on 8080 | |
+
+Inside the container HTTPS listens on 4430 and HTTP on 8080, which is why compose maps 443 and 80 to those. In this
+mode every plain-HTTP request is redirected (308) to `APP_URL`, except `/up` (the healthcheck) and
+`/api/instance/update*` (the update helper polls it with its own secret). The certificates live in the `caddy-data`
+volume: keep it, because starting over asks Let's Encrypt for new ones, which is rate-limited. Binding ports 80
+and 443 needs rootful Docker. If you use the update helper, give `install.sh` the address the app now answers
+on, `http://127.0.0.1:80`.
+
+**Behind your own reverse proxy** (Caddy, nginx, Traefik, your cloud's load balancer). Leave `RI_HTTPS` unset.
+The container speaks plain HTTP on 8080. Set `APP_URL: https://...` and `TRUSTED_PROXIES` to the proxy's address
+(or `*` if only the proxy can reach the app port) so generated links and redirects use `https`.
 
 ## Data and backups
 
-State lives in three named volumes:
+State lives in named volumes:
 
 - `db-data` — the database.
 - `secrets` — the generated database passwords. **Keep it together with `db-data`**: the database was initialised
   with those values, so deleting one without the other leaves the app unable to connect (`docker compose down -v`
   removes all of them, i.e. a clean slate).
+- `admin-secrets` — the database administrator (root) password, mounted only by the one-shot `init`, by `db` and by the
+  `provisioner` container, which makes each warehouse's schema and its own database user. The web, queue and scheduler
+  containers can't read it. Keep it with `db-data` too. An install upgraded from before this moves the password here once
+  (`init` does it), and the first start after the upgrade renames the warehouse's schema to `reliefinventory_<id>` and gives
+  it its own database user (the old, now empty, `reliefinventory` schema stays; don't use `compose.yaml` files from before
+  this with the same volumes afterwards).
 - `storage` — uploads (donation photos, feedback screenshots), print-queue PDFs, logs, and the generated app key.
 
-The scheduler writes a backup **.zip** daily into `./backups` (next to `compose.yaml`), keeping
-`RI_BACKUP_KEEP_DAYS` days. (The container takes ownership of that directory so it can write there.) It holds the
-database only unless you set `RI_BACKUP_SCOPE: full`, which adds the uploaded files — **otherwise back up the `storage`
+The scheduler asks every warehouse every hour for a backup **.zip**, and each warehouse's own schedule (Warehouse Backups →
+Snapshot Schedule: hourly / daily / weekly / monthly, how many of each to keep) decides whether one is due. They go into
+`./backups` (next to `compose.yaml`), one folder per warehouse. (The container takes ownership of that directory so it can write
+there.) A snapshot holds the database only unless its tier is set to include the uploaded files — **otherwise back up the `storage`
 volume too** if you rely on the uploaded photos, and copy backups off the machine. They are the same zips an admin
 makes on demand from **Updates & Backups** in the app (listed there, downloadable, never containing the application key —
 see `scripts/BACKUPS.md`).
 
-> **Retention is flat here.** Backups are kept `RI_BACKUP_KEEP_DAYS` days and then deleted. The daily / monthly / yearly
-> tiers a standard (systemd) server install keeps are not implemented for containers or the R Station local server yet —
-> copy a backup off the machine if you want to keep it longer.
+> **Retention is per tier.** Each warehouse keeps the newest N snapshots of each tier it enabled (default: one daily, 14 kept);
+> `RI_BACKUP_HOUR`, `RI_BACKUP_SCOPE` and `RI_BACKUP_KEEP_DAYS` only seed that schedule the first time. Backups made by hand are
+> deleted after `RI_BACKUP_KEEP_DAYS`. Snapshots sit on this machine: copy them elsewhere (the RI Launcher can) to survive losing it.
+> An admin can roll a warehouse back to any listed backup from Warehouse Backups.
 
-If you set `APP_KEY` yourself, keep it with the backups: restoring a database without its key makes encrypted
-values unreadable.
+Each warehouse has its own encryption key, kept in the `warehouse-secrets` volume (never in a backup). Keep that
+volume with `db-data` and `storage`, and write the key down (Setup > Updates & Backups shows it): restoring a database
+without its key makes its encrypted values unreadable. The instance's own `APP_KEY` (generated into the `storage`
+volume unless you set it) protects cookies and account emails; losing it only logs everyone out. An install upgraded
+from before warehouses had their own keys gives its warehouse the old `APP_KEY` and gets a new one, once (everyone logs
+in again). If you set `APP_KEY` in this file, change it yourself afterwards; the app log says so.
 
 **Restoring** one onto a brand-new install: open the new server, choose **Restore from a backup** on the first-run
-screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. If you
-want the encrypted settings (the mail passwords, and the instance's federation key — without it every paired instance and client must approve this one again) to survive, set `APP_KEY` in `compose.yaml` to the old
-system's key *before* the first start; otherwise they are cleared and listed for you to re-enter. To recover a damaged
+screen, and upload the zip. The new install must be the same version as the one that made the backup, or newer. A warehouse backup never
+holds the warehouse's key, so to keep its encrypted settings (the mail passwords, and the instance's federation key — without it every paired instance and client must approve this one
+again) give the restore step the old key (**Key from the old system**; Setup > Warehouse Backups shows it); otherwise they are cleared and listed for you to re-enter.
+A **whole-instance** backup (`restore:instance`) carries every warehouse's key sealed to your **recovery key**: the printout you made on first sign-in
+(Instance Admin > Full Instance Backups) is all it needs, `--recovery-key-file`. To recover a damaged
 database, the restore screen also takes a second zip that supplies just the uploaded files (any database inside it is
 ignored); on a system that is already set up, an administrator runs
 `docker compose exec app php artisan backup:restore backups/<database zip> --storage=backups/<files zip> --force`.
@@ -110,6 +145,33 @@ last merged — new work only reaches your server once it has been released. Rel
 the upgrade migrates the database. Only the newest release is supported, so we recommend staying on `:latest`. You can
 pin one release (`:1.4.0`) to delay an upgrade briefly, but not to stay on an old version long-term. `:edge` is an
 unreleased development build for the test instance; don't point real data at it.
+
+### Automatic updates (optional)
+
+Instance administrators can check for and install a new release from **Updates & Backups** instead of running the
+commands above. The app cannot restart its own containers, so a small service on this machine does it: the page sets a
+flag, the service (`docker/updater/ri-updater.py`, Python 3, standard library only) polls for it, runs
+`docker compose pull` and, if the pulled image is a newer release, `docker compose down` then `docker compose up -d`,
+and reports progress back to the page. It never goes backwards, never removes volumes, and the usual pre-migration backup
+still happens when the new container starts.
+
+Setting this up on a new Docker web host, start to finish: bring the stack up as in Quick start, then follow the steps
+below (a gentler walk-through is in [INSTALL.md](INSTALL.md#optional-update-from-the-web-page-linux-server)). Requirements:
+a Linux host with systemd, `docker compose` v2, `python3` and root access. The service holds no secrets of its own and
+only talks to Docker and to the app on the host's own port (default `http://127.0.0.1:8080`; pass another URL as the
+second argument to `install.sh` if you changed the published port).
+
+1. In `compose.yaml`, set `RI_UPDATE_SECRET` to a long random string and `docker compose up -d`. (Unset = the feature is
+   off and the endpoints answer 404.)
+2. On the host: `sudo docker/updater/install.sh /path/to/compose.yaml` (installs a systemd service, `ri-updater`; logs with
+   `journalctl -u ri-updater -f`). The service reads the secret from the compose file itself, via `docker compose config`.
+3. The same thing from the command line: `docker compose exec app php artisan instance:update check|apply|status`.
+
+The secret is the only credential on the update endpoints (`/api/instance/update`), so keep it private. The address of the
+caller is not checked, as behind Docker's network the app can't tell a local caller from a proxied one.
+
+The older in-app updater for bare-metal (systemd) installs is **deprecated** and will be removed; it runs `git pull`,
+`artisan migrate` and `npm run build` from a web request, which can leave a half-updated system.
 
 If the new image has pending migrations, the `app` container backs up the database to `backups/` first
 (`relief-backup-<timestamp>-database-premigrate.zip`) and only then migrates. **If that backup fails, it does not migrate** —

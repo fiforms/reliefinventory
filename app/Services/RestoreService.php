@@ -5,10 +5,17 @@
 
 namespace App\Services;
 
+use App\Models\Accounts\Account;
+use App\Models\Control\SetupCode;
+use App\Services\Warehouses\WarehouseAccounts;
+use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseJobs;
+use App\Services\Warehouses\WarehouseSetup;
+use Database\Seeders\PermissionsSeeder;
 use Illuminate\Contracts\Encryption\DecryptException;
+use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
@@ -42,16 +49,110 @@ use ZipArchive;
  * and the wizard polls that. Like BackupService this runs as a detached process (restore:run), one at a time
  * via an flock. If step 3 fails on a never-set-up instance, it is put back to a clean migrated + seeded state so
  * the wizard is usable again. On an instance that WAS set up (--force) that would be wrong — a wiped database
- * has no setup-complete latch, so the setup wizard would be open to anyone — so the site is put into maintenance
- * mode before the wipe, and left there if the load fails, for the operator to retry or reset.
+ * has no setup-complete latch, so the setup wizard would be open to anyone — so the warehouse is taken out of service (status `restoring`)
+ * before the wipe, and left there if the load fails, for the operator to retry or reset.
  */
 class RestoreService
 {
     private const CHUNK = 1024 * 1024;
 
+    /**
+     * This warehouse's restore folder: uploads, work files, status and lock. One per warehouse (MULTI_WAREHOUSE.md §11), so
+     * two warehouses can restore at once and one's progress is never shown to another's browser.
+     */
     public function dir(): string
     {
-        return rtrim(config('backup.dir'), '/').'/restore';
+        return rtrim(config('backup.dir'), '/').'/warehouses/'.app(WarehouseContext::class)->current()->id.'/restore';
+    }
+
+    /** True while a restore is setting up a new warehouse for the holder of its setup code (see stageClaim()). */
+    private bool $provisioned = false;
+
+    private function claimPath(): string
+    {
+        return $this->dir().'/claim.json';
+    }
+
+    /**
+     * Who a restore into a warehouse awaiting setup is for: the login (already proven by its password), the person's name,
+     * and the setup code row. It travels in a file, not the session, because replacing the database wipes the sessions
+     * table. Its presence is what makes a restore "provisioned": the backup is untrusted (its accounts become invitations,
+     * MULTI_WAREHOUSE.md §6), no instance-wide maintenance mode is used, a failure returns the warehouse to its empty
+     * ready-to-set-up state, and when the data is in the holder becomes Administrator and the warehouse goes active.
+     *
+     * @param  array{code_id:int,account_id:int,first_name:string,last_name:string}  $claim
+     */
+    public function stageClaim(array $claim): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        file_put_contents($this->claimPath(), json_encode($claim), LOCK_EX);
+        chmod($this->claimPath(), 0600);
+    }
+
+    public function clearClaim(): void
+    {
+        @unlink($this->claimPath());
+    }
+
+    private function claim(): ?array
+    {
+        $claim = is_file($this->claimPath()) ? json_decode((string) file_get_contents($this->claimPath()), true) : null;
+
+        return is_array($claim) && isset($claim['code_id'], $claim['account_id'], $claim['first_name'], $claim['last_name']) ? $claim : null;
+    }
+
+    private function keyImportPath(): string
+    {
+        return $this->dir().'/import.key';
+    }
+
+    /**
+     * The old warehouse's key, typed or pasted by whoever is restoring onto a new instance (or into a warehouse awaiting its setup code), so
+     * the values it encrypted can be read: a backup never carries one. Kept in a file for the same reason as the claim (the database
+     * replacement wipes the session), 0600, deleted as soon as the restore ends. Only ever used on a warehouse that holds nothing yet (perform()).
+     */
+    public function stageKeyImport(string $key): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        file_put_contents($this->keyImportPath(), trim($key), LOCK_EX);
+        chmod($this->keyImportPath(), 0600);
+    }
+
+    public function clearKeyImport(): void
+    {
+        @unlink($this->keyImportPath());
+    }
+
+    private function ownPath(): string
+    {
+        return $this->dir().'/own.json';
+    }
+
+    /**
+     * A warehouse admin restoring a backup into their own, set-up warehouse from the app. Like the setup-code restore the backup is
+     * untrusted (accounts become invitations, the files folder is replaced, jobs purged, status `restoring`), and the admin who
+     * started it stays Administrator (their session is wiped with the database, so who they are travels in a file).
+     * `any_lineage` is for an instance admin cloning another warehouse's backup into this one.
+     *
+     * @param  array{account_id:int,first_name:string,last_name:string,any_lineage:bool}  $own
+     */
+    public function stageOwnRestore(array $own): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        file_put_contents($this->ownPath(), json_encode($own), LOCK_EX);
+        chmod($this->ownPath(), 0600);
+    }
+
+    public function clearOwnRestore(): void
+    {
+        @unlink($this->ownPath());
+    }
+
+    private function ownRestore(): ?array
+    {
+        $own = is_file($this->ownPath()) ? json_decode((string) file_get_contents($this->ownPath()), true) : null;
+
+        return is_array($own) && isset($own['account_id'], $own['first_name'], $own['last_name']) ? $own : null;
     }
 
     public function uploads(): ChunkedUpload
@@ -109,7 +210,8 @@ class RestoreService
         $log = escapeshellarg($this->dir().'/restore.log');
         $php = escapeshellarg(config('backup.php_binary'));
         $args = escapeshellarg($uploadId).($storageUploadId ? ' '.escapeshellarg($storageUploadId) : '');
-        Process::path(base_path())->run("setsid -f {$php} artisan restore:run {$args} >> {$log} 2>&1 < /dev/null");
+        $warehouse = escapeshellarg('--warehouse='.app(WarehouseContext::class)->current()->id);
+        Process::path(base_path())->run("setsid -f {$php} artisan restore:run {$args} {$warehouse} >> {$log} 2>&1 < /dev/null");
     }
 
     private function lockHeld(): bool
@@ -154,6 +256,68 @@ class RestoreService
                 }
             }
             $this->removeTree($this->dir().'/'.$uploadId);
+            $this->clearClaim();
+            $this->clearOwnRestore();
+            $this->clearKeyImport();
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
+    /** The only names a rollback may be asked to restore: a zip BackupService made, in this warehouse's own backup folder. */
+    public static function isSnapshotName(string $name): bool
+    {
+        return preg_match('/^relief-backup-[A-Za-z0-9._-]+\.zip$/', $name) === 1 && ! str_contains($name, '..');
+    }
+
+    /**
+     * Roll this warehouse back to one of its own snapshots (a zip in its backup folder; stageOwnRestore() has already said who is doing it).
+     * Mark running and start the detached process, like launch().
+     */
+    public function launchSnapshot(string $filename): void
+    {
+        $this->progress($filename, 'Starting', 1);
+        $log = escapeshellarg($this->dir().'/restore.log');
+        $php = escapeshellarg(config('backup.php_binary'));
+        $warehouse = escapeshellarg('--warehouse='.app(WarehouseContext::class)->current()->id);
+        Process::path(base_path())->run("setsid -f {$php} artisan restore:run --snapshot=".escapeshellarg($filename)." {$warehouse} >> {$log} 2>&1 < /dev/null");
+    }
+
+    /**
+     * The detached half of a rollback. A safety copy of the CURRENT data is made first, in the same folder (so an unwanted rollback can itself
+     * be undone from the list, and, if that copy can't be made, nothing is touched), then the snapshot goes through the same engine as every
+     * other own-warehouse restore. The snapshot zip is never deleted. The restore replaces the `backups` table with the snapshot's, so the
+     * safety copy and any newer zips are not listed afterwards; they stay on disk as untracked files until backup:prune ages them out.
+     */
+    public function runSnapshot(string $filename): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        $lock = fopen($this->dir().'/.lock', 'c');
+        if (! flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+
+            return;
+        }
+
+        $id = 'snap-'.bin2hex(random_bytes(4));
+        try {
+            $backups = app(BackupService::class);
+            $path = $backups->dir().'/'.$filename;
+            if (! self::isSnapshotName($filename) || ! is_file($path)) {
+                throw new RuntimeException('That backup file is not in this warehouse\'s backup folder.');
+            }
+            $this->progress($id, 'Saving a safety copy of the current data', 1);
+            $backups->createIn($backups->dir(), 'database', sprintf('relief-backup-%s-database-before-rollback', now()->format('Ymd-His')));
+            $this->perform($id, $path, null, false, false);
+        } catch (Throwable $e) {
+            if (! $e instanceof RuntimeException) {
+                report($e);
+            }
+            Log::error('Rollback failed', ['message' => $e->getMessage()]);
+            $this->writeStatus(['state' => 'failed', 'upload_id' => $id, 'error' => $e instanceof RuntimeException ? $e->getMessage() : 'Unexpected error: '.$e->getMessage()]);
+        } finally {
+            $this->removeTree($this->dir().'/'.$id);
+            $this->clearOwnRestore();
             flock($lock, LOCK_UN);
             fclose($lock);
         }
@@ -183,6 +347,7 @@ class RestoreService
             throw $e;
         } finally {
             $this->removeTree($this->dir().'/'.$id);
+            $this->clearOwnRestore();
             flock($lock, LOCK_UN);
             fclose($lock);
         }
@@ -197,11 +362,26 @@ class RestoreService
         $this->progress($id, 'Checking the backup', 2);
         $plan = $this->plan($databaseZip, $storageZip);
 
-        $fresh = rescue(fn () => app(FirstRunService::class)->needsSetup(), false, false);
+        $claim = $this->claim();
+        $own = $claim === null ? $this->ownRestore() : null;
+        $this->provisioned = $claim !== null;
+        if ($own) {
+            $force = true;
+            $this->checkLineage($plan, (bool) ($own['any_lineage'] ?? false));
+        }
+        $untrusted = $this->provisioned || $own !== null;
+        if ($claim && ! $plan['database']) {
+            throw new RuntimeException('Setting up a new warehouse needs a backup that has a database. This one holds only files.');
+        }
+
+        // A warehouse waiting for its setup code is as empty and as safe to replace as a never-set-up instance.
+        $fresh = $this->provisioned || rescue(fn () => app(FirstRunService::class)->needsSetup(), false, false);
         if (! $fresh && ! $force) {
             throw new RuntimeException('This instance has already been set up. Restoring replaces its data; add --force if that is what you want.');
         }
-        $maintenance = $force && ! $fresh && $plan['database'];
+        $this->importKey($fresh);
+        $maintenance = $force && ! $fresh && ($plan['database'] || $own !== null);
+        $previousStatus = app(WarehouseContext::class)->current()->fresh()->status;
 
         // ---- 2. extract + verify ----
         $total = array_sum(array_column($plan['sources'], 'bytes'));
@@ -220,6 +400,14 @@ class RestoreService
             }
         }
 
+        // Everything unpacked and verified: from here on this warehouse is out of service (only this one; never `artisan down`).
+        if ($maintenance) {
+            $this->setStatus('restoring');
+        }
+        if ($own) {
+            WarehouseJobs::purge(app(WarehouseContext::class)->current());
+        }
+
         // ---- 3. database ----
         if ($plan['database']) {
             // Before anything is wiped: a dump cut off part-way would leave a half-empty database. (Its checksum
@@ -227,20 +415,43 @@ class RestoreService
             if (! app(DatabaseTools::class)->dumpIsComplete("{$work}/database/db.sql")) {
                 throw new RuntimeException('The database dump in this backup is incomplete (it has no end-of-dump marker), so nothing was changed. Use an earlier backup.');
             }
-            if ($maintenance) {
-                $this->artisan('down', ['--retry' => 60]);
-            }
             $this->progress($id, 'Replacing the database', 62);
             $this->replaceDatabase("{$work}/database/db.sql", $fresh);
+            // The restored people aren't the ones this warehouse's memberships point at (and an older dump's
+            // migration links its own logins, MULTI_WAREHOUSE.md §6).
+            app(WarehouseAccounts::class)->forgetMemberships();
             $this->progress($id, 'Updating the database to this version', 78);
-            $this->migrate($fresh);
+            WarehouseAccounts::$untrustedRestore = $untrusted;
+            try {
+                $this->migrate($fresh);
+            } finally {
+                WarehouseAccounts::$untrustedRestore = false;
+            }
+            $accountsFile = "{$work}/database/accounts.json";
+            $logins = app(WarehouseAccounts::class)->relinkAfterRestore(
+                is_file($accountsFile) ? json_decode((string) file_get_contents($accountsFile), true) : null,
+                untrusted: $untrusted,
+            );
+            if ($claim) {
+                $logins[] = $this->finishClaim($claim);
+            }
+            if ($own) {
+                $account = Account::find($own['account_id']);
+                if (! $account) {
+                    throw new RuntimeException('Your login no longer exists, so no one was made Administrator. The data is in place: run "php artisan warehouse:resume" and add an administrator from the command line.');
+                }
+                app(WarehouseAccounts::class)->attachRestorer($account, $own['first_name'], $own['last_name']);
+                $logins[] = "{$account->email}: Administrator of this warehouse (the person who ran the restore)";
+            }
         }
 
         // ---- 4. files ----
         if ($plan['files']) {
             $this->progress($id, 'Restoring uploaded files', 85);
+            if ($own) {
+                $this->emptyFilesFolder();   // replaced, not merged: files the backup doesn't have must not survive
+            }
             $this->moveTree("{$work}/files/private", config('filesystems.disks.local.root'));
-            $this->moveTree("{$work}/files/public", config('filesystems.disks.public.root'));
         }
 
         // ---- 5/6. fix-ups (they read the database, so only when it is the restored one) ----
@@ -254,9 +465,9 @@ class RestoreService
             if (! $adminMissing) {
                 app(FirstRunService::class)->markComplete();
             }
-            if ($maintenance) {
-                $this->artisan('up');
-            }
+        }
+        if ($maintenance) {
+            $this->setStatus($previousStatus);
         }
 
         $result = [
@@ -264,7 +475,7 @@ class RestoreService
             'blanked' => $blanked, 'admin_missing' => $adminMissing,
             'database_restored' => $plan['database'], 'includes_uploads' => $plan['files'],
             'backup_created_at' => $plan['database_created_at'], 'files_created_at' => $plan['files_created_at'],
-            'notes' => $plan['notes'],
+            'notes' => $plan['notes'], 'logins' => $logins ?? [],
         ];
         $this->writeStatus($result);
 
@@ -312,7 +523,7 @@ class RestoreService
 
         $isFile = fn (string $path) => str_starts_with($path, 'files/');
         if ($db !== null) {
-            $db['want'] = fn (string $path) => $path === 'database/db.sql' || ($dbSuppliesFiles && $isFile($path));
+            $db['want'] = fn (string $path) => in_array($path, ['database/db.sql', 'database/accounts.json'], true) || ($dbSuppliesFiles && $isFile($path));
         }
         if ($files !== null) {
             $files['want'] = $isFile;
@@ -405,6 +616,71 @@ class RestoreService
         return $manifest;
     }
 
+    /**
+     * A warehouse admin may restore only backups of this warehouse's own lineage (the uuid in each zip's manifest, or its accounts.json
+     * for a backup made before manifests carried one). It proves nothing about where a zip came from: it catches the wrong file.
+     * Containment is the warehouse's own database user and the sandboxed client. Nothing has changed on the instance when this throws.
+     */
+    private function checkLineage(array $plan, bool $anyLineage): void
+    {
+        if ($anyLineage) {
+            return;
+        }
+        $mine = app(WarehouseContext::class)->current()->uuid;
+        foreach ($plan['sources'] as $source) {
+            $uuid = $source['manifest']['warehouse']['uuid'] ?? $this->uuidFromAccounts($source['zip']);
+            if (! is_string($uuid) || $uuid === '') {
+                throw new RuntimeException(basename($source['path']).' does not say which warehouse it is a backup of (it was made before backups recorded that), so it cannot be restored here by a warehouse administrator. An instance administrator can restore it.');
+            }
+            if (! hash_equals($mine, $uuid)) {
+                throw new RuntimeException(basename($source['path']).' is a backup of a different warehouse. Nothing was changed. Only an instance administrator can restore one warehouse\'s backup into another.');
+            }
+        }
+    }
+
+    private function uuidFromAccounts(ZipArchive $zip): ?string
+    {
+        $stat = $zip->statName('database/accounts.json');
+        if ($stat === false || $stat['size'] > 16 * 1024 * 1024) {
+            return null;
+        }
+        $json = json_decode((string) $zip->getFromName('database/accounts.json'), true);
+
+        return is_array($json) && is_string($json['warehouse']['uuid'] ?? null) ? $json['warehouse']['uuid'] : null;
+    }
+
+    /** Delete everything in this warehouse's files folder (only ever that folder: the path is checked). */
+    private function emptyFilesFolder(): void
+    {
+        $root = rtrim((string) config('filesystems.disks.local.root'), '/');
+        $expected = rtrim(app(WarehouseContext::class)->current()->storagePath(), '/');
+        if ($root === '' || $root !== $expected || ! is_dir($root)) {
+            throw new RuntimeException('Refusing to replace the files folder: it is not this warehouse\'s own.');
+        }
+        foreach (new \FilesystemIterator($root, \FilesystemIterator::SKIP_DOTS) as $entry) {
+            $entry->isDir() && ! $entry->isLink() ? $this->removeTree($entry->getPathname()) : @unlink($entry->getPathname());
+        }
+    }
+
+    /**
+     * Use the staged old key, if there is one. Only while the warehouse is fresh (never set up, or awaiting its setup code): it holds
+     * nothing encrypted under the key it has, so nothing is lost by replacing it. On a set-up warehouse it is refused outright (it
+     * would make everything already encrypted there unreadable), and a wrong key shows up afterwards as settings that had to be blanked.
+     */
+    private function importKey(bool $fresh): void
+    {
+        $key = is_file($this->keyImportPath()) ? trim((string) file_get_contents($this->keyImportPath())) : '';
+        if ($key === '') {
+            return;
+        }
+        if (! $fresh) {
+            throw new RuntimeException('A key can only be imported into a warehouse that has not been set up yet: replacing the key of one in use would make its encrypted settings unreadable.');
+        }
+        $context = app(WarehouseContext::class);
+        $context->current()->replaceKey($key);
+        $context->refresh();
+    }
+
     /** @param  bool  $fresh  never set up: a failure resets it to a clean state; otherwise it is left for the operator */
     private function replaceDatabase(string $sqlFile, bool $fresh): void
     {
@@ -437,17 +713,45 @@ class RestoreService
         }
     }
 
+    /**
+     * Take this warehouse out of service (or put it back) for the length of a restore: only this warehouse, by its status, which
+     * ResolveWarehouse enforces (MULTI_WAREHOUSE.md §10). Not Laravel's instance-wide `artisan down`.
+     */
+    private function setStatus(string $status): void
+    {
+        app(WarehouseContext::class)->current()->forceFill(['status' => $status])->save();
+    }
+
+    /** The code holder joins the restored warehouse as its Administrator, the code is used up and it goes active. @return string a report line */
+    private function finishClaim(array $claim): string
+    {
+        $warehouse = app(WarehouseContext::class)->current();
+        $code = SetupCode::usable()->where('warehouse_id', $warehouse->id)->whereKey($claim['code_id'])->first();
+        $account = Account::find($claim['account_id']);
+        if (! $code || ! $account) {
+            throw new RuntimeException('The setup code was revoked or expired while the backup was loading, so no one was made Administrator. The data is in place: ask for a new setup code.');
+        }
+        app(WarehouseSetup::class)->withExistingAccount($warehouse, $code, $account, $claim, restored: true);
+
+        return "{$account->email}: Administrator of this warehouse";
+    }
+
     private function afterDatabaseFailure(bool $fresh): string
     {
+        if ($this->provisioned) {
+            $this->recoverProvisionedState();
+
+            return 'The warehouse was returned to its empty, ready-to-set-up state; your setup code still works.';
+        }
         if ($fresh) {
             $this->recoverFreshState();
 
             return 'The instance was reset to a clean state; you can try again.';
         }
 
-        return 'The database may be empty or incomplete and the site has been left in maintenance mode on purpose '
+        return 'The database may be empty or incomplete and this warehouse has been left unavailable (status "restoring") on purpose '
             .'(a database without its setup record would open the setup wizard to anyone). Run the restore again from a good backup, '
-            .'then "php artisan up". If the database cannot be loaded at all, "php artisan setup:reset" erases it and starts clean (it asks for typed confirmation).';
+            .'then "php artisan warehouse:resume". If the database cannot be loaded at all, "php artisan setup:reset" erases it and starts clean (it asks for typed confirmation).';
     }
 
     /**
@@ -460,6 +764,27 @@ class RestoreService
         $this->artisan('db:wipe', ['--force' => true]);
         $this->artisan('migrate', ['--force' => true]);
         $this->artisan('setup:seed-essentials');
+        app(WarehouseAccounts::class)->forgetAll();
+    }
+
+    /**
+     * After a failed load into a warehouse awaiting setup: empty schema, essentials, no one in it, and the setup latch set so
+     * /install never opens inside it. Touches nothing outside this warehouse (resetInstance() would delete logins
+     * that belong to no warehouse, instance admins included). Best effort.
+     */
+    private function recoverProvisionedState(): void
+    {
+        try {
+            $this->artisan('db:wipe', ['--force' => true]);
+            $this->artisan('migrate', ['--force' => true]);
+            $firstRun = app(FirstRunService::class);
+            $firstRun->ensureEssentialData();
+            app(PermissionsSeeder::class)->setContainer(app())->__invoke();
+            app(WarehouseAccounts::class)->forgetMemberships();
+            $firstRun->markComplete();
+        } catch (Throwable $e) {
+            Log::critical('Restore could not return the warehouse to its ready-to-set-up state', ['message' => $e->getMessage()]);
+        }
     }
 
     /** After a failed load on a never-set-up instance: back to a clean state so /install works. Best effort. */
@@ -511,7 +836,7 @@ class RestoreService
             $count = 0;
             foreach (DB::table($table)->whereNotNull($column)->get(['id', $column]) as $row) {
                 try {
-                    Crypt::decryptString($row->{$column});
+                    Model::currentEncrypter()->decryptString($row->{$column});
                 } catch (DecryptException) {
                     DB::table($table)->where('id', $row->id)->update([$column => null]);
                     $count++;
@@ -532,11 +857,17 @@ class RestoreService
     private function clearMachineLocalState(): void
     {
         if (Schema::hasTable('backups')) {
-            $dir = rtrim(config('backup.dir'), '/');
+            $dir = app(BackupService::class)->dir();
             foreach (DB::table('backups')->get(['id', 'status', 'filename']) as $row) {
                 if ($row->status !== 'complete' || ! $row->filename || ! is_file("{$dir}/{$row->filename}")) {
                     DB::table('backups')->where('id', $row->id)->delete();
                 }
+            }
+        }
+        // What was live when the backup was taken (logged-in sessions, cache, queued jobs) must not come back to life here.
+        foreach (config('backup.live_state_tables') as $table) {
+            if (Schema::hasTable($table)) {
+                DB::table($table)->truncate();
             }
         }
         if (Schema::hasTable('device_releases')) {

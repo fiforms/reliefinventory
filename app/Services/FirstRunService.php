@@ -84,8 +84,12 @@ class FirstRunService
         return true;
     }
 
-    /** Create an Administrator (verified and approved, so no mail setup is needed to sign in). */
-    public function createAdministrator(string $email, string $password, string $firstName, string $lastName): User
+    /**
+     * Create an Administrator (verified and approved, so no mail setup is needed to sign in). The first
+     * administrator also runs the instance, so their account is an instance admin (MULTI_WAREHOUSE.md §6); the
+     * administrator of a warehouse set up later with a setup code is not ($instanceAdmin = false).
+     */
+    public function createAdministrator(string $email, string $password, string $firstName, string $lastName, bool $instanceAdmin = true): User
     {
         $user = new User;
         $user->email = $email;
@@ -95,6 +99,9 @@ class FirstRunService
         $user->email_verified_at = now();
         $user->approved_at = now();
         $user->save();
+        if ($instanceAdmin) {
+            $user->account->forceFill(['is_instance_admin' => true])->save();
+        }
 
         PeopleRoles::create(['person_id' => $user->id, 'role_id' => self::ADMINISTRATOR_ROLE_ID]);
         $this->markComplete();
@@ -107,6 +114,25 @@ class FirstRunService
         $state = SetupState::current();
         if (! $state->completed_at) {
             $state->forceFill(['completed_at' => now()])->save();
+        }
+    }
+
+    /**
+     * The example data (WarehouseActivitySeeder), outside any setup transaction: a failure here must leave a working
+     * instance with its administrator, not roll back setup. The seeder isn't atomic, so a failure can leave a partial
+     * batch — logged, and reported to the caller. @return bool whether it loaded
+     */
+    public function loadExampleData(): bool
+    {
+        try {
+            app(WarehouseActivitySeeder::class)->setContainer(app())->__invoke();
+            SetupState::current()->forceFill(['demo_data_seeded_at' => now()])->save();
+
+            return true;
+        } catch (Throwable $e) {
+            Log::error('First-run example data failed to load', ['exception' => $e]);
+
+            return false;
         }
     }
 
@@ -150,17 +176,7 @@ class FirstRunService
         }
 
         if ($withExampleData) {
-            // Deliberately outside the transaction above: a failure here must
-            // leave a working instance with its administrator, not roll back
-            // setup. The seeder isn't atomic, so a failure can leave a partial
-            // batch — logged, and reported to the user.
-            try {
-                app(WarehouseActivitySeeder::class)->setContainer(app())->__invoke();
-                SetupState::current()->forceFill(['demo_data_seeded_at' => now()])->save();
-            } catch (Throwable $e) {
-                $demoFailed = true;
-                Log::error('First-run example data failed to load', ['exception' => $e]);
-            }
+            $demoFailed = ! $this->loadExampleData();
         }
 
         return ['user' => $user, 'demo_failed' => $demoFailed, 'simulation_started' => $simulationStarted];

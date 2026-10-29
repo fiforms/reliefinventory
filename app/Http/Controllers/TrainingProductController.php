@@ -12,7 +12,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 /**
- * Setup > Training Mode > Scan Training Products (`manage-training`): the list of real goods for the class, built by
+ * Setup > Training Warehouse > Scan Training Products (`manage-training`): the list of real goods for the class, built by
  * scanning each unit. A barcode is looked up the way Sorting does (UpcResolver, catalog only — the screen asks for an
  * online suggestion separately); a barcode the catalog doesn't know is added through the shared Add New Item box,
  * which then calls store(). This list is not stock: Prepare Training (App\Services\TrainingPreparer) reads it.

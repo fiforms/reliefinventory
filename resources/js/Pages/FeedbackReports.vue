@@ -178,7 +178,7 @@ const filteredReports = computed(() => {
 		if (number) return report.id === Number(number[1]);
 		if (text) {
 			const commentText = (report.status_logs || []).map((log) => log.comment).filter(Boolean);
-			const haystack = [report.message, report.page_title, report.page_url, report.person?.full_name, report.reporter_name, report.instance_identifier, ...commentText]
+			const haystack = [report.message, report.page_title, report.page_url, report.person?.full_name, report.reporter_name, report.instance_identifier, report.warehouse_id, ...commentText]
 				.filter(Boolean)
 				.join(' ')
 				.toLowerCase();

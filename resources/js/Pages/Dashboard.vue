@@ -47,6 +47,7 @@ import { Head } from '@inertiajs/vue3';
 import KioskEnableConfirmModal from '@/Components/KioskEnableConfirmModal.vue';
 
 import axios from 'axios';
+import { withWarehouse } from '@/bootstrap';
 
 // Special-cased rather than a generic "confirm before navigating" menu
 // flag (no admin-editable-menu behavior exists yet to drive that) — see
@@ -118,10 +119,10 @@ export default {
  	    }
 	  } else {
 	    if(newWindow) {
-			window.open(url,'_blank');
+			window.open(withWarehouse(url),'_blank');
 		}
 		else {
-			window.location.href = url;
+			window.location.href = withWarehouse(url);
 		}
 	  }
 	},

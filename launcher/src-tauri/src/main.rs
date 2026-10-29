@@ -13,6 +13,7 @@ use std::time::Duration;
 
 use ri_launcher_core::backups::{self, BackupFile};
 use ri_launcher_core::platform::{InstallOutcome, Platform, State as RunState};
+use ri_launcher_core::remote::client::ServerKind;
 use ri_launcher_core::remote::{Options as RemoteOptions, Paired, RemoteBackups, ServerView};
 use ri_launcher_core::sdimage::{self, ImageInfo};
 use ri_launcher_core::service::{Launcher, Summary};
@@ -247,8 +248,9 @@ fn remote_list(state: State<'_, AppState>) -> Vec<ServerView> {
 }
 
 #[tauri::command]
-async fn remote_pair(state: State<'_, AppState>, address: String, code: String, name: Option<String>) -> Result<Paired, String> {
-    state.remote.pair(&address, &code, name.as_deref()).await.map_err(err)
+async fn remote_pair(state: State<'_, AppState>, address: String, code: String, name: Option<String>, kind: Option<String>) -> Result<Paired, String> {
+    let kind = ServerKind::parse(kind.as_deref().unwrap_or("")).ok_or("Choose a warehouse or the whole instance.")?;
+    state.remote.pair(&address, &code, name.as_deref(), kind).await.map_err(err)
 }
 
 #[tauri::command]

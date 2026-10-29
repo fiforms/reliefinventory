@@ -8,13 +8,14 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
+use super::client::ServerKind;
 use super::identity::write_private;
 use super::schedule::{RunRecord, Schedule};
 
 /// How many copies a new server keeps.
 pub const DEFAULT_KEEP: u32 = 14;
 
-/// A server this launcher is paired with (it holds our public key as a `backup_client` trust).
+/// A server this launcher is paired with (it holds our public key as a `backup_client` trust, or, for [`ServerKind::Instance`], as an instance trust).
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct RemoteServer {
     /// Local id, used in folder names and commands (the server's own id isn't known until paired).
@@ -22,6 +23,9 @@ pub struct RemoteServer {
     pub name: String,
     pub url: String,
     pub server_uuid: String,
+    /// What its backups are of: one warehouse (every pairing made before instance backups existed) or the whole instance.
+    #[serde(default)]
+    pub kind: ServerKind,
     /// The key the server presented when pairing, pinned for display (the fingerprint people compare).
     pub server_public_key: String,
     pub paired_at: i64,
@@ -140,6 +144,7 @@ mod tests {
             name: "Statesville".into(),
             url: "https://ri.example.org".into(),
             server_uuid: "u".into(),
+            kind: ServerKind::Warehouse,
             server_public_key: "k".into(),
             paired_at: 1,
             schedule: Schedule { frequency: Frequency::Daily, ..Schedule::default() },
@@ -176,6 +181,14 @@ mod tests {
         assert_eq!(s.backup_dir(Path::new("/data")), PathBuf::from("/mnt/usb/ri"));
         s.dest_dir = Some("  ".into());
         assert_eq!(s.backup_dir(Path::new("/data")), PathBuf::from("/data/remote-backups/a1"));
+    }
+
+    #[test]
+    fn a_server_saved_before_kinds_existed_is_a_warehouse() {
+        let old = r#"{"servers":[{"id":"a1","name":"Old","url":"https://ri.example.org","server_uuid":"u","server_public_key":"k","paired_at":1,
+            "schedule":{"frequency":"daily","hour":2,"minute":0,"weekday":6},"scope":"database","keep":14,"dest_dir":null}]}"#;
+        let cfg: RemoteConfig = serde_json::from_str(old).unwrap();
+        assert_eq!(cfg.servers[0].kind, ServerKind::Warehouse);
     }
 
     #[test]

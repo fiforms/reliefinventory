@@ -19,7 +19,7 @@ class BackupRestore extends Command
     protected $signature = 'backup:restore
         {database? : Backup zip that supplies the database (scope database or full). A full zip supplies the files too, unless --storage is given}
         {--storage= : A separate zip that supplies the files (scope storage or full). Any database inside it is ignored}
-        {--force : Restore onto an instance that has already been set up. REPLACES its database; the site is in maintenance mode meanwhile}';
+        {--force : Restore onto an instance that has already been set up. REPLACES its database; this warehouse is out of service (status restoring) meanwhile}';
 
     protected $description = 'Restore a database and/or uploaded files from backup zip(s), e.g. after database corruption';
 

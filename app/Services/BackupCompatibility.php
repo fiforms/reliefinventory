@@ -14,7 +14,7 @@ namespace App\Services;
  */
 class BackupCompatibility
 {
-    private const ENTRY_PATH = '#^(database/db\.sql|files/(private|public)/[^\0\\\\]+)$#';
+    private const ENTRY_PATH = '#^(database/(db\.sql|accounts\.json)|files/(private|public)/[^\0\\\\]+)$#';
 
     /**
      * @param  array  $manifest  decoded manifest.json
@@ -27,6 +27,10 @@ class BackupCompatibility
     public function problems(array $manifest, array $zipNames, ?array $knownMigrations = null, bool $checkVersion = true): array
     {
         $problems = [];
+
+        if (($manifest['kind'] ?? 'warehouse') !== 'warehouse') {
+            return ['This is a whole-instance backup, not a warehouse backup. Restore it onto a new instance with "php artisan restore:instance" (run in the provisioner container).'];
+        }
 
         $format = $manifest['format'] ?? null;
         if (! is_int($format) || $format < 1) {

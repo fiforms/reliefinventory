@@ -17,4 +17,4 @@
     @endforeach
 </table>
 
-<p><a href="{{ config('app.url') }}/setup/forms/{{ $submission->form_id }}/submissions">View in Relief Inventory</a></p>
+<p><a href="{{ \App\Models\Control\Warehouse::current()->publicUrl('/setup/forms/'.$submission->form_id.'/submissions') }}">View in Relief Inventory</a></p>

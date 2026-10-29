@@ -99,7 +99,7 @@ export default {
 		<div class="inv_container">
 			<h2 class="ri_datatable_head inv_head">
 				Inventory Report
-				<a href="/report/inventory.csv" class="ri_defaultbutton">Download CSV</a>
+				<a :href="$withWarehouse('/report/inventory.csv')" class="ri_defaultbutton">Download CSV</a>
 				<PrintMenu document-key="inventory-report" media="report" label="Print / PDF"
 					download-href="/report/inventory.pdf" />
 			</h2>

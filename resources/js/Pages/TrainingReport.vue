@@ -65,7 +65,7 @@ onMounted(load);
 						:params="params" :download-href="'/report/training/report-cards.pdf?' + query" />
 					<PrintMenu document-key="training-certificates" media="report" variant="form" label="Print All Certificates"
 						:params="params" :download-href="'/report/training/certificates.pdf?' + query" />
-					<a :href="'/report/training/report-cards.csv?' + query" class="ri_formbutton">CSV</a>
+					<a :href="$withWarehouse('/report/training/report-cards.csv?' + query)" class="ri_formbutton">CSV</a>
 				</div>
 			</div>
 

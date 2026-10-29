@@ -22,7 +22,10 @@
              builds large JSON payloads late in the run: PHP's default 128M ran out once the suite passed ~60 files. -->
         <ini name="memory_limit" value="512M"/>
         <env name="APP_ENV" value="testing"/>
-        <env name="APP_MAINTENANCE_DRIVER" value="file"/>
+        <!-- Maintenance mode lives in the per-process array cache, never in storage/framework/down: that file is shared by every
+             parallel worker (and by a dev server on the same checkout), so one test's `down` made other workers' requests 503. -->
+        <env name="APP_MAINTENANCE_DRIVER" value="cache"/>
+        <env name="APP_MAINTENANCE_STORE" value="array"/>
         <env name="BCRYPT_ROUNDS" value="4"/>
         <env name="BROADCAST_CONNECTION" value="null"/>
         <env name="CACHE_STORE" value="array"/>
@@ -40,6 +43,9 @@
         <env name="MAIL_MAILER" value="array"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="RI_RUNTIME" value="systemd"/>
+        <!-- The test warehouse's files and key (MULTI_WAREHOUSE.md §11), never the dev instance's. -->
+        <env name="RI_WAREHOUSE_STORAGE_DIR" value="storage/framework/testing/warehouses"/>
+        <env name="RI_WAREHOUSE_SECRETS_DIR" value="storage/framework/testing/warehouse-secrets"/>
         <env name="QUEUE_CONNECTION" value="sync"/>
         <env name="SESSION_DRIVER" value="array"/>
         <env name="TELESCOPE_ENABLED" value="false"/>

@@ -5,6 +5,7 @@
 
 namespace App\Events;
 
+use App\Models\Control\Warehouse;
 use Illuminate\Broadcasting\InteractsWithSockets;
 use Illuminate\Broadcasting\PrivateChannel;
 use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
@@ -25,9 +26,9 @@ class PrintJobChanged implements ShouldBroadcastNow
 
     public function broadcastOn(): array
     {
-        $channels = [new PrivateChannel('print-queue')];
+        $channels = [new PrivateChannel(Warehouse::current()->channel('print-queue'))];
         if ($this->requestedBy) {
-            $channels[] = new PrivateChannel('print-user.'.$this->requestedBy);
+            $channels[] = new PrivateChannel(Warehouse::current()->channel('print-user.'.$this->requestedBy));
         }
 
         return $channels;

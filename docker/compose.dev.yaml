@@ -5,6 +5,9 @@ services:
   init:
     image: reliefinventory:dev
     pull_policy: never
+  provisioner:
+    image: reliefinventory:dev
+    pull_policy: never
   app:
     image: reliefinventory:dev
     pull_policy: never

@@ -1,7 +1,10 @@
 <?php
 
 use App\Console\Commands\SetupReset;
+use App\Models\Accounts\Account;
+use App\Models\Accounts\Membership;
 use App\Models\Backup;
+use App\Models\Control\Warehouse;
 use App\Models\SetupState;
 use App\Models\User;
 use App\Services\BackupCompatibility;
@@ -9,6 +12,7 @@ use App\Services\BackupService;
 use App\Services\Federation\InstanceIdentity;
 use App\Services\FirstRunService;
 use App\Services\RestoreService;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Artisan;
@@ -31,7 +35,6 @@ beforeEach(function () {
 });
 
 afterEach(function () {
-    @unlink(storage_path('framework/down')); // a failed --force test must not leave the dev site in maintenance mode
     if (! empty($GLOBALS['restore_test_dirtied_db'])) {
         Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
         $GLOBALS['restore_test_dirtied_db'] = false;
@@ -321,8 +324,10 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
     $backup = $backup->fresh();
     expect($backup->status)->toBe('complete')->and($backup->error)->toBeNull();
 
-    // The "new instance": empty schema, never set up, no photo.
+    // The "new instance": empty schema, no logins, never set up, no photo.
     Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
+    Membership::query()->delete();
+    Account::query()->delete();
     unlink($this->tmp.'/private/receiving-photos/p.jpg');
     SetupState::current()->update(['completed_at' => null]);
     expect(User::where('email', 'old-admin@example.com')->exists())->toBeFalse();
@@ -344,10 +349,63 @@ test('a full backup restores onto a fresh instance, blanking what the new key ca
         ->and(DB::table('backups')->count())->toBe(0)
         ->and(SetupState::current()->completed_at)->not->toBeNull();
 
+    // The logins came with it (database/accounts.json): the administrator signs in with their old password
+    // and, the instance having no instance admin yet, runs it.
+    expect(Account::findByEmail('old-admin@example.com')->is_instance_admin)->toBeTrue()
+        ->and($status['logins'])->toBe(['old-admin@example.com: login created']);
+
     // The instance is now a normal, set-up one: the wizard and restore are closed.
     $this->get('/install')->assertRedirect(route('login'));
     $this->postJson('/install/restore', ['filename' => 'b.zip', 'size' => 10])->assertForbidden();
     expect($this->getJson('/install/restore/status')->json('state'))->toBe('complete');
+
+    $this->post('/login', ['email' => 'old-admin@example.com', 'password' => 'password']);
+    $this->assertAuthenticated();
+});
+
+test('the old warehouse key given at the restore step keeps the encrypted settings readable, and only on a warehouse nothing has been set up in', function () {
+    $GLOBALS['restore_test_dirtied_db'] = true;
+    Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
+    $warehouse = Warehouse::current();
+    $ownKey = $warehouse->key();
+    $oldKey = 'base64:'.base64_encode(Encrypter::generateKey(config('app.cipher')));
+    DB::table('federation_identities')->insert([
+        'uuid' => '11111111-2222-4333-8444-555555555555', 'name' => 'old-box', 'public_key' => str_repeat('A', 43),
+        'private_key' => (new Encrypter(base64_decode(substr($oldKey, 7)), config('app.cipher')))->encryptString('the-private-key'),
+        'created_at' => now(), 'updated_at' => now(),
+    ]);
+    $admin = User::factory()->create(['email' => 'old-admin@example.com']);
+    DB::table('people_roles')->insert(['person_id' => $admin->id, 'role_id' => 15, 'created_at' => now(), 'updated_at' => now()]);
+    $backup = Backup::create(['status' => 'queued', 'scope' => 'database']);
+    app(BackupService::class)->run($backup);
+    $zip = $backup->fresh()->path();
+
+    try {
+        Artisan::call('migrate:fresh', SchemaSnapshot::freshOptions());
+        Membership::query()->delete();
+        Account::query()->delete();
+        freshInstance();
+
+        Process::fake();
+        $id = uploadZip($zip);
+        $this->postJson('/install/restore/launch', ['upload_id' => $id, 'warehouse_key' => 'not a key'])->assertStatus(422)->assertJsonValidationErrors('warehouse_key');
+        $this->postJson('/install/restore/launch', ['upload_id' => $id, 'warehouse_key' => $oldKey])->assertStatus(202);
+        app(RestoreService::class)->run($id);
+
+        $status = app(RestoreService::class)->status();
+        expect($status['state'])->toBe('complete', $status['error'] ?? '')->and($status['blanked'])->toBe([])
+            ->and($warehouse->fresh()->key())->toBe($oldKey)
+            ->and(InstanceIdentity::isLost())->toBeFalse()
+            ->and(is_file(app(RestoreService::class)->dir().'/import.key'))->toBeFalse();   // the key was not left lying about
+
+        // A set-up warehouse refuses an import: it would make what is encrypted under its key unreadable.
+        app(RestoreService::class)->stageKeyImport($ownKey);
+        expect(fn () => app(RestoreService::class)->runFromFiles($zip, null, true))->toThrow(RuntimeException::class, 'has not been set up');
+    } finally {
+        $warehouse->replaceKey($ownKey);
+        app(WarehouseContext::class)->refresh();
+        app(RestoreService::class)->clearKeyImport();
+    }
 });
 
 // ---- restoring from zips on disk (backup:restore) -----------------------------------------------------
@@ -393,7 +451,7 @@ test('a files-only restore lays the files down and leaves the database alone', f
         ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('good-photo')
         ->and(file_get_contents($this->tmp.'/private/keep-me.txt'))->toBe('newer than the backup') // nothing is deleted
         ->and(DB::table('people')->count())->toBe($people)
-        ->and(file_exists(storage_path('framework/down')))->toBeFalse()                              // no maintenance mode for a files-only restore
+        ->and(app()->isDownForMaintenance())->toBeFalse()                                            // no maintenance mode for a files-only restore
         ->and(app(RestoreService::class)->status()['state'])->toBe('complete');
 });
 
@@ -427,18 +485,18 @@ test('a damaged database is repaired from a database zip plus the best copy of t
         ->and(User::where('email', 'tuesday@example.com')->exists())->toBeFalse()   // the full zip's newer database was ignored
         ->and(file_get_contents($this->tmp.'/private/receiving-photos/p.jpg'))->toBe('tuesday-photo')
         ->and($result['notes'])->toContain('The files backup also contained a database; it was ignored.')
-        ->and(app()->isDownForMaintenance())->toBeFalse()                            // maintenance mode was used and lifted
+        ->and(Warehouse::current()->fresh()->status)->toBe('active')                 // the warehouse was out of service meanwhile, and is back
         ->and(SetupState::current()->completed_at)->not->toBeNull();
 });
 
-test('a failed database load on a set-up instance leaves the site in maintenance mode instead of opening the setup wizard', function () {
+test('a failed database load on a set-up instance leaves the warehouse out of service instead of opening the setup wizard', function () {
     $GLOBALS['restore_test_dirtied_db'] = true;
     craftZip($this->tmp.'/broken.zip', ['database/db.sql' => 'THIS IS NOT SQL;'.DUMP_END]);
 
     $this->artisan('backup:restore', ['database' => $this->tmp.'/broken.zip', '--force' => true, '--no-interaction' => true])->assertFailed();
 
-    expect(app()->isDownForMaintenance())->toBeTrue();
-    @unlink(storage_path('framework/down'));
+    expect(Warehouse::current()->fresh()->status)->toBe('restoring')
+        ->and(app()->isDownForMaintenance())->toBeFalse();   // never Laravel's instance-wide maintenance mode
 });
 
 test('a truncated database dump is refused before anything is wiped', function () {

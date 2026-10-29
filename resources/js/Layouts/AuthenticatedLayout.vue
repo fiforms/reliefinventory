@@ -49,12 +49,21 @@ async function markAllNotificationsRead() {
     <div>
         <div class="min-h-screen bg-gray-100">
             <Banner @open-feedback="showingFeedbackModal = true" />
-            <!-- Training Mode tap-your-name login: station work only (App\Services\TrainingMode) -->
-            <div v-if="$page.props.training?.session" class="bg-amber-100 text-amber-900 text-sm px-4 py-1 flex justify-between items-center">
-                <span>
-                    Training login — {{ $page.props.auth.user.first_name }} {{ $page.props.auth.user.last_name }}<template v-if="$page.props.training.team">, Team {{ $page.props.training.team }}</template>
-                </span>
-                <Link :href="route('training-login.exit')" method="post" as="button" class="underline">Staff login</Link>
+            <!-- A training warehouse (MULTI_WAREHOUSE.md §12): practice data, never real stock -->
+            <div v-if="$page.props.warehouse?.training" class="bg-amber-100 text-amber-900 text-sm px-4 py-1">
+                Training warehouse &mdash; everything here is practice data.
+            </div>
+            <!-- Instance administrators, until the instance has a recovery key and they have confirmed storing it (HandleInertiaRequests::recoveryKeyProps) -->
+            <div v-if="$page.props.recoveryKey" class="bg-red-100 text-red-900 text-sm px-4 py-2 border-b border-red-300">
+                <template v-if="$page.props.recoveryKey.state === 'none'">
+                    <strong>Set up your recovery key.</strong>
+                    Without it, an automatic backup can't restore the warehouses' encrypted settings after a disaster.
+                </template>
+                <template v-else>
+                    <strong>Confirm your recovery key is stored.</strong>
+                    It was made but never confirmed. If the printout wasn't kept, make a new one.
+                </template>
+                <a href="/setup/instance?tab=backups" class="underline font-semibold ml-1">Open Instance Admin</a>
             </div>
             <PrintToast />
 
@@ -167,6 +176,10 @@ async function markAllNotificationsRead() {
                                     </template>
 
                                     <template #content>
+                                        <div v-if="$page.props.warehouse?.name" class="border-b border-gray-200 px-4 py-2">
+                                            <div class="text-xs text-gray-500">Warehouse</div>
+                                            <div class="break-words text-sm font-medium text-gray-800">{{ $page.props.warehouse.name }}</div>
+                                        </div>
                                         <DropdownLink
                                             :href="route('profile.edit')"
                                         >
@@ -192,6 +205,9 @@ async function markAllNotificationsRead() {
                                             as="button"
                                         >
                                             Switch User
+                                        </DropdownLink>
+                                        <DropdownLink v-if="$page.props.pendingInvitations > 0" :href="route('account.invitations')">
+                                            Invitations ({{ $page.props.pendingInvitations }})
                                         </DropdownLink>
                                         <DropdownLink href="/this-device">
                                             PIN Login on This Device
@@ -284,6 +300,9 @@ async function markAllNotificationsRead() {
                             <div class="text-sm font-medium text-gray-500">
                                 {{ $page.props.auth.user.email }}
                             </div>
+                            <div v-if="$page.props.warehouse?.name" class="mt-1 text-sm text-gray-500">
+                                Warehouse: {{ $page.props.warehouse.name }}
+                            </div>
                         </div>
 
                         <div class="mt-3 space-y-1">
@@ -302,6 +321,9 @@ async function markAllNotificationsRead() {
                                 href="/building-safety"
                             >
                                 Who's In The Building
+                            </ResponsiveNavLink>
+                            <ResponsiveNavLink v-if="$page.props.pendingInvitations > 0" :href="route('account.invitations')">
+                                Invitations ({{ $page.props.pendingInvitations }})
                             </ResponsiveNavLink>
                             <ResponsiveNavLink href="/this-device">
                                 PIN Login on This Device

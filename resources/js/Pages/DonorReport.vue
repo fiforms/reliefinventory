@@ -178,7 +178,7 @@ export default {
 			<h2 class="ri_datatable_head dnr_head">
 				Donor Report
 				<span class="dnr_exports">
-					<a :href="'/report/donors.csv' + query" class="ri_defaultbutton">Download CSV</a>
+					<a :href="$withWarehouse('/report/donors.csv' + query)" class="ri_defaultbutton">Download CSV</a>
 					<PrintMenu document-key="donor-report" media="report" label="Print / PDF"
 						:params="appliedParams" :download-href="'/report/donors.pdf' + query" />
 				</span>

@@ -5,14 +5,26 @@
 
 namespace App\Providers;
 
+use App\Auth\AccountSession;
+use App\Auth\AccountUserProvider;
+use App\Models\Control\Warehouse;
 use App\Services\ActivityRecorder;
 use App\Services\MailSettings;
 use App\Services\SlowQueryLog;
+use App\Services\Warehouses\WarehouseConsole;
+use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseJobs;
+use App\Support\InstanceSignedUrl;
+use Illuminate\Auth\Events\Login;
+use Illuminate\Auth\Events\Logout;
+use Illuminate\Auth\Notifications\ResetPassword;
+use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Http\Events\RequestHandled;
 use Illuminate\Http\Middleware\TrustProxies;
 use Illuminate\Http\Request;
 use Illuminate\Queue\Events\JobProcessing;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
@@ -30,6 +42,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(SlowQueryLog::class);
         // Keeps the .env mail config it snapshots before the settings below override it.
         $this->app->singleton(MailSettings::class);
+        // Which warehouse this request/job/command works in (MULTI_WAREHOUSE.md §8).
+        $this->app->singleton(WarehouseContext::class);
+        $this->app->singleton(WarehouseJobs::class);
     }
 
     /**
@@ -38,6 +53,40 @@ class AppServiceProvider extends ServiceProvider
     public function boot(): void
     {
         Vite::prefetch(concurrency: 3);
+
+        // Not in tests: a parallel worker's own databases are only chosen after boot; tests\InstanceSchemas
+        // switches once they are.
+        if ($this->app->runningInConsole() && ! $this->app->runningUnitTests()) {
+            $this->app->booted(fn () => app(WarehouseContext::class)->bootConsole());
+        }
+
+        // Queued jobs run in the warehouse that queued them. Registered before any other JobProcessing listener
+        // (MailSettings, below), which must already see the job's warehouse.
+        WarehouseJobs::register();
+        // Every command takes --warehouse; with several warehouses, one that works on a warehouse's data needs it.
+        WarehouseConsole::register();
+
+        // Logins check the central account, then resolve this warehouse's person (MULTI_WAREHOUSE.md §6).
+        Auth::provider('accounts', fn ($app, array $config) => new AccountUserProvider($app['hash'], $config['model']));
+        Event::listen(Login::class, fn (Login $e) => AccountSession::started($e->user));
+        Event::listen(Logout::class, fn () => AccountSession::forget());
+        // Account-level, so signed with APP_KEY rather than the warehouse's key (VerifyEmailController checks it).
+        // Both are emailed, so they are built on the warehouse's public address, never the request's Host header (which
+        // whoever asks for the email chooses), and name the warehouse when the address alone doesn't (§3).
+        VerifyEmail::createUrlUsing(function ($notifiable) {
+            $warehouse = Warehouse::current();
+            $generator = InstanceSignedUrl::generator();
+            $generator->forceRootUrl($warehouse->publicRoot());
+
+            return $warehouse->withSelector($generator->temporarySignedRoute(
+                'verification.verify',
+                now()->addMinutes(config('auth.verification.expire', 60)),
+                ['id' => $notifiable->getKey(), 'hash' => sha1($notifiable->getEmailForVerification())],
+            ));
+        });
+        ResetPassword::createUrlUsing(fn ($notifiable, string $token) => Warehouse::current()->publicUrl(
+            '/reset-password/'.$token.'?email='.rawurlencode($notifiable->getEmailForPasswordReset()),
+        ));
 
         // Federation backup endpoints. Named limiters, keyed by who is calling: a numeric `throttle:N,1` shares one counter
         // per IP across every route, so a client polling a backup's status would use up the budget of the call that

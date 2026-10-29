@@ -18,6 +18,8 @@ function trainingScanItem(string $upc = '012345678905')
         'case_qty' => 1, 'active' => true, 'description' => 'Green beans', 'upc' => $upc]);
 }
 
+beforeEach(fn () => trainingWarehouse());
+
 test('the product list needs manage-training', function () {
     $this->actingAs(userWithPermissions('manage-sorting'));
 

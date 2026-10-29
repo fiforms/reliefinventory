@@ -19,7 +19,7 @@ use Illuminate\Support\Facades\Auth;
 use Throwable;
 
 /**
- * Who did what, at which station — always on, not only in Training Mode. Hooks the model events of the records
+ * Who did what, at which station — recorded in training warehouses only (MULTI_WAREHOUSE.md §12), where the report cards read it. Hooks the model events of the records
  * each station writes, so every path that writes them is covered without touching the station controllers:
  *
  *   1 Receiving  — a donation created as Received/Logged; a donation offer logged or decided
@@ -114,7 +114,7 @@ class ActivityRecorder
     /** Someone to credit: a logged-in person, or a Driver Portal driver. */
     private static function active(): bool
     {
-        return ! self::$paused && (Auth::check() || self::portalDriverId());
+        return ! self::$paused && TrainingMode::active() && (Auth::check() || self::portalDriverId());
     }
 
     private static function portalDriverId(): ?int
@@ -139,7 +139,7 @@ class ActivityRecorder
 
     private static function record(string $action, Model $subject, ?int $driverId = null): void
     {
-        if (self::$paused) {
+        if (self::$paused || ! TrainingMode::active()) {
             return;
         }
         try {

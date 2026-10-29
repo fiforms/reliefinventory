@@ -1,0 +1,32 @@
+# Used instead of Caddyfile when RI_HTTPS is `auto` or `internal` (the entrypoint picks it, and sets
+# RI_HOST and RI_ORIGIN from APP_URL). Inside the container HTTPS listens on 4430 and HTTP on 8080;
+# compose.yaml publishes them as 443 and 80. Plain HTTP only redirects to HTTPS, except what the
+# container's own healthcheck and the host-side updater need.
+{
+	frankenphp
+	admin off
+	http_port {$RI_HTTP_PORT:8080}
+	https_port {$RI_HTTPS_PORT:4430}
+	# the redirect below is written by hand: Caddy's own would send people to :4430
+	auto_https disable_redirects
+	log {
+		output stderr
+	}
+}
+
+{$RI_HOST}:{$RI_HTTPS_PORT:4430} {
+	# tls-auto.caddy (Let's Encrypt) or tls-internal.caddy (Caddy's own local CA)
+	import /etc/caddy/tls-{$RI_HTTPS}.caddy
+	import /etc/caddy/Caddyfile.app
+}
+
+http://:{$RI_HTTP_PORT:8080} {
+	# /up: the healthcheck. /api/instance/update*: the updater polls it over loopback with its own secret.
+	@plain path /up /api/instance/update*
+	handle @plain {
+		import /etc/caddy/Caddyfile.app
+	}
+	handle {
+		redir {$RI_ORIGIN}{uri} 308
+	}
+}

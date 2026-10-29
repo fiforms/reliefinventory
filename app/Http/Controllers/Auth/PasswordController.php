@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Auth\AccountSession;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +25,8 @@ class PasswordController extends Controller
             'password' => Hash::make($validated['password']),
             'password_change_required' => false,
         ])->save();
+        // The new password ends every other session of this login (in every warehouse), not this one.
+        AccountSession::remember($request->user()->account);
 
         return back();
     }

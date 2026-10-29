@@ -261,6 +261,18 @@ everyone to adopt this one.
 
 ---
 
+## 6. Schema sanity check for restores
+
+A backup with a valid manifest and hashes but the wrong database (a WordPress dump) is accepted today: the manifest's migration
+list is the only compatibility check, and it is the zip's own claim. Idea (added 2026-10-28, not a security feature, a guard
+against mistakes): before anything is wiped, read the dump's `CREATE TABLE` lines (mariadb-dump's output is regular; no SQL parser)
+and require a few sentinel tables (`migrations`, `orderdonations`, `item_ledgers`, `people`), refusing with a plain message.
+Do **not** reject unknown tables: older backups legitimately hold tables a later migration drops. A fuller version would compare the
+restored schema with what `migrate` produces (a schema map, with a drift test like `tests/SchemaSnapshot.php`), flagging a mismatch
+to the person after the restore. Would live in `BackupCompatibility` / `RestoreService`.
+
+---
+
 ## How these ideas relate
 
 - **2 (multi-tenant)** and **4 (federation)** are two answers to "more than one site." Decide which problem is real

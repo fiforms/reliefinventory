@@ -7,12 +7,18 @@ namespace App\Http\Controllers;
 
 use App\Exceptions\AccountActionRefused;
 use App\Mail\AccountCreated;
+use App\Models\Accounts\Account;
+use App\Models\Accounts\Membership;
+use App\Models\Accounts\MembershipInvitation;
+use App\Models\Control\Warehouse;
 use App\Models\Person;
+use App\Services\MembershipInvitations;
 use App\Services\PersonPermissionAssignment;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Mail;
@@ -70,7 +76,7 @@ class UserAdminController extends Controller
     ];
 
     /**
-     * Retrieve all login-capable people (anyone with an email set).
+     * Retrieve all login-capable people (anyone with a login account).
      *
      * @return JsonResponse
      */
@@ -165,6 +171,11 @@ class UserAdminController extends Controller
             return response()->json(['message' => $error], 403);
         }
 
+        // That email already has a login (in another warehouse): never attach it from here, invite it (MULTI_WAREHOUSE.md §6).
+        if (Account::findByEmail($data['email'])) {
+            return $this->inviteExistingLogin($data, $roleData, $permissionData);
+        }
+
         $person = Person::create([
             'first_name' => $data['first_name'],
             'last_name' => $data['last_name'],
@@ -215,6 +226,83 @@ class UserAdminController extends Controller
     }
 
     /**
+     * An email that already has a login elsewhere. The person is made here without a login, with the roles the admin chose, and
+     * the login's owner is invited (an emailed link, and listed in their app); roles take effect only when they accept. Whatever
+     * password the admin typed is ignored: nobody sets another warehouse's login's password.
+     */
+    private function inviteExistingLogin(array $data, array $roleData, array $permissionData): JsonResponse
+    {
+        $warehouse = Warehouse::current();
+        $account = Account::findByEmail($data['email']);
+        if (Membership::where('account_id', $account->id)->where('warehouse_id', $warehouse->id)->exists()) {
+            return response()->json(['message' => 'That login already belongs to this warehouse.'], 422);
+        }
+
+        $person = DB::transaction(function () use ($data, $roleData, $permissionData) {
+            $person = Person::create([
+                'first_name' => $data['first_name'],
+                'last_name' => $data['last_name'],
+                'email' => $data['email'],
+                'is_volunteer' => $data['is_volunteer'] ?? false,
+                'approved_at' => now(),
+            ]);
+            $person->forceFill(['created_by_person_id' => Auth::id(), 'approved_by_person_id' => Auth::id()])->save();
+            $this->permissionAssignment->syncRolesAndPermissions($person, $roleData, $permissionData);
+
+            return $person;
+        });
+
+        $result = app(MembershipInvitations::class)->invite($warehouse, $person->id, $data['email'], 'admin', Auth::user()->full_name, sendEmail: true);
+
+        return response()->json([
+            'message' => 'That email already has a login, so it was invited instead. '.($result['mailed']
+                ? 'They have been emailed a link to accept; until they do they cannot sign in here.'
+                : 'The invitation email could not be sent (check Email Settings); they will still see it under Invitations after signing in elsewhere.'),
+            'record' => $person,
+            'invited' => true,
+        ], 201);
+    }
+
+    /** Invitations raised by this warehouse that nobody has answered, for the Users page. */
+    public function invitations()
+    {
+        $invitations = app(MembershipInvitations::class)->openIn(Warehouse::current());
+        $people = Person::whereIn('id', $invitations->pluck('person_id'))->get()->keyBy('id');
+
+        return response()->json($invitations->map(fn ($i) => [
+            'id' => $i->id,
+            'email' => $i->email,
+            'person' => $people[$i->person_id]->full_name ?? '',
+            'source' => $i->source,
+            'invited_by' => $i->invited_by,
+            'expires_at' => $i->expires_at->toIso8601String(),
+        ])->values());
+    }
+
+    /** Send an open invitation again: a new link and a fresh expiry, and (for a restore's, which was never emailed) the first email. */
+    public function resendInvitation(int $id)
+    {
+        $invitation = $this->ownInvitation($id);
+        $result = app(MembershipInvitations::class)->invite(
+            Warehouse::current(), $invitation->person_id, $invitation->email, $invitation->source, Auth::user()->full_name, sendEmail: true,
+        );
+
+        return response()->json(['message' => $result['mailed'] ? 'Invitation emailed again.' : 'The email could not be sent — check Email Settings.']);
+    }
+
+    public function withdrawInvitation(int $id)
+    {
+        app(MembershipInvitations::class)->withdraw($this->ownInvitation($id));
+
+        return response()->json(['message' => 'Invitation withdrawn.']);
+    }
+
+    private function ownInvitation(int $id): MembershipInvitation
+    {
+        return MembershipInvitation::open()->where('warehouse_id', Warehouse::current()->id)->whereKey($id)->firstOrFail();
+    }
+
+    /**
      * Promote/change an existing login-capable account's roles and
      * permission overrides.
      *
@@ -223,7 +311,7 @@ class UserAdminController extends Controller
      */
     public function update(Request $request, $id)
     {
-        $person = Person::whereNotNull('email')->findOrFail($id);
+        $person = Person::whereNotNull('account_id')->findOrFail($id);
 
         $rules = self::VALIDATION_RULES;
         $rules['email'] = 'required|email|max:255|unique:people,email,'.$id;
@@ -279,7 +367,7 @@ class UserAdminController extends Controller
             'require_password_change' => 'nullable|boolean',
             'send_login_email' => 'nullable|boolean',
         ]);
-        $person = Person::whereNotNull('email')->findOrFail($id);
+        $person = Person::whereNotNull('account_id')->findOrFail($id);
 
         try {
             $this->assertCanTakeOver($person);
@@ -323,7 +411,7 @@ class UserAdminController extends Controller
             'ids.*' => 'integer',
         ]);
 
-        $people = Person::whereNotNull('email')->whereIn('id', $data['ids'])->get();
+        $people = Person::whereNotNull('account_id')->whereIn('id', $data['ids'])->get();
         $done = 0;
         $skipped = [];
         foreach ($people as $person) {
@@ -345,7 +433,7 @@ class UserAdminController extends Controller
 
     private function runAction(string $action, $id): JsonResponse
     {
-        $person = Person::whereNotNull('email')->findOrFail($id);
+        $person = Person::whereNotNull('account_id')->findOrFail($id);
 
         try {
             return response()->json(['message' => $this->applyAction($action, $person)], 200);
@@ -490,9 +578,9 @@ class UserAdminController extends Controller
      */
     private function loadUsers(?array $ids = null)
     {
-        $people = Person::whereNotNull('email')
+        $people = Person::whereNotNull('account_id')
             ->when($ids !== null, fn ($q) => $q->whereIn('id', $ids))
-            ->with(['people_roles', 'roles', 'person_permissions', 'createdBy', 'approvedBy'])
+            ->with(['account', 'people_roles', 'roles', 'person_permissions', 'createdBy', 'approvedBy'])
             ->withMax('loginHistory as last_login_at', 'logged_in_at')
             ->get();
 
@@ -506,6 +594,8 @@ class UserAdminController extends Controller
             // — this exposes just enough to distinguish "invited, hasn't set
             // a password yet" from "active" in the UI.
             $person->has_password = ! is_null($person->password);
+            // The account's (HasAccount), so not a column the model would serialize by itself.
+            $person->append('email_verified_at')->makeHidden('account');
             $person->status = self::status($person);
             // withMax hands back the raw column string; send an ISO time so
             // the browser reads it in the right timezone.

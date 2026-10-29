@@ -43,6 +43,11 @@ docker compose up -d
 Then open `APP_URL` (default <http://localhost:8080>); a setup wizard creates your administrator account. To
 upgrade, run `docker compose pull && docker compose up -d`.
 
+**Updating from the web page (optional, Linux hosts):** instead of running the upgrade by hand, an instance
+administrator can click *Check for Updates* / *Install Update* on the **Updates & Backups** page. That needs one
+small service on the host; see [Automatic updates](docker/README.md#automatic-updates-optional) and the setup steps
+in [docker/INSTALL.md](docker/INSTALL.md#optional-update-from-the-web-page-linux-server).
+
 Putting it on the internet? Read [docker/README.md](docker/README.md) first. It covers HTTPS, email, backups and
 restore, and the setup code that stops a stranger from claiming the administrator account before you do.
 

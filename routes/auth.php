@@ -41,7 +41,7 @@ Route::middleware('guest')->group(function () {
     Route::post('unlock/pin', [UnlockController::class, 'attemptPin'])
         ->middleware('throttle:20,1')->name('unlock.pin');
 
-    // Training Mode tap-your-name login — only on approved devices while training mode is on (see the controller).
+    // Training Mode tap-your-name login — only in a training warehouse, on approved devices (see the controller).
     Route::get('training-login', [TrainingLoginController::class, 'show'])->name('training-login');
     Route::post('training-login', [TrainingLoginController::class, 'login'])
         ->middleware('throttle:30,1')->name('training-login.login');
@@ -68,8 +68,6 @@ Route::get('verify-email/{id}/{hash}', VerifyEmailController::class)
     ->name('verification.verify');
 
 Route::middleware('auth')->group(function () {
-    // Leave a training login for a full one (PIN unlock or email).
-    Route::post('training-login/exit', [TrainingLoginController::class, 'exit'])->name('training-login.exit');
 
     Route::get('verify-email', EmailVerificationPromptController::class)
         ->name('verification.notice');

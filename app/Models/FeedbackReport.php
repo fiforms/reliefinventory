@@ -26,6 +26,7 @@ class FeedbackReport extends Model
         'flagged_reason',
         'uuid',
         'instance_identifier',
+        'warehouse_id',
         'reporter_name',
         'reporter_email',
         'submitted_at',

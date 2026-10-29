@@ -3,8 +3,10 @@
 /public/build
 /public/hot
 /public/storage
+/secrets
 /storage/*.key
 /storage/pail
+/storage/backups
 /vendor
 /chatgpt
 /docs

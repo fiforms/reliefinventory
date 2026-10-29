@@ -32,8 +32,16 @@ On Debian/Ubuntu:
     sudo mariadb
     create user reliefinventory@localhost identified by 'YourPasswordHere';
     create database reliefinventory;
+    create database reliefinventory_control;
+    create database reliefinventory_accounts;
     grant all on reliefinventory.* to reliefinventory@localhost;
+    grant all on `reliefinventory\_control`.* to reliefinventory@localhost;
+    grant all on `reliefinventory\_accounts`.* to reliefinventory@localhost;
     exit
+
+The `_control` and `_accounts` schemas hold the instance's list of warehouses and its login accounts
+(see `MULTI_WAREHOUSE.md`); they are named after the main database (`RI_CONTROL_DATABASE` /
+`RI_ACCOUNTS_DATABASE` override that). The Docker image creates them itself.
 
 **Create your local configuration** and edit `.env` with the database name and password from above
 
@@ -50,7 +58,7 @@ On Debian/Ubuntu:
 
 *(If you have a database backup, restore it at this point instead.)*
 
-    php artisan migrate
+    php artisan instance:migrate
 
 **Finish setup in the browser**
 
@@ -90,7 +98,7 @@ After pulling new code you may need some or all of:
     composer install
     npm install
     npm run build
-    php artisan migrate
+    php artisan instance:migrate
 
 ## Running in production
 

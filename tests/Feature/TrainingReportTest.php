@@ -14,7 +14,6 @@ use App\Models\ItemLedger;
 use App\Models\TrainingSetting;
 use App\Models\Transaction;
 use App\Models\User;
-use App\Services\TrainingMode;
 use App\Services\TrainingPreparer;
 use App\Support\TrainingGuide;
 use Illuminate\Http\UploadedFile;
@@ -23,7 +22,7 @@ use Illuminate\Support\Facades\Storage;
 function preparedTraining(): array
 {
     $items = scannedProducts();
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
 
     test()->actingAs(userWithPermissions('manage-training'));
     $summary = app(TrainingPreparer::class)->run();
@@ -32,10 +31,10 @@ function preparedTraining(): array
     return ['summary' => $summary, 'item' => $items[0]];
 }
 
-/** Act as $trainee through a training login (the session key is what marks it). */
+/** Act as $trainee (a person in this training warehouse). */
 function asTrainee(User $user)
 {
-    return test()->actingAs($user)->withSession([TrainingMode::SESSION_KEY => $user->id]);
+    return test()->actingAs($user);
 }
 
 test('station actions are logged with the trainee and their team; nothing is logged with nobody logged in', function () {
@@ -188,10 +187,7 @@ test('the training pages and PDFs are gated and render', function () {
     $this->actingAs($trainer)->get('/reports/training')->assertInertia(fn ($page) => $page->component('TrainingReport'));
     $this->actingAs($staff)->get('/help')->assertInertia(fn ($page) => $page->has('trainingTeams', 5));
     $this->actingAs($trainer)->getJson('/json/training/status')->assertOk()
-        ->assertJsonPath('enabled', true)->assertJsonPath('can_toggle', false)->assertJsonPath('prepared', true);
-    $this->actingAs($trainer)->putJson('/json/training/mode', ['enabled' => false])->assertForbidden();
-    $this->actingAs(userWithPermissions('admin-system'))->putJson('/json/training/mode', ['enabled' => false])->assertOk();
-    expect(TrainingSetting::current()->enabled)->toBeFalse();
+        ->assertJsonPath('prepared', true)->assertJsonMissingPath('enabled')->assertJsonMissingPath('reset_point');
 
     $this->actingAs($trainer)->postJson('/json/training/trainees', ['first_name' => 'Ed', 'last_name' => 'East', 'team' => 5])
         ->assertOk()->assertJsonPath('trainees.0.full_name', 'Ed East');

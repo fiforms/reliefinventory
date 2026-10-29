@@ -72,6 +72,8 @@ class CreateUserCommand extends Command
             $user->email_verified_at = now();
             $user->approved_at = now();
             $user->save();
+            // Made from the command line, so by someone who runs the instance (MULTI_WAREHOUSE.md §6).
+            $user->account->forceFill(['is_instance_admin' => true])->save();
             $role = new PeopleRoles;
             $role->person_id = $user->id;
             $role->role_id = 15;

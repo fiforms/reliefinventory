@@ -46,6 +46,16 @@ return [
             'lock_table' => env('DB_CACHE_LOCK_TABLE'),
         ],
 
+        // Login attempt counts, kept in the accounts schema so they are per account across every
+        // warehouse rather than per warehouse (MULTI_WAREHOUSE.md §6, App\Http\Requests\Auth\LoginRequest).
+        'accounts' => [
+            'driver' => 'database',
+            'connection' => 'accounts',
+            'table' => 'cache',
+            'lock_connection' => 'accounts',
+            'lock_table' => 'cache_locks',
+        ],
+
         'file' => [
             'driver' => 'file',
             'path' => storage_path('framework/cache/data'),

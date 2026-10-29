@@ -468,7 +468,7 @@ const containerTypeOptions = [
 
 					<template v-if="record.id && record.photo_path">
 						<h3 class="recv_subhead">Photo of the Shipment</h3>
-						<a :href="photoUrl(record)" target="_blank">
+						<a :href="$withWarehouse(photoUrl(record))" target="_blank">
 							<img :src="photoUrl(record)" alt="Photo of the shipment" class="recv_photo" />
 						</a>
 					</template>
@@ -506,7 +506,7 @@ const containerTypeOptions = [
 						@captured="(file) => onPhotoCaptured(file, record)"
 						@close="webcamOpen = false"
 					/>
-					<a v-if="record.photo_path" :href="photoUrl(record)" target="_blank">
+					<a v-if="record.photo_path" :href="$withWarehouse(photoUrl(record))" target="_blank">
 						<img :src="photoUrl(record)" alt="Photo of the shipment" class="recv_photo" />
 					</a>
 					<p v-if="photoError" class="ri_error">{{ photoError }}</p>

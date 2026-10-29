@@ -111,7 +111,7 @@ const mockServers = () => {
     const k = remoteMock()
     if (k === 'remote-empty') return []
     const server = (over) => ({
-        id: 'a1b2c3d4', name: 'Statesville warehouse', url: 'https://ri.example.org', fingerprint: '9A77-E967-6525-8550', paired_at: now - 86400 * 9,
+        id: 'a1b2c3d4', name: 'Statesville warehouse', url: 'https://ri.example.org', kind: 'warehouse', fingerprint: '9A77-E967-6525-8550', paired_at: now - 86400 * 9,
         schedule: { frequency: 'daily', hour: 2, minute: 0, weekday: 6 }, scope: 'database', keep: 14, dest_dir: null,
         folder: '/home/me/.local/share/ReliefInventory/remote-backups/a1b2c3d4',
         state: { last_attempt_at: now - 40000, last_success_at: now - 40000, failures: 0, last_error: null, last_file: 'relief-backup-20261025-020001-database-31.zip', needs_pairing: false, running: null },
@@ -135,8 +135,8 @@ const mockServers = () => {
 }
 let mockRemote = null
 export const remoteList = () => call('remote_list', {}, () => (mockRemote ??= mockServers()))
-export const remotePair = (address, code, name) =>
-    inTauri ? invoke('remote_pair', { address, code, name: name || null }) : Promise.reject('Pairing only works in the desktop app.')
+export const remotePair = (address, code, name, kind = 'warehouse') =>
+    inTauri ? invoke('remote_pair', { address, code, name: name || null, kind }) : Promise.reject('Pairing only works in the desktop app.')
 export const remoteConfigure = (id, options) => call('remote_configure', { id, options }, () => {
     const s = (mockRemote ??= mockServers()).find((x) => x.id === id)
     if (!s) return

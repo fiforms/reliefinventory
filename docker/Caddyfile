@@ -1,6 +1,7 @@
 # FrankenPHP (Caddy + embedded PHP) in plain "classic" mode: every request is a
-# normal PHP request, exactly like php-fpm. TLS is deliberately off — put a
-# reverse proxy (or your platform's ingress) in front for HTTPS.
+# normal PHP request, exactly like php-fpm. TLS is off here — put a reverse proxy
+# (or your platform's ingress) in front for HTTPS, or set RI_HTTPS=auto and the
+# entrypoint serves Caddyfile.https instead (certificates handled in the container).
 {
 	frankenphp
 	auto_https off
@@ -12,13 +13,5 @@
 }
 
 :{$RI_HTTP_PORT:8080} {
-	root * /var/www/html/public
-	encode zstd gzip
-	request_body {
-		max_size 64MB
-	}
-	# The emoji font is ~10 MB and never changes between releases of an image: let browsers keep it.
-	@emojifont path /fonts/NotoColorEmoji.ttf
-	header @emojifont Cache-Control "public, max-age=604800"
-	php_server
+	import /etc/caddy/Caddyfile.app
 }

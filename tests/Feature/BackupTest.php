@@ -1,8 +1,19 @@
 <?php
 
 use App\Models\Backup;
+use App\Models\BackupSchedule;
+use App\Models\Control\Warehouse;
 use App\Services\BackupService;
+use App\Services\DatabaseTools;
+use App\Services\RestoreService;
+use App\Services\Warehouses\WarehouseContext;
+use App\Services\Warehouses\WarehouseLayout;
+use App\Support\LegacyBackupSettings;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
+use Tests\SecondWarehouse;
 
 beforeEach(function () {
     $this->tmp = sys_get_temp_dir().'/ri-backup-test-'.bin2hex(random_bytes(4));
@@ -73,12 +84,13 @@ test('uploads are included with hashes, excluded dirs and key files are left out
     file_put_contents($this->tmp.'/private/print-jobs/j.pdf', 'pdf');
     file_put_contents($this->tmp.'/private/.app_key', 'base64:SECRETSECRET');
     file_put_contents($this->tmp.'/private/.env', 'APP_KEY=base64:SECRETSECRET');
-    file_put_contents($this->tmp.'/public/logo.png', 'png');
 
     $backup = runBackup('full');
     [$names, $manifest, $contents] = zipEntries($backup);
 
-    expect($names)->toContain('database/db.sql', 'files/private/receiving-photos/a.jpg', 'files/public/logo.png')
+    // The warehouse's own files only (there is no public disk any more), and its logins beside the dump.
+    expect($names)->toContain('database/db.sql', 'database/accounts.json', 'files/private/receiving-photos/a.jpg')
+        ->and(collect($names)->filter(fn ($n) => str_starts_with($n, 'files/public/'))->all())->toBe([])
         ->and($manifest['scope'])->toBe('full')
         ->and($names)->not->toContain('files/private/device-releases/x/firmware.img')
         ->and($names)->not->toContain('files/private/print-jobs/j.pdf')
@@ -167,7 +179,8 @@ test('only one backup can be started at a time', function () {
 });
 
 test('a second runner cannot take the lock while one is running', function () {
-    $lock = fopen($this->tmp.'/out/.backup.lock', 'c');
+    mkdir(app(BackupService::class)->dir(), 0750, true);
+    $lock = fopen(app(BackupService::class)->dir().'/.backup.lock', 'c');
     flock($lock, LOCK_EX);
 
     $backup = runBackup('database');
@@ -186,7 +199,8 @@ test('a running backup whose process died is marked failed instead of blocking f
 
 test('a running backup that still holds the lock is left alone', function () {
     $running = Backup::create(['status' => 'running', 'scope' => 'database']);
-    $lock = fopen($this->tmp.'/out/.backup.lock', 'c');
+    mkdir(app(BackupService::class)->dir(), 0750, true);
+    $lock = fopen(app(BackupService::class)->dir().'/.backup.lock', 'c');
     flock($lock, LOCK_EX);
 
     app(BackupService::class)->reapInterrupted();
@@ -207,7 +221,8 @@ test('expired backups are pruned with their files', function () {
 
 test('old zips with no record are pruned too, but only ones this app names, and only past the retention', function () {
     config(['backup.keep_days' => 14]);
-    $dir = $this->tmp.'/out';
+    $dir = app(BackupService::class)->dir();
+    mkdir($dir, 0750, true);
     $old = fn ($name) => tap("{$dir}/{$name}", fn ($path) => touch($path, now()->subDays(20)->getTimestamp()));
     $orphan = $old('relief-backup-20260101-000000-database-premigrate.zip');   // pre-migration backup: never had a row
     $unrelated = $old('someone-elses-notes.zip');
@@ -255,11 +270,12 @@ test('the app key needs its own permission, the right password and is never cach
     // manage-backups alone is not enough
     $this->actingAs(userWithPermissions('manage-backups'))->postJson('/json/backups/app-key', ['password' => 'x'])->assertForbidden();
 
-    $this->actingAs($viewer)->postJson('/json/backups/app-key', ['password' => 'wrong'])->assertStatus(422)->assertJsonMissing(['key' => config('app.key')]);
+    $this->actingAs($viewer)->postJson('/json/backups/app-key', ['password' => 'wrong'])->assertStatus(422)->assertJsonMissing(['key' => Warehouse::current()->key()]);
     $this->actingAs($viewer)->getJson('/json/backups/app-key')->assertStatus(405);
 
     $ok = $this->actingAs($viewer)->postJson('/json/backups/app-key', ['password' => $password])->assertOk();
-    expect($ok->json('key'))->toBe(config('app.key'))->and($ok->headers->get('Cache-Control'))->toContain('no-store');
+    expect($ok->json('key'))->toBe(Warehouse::current()->key())->not->toBe(config('app.key'))   // this warehouse's key, not the instance's
+        ->and($ok->headers->get('Cache-Control'))->toContain('no-store');
 });
 
 test('the page offers only a database or a database + files backup, never a files-only one', function () {
@@ -276,7 +292,7 @@ test('the merged page opens for either permission and tells each person what the
     $this->actingAs(userWithPermissions('manage-backups', 'view-app-key'))->get('/setup/system')
         ->assertInertia(fn ($page) => $page->where('canViewAppKey', true));
     $this->actingAs(userWithPermissions('admin-system'))->get('/setup/system')
-        ->assertInertia(fn ($page) => $page->where('canAdminSystem', true)->where('canManageBackups', false)->where('runtime', 'systemd'));
+        ->assertInertia(fn ($page) => $page->where('canAdminSystem', true)->where('canManageBackups', false));
     $this->actingAs(userWithPermissions('general-access'))->get('/setup/system')->assertForbidden();
 });
 
@@ -285,7 +301,7 @@ test('the old backup files address lands on the merged page', function () {
 });
 
 test('only a dump that ends with the end-of-dump marker counts as complete', function () {
-    $tools = app(App\Services\DatabaseTools::class);
+    $tools = app(DatabaseTools::class);
     $write = fn (string $sql) => tap($this->tmp.'/d.sql', fn ($f) => file_put_contents($f, $sql));
 
     expect($tools->dumpIsComplete($write("CREATE TABLE t (id int);\n\n-- Dump completed on 2026-10-20 10:12:46\n")))->toBeTrue()
@@ -302,31 +318,273 @@ test('only a dump that ends with the end-of-dump marker counts as complete', fun
     expect($tools->dumpIsComplete($real))->toBeTrue();
 });
 
-test('a scheduled (tier) backup can be downloaded by manage-backups holders, and nothing else is reachable', function () {
-    $dir = $this->tmp.'/tiers';
-    config(['system.backup_dir' => $dir]);
-    mkdir("$dir/daily", 0777, true);
-    mkdir("$dir/hourly/20260101-010000", 0777, true);               // an old-style directory
-    file_put_contents("$dir/daily/20260102-030000.zip", 'zip-bytes');
-    file_put_contents("$dir/secret.zip", 'not in a tier');
+// ---- per warehouse, one at a time (MULTI_WAREHOUSE.md §10/§11) ----------------------------------------
 
+test('each warehouse backs up into a folder of its own', function () {
+    $other = SecondWarehouse::make($this, ['display_name' => 'Elsewhere'])->fresh();
+    $here = runBackup('database');
+    $there = app(WarehouseContext::class)->run($other, fn () => runBackup('database'));
+    app(WarehouseContext::class)->switchTo(Warehouse::default());
+
+    expect($here->status)->toBe('complete', $here->error ?? '')->and($there->status)->toBe('complete', $there->error ?? '')
+        ->and($here->path())->toContain('/warehouses/'.Warehouse::default()->id.'/')
+        ->and(is_file($here->path()))->toBeTrue()
+        ->and(app(WarehouseContext::class)->run($other, fn () => $there->path()))->toContain('/warehouses/'.$other->id.'/')
+        ->and(glob($this->tmp.'/out/relief-backup-*.zip'))->toBe([]);
+});
+
+test('backups wait for each other across the whole instance, and give up after the limit', function () {
+    config(['backup.lock_wait_seconds' => 1]);
+    $lock = fopen($this->tmp.'/out/.instance-backup.lock', 'c');
+    flock($lock, LOCK_EX);
+
+    $backup = runBackup('database');
+    expect($backup->status)->toBe('failed')->and($backup->error)->toContain('kept the instance busy');
+    expect(fn () => app(BackupService::class)->createIn($this->tmp.'/elsewhere', 'database'))->toThrow(RuntimeException::class, 'kept the instance busy');
+
+    flock($lock, LOCK_UN);
+    expect(runBackup('database')->status)->toBe('complete');
+});
+
+test('a dump keeps the structure of the live-state tables but not their rows, and every table on the list exists', function () {
+    foreach (config('backup.live_state_tables') as $table) {
+        expect(Schema::hasTable($table))->toBeTrue("{$table} is on backup.live_state_tables but doesn't exist");
+    }
+
+    $db = config('database.connections.'.config('database.default').'.database');
+    $tools = app(DatabaseTools::class);
+    $command = implode(' ', $tools->dumpCommand($this->tmp.'/x.sql'));
+
+    expect($command)->toContain("--ignore-table-data={$db}.sessions")->toContain("--ignore-table-data={$db}.jobs")
+        ->and($command)->not->toContain('--ignore-table=')->not->toContain('--ignore-table-data='.$db.'.people');
+});
+
+test('a restore empties the live-state tables, which also covers older backups', function () {
+    DB::table('sessions')->insert(['id' => 'abc', 'payload' => 'x', 'last_activity' => time()]);
+    DB::table('jobs')->insert(['queue' => 'default', 'payload' => '{}', 'attempts' => 0, 'available_at' => time(), 'created_at' => time()]);
+
+    (fn () => $this->clearMachineLocalState())->call(app(RestoreService::class));
+
+    expect(DB::table('sessions')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
+});
+
+/** A finished scheduled snapshot, for the schedule and retention tests (no zip: they only look at the rows). */
+function snapshot(string $tiers, $finishedAt, ?string $filename = null): Backup
+{
+    return Backup::create([
+        'status' => 'complete', 'scope' => 'database', 'tiers' => $tiers, 'filename' => $filename,
+        'started_at' => $finishedAt, 'finished_at' => $finishedAt,
+    ]);
+}
+
+test('the daily snapshot waits for its hour, is made once a day, and a missed one is made at the next check', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['daily_enabled' => true, 'daily_hour' => 2, 'hourly_enabled' => false, 'weekly_enabled' => false, 'monthly_enabled' => false]);
+
+    expect($schedule->due(Carbon::parse('2026-02-10 01:30')))->toBe([])
+        ->and($schedule->due(Carbon::parse('2026-02-10 02:05')))->toBe(['daily']);
+
+    snapshot('daily', Carbon::parse('2026-02-10 02:06'));
+    expect($schedule->due(Carbon::parse('2026-02-10 09:00')))->toBe([])
+        ->and($schedule->due(Carbon::parse('2026-02-11 01:00')))->toBe([])
+        ->and($schedule->due(Carbon::parse('2026-02-11 14:00')))->toBe(['daily']);   // the warehouse was off at 02:00
+});
+
+test('hourly, weekly and monthly are due on their own rules, and one zip can carry several tiers', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update([
+        'hourly_enabled' => true, 'daily_enabled' => true, 'daily_hour' => 2,
+        'weekly_enabled' => true, 'weekly_dow' => 0, 'monthly_enabled' => true,   // Sunday
+    ]);
+
+    // Sunday 2026-02-08 at 02:10 with nothing ever made: everything is due
+    expect($schedule->due(Carbon::parse('2026-02-08 02:10')))->toBe(['hourly', 'daily', 'weekly', 'monthly']);
+
+    snapshot('hourly,daily,weekly,monthly', Carbon::parse('2026-02-08 02:11'));
+    expect($schedule->due(Carbon::parse('2026-02-08 02:40')))->toBe([])                   // under 50 minutes later
+        ->and($schedule->due(Carbon::parse('2026-02-08 03:05')))->toBe(['hourly'])
+        ->and($schedule->due(Carbon::parse('2026-02-09 02:10')))->toBe(['hourly', 'daily'])   // Monday: no weekly, same month
+        ->and($schedule->due(Carbon::parse('2026-02-15 02:10')))->toBe(['hourly', 'daily', 'weekly'])
+        ->and($schedule->due(Carbon::parse('2026-02-17 02:10')))->toBe(['hourly', 'daily', 'weekly'])   // Tuesday: the 03-15 Sunday was missed, and 03-08's is over a week old
+        ->and($schedule->due(Carbon::parse('2026-03-01 02:10')))->toContain('monthly');
+});
+
+test('a weekly snapshot missed on its day is made at the next check once it is over a week old', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['hourly_enabled' => false, 'daily_enabled' => false, 'monthly_enabled' => false, 'weekly_enabled' => true, 'weekly_dow' => 0, 'daily_hour' => 2]);
+    snapshot('weekly', Carbon::parse('2026-02-01 02:10'));   // a Sunday
+
+    expect($schedule->due(Carbon::parse('2026-02-05 10:00')))->toBe([])                // Thursday, 4 days later
+        ->and($schedule->due(Carbon::parse('2026-02-09 10:00')))->toBe(['weekly']);    // Monday: the Sunday 03-08 was missed
+});
+
+test('a snapshot includes the files when any tier it carries asks for them', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['daily_with_files' => false, 'weekly_with_files' => true]);
+
+    expect($schedule->scopeFor(['hourly', 'daily']))->toBe('database')
+        ->and($schedule->scopeFor(['hourly', 'daily', 'weekly']))->toBe('full')
+        ->and($schedule->withFiles('hourly'))->toBeFalse();
+});
+
+test('backup:scheduled makes one zip for what is due, tags its tiers, and makes nothing when nothing is due', function () {
+    BackupSchedule::current()->update(['daily_enabled' => true, 'daily_hour' => 2, 'hourly_enabled' => true]);
+
+    $this->travelTo(Carbon::parse('2026-02-10 01:00'));
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('hourly');   // hourly is due at any hour
+    $this->travelTo(Carbon::parse('2026-02-10 01:20'));
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('No snapshot is due');
+
+    $this->travelTo(Carbon::parse('2026-02-10 02:10'));
+    $this->artisan('backup:scheduled')->assertSuccessful();
+
+    $latest = Backup::orderByDesc('id')->first();
+    expect(Backup::count())->toBe(2)
+        ->and($latest->tiers)->toBe('hourly,daily')->and($latest->status)->toBe('complete')
+        ->and($latest->expires_at)->toBeNull()                       // kept by its tiers, not by age
+        ->and(is_file($latest->path()))->toBeTrue()
+        ->and(BackupSchedule::current()->last_status)->toBe('complete');
+    $this->travelBack();
+});
+
+test('RI_BACKUP_ENABLED=false stops every scheduled snapshot, whatever a warehouse chose', function () {
+    BackupSchedule::current()->update(['daily_enabled' => true, 'daily_hour' => 0, 'hourly_enabled' => true]);
+    config(['backup.container.enabled' => false]);
+
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('turned off');
+    expect(Backup::count())->toBe(0);
+
+    config(['backup.container.enabled' => true]);
+    $this->artisan('backup:scheduled')->assertSuccessful();
+    expect(Backup::count())->toBe(1);
+});
+
+test('a legacy schedule row names only columns the table has, and the migration can insert it', function () {
+    $path = sys_get_temp_dir().'/ri-legacy-feature-'.bin2hex(random_bytes(4)).'.conf';
+    file_put_contents($path, "BACKUP_FREQUENCY=weekly\nBACKUP_DOW=7\nHOURLY_BACKUPS=1\nBACKUP_TZ=America/Los_Angeles\n");
+    $row = LegacyBackupSettings::scheduleRow($path, 'UTC');
+    unlink($path);
+
+    expect(array_diff(array_keys($row), Schema::getColumnListing('backup_schedule')))->toBe([]);
+    DB::table('backup_schedule')->where('id', 1)->update($row);
+    $schedule = BackupSchedule::current();
+    expect($schedule->weekly_enabled)->toBeTrue()->and($schedule->weekly_dow)->toBe(0)->and($schedule->hourly_enabled)->toBeTrue();
+});
+
+test('the schedule says which timezone its hours are in', function () {
+    config(['app.timezone' => 'America/New_York']);
+
+    $this->actingAs(userWithPermissions('manage-backups'))->getJson('/json/backups/schedule')->assertOk()->assertJsonPath('timezone', 'America/New_York');
+});
+
+test('a training warehouse and a running backup both stop a scheduled snapshot', function () {
+    BackupSchedule::current()->update(['daily_enabled' => true, 'daily_hour' => 0]);
+
+    Backup::create(['status' => 'queued', 'scope' => 'database']);   // just queued: its process may not have started yet, so it isn't reaped
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('already running');
+    expect(Backup::count())->toBe(1);
+    Backup::query()->delete();
+
+    trainingWarehouse();
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('training');
+    expect(Backup::count())->toBe(0);
+});
+
+test('a snapshot is kept while it is among the newest of any tier it carries; hand-made zips keep their own expiry', function () {
+    BackupSchedule::current()->update(['hourly_keep' => 2, 'daily_keep' => 2, 'weekly_keep' => 1, 'monthly_keep' => 1]);
+
+    $hourly = collect(range(1, 4))->map(fn ($h) => snapshot('hourly', Carbon::parse("2026-02-10 0{$h}:00")));
+    $sundayDaily = snapshot('daily,weekly', Carbon::parse('2026-02-08 02:00'));
+    $daily = collect([9, 10, 11])->map(fn ($d) => snapshot('daily', Carbon::parse("2026-02-{$d} 02:30")));
+    $manual = Backup::create(['status' => 'complete', 'scope' => 'database', 'finished_at' => now()->subDays(40), 'expires_at' => now()->addDay()]);
+
+    app(BackupService::class)->prune();
+
+    $kept = Backup::pluck('id')->all();
+    expect($kept)->toContain($hourly[3]->id, $hourly[2]->id)                  // newest two hourly
+        ->not->toContain($hourly[0]->id, $hourly[1]->id)
+        ->toContain($daily[2]->id, $daily[1]->id)                             // newest two daily
+        ->not->toContain($daily[0]->id)
+        ->toContain($sundayDaily->id)                                         // out of the daily window but the newest weekly
+        ->toContain($manual->id);
+});
+
+test('turning a tier off does not delete the snapshots it made', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['weekly_enabled' => false, 'weekly_keep' => 3]);
+    $weeklies = collect([1, 8, 15])->map(fn ($d) => snapshot('weekly', Carbon::parse('2026-02-'.str_pad($d, 2, '0', STR_PAD_LEFT).' 02:00')));
+
+    app(BackupService::class)->prune();
+
+    expect(Backup::whereIn('id', $weeklies->pluck('id'))->count())->toBe(3);
+});
+
+test('the schedule is read and changed by manage-backups holders, with limits', function () {
     $admin = userWithPermissions('manage-backups');
-    $get = fn ($path) => test()->actingAs($admin)->get("/json/backups/tier/{$path}/download");
+    $valid = [
+        'hourly_enabled' => true, 'hourly_keep' => 12, 'daily_enabled' => true, 'daily_hour' => 3, 'daily_keep' => 10, 'daily_with_files' => false,
+        'weekly_enabled' => true, 'weekly_dow' => 6, 'weekly_keep' => 5, 'weekly_with_files' => true,
+        'monthly_enabled' => false, 'monthly_keep' => 6, 'monthly_with_files' => true,
+    ];
 
-    $ok = $get('daily/20260102-030000')->assertOk()->assertDownload('relief-backup-daily-20260102-030000.zip');
-    expect($ok->headers->get('Cache-Control'))->toContain('no-store');
+    $this->actingAs(userWithPermissions('general-access'))->getJson('/json/backups/schedule')->assertForbidden();
+    $this->actingAs(userWithPermissions('admin-system'))->putJson('/json/backups/schedule', $valid)->assertForbidden();
+    $this->actingAs($admin)->getJson('/json/backups/schedule')->assertOk()->assertJsonPath('daily_enabled', true);
 
-    $get('daily/20260109-030000')->assertNotFound();                // no such backup
-    $get('hourly/20260101-010000')->assertNotFound();               // a directory, not a zip
-    $get('weekly/20260102-030000')->assertNotFound();               // not a tier
-    $get('daily/..%2Fsecret')->assertNotFound();                    // the stamp is a fixed pattern
-    $get('daily/20260102-030000.zip')->assertNotFound();
+    $this->actingAs($admin)->putJson('/json/backups/schedule', $valid)->assertOk()->assertJsonPath('weekly_dow', 6);
+    expect(BackupSchedule::current()->weekly_keep)->toBe(5)->and(BackupSchedule::current()->weekly_with_files)->toBeTrue();
 
-    // the same permission as an on-demand zip, not admin-system's
-    $this->actingAs(userWithPermissions('admin-system'))->get('/json/backups/tier/daily/20260102-030000/download')->assertForbidden();
-    $this->actingAs(userWithPermissions('general-access'))->get('/json/backups/tier/daily/20260102-030000/download')->assertForbidden();
+    foreach ([['hourly_keep', 0], ['hourly_keep', 500], ['daily_hour', 24], ['weekly_dow', 7], ['monthly_keep', 99]] as [$field, $value]) {
+        $this->actingAs($admin)->putJson('/json/backups/schedule', [$field => $value] + $valid)->assertStatus(422)->assertJsonValidationErrors($field);
+    }
+    $this->actingAs($admin)->putJson('/json/backups/schedule', ['hourly_enabled' => true])->assertStatus(422);
+});
 
-    // a Docker install has no tiers to serve
-    config(['system.runtime' => 'docker']);
-    $get('daily/20260102-030000')->assertNotFound();
+test('rolling back needs admin-system, the password and a real snapshot of this warehouse, and takes a safety copy first', function () {
+    Process::fake();
+    $password = 'correct-horse-battery';
+    $admin = userWithPermissions('manage-backups', 'admin-system');
+    $admin->forceFill(['password' => bcrypt($password)])->save();
+    $snapshot = runBackup('database');
+
+    // manage-backups alone may not roll anything back
+    $this->actingAs(userWithPermissions('manage-backups'))->postJson("/json/backups/{$snapshot->id}/restore", ['password' => 'x'])->assertForbidden();
+    // wrong password, then a file that is not a snapshot, then files only
+    $this->actingAs($admin)->postJson("/json/backups/{$snapshot->id}/restore", ['password' => 'wrong'])->assertStatus(422);
+    $odd = Backup::create(['status' => 'complete', 'scope' => 'database', 'filename' => '../../etc/passwd']);
+    $this->actingAs($admin)->postJson("/json/backups/{$odd->id}/restore", ['password' => $password])->assertNotFound();
+    $filesOnly = Backup::create(['status' => 'complete', 'scope' => 'storage', 'filename' => $snapshot->filename]);
+    $this->actingAs($admin)->postJson("/json/backups/{$filesOnly->id}/restore", ['password' => $password])->assertStatus(422);
+
+    $this->actingAs($admin)->postJson("/json/backups/{$snapshot->id}/restore", ['password' => $password])->assertStatus(202);
+    Process::assertRan(fn ($process) => is_string($process->command) && str_contains($process->command, 'restore:run --snapshot=')
+        && str_contains($process->command, escapeshellarg($snapshot->filename)));
+    expect(RestoreService::isSnapshotName($snapshot->filename))->toBeTrue()
+        ->and(RestoreService::isSnapshotName('../relief-backup-1.zip'))->toBeFalse()
+        ->and(RestoreService::isSnapshotName('notes.zip'))->toBeFalse();
+});
+
+test('the zips of the one warehouse that predates per-warehouse folders move into its own', function () {
+    $warehouse = Warehouse::default();
+    file_put_contents($this->tmp.'/out/relief-backup-20260101-000000-database-1.zip', 'zip');
+    file_put_contents($this->tmp.'/out/relief-backup-20260101-000000-database-premigrate.zip', 'zip');
+    file_put_contents($this->tmp.'/out/someone-elses-notes.zip', 'keep me');
+
+    $done = app(WarehouseLayout::class)->ensure($warehouse);
+
+    $folder = $this->tmp.'/out/warehouses/'.$warehouse->id;
+    expect($done)->toContain('moved its backup zips into its own backup folder')
+        ->and(is_file($folder.'/relief-backup-20260101-000000-database-1.zip'))->toBeTrue()
+        ->and(is_file($folder.'/relief-backup-20260101-000000-database-premigrate.zip'))->toBeTrue()
+        ->and(is_file($this->tmp.'/out/someone-elses-notes.zip'))->toBeTrue()
+        ->and(glob($this->tmp.'/out/relief-backup-*.zip'))->toBe([]);
+});
+
+test('warehouse:resume puts a warehouse a failed restore left unavailable back in service', function () {
+    $warehouse = Warehouse::default();
+    $this->artisan('warehouse:resume', ['warehouse' => $warehouse->id])->assertFailed();
+
+    $warehouse->forceFill(['status' => 'restoring'])->save();
+    $this->artisan('warehouse:resume', ['warehouse' => $warehouse->id])->assertSuccessful();
+    expect($warehouse->fresh()->status)->toBe('active');
 });

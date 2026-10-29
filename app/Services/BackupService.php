@@ -6,8 +6,12 @@
 namespace App\Services;
 
 use App\Models\Backup;
+use App\Models\BackupSchedule;
+use App\Services\Warehouses\WarehouseAccounts;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Schema;
 use RuntimeException;
 use Throwable;
 use ZipArchive;
@@ -26,8 +30,10 @@ use ZipArchive;
  * Layout of a zip:
  *   manifest.json            format version, scope, app commit, migrations, and size + SHA-256 of every entry below
  *   database/db.sql          plain mariadb-dump of the app database (scope database, full)
- *   files/private/...        storage/app/private (the `local` disk: receiving photos, screenshots, imports, BOLs)
- *   files/public/...         storage/app/public           (scope full, storage)
+ *   database/accounts.json   this warehouse's logins (WarehouseAccounts::export(); with the dump, since the
+ *                            accounts schema isn't in it — MULTI_WAREHOUSE.md §6)
+ *   files/private/...        the warehouse's files folder (the `local` disk: receiving photos, screenshots, imports,
+ *                            BOLs) (scope full, storage). Older backups may also have files/public/..., ignored.
  *
  * The application key (APP_KEY / .env / storage/app/.app_key) is NEVER written to a zip — see
  * NEVER_INCLUDE and the "Application key" panel on /setup/system. A restore onto a new instance gets a
@@ -86,7 +92,12 @@ class BackupService
         $log = escapeshellarg($this->dir().'/backup.log');
         $php = escapeshellarg(config('backup.php_binary'));
         // setsid -f: new session, forked away — survives the web request and the web server's restart of workers.
-        Process::path(base_path())->run("setsid -f {$php} artisan backup:run {$backup->id} >> {$log} 2>&1 < /dev/null");
+        // --warehouse: with more than one warehouse, a console command won't guess which one it is for.
+        $warehouse = escapeshellarg('--warehouse='.app(WarehouseContext::class)->current()->id);
+        $result = Process::path(base_path())->run("setsid -f {$php} artisan backup:run {$backup->id} {$warehouse} >> {$log} 2>&1 < /dev/null");
+        if ($result->failed()) {
+            $this->fail($backup, 'Could not start the backup process: '.trim($result->errorOutput() ?: 'exit code '.$result->exitCode()));
+        }
     }
 
     /** Build the zip for an existing row. Runs in the detached process (or inline from backup:create). */
@@ -100,7 +111,13 @@ class BackupService
             return;
         }
 
+        $instance = null;
         try {
+            $backup->update(['progress' => 'Waiting for another backup to finish']);
+            $instance = $this->instanceLock();
+            if (! $instance) {
+                throw new RuntimeException('Another warehouse\'s backup kept the instance busy for too long. Try again later.');
+            }
             $backup->update(['status' => 'running', 'started_at' => now(), 'progress' => 'Starting']);
             $this->prune();
 
@@ -110,12 +127,14 @@ class BackupService
             $backup->update([
                 'status' => 'complete', 'filename' => basename($result['path']), 'size_bytes' => $result['size'],
                 'file_count' => $result['files'], 'progress' => null, 'finished_at' => now(),
-                'expires_at' => now()->addDays((int) config('backup.keep_days')),
+                // A scheduled snapshot is kept by its tiers (pruneTiered()), not by age; a manual one by the flat rule.
+                'expires_at' => $backup->tiers ? null : now()->addDays((int) config('backup.keep_days')),
             ]);
         } catch (Throwable $e) {
             report($e);
             $this->fail($backup, $e->getMessage());
         } finally {
+            $instance && $this->unlock($instance);
             $this->unlock($lock);
         }
     }
@@ -135,11 +154,14 @@ class BackupService
         if (! $lock) {
             throw new RuntimeException("Another backup is already running in {$dir}.");
         }
+        $instance = null;
         try {
+            $instance = $this->instanceLock() ?? throw new RuntimeException('Another backup kept the instance busy for too long. Try again later.');
             $base = $name ?? sprintf('relief-backup-%s-%s', now()->format('Ymd-His'), $scope);
 
             return $this->write($scope, $dir, $base, $progress ?? fn () => null);
         } finally {
+            $instance && $this->unlock($instance);
             $this->unlock($lock);
         }
     }
@@ -170,6 +192,12 @@ class BackupService
                 $progress('Dumping the database');
                 $this->dumpDatabase("{$work}/db.sql");
                 $entries[] = ['path' => 'database/db.sql', 'source' => "{$work}/db.sql"];
+                // A database not yet moved to central accounts (the pre-migration backup of an upgrade, taken before
+                // the accounts schema exists) still holds the logins in its own people table: nothing to add.
+                if (! Schema::hasColumn('people', 'password')) {
+                    file_put_contents("{$work}/accounts.json", json_encode(app(WarehouseAccounts::class)->export(), JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+                    $entries[] = ['path' => 'database/accounts.json', 'source' => "{$work}/accounts.json"];
+                }
             }
             if (self::hasStorage($scope)) {
                 $progress('Listing uploaded files');
@@ -223,7 +251,11 @@ class BackupService
             'format' => self::FORMAT,
             'created_at' => now()->toIso8601String(),
             'app' => ['name' => config('app.name'), 'commit' => app(GitVersionService::class)->currentCommit(), 'version' => app(GitVersionService::class)->release()],
+            'kind' => 'warehouse',
             'scope' => $scope,
+            // The lineage: which warehouse this is a backup of. It proves nothing about origin (whoever made the zip chose it);
+            // it only lets a warehouse admin's restore catch the wrong file (MULTI_WAREHOUSE.md §11).
+            'warehouse' => ['id' => app(WarehouseContext::class)->current()->id, 'uuid' => app(WarehouseContext::class)->current()->uuid],
             'database' => [
                 'driver' => config('database.default'),
                 'name' => config('database.connections.'.config('database.default').'.database'),
@@ -255,7 +287,20 @@ class BackupService
     /** @return iterable<array{path: string, source: string}> */
     private function storageFiles(): iterable
     {
-        $roots = ['private' => config('filesystems.disks.local.root'), 'public' => config('filesystems.disks.public.root')];
+        // The current warehouse's files folder (MULTI_WAREHOUSE.md §11). There is no `public` disk any more;
+        // older backups' files/public entries are accepted and ignored on restore.
+        yield from $this->filesIn(config('filesystems.disks.local.root'), 'files/private');
+    }
+
+    /**
+     * Every file under a warehouse's files folder, as zip entries under $prefix (the excluded directories and never-included names left
+     * out, symlinks never followed). Shared with the whole-instance backup.
+     *
+     * @return iterable<array{path: string, source: string}>
+     */
+    public function filesIn(?string $folder, string $prefix): iterable
+    {
+        $roots = [$prefix => $folder];
         $excluded = config('backup.exclude_dirs');
 
         foreach ($roots as $label => $root) {
@@ -276,7 +321,7 @@ class BackupService
             ));
             foreach ($iterator as $file) {
                 if ($file->isFile()) {
-                    yield ['path' => "files/{$label}/".substr($file->getPathname(), strlen($root) + 1), 'source' => $file->getPathname()];
+                    yield ['path' => "{$label}/".substr($file->getPathname(), strlen($root) + 1), 'source' => $file->getPathname()];
                 }
             }
         }
@@ -304,11 +349,6 @@ class BackupService
             throw new RuntimeException('The finished zip failed its self-check and was discarded.');
         }
         $zip->close();
-    }
-
-    private function progress(Backup $backup, string $text): void
-    {
-        $backup->update(['progress' => $text]);
     }
 
     private function fail(Backup $backup, string $message): void
@@ -345,6 +385,40 @@ class BackupService
         return ! $free;
     }
 
+    /** Run $callback holding the instance-wide backup lock (waiting for it), or fail if it never comes. */
+    public function withInstanceLock(callable $callback): mixed
+    {
+        $lock = $this->instanceLock() ?? throw new RuntimeException('Another backup kept the instance busy for too long. Try again later.');
+        try {
+            return $callback();
+        } finally {
+            $this->unlock($lock);
+        }
+    }
+
+    /**
+     * The one lock every backup on the instance takes (MULTI_WAREHOUSE.md §10): N warehouses' backups run one after another, not all at
+     * once on the one database. Waits for it, up to config('backup.lock_wait_seconds').
+     *
+     * @return resource|null
+     */
+    private function instanceLock()
+    {
+        $this->ensureDir($this->rootDir());
+        $handle = fopen($this->rootDir().'/.instance-backup.lock', 'c');
+        $deadline = time() + (int) config('backup.lock_wait_seconds');
+        while (! flock($handle, LOCK_EX | LOCK_NB)) {
+            if (time() >= $deadline) {
+                fclose($handle);
+
+                return null;
+            }
+            sleep(2);
+        }
+
+        return $handle;
+    }
+
     /** @return resource|null the held lock, or null when another backup in $dir holds it */
     private function lock(string $dir)
     {
@@ -374,7 +448,38 @@ class BackupService
         });
         Backup::where('status', 'failed')->where('finished_at', '<', now()->subDays(7))->delete();
 
-        return $count + $this->pruneUntracked();
+        return $count + $this->pruneTiered() + $this->pruneUntracked();
+    }
+
+    /**
+     * Scheduled snapshots: one is kept while it is among the newest N of ANY tier it carries (N from the schedule, at least 1), so
+     * the Sunday zip that is also the daily one outlives the daily window as the weekly. A tier switched off keeps its newest N too
+     * (turning a tier off must not quietly delete history); they go as newer ones displace them or when an admin deletes them.
+     * Rows made by hand (tiers null) are not touched: they have their own expiry.
+     */
+    private function pruneTiered(): int
+    {
+        // The pre-migration backup of an upgrade runs before this version's tables exist; it must still be made.
+        if (! Schema::hasTable('backup_schedule') || ! Schema::hasColumn('backups', 'tiers')) {
+            return 0;
+        }
+        $schedule = BackupSchedule::current();
+        $keep = [];
+        foreach (BackupSchedule::TIERS as $tier) {
+            $ids = Backup::where('status', 'complete')->where('tiers', 'like', "%{$tier}%")
+                ->orderByDesc('finished_at')->orderByDesc('id')->limit($schedule->keep($tier))->pluck('id');
+            foreach ($ids as $id) {
+                $keep[$id] = true;
+            }
+        }
+
+        $count = 0;
+        Backup::where('status', 'complete')->whereNotNull('tiers')->whereNotIn('id', array_keys($keep))->get()->each(function (Backup $backup) use (&$count) {
+            $this->delete($backup);
+            $count++;
+        });
+
+        return $count;
     }
 
     /**
@@ -404,7 +509,14 @@ class BackupService
         $backup->delete();
     }
 
+    /** This warehouse's own backup folder: its zips, its backup.log, its lock (MULTI_WAREHOUSE.md §11). */
     public function dir(): string
+    {
+        return $this->rootDir().'/warehouses/'.app(WarehouseContext::class)->current()->id;
+    }
+
+    /** The instance's backup directory, above every warehouse's own folder. */
+    public function rootDir(): string
     {
         return rtrim(config('backup.dir'), '/');
     }

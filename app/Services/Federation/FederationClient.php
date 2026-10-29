@@ -40,10 +40,13 @@ class FederationClient
 
     private function send(string $method, string $path, string $body): Response
     {
-        $origin = PeerUrl::assertSafe((string) $this->trust->base_url);
-        $path = self::PREFIX.$path;
+        // A peer on a shared host is addressed as https://host/w/<id>: the prefix is part of every path we send and sign.
+        $address = PeerUrl::assertSafe((string) $this->trust->base_url);
+        $origin = PeerUrl::origin($address);
+        $prefix = PeerUrl::basePath($address).self::PREFIX;
+        $path = $prefix.$path;
 
-        $session = $this->session($origin);
+        $session = $this->session($origin, $prefix);
         if ($session) {
             $response = $this->dispatch($origin, $method, $path, $body, ['Authorization' => 'Bearer '.$session]);
             if ($response->status() !== 401) {
@@ -55,13 +58,13 @@ class FederationClient
         return $this->dispatch($origin, $method, $path, $body, $this->signedHeaders($origin, $method, $path, $body));
     }
 
-    private function session(string $origin): ?string
+    private function session(string $origin, string $prefix): ?string
     {
         $cached = Cache::get($this->sessionKey());
         if ($cached) {
             return $cached;
         }
-        $path = self::PREFIX.'/session';
+        $path = $prefix.'/session';
         $response = $this->dispatch($origin, 'POST', $path, '{}', $this->signedHeaders($origin, 'POST', $path, '{}'));
         if (! $response->successful() || ! $response->json('session_token')) {
             return null; // fall back to signing the real request, which will surface the real error

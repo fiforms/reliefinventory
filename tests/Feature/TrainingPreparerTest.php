@@ -13,7 +13,6 @@ use App\Models\ItemLedger;
 use App\Models\Location;
 use App\Models\Pallet;
 use App\Models\PalletStockAssignment;
-use App\Models\TrainingSetting;
 use App\Models\Transaction;
 use App\Services\PalletStock;
 use App\Services\TrainingPreparer;
@@ -48,7 +47,7 @@ test('Prepare Training refuses while training mode is off', function () {
 
 test('Prepare Training refuses with fewer scanned items than Stations 3–5 need', function () {
     scannedProducts(10, 4); // 40 of 44
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
     $this->actingAs(userWithPermissions('manage-training'));
 
     expect(fn () => app(TrainingPreparer::class)->run())->toThrow(RuntimeException::class, 'Scan at least');
@@ -57,7 +56,7 @@ test('Prepare Training refuses with fewer scanned items than Stations 3–5 need
 
 test('Prepare Training places every scanned unit once in Stations 3–5, extra on the trays; Receiving gets only offers', function () {
     $items = scannedProducts(15, 4); // 60 units: 44 needed, 16 extra
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
     $this->actingAs(userWithPermissions('manage-training'));
 
     $summary = app(TrainingPreparer::class)->run();
@@ -125,7 +124,7 @@ test('Prepare Training places every scanned unit once in Stations 3–5, extra o
 
 test('Prepare Training warns about too few different products, but runs', function () {
     scannedProducts(4, 11); // 44 units, 4 products
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
     $this->actingAs(userWithPermissions('manage-training'));
 
     $summary = app(TrainingPreparer::class)->run();
@@ -149,7 +148,7 @@ test('Prepare Training retires the TR- locations an earlier version made', funct
     $other = $make('TR-ROOM'); // not one of ours
     $pallet = Pallet::create(['kind' => 'W', 'status' => 'sealed', 'container_type' => 'pallet', 'location_id' => $used->id, 'datepacked' => now()->toDateString()]);
     $pallet->statuses()->create(['status' => 'sealed', 'location_id' => $used->id]);
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
     $this->actingAs(userWithPermissions('manage-training'));
 
     app(TrainingPreparer::class)->run();
@@ -161,7 +160,7 @@ test('Prepare Training retires the TR- locations an earlier version made', funct
 
 test('the setup packet lists the placements and prints a sign per station; spot labels print', function () {
     scannedProducts();
-    TrainingSetting::current()->update(['enabled' => true]);
+    trainingWarehouse();
     $this->actingAs(userWithPermissions('manage-training'));
     app(TrainingPreparer::class)->run();
 

@@ -25,13 +25,21 @@ class TrustService
 
     public const SESSION_PREFIX = 'RIS-';
 
-    /** @return array{0: string, 1: TrustPairingCode} the plaintext code (shown once) and its row */
-    public static function createPairingCode(string $kind, array $grants, ?string $nameHint, ?int $kioskLocationId, ?int $createdBy): array
+    /** A fresh pairing code: 10 characters, no look-alikes (0/O, 1/I). Shared with the instance-level trust (InstanceTrustService). */
+    public static function newCode(): string
     {
         $plain = '';
         for ($i = 0; $i < 10; $i++) {
             $plain .= self::CODE_ALPHABET[random_int(0, strlen(self::CODE_ALPHABET) - 1)];
         }
+
+        return $plain;
+    }
+
+    /** @return array{0: string, 1: TrustPairingCode} the plaintext code (shown once) and its row */
+    public static function createPairingCode(string $kind, array $grants, ?string $nameHint, ?int $kioskLocationId, ?int $createdBy): array
+    {
+        $plain = self::newCode();
 
         $row = TrustPairingCode::create([
             'code_hash' => TrustPairingCode::hash($plain),

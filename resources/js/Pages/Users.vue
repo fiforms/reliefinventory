@@ -41,7 +41,9 @@ import { ref, computed, onMounted, watch } from 'vue';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import SecondaryButton from '@/Components/SecondaryButton.vue';
 import Checkbox from '@/Components/Checkbox.vue';
+import UserInvitations from '@/Components/UserInvitations.vue';
 import axios from 'axios';
+import { withWarehouse } from '@/bootstrap';
 
 defineProps({
     breadcrumb: {
@@ -253,7 +255,7 @@ function runBulk(action) {
 
 function exportCsv() {
     const ids = filteredUsers.value.map((r) => r.id).join(',');
-    window.location.href = `/json/users/export.csv?ids=${ids}`;
+    window.location.href = withWarehouse(`/json/users/export.csv?ids=${ids}`);
 }
 
 // --- Passwords --------------------------------------------------------------
@@ -497,6 +499,8 @@ function setPasswordChangeRequired(required) {
           <li v-for="item in bulkSkipped" :key="item.id">{{ item.name }} — {{ item.reason }}</li>
         </ul>
       </div>
+
+      <UserInvitations v-if="!selected" />
 
       <!-- List view -->
       <section v-if="!selected" class="bg-white shadow rounded-lg p-6 space-y-4">

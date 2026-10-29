@@ -83,7 +83,7 @@ compose() {
 free_bytes() { df --output=avail -B1 "$1" 2>/dev/null | tail -n1 | tr -d ' '; }
 
 ensure_dirs() {
-    mkdir -p "$DATA"/{db,storage,secrets,backups,state} "$DOCKER_ROOT"
+    mkdir -p "$DATA"/{db,storage,secrets,admin-secrets,warehouse-secrets,backups,state} "$DOCKER_ROOT"
     chmod 755 "$DATA"
 }
 
@@ -335,7 +335,7 @@ reset() {
         docker_down
     fi
     rm -f "$FLAG"
-    rm -rf "$DATA/db" "$DATA/storage" "$DATA/secrets" "$DATA/backups" "$DATA/state"
+    rm -rf "$DATA/db" "$DATA/storage" "$DATA/secrets" "$DATA/admin-secrets" "$DATA/warehouse-secrets" "$DATA/backups" "$DATA/state"
     ensure_dirs; rm -f "$FLAG"
     status stopped "The server's data was erased."
 }

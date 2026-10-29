@@ -3,9 +3,9 @@
 
 
 import '../css/app.css';
-import './bootstrap';
+import { setWarehouse, withWarehouse } from './bootstrap';
 
-import { createInertiaApp } from '@inertiajs/vue3';
+import { createInertiaApp, router } from '@inertiajs/vue3';
 import { resolvePageComponent } from 'laravel-vite-plugin/inertia-helpers';
 import { createApp, h } from 'vue';
 import { ZiggyVue } from '../../vendor/tightenco/ziggy';
@@ -20,7 +20,12 @@ createInertiaApp({
             import.meta.glob('./Pages/**/*.vue'),
         ),
     setup({ el, App, props, plugin }) {
-        return createApp({ render: () => h(App, props) })
+        setWarehouse(props.initialPage.props.warehouse);
+        router.on('navigate', (event) => setWarehouse(event.detail.page.props.warehouse));
+        const app = createApp({ render: () => h(App, props) });
+        // Templates: `:href="$withWarehouse('/report/x.csv')"` — every plain download link names its warehouse.
+        app.config.globalProperties.$withWarehouse = withWarehouse;
+        return app
             .use(plugin)
             .use(ZiggyVue)
             .mount(el);

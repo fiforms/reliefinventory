@@ -12,6 +12,8 @@
 # Services (the same image runs init, web, queue, scheduler and reverb):
 #   init       one-shot: creates the database passwords the first time
 #   db         MariaDB (data in the `db-data` volume)
+#   provisioner the only container that holds the database administrator password: makes each
+#              warehouse's schema and database user (the others can't read it)
 #   app        web server + first-run migrate/seed/admin bootstrap
 #   queue      queue worker
 #   scheduler  hourly volunteer-window sync + daily database dump to ./backups
@@ -42,6 +44,15 @@ x-settings: &settings
   # RI_ADMIN_PASSWORD: choose-one       # (with RI_ADMIN_EMAIL) instead of a generated one
   # RI_ADMIN_FIRST_NAME: Pat
   # RI_ADMIN_LAST_NAME: Smith
+
+  # HTTPS served by this container itself (no reverse proxy needed). Also set APP_URL to https://your.host.name
+  # (no port) and switch the two `ports:` lines under `app` to 80 and 443 (see README.md > HTTPS).
+  #   auto      a real certificate from Let's Encrypt: needs a public DNS name for this server and ports 80 and
+  #             443 reachable from the internet
+  #   internal  a certificate from Caddy's own local CA: for a LAN server with no public name (browsers warn
+  #             until they trust it)
+  # Plain-HTTP requests are then redirected to HTTPS. Leave it off behind your own reverse proxy.
+  # RI_HTTPS: auto
 
   # Behind an HTTPS reverse proxy: its address(es), comma separated, or * if
   # only the proxy can reach this container (see README.md).
@@ -92,6 +103,11 @@ x-settings: &settings
   # RI_FEDERATION_ALLOW_HTTP: "true"        # let this site reach another over plain http:// (a private network)
   # RI_FEDERATION_ALLOW_PRIVATE: "true"     # ...and at private/loopback addresses (LAN-only sites, local testing)
 
+  # Updates from the web page (Updates & Backups, instance administrators only): the app only *asks*; a small
+  # service on this machine (docker/updater/, see README.md "Automatic updates") does the pull and restart.
+  # Any long random string; the updater reads the same value from this file. Leave it unset to keep updating by hand.
+  # RI_UPDATE_SECRET: choose-a-long-random-string
+
   # Passwords are generated for you. Only set these to pick your own, and only
   # BEFORE the first `docker compose up` (afterwards they're already in the
   # database and changing them here would lock the app out).
@@ -101,6 +117,12 @@ x-settings: &settings
   # Keep the application key stable if you manage secrets yourself; by default
   # one is generated and stored in the `storage` volume.
   # APP_KEY: base64:...
+
+  # The instance's backup RECOVERY key (scripts/BACKUPS.md): normally you make it from the web page the first time an
+  # administrator signs in (Instance Admin > Full Instance Backups), or with `instance:recovery-key generate`. If your own
+  # tooling made the key pair instead (`php artisan instance:recovery-key keypair`), put ONLY THE PUBLIC KEY here and keep
+  # the private one yourself; the instance then never sees it. Never put the private key (RK1-...) in this file.
+  # RI_RECOVERY_PUBLIC_KEY: ...
 # ============================================================================
 
 x-app: &app
@@ -132,12 +154,15 @@ x-app: &app
     CACHE_STORE: database
     # Daily backups, pre-migration backups and the zips made from Updates & Backups in the app all live here.
     RI_BACKUP_DIR: /backups
+    # Each warehouse's key file (MULTI_WAREHOUSE.md §2): outside `storage`, so never in a backup.
+    RI_WAREHOUSE_SECRETS_DIR: /warehouse-secrets
   volumes:
     # private uploads, logs, caches, print-queue PDFs and the generated APP_KEY
     - storage:/var/www/html/storage
     - secrets:/secrets:ro
     # Deliberately a host directory outside `storage`, so a backup never contains earlier backups.
     - ./backups:/backups
+    - warehouse-secrets:/warehouse-secrets:ro
 
 services:
   init:
@@ -148,6 +173,7 @@ services:
       disable: true
     volumes:
       - secrets:/secrets
+      - admin-secrets:/admin-secrets
 
   db:
     image: mariadb:11
@@ -159,11 +185,12 @@ services:
       MARIADB_DATABASE: reliefinventory
       MARIADB_USER: reliefinventory
       MARIADB_PASSWORD_FILE: /secrets/db_password
-      MARIADB_ROOT_PASSWORD_FILE: /secrets/db_root_password
+      MARIADB_ROOT_PASSWORD_FILE: /admin-secrets/db_root_password
       MARIADB_AUTO_UPGRADE: "1"
     volumes:
       - db-data:/var/lib/mysql
       - secrets:/secrets:ro
+      - admin-secrets:/admin-secrets:ro
     depends_on:
       init:
         condition: service_completed_successfully
@@ -174,14 +201,50 @@ services:
       retries: 12
       start_period: 30s
 
+  # Holds the database administrator password (MULTI_WAREHOUSE.md §7), which no other container mounts. Reads plain
+  # commands from the control schema ("make warehouse X's schema and user") and re-checks each against the
+  # warehouse's own record. Also makes the instance's own schemas at start-up, which `app` waits for.
+  provisioner:
+    <<: *app
+    command: ["provisioner"]
+    healthcheck:
+      disable: true
+    environment:
+      <<: *app-env
+      RI_DB_ROOT_PASSWORD_FILE: /admin-secrets/db_root_password
+    # Also the storage volume and ./backups: the whole-instance backup and restore (`php artisan instance:backup` /
+    # `restore:instance`, run in this container) read and write every warehouse's files and the zips.
+    volumes:
+      - secrets:/secrets:ro
+      - admin-secrets:/admin-secrets:ro
+      - warehouse-secrets:/warehouse-secrets
+      - storage:/var/www/html/storage
+      - ./backups:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+
   app:
     <<: *app
     command: ["web"]
     ports:
       - "8080:8080"
+      # With RI_HTTPS (above), use these two lines instead of the one above:
+      # - "80:8080"
+      # - "443:4430"
+    # The same as above, except that only this container may write the warehouse key files.
+    volumes:
+      - storage:/var/www/html/storage
+      - secrets:/secrets:ro
+      - ./backups:/backups
+      - warehouse-secrets:/warehouse-secrets
+      # HTTPS certificates (RI_HTTPS): kept across restarts, or every start would ask Let's Encrypt for a new one
+      - caddy-data:/tmp/home/.local/share/caddy
     depends_on:
       db:
         condition: service_healthy
+      provisioner:
+        condition: service_started
 
   queue:
     <<: *app
@@ -225,3 +288,11 @@ volumes:
   # Generated database passwords. Keep this volume together with db-data: the
   # database was initialised with these values.
   secrets:
+  # The database administrator password, in a volume of its own that only `init`, `db` and `provisioner` mount.
+  # Keep it together with db-data too.
+  admin-secrets:
+  # Each warehouse's encryption key. Keep it together with db-data and storage:
+  # without its key a warehouse's encrypted settings can't be read.
+  warehouse-secrets:
+  # HTTPS certificates and the local CA's key (RI_HTTPS). Losing it only means getting new certificates.
+  caddy-data:

@@ -220,6 +220,9 @@ class PermissionsSeeder extends Seeder
             fn ($description, $key) => Permission::firstOrCreate(['key' => $key], ['name' => $key, 'description' => $description])
         );
 
+        // The class tools belong to training warehouses (MULTI_WAREHOUSE.md §12): no role of a real warehouse is given the key.
+        $grantable = TrainingMode::active() ? $permissions : $permissions->except('manage-training');
+
         $volunteer = Role::where('name', 'Volunteer')->first();
         $teamLeader = Role::where('name', 'Team Leader')->first();
         $administrator = Role::where('name', 'Administrator')->first();
@@ -237,14 +240,14 @@ class PermissionsSeeder extends Seeder
         }
 
         if ($office) {
-            $office->permissions()->syncWithoutDetaching($permissions->only(self::OFFICE_KEYS)->pluck('id'));
+            $office->permissions()->syncWithoutDetaching($grantable->only(self::OFFICE_KEYS)->pluck('id'));
         }
         if ($sortingInventory) {
             $sortingInventory->permissions()->syncWithoutDetaching($permissions->only(self::SORTING_INVENTORY_KEYS)->pluck('id'));
         }
 
         if ($administrator) {
-            $administrator->permissions()->syncWithoutDetaching($permissions->pluck('id'));
+            $administrator->permissions()->syncWithoutDetaching($grantable->pluck('id'));
         }
 
         // Training Mode's tap-your-name trainees (created by the 2026_10_23 training-mode migration).

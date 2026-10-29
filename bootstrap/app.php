@@ -6,13 +6,20 @@
 use App\Http\Middleware\AuthenticateManagedDevice;
 use App\Http\Middleware\CheckPermission;
 use App\Http\Middleware\EnsureAccountApproved;
+use App\Http\Middleware\EnsureAccountSessionCurrent;
 use App\Http\Middleware\EnsureDeviceAccess;
+use App\Http\Middleware\EnsureInstanceAdmin;
 use App\Http\Middleware\EnsureKioskAccess;
 use App\Http\Middleware\EnsurePasswordChanged;
+use App\Http\Middleware\GuardWarehouseTab;
 use App\Http\Middleware\HandleInertiaRequests;
+use App\Http\Middleware\InstanceTrustAuth;
+use App\Http\Middleware\InstanceUpdateSecret;
 use App\Http\Middleware\RedirectToSetup;
+use App\Http\Middleware\ResolveWarehouse;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Http\Middleware\TrustAuth;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
@@ -31,11 +38,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware) {
+        // Before anything touches the database (sessions, auth): every request works in one warehouse.
+        $middleware->prepend(ResolveWarehouse::class);
+        // The selector cookie only names a warehouse, and ResolveWarehouse reads it before EncryptCookies runs.
+        $middleware->encryptCookies(except: [WarehouseContext::SELECTOR_COOKIE]);
         $middleware->web(append: [
+            GuardWarehouseTab::class,
             RedirectToSetup::class,
             HandleInertiaRequests::class,
             AddLinkHeadersForPreloadedAssets::class,
             TrackSessionActivity::class,
+            EnsureAccountSessionCurrent::class,
             EnsureAccountApproved::class,
             EnsurePasswordChanged::class,
         ]);
@@ -44,9 +57,12 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(before: AuthenticatesRequests::class, prepend: RedirectToSetup::class);
         $middleware->alias([
             'permission' => CheckPermission::class,
+            'instance-admin' => EnsureInstanceAdmin::class,
             'kiosk-access' => EnsureKioskAccess::class,
             'device-auth' => AuthenticateManagedDevice::class,
             'trust-auth' => TrustAuth::class,
+            'instance-trust' => InstanceTrustAuth::class,
+            'update-secret' => InstanceUpdateSecret::class,
             'display-access' => EnsureDeviceAccess::class,
         ]);
 
