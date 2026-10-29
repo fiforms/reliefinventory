@@ -736,7 +736,7 @@ function setPasswordChangeRequired(required) {
           </div>
           <p class="text-xs text-gray-500 mt-1">
             Partner accounts currently have ordering-scoped access pending — see
-            TODO.md item 1. They can log in, but ordering permissions aren't wired up yet.
+            TODO.md item 22. They can log in, but ordering permissions aren't wired up yet.
           </p>
         </div>
 

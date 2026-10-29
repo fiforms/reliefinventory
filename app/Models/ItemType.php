@@ -68,7 +68,7 @@ class ItemType extends Model
         'source_system',
         'source_ref',
         // Null = use config('inventory.low_stock_threshold'). See
-        // stock-visibility-and-fair-share-allocation (PROJECT_ANALYSIS.md Part 5).
+        // stock-visibility-and-fair-share-allocation (dev/FACILITY_NETWORK.md).
         'low_stock_threshold',
     ];
 

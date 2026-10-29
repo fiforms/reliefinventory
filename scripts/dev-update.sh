@@ -14,8 +14,7 @@
 # BRANCH=master (the default) tracks origin, same as production: fetch +
 # hard-reset to origin/master. Any other BRANCH is treated as a LOCAL-ONLY
 # branch instead (e.g. an autofix/* dev-autofix branch) — this box has no
-# push-capable git credentials by design (see scripts/AI_AGENT_ACCESS.md and
-# .claude/skills/dev-autofix/SKILL.md), so such a branch never exists on
+# push-capable git credentials by design (see scripts/AI_AGENT_ACCESS.md), so such a branch never exists on
 # origin to fetch. Previewing it just means checking out the local ref
 # as-is, with no network fetch at all.
 #

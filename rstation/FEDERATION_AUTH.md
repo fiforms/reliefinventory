@@ -35,7 +35,7 @@ fresh code and is recorded as a key change. Un-pairing on the client forgets the
 
 ## Warehouses: the server address can carry a path
 
-An instance can host several warehouses (`MULTI_WAREHOUSE.md`). Each is a separate server as far as a client is
+An instance can host several warehouses (`dev/notes/MULTI_WAREHOUSE.md`). Each is a separate server as far as a client is
 concerned — its own identity key, trusts, pairing codes and grants — and is addressed **by URL**: its own hostname,
 or `https://host/w/<id>` on a host shared with other warehouses (`<id>` is 8 letters and digits). A client keeps the
 whole URL it was given as its server address and puts every path after it: `https://host/w/K7Q2X9MD/api/federation/v1/pair`.

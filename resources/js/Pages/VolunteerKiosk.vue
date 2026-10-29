@@ -3,7 +3,7 @@
 
 <!-- VolunteerKiosk.vue
 
-	The facility sign-in kiosk (PROJECT_ANALYSIS.md Part 5). Touch-first,
+	The facility sign-in kiosk (dev/FACILITY_NETWORK.md). Touch-first,
 	not built on RIForm — closer in spirit to DonationSorting.vue's custom
 	session flow than to an admin CRUD form.
 

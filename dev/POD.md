@@ -1,7 +1,7 @@
 # Point of Distribution (PoD): design notes
 
 Unbuilt ideas, kept so they aren't lost. Not a commitment or a schedule. Two halves of one PoD: goods out to the public (Part 1) and
-goods in from an upstream warehouse (Part 2). Design them together with the facility network in `PROJECT_ANALYSIS.md` Part 5.
+goods in from an upstream warehouse (Part 2). Design them together with the facility network in `FACILITY_NETWORK.md`.
 
 ## Part 1. PoD module: on-site, public-facing
 
@@ -38,7 +38,7 @@ way as in the warehouse, so one ledger covers both.
   that don't apply to a walk-up sale.
 - **Flow report** (`/reports/flow`) already aggregates the ledger over time. Splitting it by location (or by
   warehouse/PoD) is a natural extension.
-- **Facility network design** (`PROJECT_ANALYSIS.md` Part 5) already describes PoDs as facilities with their own
+- **Facility network design** (`FACILITY_NETWORK.md`) already describes PoDs as facilities with their own
   approval, assignments and a *tally-based* recipient control (no ID or registration by default, based on FEMA
   PoD doctrine). This module is the **on-site** variant of that, and should be designed together with it, so a PoD
   is not modeled twice.

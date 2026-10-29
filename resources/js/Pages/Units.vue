@@ -3,7 +3,7 @@
 
 <!-- Units.vue
 
-	TODO.md item 5: admin UI for the "Default Ordering Unit" list
+	Admin UI for the "Default Ordering Unit" list
 	(units table, /json/units — UnitController already existed with no
 	page bound to it). Modeled on CategoryEntry.vue, the simplest existing
 	RIForm CRUD page.

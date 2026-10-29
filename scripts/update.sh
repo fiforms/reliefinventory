@@ -196,7 +196,7 @@ if [ "$BACKUP_ONLY" -eq 1 ]; then
     exit 0
 fi
 
-[ -d "$APP_DIR/.git" ] || { echo "$APP_DIR is not a git checkout — run the conversion in scripts/CONVERT-TO-GIT.md first." >&2; exit 2; }
+[ -d "$APP_DIR/.git" ] || { echo "$APP_DIR is not a git checkout — run the conversion in scripts/CONVERT_TO_GIT.md first." >&2; exit 2; }
 
 # -------------------------------------------------------- 2. maintenance mode on
 SECRET="$(openssl rand -hex 16)"

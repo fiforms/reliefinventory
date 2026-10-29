@@ -240,7 +240,7 @@ class VolunteerSignInController extends Controller
 
     /**
      * Bulk-certify a batch of sign-ins — the FEMA-compliance-critical step
-     * (see PROJECT_ANALYSIS.md ~line 258), gated separately on
+     * (see dev/FACILITY_NETWORK.md), gated separately on
      * certify-volunteer-hours rather than the broad kiosk-operator key.
      */
     public function certify(Request $request)

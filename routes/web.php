@@ -201,7 +201,7 @@ Route::get('/receiving/offers', function () {
         // Whether to show the decision buttons at all — the endpoints they
         // call are still independently gated server-side either way, this
         // just avoids offering an action that's already known to 403 (see
-        // PROJECT_ANALYSIS.md Part 12).
+        // dev/TODO.md item 22).
         'canDecide' => Auth::user()->hasPermission('manage-donation-offers'),
     ]);
 })->middleware(['auth', 'permission:manage-receiving']);
@@ -310,7 +310,7 @@ Route::get('/setup/locations', function () {
         ['breadcrumb' => MenuItem::getBreadcrumb('/setup/locations')]);
 })->middleware(['auth', 'permission:manage-locations']);
 
-// TODO.md item 5: admin UI for the units table (/json/units already
+// Admin UI for the units table (/json/units already
 // existed, gated the same way, with no page bound to it).
 Route::get('/setup/units', function () {
     return Inertia::render('Units',
@@ -608,7 +608,7 @@ Route::get('/report/inventory-labels',
     ->name('report.inventory-labels')
     ->middleware(['auth', 'permission:manage-pallets']);
 
-// Pre-print Labels batch (PROJECT_ANALYSIS.md Part 12) — an arbitrary set
+// Pre-print Labels batch — an arbitrary set
 // of just-created, not-yet-assigned pallet ids, same gate as the rest of
 // Receiving's label printing.
 Route::get('/report/pallets/preprint',
@@ -1058,7 +1058,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-re
     Route::put('/receiving/{id}', [ReceivingController::class, 'update']);
     Route::delete('/receiving/{id}', [ReceivingController::class, 'destroy']);
     Route::post('/receiving/{id}/pallets', [ReceivingController::class, 'createPallets']);
-    // Pre-print Labels (PROJECT_ANALYSIS.md Part 12, replaces the deleted
+    // Pre-print Labels (replaces the deleted
     // /reports/labels page): print a batch of unassigned R labels ahead of
     // a donation record existing, then attach the ones actually used to a
     // real intake once it's entered — an alternate label-first path
@@ -1114,7 +1114,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:review-fo
     Route::post('/forms/{form}/submissions/{submission}/note', [FormSubmissionController::class, 'addNote']);
 });
 
-// Facility sign-in kiosk (PROJECT_ANALYSIS.md Part 5) — kiosk-access
+// Facility sign-in kiosk (rationale: dev/FACILITY_NETWORK.md) — kiosk-access
 // (not auth+permission) so these work both for a normally logged-in
 // operate-kiosk holder AND a guest request from a device in
 // kiosk mode (see EnsureKioskAccess). Nothing here depends on Auth::id():
@@ -1287,7 +1287,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-imp
 // Deleting a person is a records-integrity issue, not a permissions tier —
 // no bundle grants this by default; kept separate from manage-people
 // pending the Partner/Donor rework, which is expected to replace this with
-// deactivate/hide rather than a hard delete (see PROJECT_ANALYSIS.md Part 12).
+// deactivate/hide rather than a hard delete (see dev/TODO.md item 22).
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-people']], function () {
     Route::delete('/people/{id}', [PeopleController::class, 'destroy']);
 });

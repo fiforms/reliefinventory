@@ -50,7 +50,7 @@ class OrderController extends Controller
         // Self-reported by the partner, entered by staff on their behalf (no
         // partner portal exists yet). Never required — decision-support
         // context for the fair-share allocation review, not a formula
-        // input; see PROJECT_ANALYSIS.md Part 5.
+        // input; see dev/FACILITY_NETWORK.md.
         'need_level' => 'nullable|in:critical,moderate,low',
     ];
 

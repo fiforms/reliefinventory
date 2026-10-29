@@ -6,6 +6,10 @@ All notable changes to Relief Inventory are recorded here. The format follows
 
 ## [Unreleased]
 
+- Federation trust between instances: identity, pairing codes, permissioned trusts and signed requests (`dev/notes/FEDERATION.md`). Devices paired the old way must be paired again.
+- Docker host-side updater (`instance:update`) and whole-instance backups that the RI Launcher can pull.
+- Per-warehouse scheduled backups with hourly, daily, weekly and monthly tiers, on Docker and bare metal.
+
 ## [0.1.0] - 2026-10-22
 
 Initial release.

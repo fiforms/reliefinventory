@@ -22,8 +22,7 @@ the multi-warehouse features; don't build or maintain elaborate bare-metal paths
 - `rstation/` — **R Station**: Raspberry Pi device image: warehouse kiosk view, print client, and Docker host (can run a whole
   offline site). Wire protocols and specs live in its docs (`PRINT_SERVER.md`, `FEDERATION_AUTH.md`, OpenAPI files).
 
-`dev/notes/PROJECT_ANALYSIS.md` is a stale collection of project notes (defects, a phased plan). It can help with detailed
-work, but verify anything in it against the code before relying on it. Future ideas: `dev/ROADMAP.md`; open work: `dev/TODO.md`.
+Future ideas: `dev/ROADMAP.md` (the unbuilt facility-network design is `dev/FACILITY_NETWORK.md`); open work: `dev/TODO.md`.
 **Doc map: `dev/README.md`.** Conventions: GitHub workflows are manual-only; document non-obvious things
 (in a comment next to the code, or the matching `dev/notes/` file). Markdown files are named `ALL_UPPERCASE_WITH_UNDERSCORES.md`
 (`README.md` too); `dev/notes/` files are named for their topic, e.g. `PRINT_QUEUE.md`.
@@ -63,7 +62,7 @@ vendor/bin/pint <files>             # style: pass only the files you changed (th
 
 Read `scripts/TESTING.md` before touching test DB config. No JS test suite: verify Vue changes in the browser.
 Demo data: `db:seed --class=WarehouseActivitySeeder` (demo instances only, never real data). Instance/warehouse/account
-management commands: `instance:status` is the overview; the table is in MULTI_WAREHOUSE.md §18.
+management commands: `instance:status` is the overview; the table is in `dev/notes/MULTI_WAREHOUSE_NOTES.md`.
 
 ## Outline
 
@@ -82,7 +81,7 @@ management commands: `instance:status` is the overview; the table is in MULTI_WA
 - **First-run setup:** `dev/notes/FIRST_RUN.md`.
 - **People and logins:** one `Person` table; credentials live in the accounts schema. → `dev/notes/MULTI_WAREHOUSE_NOTES.md`
 - **Multi-warehouse:** an instance hosts several warehouses (own schema, files, key, DB user each) plus shared control and
-  accounts schemas. Design: `MULTI_WAREHOUSE.md`. **Before changing sessions, auth, `storage_path()`, backups/restore, queue,
+  accounts schemas. Design: `dev/notes/MULTI_WAREHOUSE.md`. **Before changing sessions, auth, `storage_path()`, backups/restore, queue,
   cookies, emailed links or anything assuming one database, read the rules in the `WarehouseContext` class comment and
   `dev/notes/MULTI_WAREHOUSE_NOTES.md`.**
 - **Training warehouse:** a warehouse of its own, not a mode. → `dev/notes/TRAINING_WAREHOUSE.md`

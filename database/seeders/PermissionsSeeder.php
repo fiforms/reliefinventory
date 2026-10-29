@@ -52,7 +52,7 @@ class PermissionsSeeder extends Seeder
         // issue, not an access-control one — so this stays a standalone,
         // Administrator-only-by-default key rather than folding into
         // manage-people. Expected to be replaced by deactivate/hide as part
-        // of the Partner/Donor rework (PROJECT_ANALYSIS.md Part 12), not
+        // of the Partner/Donor rework (dev/TODO.md item 22), not
         // widened.
         'admin-people' => 'Delete people',
         'manage-orders' => 'View, update, and delete orders/donations',
@@ -123,8 +123,7 @@ class PermissionsSeeder extends Seeder
         // default rather than every front-line role, with per-person
         // grants (e.g. a night security officer with no other role) for
         // anyone else who needs it. Certifying a batch of hours is the
-        // separate FEMA-compliance-critical step (see PROJECT_ANALYSIS.md
-        // ~line 258).
+        // separate FEMA-compliance-critical step (see dev/FACILITY_NETWORK.md).
         'operate-kiosk' => 'Put a device into or out of Sign-in Kiosk mode, and confirm building-safety state (closeout, roll call)',
         'certify-volunteer-hours' => 'Certify volunteer hours for FEMA reporting',
         // Deliberately broad (base volunteer tier, not just Office/Admin)

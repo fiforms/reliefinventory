@@ -11,12 +11,13 @@ conventions an agent must always have loaded and points back here.
 | Look up a table or column | [SCHEMA.md](SCHEMA.md) (generated) |
 | Change the schema | Add a migration, then run `dev/scripts/schema-doc.sh` and commit `SCHEMA.md` with it |
 | Back up / restore | [../scripts/BACKUPS.md](../scripts/BACKUPS.md) |
-| Update an install | [../scripts/DOCKER_PLAN.md](../scripts/DOCKER_PLAN.md), [../scripts/update.sh](../scripts/update.sh) |
+| Run or update a Docker install | [../docker/README.md](../docker/README.md), [../docker/INSTALL.md](../docker/INSTALL.md); history: [../scripts/DOCKER_PLAN.md](../scripts/DOCKER_PLAN.md) |
+| Update a bare-metal install (deprecated) | [../scripts/update.sh](../scripts/update.sh), [../scripts/CONVERT_TO_GIT.md](../scripts/CONVERT_TO_GIT.md) |
 | Simulate load / hardware | [../scripts/SIMULATOR.md](../scripts/SIMULATOR.md), [../scripts/REVERB.md](../scripts/REVERB.md) |
 | Give an AI agent access | [../scripts/AI_AGENT_ACCESS.md](../scripts/AI_AGENT_ACCESS.md) |
 
 ## Planning
-[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) · [notes/PROJECT_ANALYSIS.md](notes/PROJECT_ANALYSIS.md) (stale notes; verify before relying on) · [../MULTI_WAREHOUSE.md](../MULTI_WAREHOUSE.md) (design) · [../CHANGELOG.md](../CHANGELOG.md)
+[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) · [FACILITY_NETWORK.md](FACILITY_NETWORK.md) (unbuilt facility-network design) · [notes/MULTI_WAREHOUSE.md](notes/MULTI_WAREHOUSE.md) (design) · [../CHANGELOG.md](../CHANGELOG.md)
 
 ## Implementation notes (`notes/`)
 Read the one for the area you're changing.
@@ -27,7 +28,7 @@ Read the one for the area you're changing.
 - [UPC_SCANNING.md](notes/UPC_SCANNING.md): barcode → item, cartons, online lookup
 - [FEDERATION.md](notes/FEDERATION.md): identity, pairing, grants, what's built
 - [PRINT_QUEUE.md](notes/PRINT_QUEUE.md): print jobs, print servers, device API
-- [SUB_PROJECTS.md](notes/SUB_PROJECTS.md): RI Launcher, RI Print, R Station
+- [SUB_PROJECTS.md](notes/SUB_PROJECTS.md): RI Launcher, RI Print, R Station. Their own docs: [launcher/README.md](../launcher/README.md), [print-client/README.md](../print-client/README.md), and in `rstation/`: [IMPLEMENTATION.md](../rstation/IMPLEMENTATION.md), [LOCAL_SERVER.md](../rstation/LOCAL_SERVER.md), [PRINT_SERVER.md](../rstation/PRINT_SERVER.md), [PRINT_CLIENT_SPEC.md](../rstation/PRINT_CLIENT_SPEC.md), [FEDERATION_AUTH.md](../rstation/FEDERATION_AUTH.md), [CUPS_BACKPORT.md](../rstation/CUPS_BACKPORT.md)
 - [UNTRUSTED_CONTENT.md](notes/UNTRUSTED_CONTENT.md): feedback reports, AI-assisted work
 - [FIRST_RUN.md](notes/FIRST_RUN.md): setup wizard and its latch
 - [REPORTS.md](notes/REPORTS.md): report structure and definitions

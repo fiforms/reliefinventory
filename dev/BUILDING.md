@@ -3,8 +3,8 @@
 Most people should [run the Docker image](../README.md#quick-start-docker) instead. This page is for
 developers, and for anyone installing on a bare server without Docker.
 
-Relief Inventory is a [Laravel](https://laravel.com/) 11 + Inertia.js + Vue 3 application. For an architecture
-tour, see [dev/README.md](README.md) and [CLAUDE.md](../CLAUDE.md); for known gaps and the roadmap, [PROJECT_ANALYSIS.md](notes/PROJECT_ANALYSIS.md).
+Relief Inventory is a [Laravel](https://laravel.com/) 13 + Inertia.js + Vue 3 application. For an architecture
+tour, see [dev/README.md](README.md) and [CLAUDE.md](../CLAUDE.md); for open work and the roadmap, [TODO.md](TODO.md) and [ROADMAP.md](ROADMAP.md).
 
 ## Requirements
 
@@ -40,7 +40,7 @@ On Debian/Ubuntu:
     exit
 
 The `_control` and `_accounts` schemas hold the instance's list of warehouses and its login accounts
-(see `MULTI_WAREHOUSE.md`); they are named after the main database (`RI_CONTROL_DATABASE` /
+(see `notes/MULTI_WAREHOUSE.md`); they are named after the main database (`RI_CONTROL_DATABASE` /
 `RI_ACCOUNTS_DATABASE` override that). The Docker image creates them itself.
 
 **Create your local configuration** and edit `.env` with the database name and password from above

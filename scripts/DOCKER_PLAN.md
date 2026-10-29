@@ -1,9 +1,9 @@
 # Docker distribution plan (x64 + arm64)
 
-Status: **built and tested on amd64 (2026-10-19), branch `docker-image`**; arm64 build verified under QEMU
+Status: **built and tested on amd64 (2026-10-19)**; this is a historical plan, see `docker/README.md` for how it works today; arm64 build verified under QEMU
 emulation (see below); not yet run on real arm64 hardware or published. Files: `Dockerfile`, `.dockerignore`,
 `docker/` (compose.yaml, README.md, entrypoint, scheduler, Caddyfile),
-`.github/workflows/docker-amd64.yml` + `docker-arm64.yml` (manual-dispatch, one per architecture; no combined multi-arch manifest yet). User-facing docs: `docker/README.md`.
+`.github/workflows/docker.yml` (manual-dispatch; builds both architectures and pushes a combined multi-arch manifest). User-facing docs: `docker/README.md`; updating an install: its Docker updater section (`instance:update`).
 
 ## What was actually built (differs slightly from the plan below)
 
@@ -22,9 +22,8 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   DB passwords into a `secrets` volume that `db` (via `MARIADB_*_FILE`) and the app (via `DB_PASSWORD_FILE`) read;
   `secrets` must live and die with `db-data`.
 - **Scheduler container** replaces the systemd timers: hourly `volunteers:sync-active-windows`, and a daily backup zip
-  (`php artisan backup:create`, the same format as every other backup — `scripts/BACKUPS.md`) into `./backups`, kept a flat
-  `RI_BACKUP_KEEP_DAYS` days. **Tiered (daily/monthly/yearly) retention, as the bare-metal install has, is not implemented
-  here or in the R Station local server** — TODO.md item 14.
+  (`php artisan backup:create`, the same format as every other backup — `scripts/BACKUPS.md`) into `./backups`. Since this was
+  written, `backup:scheduled` gives every warehouse hourly/daily/weekly/monthly tiers (TODO.md item 14, `scripts/BACKUPS.md`).
 - Image was ~2.9 GB uncompressed with Chromium (380 MB) and Node (120 MB); both are now gone: the amd64 image measures ~1.7 GB (rebuilt 2026-10-19; a PDF rendered inside the container). Python/WeasyPrint is 255 MB; the rest is fonts and FrankenPHP.
 
 ## Known gaps
@@ -40,7 +39,6 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   if the backup fails (`RI_PREMIGRATE_BACKUP=false` opts out). Untested in a real container build. Known gap: a
   crash-looping failed migration re-backs-up on every restart (timestamped, pruned by age).
 - Backups are database-only unless `RI_BACKUP_SCOPE=full`; otherwise the `storage` volume (photos, print PDFs) is the operator's to back up.
-- **No tiered retention** (see above): one flat number of days.
 - Print servers/R Stations pointing at a containerised instance untested end to end.
 
 
@@ -108,7 +106,7 @@ get much worse that way):
 
 ## Suggested order
 
-1. Multi-stage Dockerfile (composer → npm build → runtime on `php:8.4-fpm` with weasyprint) and a
+1. Multi-stage Dockerfile (composer → npm build → runtime on PHP 8.4 (built on FrankenPHP) with weasyprint) and a
    compose file, x64 first.
 2. Entrypoint, plus a PDF smoke test that renders a document through weasyprint.
 3. buildx multi-arch; test on the Pi.
