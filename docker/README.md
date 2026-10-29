@@ -62,9 +62,30 @@ Example data can also be loaded later from the command line (**never** on a real
 
 ## HTTPS
 
-The container speaks plain HTTP on 8080 and expects a reverse proxy (Caddy, nginx, Traefik, your cloud's load
-balancer) to provide TLS. Set `APP_URL: https://...` and `TRUSTED_PROXIES` to the proxy's address (or `*` if only
-the proxy can reach the app port) so generated links and redirects use `https`.
+Two ways to get HTTPS. Pick one.
+
+**Built in (`RI_HTTPS`).** The container serves HTTPS itself, with no reverse proxy. In `compose.yaml`:
+
+1. Set `APP_URL: https://your.host.name` (no port) and `RI_HTTPS: auto` (or `internal`, below).
+2. Under `app`, replace the `"8080:8080"` line with the two lines below it, `"80:8080"` and `"443:4430"`.
+3. `docker compose up -d`.
+
+| `RI_HTTPS` | Certificate | Needs |
+|---|---|---|
+| `auto` | A real one from Let's Encrypt, renewed automatically | A **public DNS name** pointing at this server, and ports **80 and 443 reachable from the internet** |
+| `internal` | One from Caddy's own local CA | Nothing public. Browsers show a warning until each one trusts the CA (`root.crt`, in the `caddy-data` volume under `pki/authorities/local/`) |
+| unset | None: plain HTTP on 8080 | |
+
+Inside the container HTTPS listens on 4430 and HTTP on 8080, which is why compose maps 443 and 80 to those. In this
+mode every plain-HTTP request is redirected (308) to `APP_URL`, except `/up` (the healthcheck) and
+`/api/instance/update*` (the update helper polls it with its own secret). The certificates live in the `caddy-data`
+volume: keep it, because starting over asks Let's Encrypt for new ones, which is rate-limited. Binding ports 80
+and 443 needs rootful Docker. If you use the update helper, give `install.sh` the address the app now answers
+on, `http://127.0.0.1:80`.
+
+**Behind your own reverse proxy** (Caddy, nginx, Traefik, your cloud's load balancer). Leave `RI_HTTPS` unset.
+The container speaks plain HTTP on 8080. Set `APP_URL: https://...` and `TRUSTED_PROXIES` to the proxy's address
+(or `*` if only the proxy can reach the app port) so generated links and redirects use `https`.
 
 ## Data and backups
 

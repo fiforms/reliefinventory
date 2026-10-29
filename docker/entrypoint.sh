@@ -242,8 +242,39 @@ web)
 
     php artisan config:cache --no-interaction
     php artisan route:cache --no-interaction
+    caddyfile=/etc/caddy/Caddyfile
+    case "${RI_HTTPS:-off}" in
+    off|"") ;;
+    auto|internal)
+        # HTTPS in the container itself: the host name (and so the certificate) comes from APP_URL
+        case "${APP_URL:-}" in
+        https://*) ;;
+        *) log "RI_HTTPS=$RI_HTTPS needs APP_URL to start with https:// (it is '${APP_URL:-}')"; exit 1 ;;
+        esac
+        rest=${APP_URL#https://}
+        auth=${rest%%/*}
+        export RI_HOST=${auth%%:*}
+        export RI_ORIGIN="https://$auth"
+        export RI_HTTPS_PORT="${RI_HTTPS_PORT:-4430}"
+        if [ "$RI_HTTPS" = auto ]; then
+            # Let's Encrypt only issues for public host names: not an IP address, localhost or a .local name
+            public=""
+            case "$RI_HOST" in
+            localhost|*.local|*.localhost) ;;
+            *[!0-9.]*) public=1 ;;
+            esac
+            if [ -z "$public" ]; then
+                log "RI_HTTPS=auto can't get a Let's Encrypt certificate for '$RI_HOST': use a public host name, or RI_HTTPS=internal"
+                exit 1
+            fi
+        fi
+        caddyfile=/etc/caddy/Caddyfile.https
+        log "HTTPS ($RI_HTTPS) for $RI_HOST on :$RI_HTTPS_PORT; :${RI_HTTP_PORT:-8080} redirects to $RI_ORIGIN"
+        ;;
+    *) log "RI_HTTPS must be off, auto or internal (it is '$RI_HTTPS')"; exit 1 ;;
+    esac
     log "starting web server on :${RI_HTTP_PORT:-8080}"
-    exec frankenphp run --config /etc/caddy/Caddyfile --adapter caddyfile
+    exec frankenphp run --config "$caddyfile" --adapter caddyfile
     ;;
 provisioner)
     # It encrypts nothing, so it needs no application key: a throwaway one just lets the framework start.
