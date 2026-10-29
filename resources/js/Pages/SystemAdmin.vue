@@ -161,7 +161,44 @@ function pollRollback() {
 	rollbackTimer = setInterval(tick, 2000);
 }
 
-const when = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+async function startBackup() {
+	error.value = '';
+	notice.value = '';
+	starting.value = true;
+	try {
+		await axios.post('/json/backups', { scope: scope.value });
+		notice.value = 'Backup started. You can leave this page; it keeps running on the server.';
+		await loadBackups();
+	} catch (e) {
+		fail(e, 'Could not start the backup.');
+	} finally {
+		starting.value = false;
+	}
+}
+
+async function deleteBackup(record) {
+	error.value = '';
+	notice.value = '';
+	if (confirmingDelete.value !== record.id) {
+		confirmingDelete.value = record.id;
+		return;
+	}
+	confirmingDelete.value = null;
+	try {
+		await axios.delete(`/json/backups/${record.id}`);
+		await loadBackups();
+	} catch (e) {
+		fail(e, 'Could not delete that backup.');
+	}
+}
+
+function formatSize(bytes) {
+	if (bytes == null) return '';
+	if (bytes > 1073741824) return `${(bytes / 1073741824).toFixed(2)} GB`;
+	return bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`;
+}
+
+const when = (iso) =>(iso ? new Date(iso).toLocaleString() : '');
 
 // ---- Application key (view-app-key) ----
 const keyPassword = ref('');
@@ -249,7 +286,7 @@ onUnmounted(() => {
 					For your protection no backup ever contains the warehouse key. <strong>You NEED a copy of it, kept in a safe place
 					separate from your backups</strong> (a password manager or a sealed envelope): it is required to restore the encrypted
 					parts of a backup — for example the shared secret for centralized feedback. Without the key those values can't be
-					recovered and have to be re-entered, and everyone has to sign in again; with it, a restore is complete.
+					recovered and have to be re-entered; with it, a restore is complete.
 				</p>
 				<p v-if="canViewAppKey">
 					<a href="#application-key" class="font-semibold underline">Show the warehouse key (at the bottom of this page)</a>

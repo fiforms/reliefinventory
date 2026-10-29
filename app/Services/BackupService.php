@@ -92,7 +92,12 @@ class BackupService
         $log = escapeshellarg($this->dir().'/backup.log');
         $php = escapeshellarg(config('backup.php_binary'));
         // setsid -f: new session, forked away — survives the web request and the web server's restart of workers.
-        Process::path(base_path())->run("setsid -f {$php} artisan backup:run {$backup->id} >> {$log} 2>&1 < /dev/null");
+        // --warehouse: with more than one warehouse, a console command won't guess which one it is for.
+        $warehouse = escapeshellarg('--warehouse='.app(WarehouseContext::class)->current()->id);
+        $result = Process::path(base_path())->run("setsid -f {$php} artisan backup:run {$backup->id} {$warehouse} >> {$log} 2>&1 < /dev/null");
+        if ($result->failed()) {
+            $this->fail($backup, 'Could not start the backup process: '.trim($result->errorOutput() ?: 'exit code '.$result->exitCode()));
+        }
     }
 
     /** Build the zip for an existing row. Runs in the detached process (or inline from backup:create). */
