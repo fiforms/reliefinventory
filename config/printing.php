@@ -44,7 +44,7 @@ return [
     // publishes to (REVERB_HOST/PORT/SCHEME). Set these only when the app
     // publishes to Reverb locally (e.g. http://127.0.0.1:8080) while devices
     // connect through the public proxy (wss://your.host:443). Browsers use the
-    // VITE_REVERB_* values instead. See scripts/REVERB.md.
+    // VITE_REVERB_* values instead. See dev/notes/REVERB.md.
     'realtime' => [
         'host' => env('REVERB_PUBLIC_HOST'),
         'port' => env('REVERB_PUBLIC_PORT'),

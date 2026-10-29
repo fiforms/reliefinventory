@@ -1,7 +1,7 @@
 # Building and running from source
 
 Most people should [run the Docker image](../README.md#quick-start-docker) instead. This page is for
-developers, and for anyone installing on a bare server without Docker.
+developers, and for anyone installing on a bare server without Docker (supported as a single warehouse, with manual updates; see "Updating").
 
 Relief Inventory is a [Laravel](https://laravel.com/) 13 + Inertia.js + Vue 3 application. For an architecture
 tour, see [dev/README.md](README.md) and [CLAUDE.md](../CLAUDE.md); for open work and the roadmap, [TODO.md](TODO.md) and [ROADMAP.md](ROADMAP.md).
@@ -88,21 +88,27 @@ This starts the web server, queue listener, log viewer and Vite together. `npm r
     vendor/bin/pest
 
 The suite runs against a separate, disposable database — never your real one. See
-[scripts/TESTING.md](../scripts/TESTING.md) before changing that configuration or setting up a new machine. PHP
+[TESTING.md](TESTING.md) before changing that configuration or setting up a new machine. PHP
 style is checked with `vendor/bin/pint`.
 
 ## Updating
 
-After pulling new code you may need some or all of:
+**Docker installs** update by pulling a new image (or the host-side updater; see [docker/README.md](../docker/README.md)).
 
-    composer install
-    npm install
-    npm run build
+**Bare-metal installs are updated by hand, from a shell, by the site administrator.** There is no in-app updater: the old one (which
+ran `git pull`, `npm run build` and `artisan migrate` from a web request and could leave a broken system) is deprecated and being
+removed ([TODO.md](TODO.md)). Take a backup first (`php artisan backup:create`), then, as the app's user:
+
+    git pull
+    composer install --no-dev --optimize-autoloader
+    npm ci && npm run build
     php artisan instance:migrate
+
+Restart the queue worker afterwards (`php artisan queue:restart`). `scripts/update.sh` (backup + the same steps) still exists but is deprecated; run it from a shell only, never from the web page. If the update fails, restore the backup. See [notes/BACKUPS.md](notes/BACKUPS.md).
 
 ## Running in production
 
-(These steps are still incomplete. See also [scripts/](../scripts/) for the update, backup and realtime notes.)
+(These steps are still incomplete. See also [notes/BACKUPS.md](notes/BACKUPS.md) and [notes/REVERB.md](notes/REVERB.md).)
 
 **Web server and cache.** You'll need a web server such as Apache or nginx with PHP, and optionally Redis.
 
@@ -154,7 +160,7 @@ To refresh with newer data, download the per-state files linked from
 
 Published images are built by the **Docker image (multi-arch)** GitHub Action (Actions tab, Run workflow), which
 builds both architectures natively and publishes `ghcr.io/fiforms/reliefinventory`. See
-[docker/README.md](../docker/README.md) for running it and [scripts/DOCKER_PLAN.md](../scripts/DOCKER_PLAN.md) for the
+[docker/README.md](../docker/README.md) for running it and [DOCKER_PLAN.md](DOCKER_PLAN.md) for the
 design.
 
 ## Building the companion apps

@@ -7,7 +7,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Menu/permissions audit follow-up (PROJECT_ANALYSIS.md Part 12,
+ * Menu/permissions audit follow-up (retired PROJECT_ANALYSIS.md Part 12 (dev/README.md, "Retired docs"),
  * permissions-model-rework-2026-09-02 memory). Three changes, all decided
  * with Mark on 2026-09-02:
  *

@@ -11,7 +11,7 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   php-fpm + nginx — one process, no supervisor. Plain HTTP on 8080; TLS is a reverse proxy's job.
 - **PDF rendering: distro `weasyprint` from Debian trixie apt**, identical on both arches — the only PDF engine.
   The image originally also carried distro `chromium`, Node and puppeteer's `node_modules` (for Browsershot, driving
-  the pallet labels, sitrep and help guide, via a `docker/chromium-wrapper.sh` that added `--no-sandbox
+  the pallet labels, sitrep and help guide, via a `docker/chromium-wrapper.sh` (since removed) that added `--no-sandbox
   --disable-dev-shm-usage --disable-gpu`); those documents were verified under WeasyPrint on 2026-10-19 and all of it
   was removed (Chromium ~380 MB + Node ~120 MB; measured total saving ~1.2 GB), along with the `pdf-node`/`node-bin` build stages.
 - **One image, roles by first argument** (`web|queue|scheduler|reverb|artisan`); only `web` migrates, seeds,
@@ -22,8 +22,8 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   DB passwords into a `secrets` volume that `db` (via `MARIADB_*_FILE`) and the app (via `DB_PASSWORD_FILE`) read;
   `secrets` must live and die with `db-data`.
 - **Scheduler container** replaces the systemd timers: hourly `volunteers:sync-active-windows`, and a daily backup zip
-  (`php artisan backup:create`, the same format as every other backup — `scripts/BACKUPS.md`) into `./backups`. Since this was
-  written, `backup:scheduled` gives every warehouse hourly/daily/weekly/monthly tiers (TODO.md item 14, `scripts/BACKUPS.md`).
+  (`php artisan backup:create`, the same format as every other backup — `dev/notes/BACKUPS.md`) into `./backups`. Since this was
+  written, `backup:scheduled` gives every warehouse hourly/daily/weekly/monthly tiers (`dev/notes/BACKUPS.md`).
 - Image was ~2.9 GB uncompressed with Chromium (380 MB) and Node (120 MB); both are now gone: the amd64 image measures ~1.7 GB (rebuilt 2026-10-19; a PDF rendered inside the container). Python/WeasyPrint is 255 MB; the rest is fonts and FrankenPHP.
 
 ## Known gaps
@@ -43,7 +43,7 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
 
 
 Goal: a multi-arch (linux/amd64 + linux/arm64) image and compose stack that someone else can run in a Docker
-environment, without the manual server provisioning the app otherwise needs (see `dev/BUILDING.md` and `scripts/REVERB.md`).
+environment, without the manual server provisioning the app otherwise needs (see `dev/BUILDING.md` and `dev/notes/REVERB.md`).
 
 **Effort estimate:** roughly 2–4 days to a working multi-arch image and compose file; about another week to make
 it something distributable to other people (entrypoint hardening, docs, CI publishing).
@@ -85,7 +85,7 @@ get much worse that way):
    admin (existing `php artisan user:create`).
 3. **Persistence.** Volumes for the MariaDB data dir and `storage/app` (private: donation photos, feedback
    screenshots, print-queue PDFs).
-4. **Scheduled work.** The backup timer (`scripts/BACKUPS.md`) and `volunteers:sync-active-windows`
+4. **Scheduled work.** The backup timer (`dev/notes/BACKUPS.md`) and `volunteers:sync-active-windows`
    (`scripts/volunteer-sync.sh`) are systemd timers with no Docker equivalent. Replace with a scheduler
    sidecar or loop container; document backup guidance for the DB volume.
 5. **Config hygiene.** A documented `.env`-driven compose file: secrets, `APP_URL`, trusted proxies.

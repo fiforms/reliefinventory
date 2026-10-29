@@ -28,7 +28,7 @@ use Illuminate\Validation\Rules\Password as PasswordRule;
 use League\Csv\Writer;
 
 /**
- * User Administration (TODO.md item 1) — create/promote/deactivate
+ * User Administration — create/promote/deactivate
  * login-capable accounts (anyone with a non-null email). Distinct from
  * PeopleController: that page manages party-tracking roles
  * (Partner/Donor, plus the is_volunteer flag — see Person::$fillable),

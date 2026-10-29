@@ -8,11 +8,11 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * The facility sign-in kiosk record (PROJECT_ANALYSIS.md Part 5): one row
+ * The facility sign-in kiosk record (retired PROJECT_ANALYSIS.md Part 5 (dev/README.md, "Retired docs")): one row
  * per visit, covering both the building-occupancy roster and the
  * FEMA-reportable Volunteer subset of it. No signature field — researched
  * directly against FEMA's own documentation requirements (DAP 9525.2 /
- * PAPPG donated-resources checklist, see PROJECT_ANALYSIS.md ~line 259) and
+ * PAPPG donated-resources checklist, see retired PROJECT_ANALYSIS.md ~line 259, dev/README.md "Retired docs") and
  * confirmed none is required; what's required is content (name, hours,
  * site, description) plus a periodic official certification, which
  * certified_at/certified_by_person_id below cover.

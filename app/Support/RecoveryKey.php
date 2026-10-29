@@ -9,7 +9,7 @@ use App\Services\Federation\RequestSigner;
 use RuntimeException;
 
 /**
- * The instance's recovery key pair (MULTI_WAREHOUSE.md §11, scripts/BACKUPS.md "Recovery key"). Whole-instance backups seal every
+ * The instance's recovery key pair (MULTI_WAREHOUSE.md §11, dev/notes/BACKUPS.md "Recovery key"). Whole-instance backups seal every
  * warehouse's key to the PUBLIC half (a libsodium sealed box), so the unattended backup can lock them but nothing on the server can
  * unlock them. The PRIVATE half is shown once, on paper, to the instance administrator, and is needed only for a disaster restore.
  *

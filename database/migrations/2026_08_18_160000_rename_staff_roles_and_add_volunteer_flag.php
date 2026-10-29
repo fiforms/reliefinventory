@@ -9,7 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Follow-up to the User Administration build (TODO.md item 1):
+ * Follow-up to the User Administration build:
  *
  * - "Staff" implies paid employment, which is out of scope for this app —
  *   drop it from the two new role names ("Sorting and Inventory Staff" ->
@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\Schema;
  * - Whether someone is a volunteer is a fact about the *person*, not a
  *   permission role — a volunteer can just as easily be the office
  *   manager or an administrator. Add people.is_volunteer (feeds future
- *   volunteer-hours/FEMA-reporting tracking, see PROJECT_ANALYSIS.md
+ *   volunteer-hours/FEMA-reporting tracking, see the retired PROJECT_ANALYSIS.md (dev/README.md, "Retired docs")
  *   Part 5) and retire the "Volunteer" role from both pickers, backfilling
  *   the flag for anyone currently holding it so no information is lost.
  */

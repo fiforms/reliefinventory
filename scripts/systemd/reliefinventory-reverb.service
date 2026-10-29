@@ -1,5 +1,5 @@
 [Unit]
-Description=Relief Inventory realtime server (Laravel Reverb — see scripts/REVERB.md)
+Description=Relief Inventory realtime server (Laravel Reverb — see dev/notes/REVERB.md)
 After=network.target
 
 [Service]

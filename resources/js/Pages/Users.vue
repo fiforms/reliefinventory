@@ -3,7 +3,7 @@
 
 <!-- Users.vue
 
-	User Administration (permission: manage-users; TODO.md item 1) —
+	User Administration (permission: manage-users) —
 	create/promote/deactivate login-capable accounts (anyone with an
 	email). Distinct from /setup/people: that page manages party-tracking
 	roles (Partner/Donor) plus the is_volunteer flag, with no permission
@@ -735,8 +735,7 @@ function setPasswordChangeRequired(required) {
             >{{ role.name }} <span class="role-chip-count">({{ (role.permissions || []).length }})</span></button>
           </div>
           <p class="text-xs text-gray-500 mt-1">
-            Partner accounts currently have ordering-scoped access pending — see
-            TODO.md item 22. They can log in, but ordering permissions aren't wired up yet.
+            Partner accounts can log in, but ordering isn't available to them yet.
           </p>
         </div>
 

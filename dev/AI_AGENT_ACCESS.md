@@ -50,7 +50,7 @@ reload php-fpm, health check against that instance's own URL. It never dumps the
 (`PermissionsSeeder` in particular: safe to repeat, per `update.sh`'s own comment, but still run
 manually as root when needed, not wired into the agent path). Backup coverage between deploys is
 unaffected: the existing `reliefinventory-backup.timer` (see
-`BACKUPS.md`) runs independently of any deploy and isn't touched by this account.
+`dev/notes/BACKUPS.md`) runs independently of any deploy and isn't touched by this account.
 
 File permissions on the server independently deny this account read access to `.env` (mode `640`,
 owned `www-data:www-data`), to its cached copy `bootstrap/cache/config.php` (Laravel writes it

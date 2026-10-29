@@ -24,7 +24,7 @@ Design and rationale: `MULTI_WAREHOUSE.md` (this folder). This file is the "how 
 - Attaching a login a warehouse doesn't own is an **invitation** the owner accepts with their password (`MembershipInvitations`, `/invitations/{token}`, `/account/invitations`). Never write a `memberships` row for someone else's account directly.
 - Backups carry `database/accounts.json` (`WarehouseAccounts`), relinked after every restore.
 
-## Backups and restore (details: `scripts/BACKUPS.md`)
+## Backups and restore (details: `dev/notes/BACKUPS.md`)
 - Per warehouse: `<backup dir>/warehouses/<id>/`, one at a time instance-wide via `.instance-backup.lock`. `config/backup.php` `live_state_tables` keep their rows out of dumps and are emptied by a restore.
 - Restores are untrusted input: run as the warehouse's own DB user with the `mariadb` client in `--sandbox --local-infile=0` (`DatabaseTools::clientCommand()`). The grants bound the SQL; the dump is deliberately not parsed for keywords — don't add a filter. Restored logins become invitations; a failed load returns the warehouse to empty.
 - A forced restore takes only that warehouse out of service (status `restoring`, ended by `warehouse:resume`), never `artisan down`.

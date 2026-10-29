@@ -1,7 +1,7 @@
 <?php
 
 // MULTI_WAREHOUSE.md §11: the whole-instance backup and restore, against real schemas and the provisioning test user of
-// scripts/TESTING.md (skips without it). The restore test points the control and accounts connections at schemas of its own
+// dev/TESTING.md (skips without it). The restore test points the control and accounts connections at schemas of its own
 // first, because a restore drops what it finds.
 
 use App\Models\Accounts\Account;
@@ -27,7 +27,7 @@ beforeEach(function () {
     try {
         $this->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $this->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $this->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     $this->tmp = sys_get_temp_dir().'/ri-instance-backup-'.bin2hex(random_bytes(4));
     mkdir($this->tmp.'/out', 0777, true);

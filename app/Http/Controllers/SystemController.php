@@ -25,7 +25,7 @@ use Illuminate\Support\Facades\Process;
  * updater is deprecated. status() says which one this is and leaves out what doesn't apply, and the
  * systemd-only actions refuse in a container (the page doesn't offer them there either).
  *
- * Design notes (see scripts/BACKUPS.md):
+ * Design notes (see dev/notes/BACKUPS.md):
  * - A software update is NOT run in-process (composer/npm take minutes and it puts the site into maintenance mode). It is a
  *   dedicated systemd oneshot unit started via a sudoers rule scoped to exactly that command. update.sh reports progress through
  *   a status JSON file this controller reads back.

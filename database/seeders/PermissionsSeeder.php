@@ -52,7 +52,7 @@ class PermissionsSeeder extends Seeder
         // issue, not an access-control one — so this stays a standalone,
         // Administrator-only-by-default key rather than folding into
         // manage-people. Expected to be replaced by deactivate/hide as part
-        // of the Partner/Donor rework (dev/TODO.md item 22), not
+        // of the Partner/Donor rework (dev/TODO.md, "Permissions and people"), not
         // widened.
         'admin-people' => 'Delete people',
         'manage-orders' => 'View, update, and delete orders/donations',
@@ -174,7 +174,7 @@ class PermissionsSeeder extends Seeder
     ];
 
     /**
-     * Office (TODO.md item 1 — "everything except admin/setup roles"):
+     * Office (User Administration — "everything except admin/setup roles"):
      * same effective bundle as today's Volunteer + Team Leader tiers,
      * just under a name that reflects what it actually grants rather than
      * the legacy role_bitpack-era naming. Deliberately not called "Office
@@ -199,7 +199,7 @@ class PermissionsSeeder extends Seeder
     ];
 
     /**
-     * Sorting and Inventory (TODO.md item 1): warehouse-side work only —
+     * Sorting and Inventory (the User Administration build): warehouse-side work only —
      * receiving, sorting, pallets, the item/location catalog, and donor
      * lookup (manage-people) for intake. No manage-orders (ordering isn't
      * this role's job) and no manage-roles.

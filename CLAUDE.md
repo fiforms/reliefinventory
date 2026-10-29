@@ -13,7 +13,9 @@ tracing; don't claim it in docs or copy).
 
 **Deployment:** Docker is the preferred and primary way to run it (multi-warehouse, the provisioner, self-update and
 whole-instance backup all assume it). A bare Linux server (systemd) is still supported, but as a single warehouse without
-the multi-warehouse features; don't build or maintain elaborate bare-metal paths.
+the multi-warehouse features; don't build or maintain elaborate bare-metal paths. The in-app web updater for bare metal
+(`git pull` + `npm run build` + `artisan migrate` from a web request) is **deprecated and being removed**: a bare-metal
+administrator updates by hand from a shell (`dev/BUILDING.md`, "Updating"). Don't extend it.
 
 **Sub-projects** (this repo, separate from the Laravel app; each has its own README):
 - `launcher/` — **RI Launcher**: Rust (Tauri) desktop app that launches and manages the Docker install and acts as the
@@ -22,7 +24,7 @@ the multi-warehouse features; don't build or maintain elaborate bare-metal paths
 - `rstation/` — **R Station**: Raspberry Pi device image: warehouse kiosk view, print client, and Docker host (can run a whole
   offline site). Wire protocols and specs live in its docs (`PRINT_SERVER.md`, `FEDERATION_AUTH.md`, OpenAPI files).
 
-Future ideas: `dev/ROADMAP.md` (the unbuilt facility-network design is `dev/FACILITY_NETWORK.md`); open work: `dev/TODO.md`.
+**Where is the code for X?** `dev/CODE_MAP.md`. Future ideas: `dev/ROADMAP.md` (the unbuilt facility-network design is `dev/FACILITY_NETWORK.md`); open work: `dev/TODO.md`.
 **Doc map: `dev/README.md`.** Conventions: GitHub workflows are manual-only; document non-obvious things
 (in a comment next to the code, or the matching `dev/notes/` file). Markdown files are named `ALL_UPPERCASE_WITH_UNDERSCORES.md`
 (`README.md` too); `dev/notes/` files are named for their topic, e.g. `PRINT_QUEUE.md`.
@@ -46,7 +48,7 @@ Other agents may be working here at the same time.
 **Start with `dev/SCHEMA.md`** for any table or column question: every table in the warehouse, control and accounts schemas, built
 from the migrations (use it instead of grepping 240 migrations). It is generated. After adding or changing a migration, run
 `dev/scripts/schema-doc.sh` and commit the result with the migration. Never edit it by hand. A test (`SchemaDocFreshTest`) fails if it is stale.
-The script needs a local MariaDB and the test-database grant from `scripts/TESTING.md`.
+The script needs a local MariaDB and the test-database grant from `dev/TESTING.md`.
 
 ## Commands
 
@@ -60,7 +62,7 @@ vendor/bin/pest [file] [--filter=name]   # tests; phpunit.xml targets a disposab
 vendor/bin/pint <files>             # style: pass only the files you changed (the repo isn't Pint-clean)
 ```
 
-Read `scripts/TESTING.md` before touching test DB config. No JS test suite: verify Vue changes in the browser.
+Read `dev/TESTING.md` before touching test DB config. No JS test suite: verify Vue changes in the browser.
 Demo data: `db:seed --class=WarehouseActivitySeeder` (demo instances only, never real data). Instance/warehouse/account
 management commands: `instance:status` is the overview; the table is in `dev/notes/MULTI_WAREHOUSE_NOTES.md`.
 

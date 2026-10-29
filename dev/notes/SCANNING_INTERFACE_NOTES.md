@@ -149,4 +149,4 @@ That showed focus never moved mid-scan (our first theory) and that the Qty value
 `resources/js/Pages/DonationSorting.vue` (flow), `resources/js/scanSounds.js`, `resources/js/Components/SearchSelect.vue`
 (`smartOpen`/`debounce`/`scanDigits`/`scanmatch`), `app/Helpers/Gtin.php`, `app/Services/Upc/*`, `app/Http/Controllers/UpcController.php`,
 Setup > Carton Barcodes (`resources/js/Pages/CartonCodes.vue`). Tests: `tests/Feature/UpcLookupTest.php`, `SortingConsolidateTest.php`.
-Open follow-ups are in TODO.md item 15.
+Open follow-ups are in dev/TODO.md, "Receiving, sorting and scanning".

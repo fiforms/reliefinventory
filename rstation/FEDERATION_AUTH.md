@@ -145,7 +145,7 @@ holds `operator.full_read`. It then uses `/api/federation/v1/backups` (session t
 3. `GET /backups/{id}/download` streams the zip and honours `Range`, so an interrupted download resumes. Verify the hash before
    keeping the file, and keep it: the server deletes its copy after `keep_days`.
 
-The zip never contains `APP_KEY` (see `scripts/BACKUPS.md`), but a database backup does hold password hashes and personal data, which is
+The zip never contains `APP_KEY` (see `dev/notes/BACKUPS.md`), but a database backup does hold password hashes and personal data, which is
 why this grant is rated high risk.
 
 ## Instance-level trust: whole-instance backups (`/api/instance/v1`, `instance.backup`)

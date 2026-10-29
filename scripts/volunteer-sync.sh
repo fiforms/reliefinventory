@@ -8,7 +8,7 @@
 #
 # Run as root (drops to www-data internally), via
 # reliefinventory-volunteer-sync.timer — same hourly-systemd-timer pattern as
-# reliefinventory-backup.timer (see scripts/BACKUPS.md), reused here rather
+# reliefinventory-backup.timer (see dev/notes/BACKUPS.md), reused here rather
 # than introducing a new scheduling mechanism. Unlike the backup timer, this
 # job is naturally idempotent (volunteers:sync-active-windows only touches
 # rows exactly on their transition day) so it has no separate "is it due"

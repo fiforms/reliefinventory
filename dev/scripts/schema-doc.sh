@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Regenerates dev/SCHEMA.md by migrating throwaway schemas from scratch. See the header of dev/SCHEMA.md.
-# Needs the database user from scripts/TESTING.md (it may create `test_reliefinventory%` schemas).
+# Needs the database user from dev/TESTING.md (it may create `test_reliefinventory%` schemas).
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 

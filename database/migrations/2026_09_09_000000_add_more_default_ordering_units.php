@@ -4,7 +4,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
- * TODO.md item 5: the "Default Ordering Unit" list (units table) only had
+ * the Default Ordering Unit work: the "Default Ordering Unit" list (units table) only had
  * weight/volume/each measurement units — no way to order something by the
  * container it actually ships in. insertOrIgnore (not the seeder, which
  * only runs once per instance at initial setup) so this lands on every

@@ -2,7 +2,7 @@
 
 Design for a **network of facilities** (warehouses, church/school resource sites, Points of Distribution) cooperating within one
 disaster **incident**, with scoped views per person. **Not built.** Planning notes from August 2026, moved here from the retired
-`PROJECT_ANALYSIS.md`; verify against the code before building. Related designs: [POD.md](POD.md), [INTEROPERABILITY.md](INTEROPERABILITY.md).
+`PROJECT_ANALYSIS.md` (see [README.md](README.md), "Retired docs"); verify against the code before building. Related designs: [POD.md](POD.md), [INTEROPERABILITY.md](INTEROPERABILITY.md).
 
 ## What exists today
 

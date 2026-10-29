@@ -201,7 +201,7 @@ Route::get('/receiving/offers', function () {
         // Whether to show the decision buttons at all — the endpoints they
         // call are still independently gated server-side either way, this
         // just avoids offering an action that's already known to 403 (see
-        // dev/TODO.md item 22).
+        // dev/TODO.md, "Permissions and people").
         'canDecide' => Auth::user()->hasPermission('manage-donation-offers'),
     ]);
 })->middleware(['auth', 'permission:manage-receiving']);
@@ -287,7 +287,7 @@ Route::get('/setup/people', function () {
     ]);
 })->middleware(['auth', 'permission:manage-people']);
 
-// User Administration (TODO.md item 1) — create/promote/deactivate
+// User Administration — create/promote/deactivate
 // login-capable accounts. Distinct from /setup/people: that page manages
 // party-tracking roles only, no permission overrides.
 Route::get('/setup/users', function () {
@@ -1287,7 +1287,7 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-imp
 // Deleting a person is a records-integrity issue, not a permissions tier —
 // no bundle grants this by default; kept separate from manage-people
 // pending the Partner/Donor rework, which is expected to replace this with
-// deactivate/hide rather than a hard delete (see dev/TODO.md item 22).
+// deactivate/hide rather than a hard delete (see dev/TODO.md, "Permissions and people").
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-people']], function () {
     Route::delete('/people/{id}', [PeopleController::class, 'destroy']);
 });

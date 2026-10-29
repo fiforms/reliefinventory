@@ -1,6 +1,6 @@
 # Database schema reference
 
-<!-- migrations-stamp: 54db0afd9c88e97af103d4c153e8a5584f30a42b -->
+<!-- migrations-stamp: 10565863e34703e492999492ef00b58e498e41db -->
 
 **Generated — do not edit by hand.** Regenerate with `dev/scripts/schema-doc.sh` after adding or changing a migration, and commit the result
 with it. It migrates throwaway databases (`test_reliefinventory_schemadoc*`) from scratch, so it shows what the migrations produce, not what any

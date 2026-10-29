@@ -1,7 +1,7 @@
 <?php
 
 // MULTI_WAREHOUSE.md §7: a warehouse's own database user, the provisioner that makes it, and the guarantee that the user
-// reaches only its own schema. Uses the provisioning test user from scripts/TESTING.md (it can create users and
+// reaches only its own schema. Uses the provisioning test user from dev/TESTING.md (it can create users and
 // manages only schemas named test_reliefinventory*); everything the tests create is dropped again.
 
 use App\Console\Commands\InstanceMigrate;
@@ -17,7 +17,7 @@ beforeEach(function () {
     try {
         $this->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $this->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $this->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     $this->prefix = 'test_reliefinventory_prov'.bin2hex(random_bytes(2));
     config(['warehouses.provisioning' => [

@@ -8,7 +8,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Volunteer hours kiosk (PROJECT_ANALYSIS.md Part 5): the kiosk's default
+ * Volunteer hours kiosk (retired PROJECT_ANALYSIS.md Part 5 (dev/README.md, "Retired docs")): the kiosk's default
  * tile grid needs a single flag to gate membership on, separate from
  * is_volunteer (a permanent fact about the person) and from disabled_at
  * (login access, unrelated). volunteer_active is that flag — admins can

@@ -10,7 +10,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Append-only "who changed what, when" trail for a volunteer_sign_ins row —
  * this is the tamper-evidence half of the FEMA 2 CFR §200.336 "cannot be
- * altered" requirement (see PROJECT_ANALYSIS.md ~line 259). Corrections
+ * altered" requirement (see retired PROJECT_ANALYSIS.md ~line 259, dev/README.md "Retired docs"). Corrections
  * (a pending_confirmation resolved, a manager override, an admin edit to
  * agency/hours/etc.) write a new row here; the sign-in row itself is never
  * silently overwritten without a trace. One row per changed field, not per

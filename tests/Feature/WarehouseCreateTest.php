@@ -1,7 +1,7 @@
 <?php
 
 // MULTI_WAREHOUSE.md §7: making a new, empty warehouse end to end against a real schema and database user. Uses the provisioning
-// test user from scripts/TESTING.md (skips without it); everything created is dropped again.
+// test user from dev/TESTING.md (skips without it); everything created is dropped again.
 
 use App\Models\Control\Warehouse;
 use App\Services\FirstRunService;
@@ -18,7 +18,7 @@ beforeEach(function () {
     try {
         $this->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $this->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $this->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     config(['warehouses.provisioning' => [
         'admin_user' => 'ri_test_provisioner', 'admin_password' => 'ri_test_provisioner', 'admin_password_file' => '/nonexistent',

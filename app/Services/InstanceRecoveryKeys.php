@@ -12,7 +12,7 @@ use RuntimeException;
 use Throwable;
 
 /**
- * The instance's recovery key (scripts/BACKUPS.md "Recovery key"): who made it, whether the administrator confirmed storing it, and the
+ * The instance's recovery key (dev/notes/BACKUPS.md "Recovery key"): who made it, whether the administrator confirmed storing it, and the
  * public half the backups seal to. The private half passes through generate() once, on its way to the person, and is stored nowhere: not in
  * the database, not in the audit log (which records the fingerprint only), not in a file.
  *

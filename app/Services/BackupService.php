@@ -17,7 +17,7 @@ use Throwable;
 use ZipArchive;
 
 /**
- * Backup zips (see scripts/BACKUPS.md). The one backup format for every platform: the admin page, `backup:create`,
+ * Backup zips (see dev/notes/BACKUPS.md). The one backup format for every platform: the admin page, `backup:create`,
  * the bare-metal tiered backups (scripts/update.sh calls `backup:create --dest=...`) and the Docker daily and
  * pre-migration dumps all write this.
  *

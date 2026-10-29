@@ -1,7 +1,7 @@
 <?php
 
 // MULTI_WAREHOUSE.md §6: archiving and removing a warehouse. The account rules and the guards run against plain rows; the removal
-// itself runs against a real provisioned warehouse (needs the provisioning test user of scripts/TESTING.md; skips without it).
+// itself runs against a real provisioned warehouse (needs the provisioning test user of dev/TESTING.md; skips without it).
 
 use App\Models\Accounts\Account;
 use App\Models\Accounts\Membership;
@@ -122,7 +122,7 @@ test('a real warehouse is removed completely: final backup, schema, user, files,
     try {
         $this->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $this->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $this->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     config(['warehouses.provisioning' => [
         'admin_user' => 'ri_test_provisioner', 'admin_password' => 'ri_test_provisioner', 'admin_password_file' => '/nonexistent',
