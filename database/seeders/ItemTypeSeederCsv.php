@@ -14,10 +14,11 @@ class ItemTypeSeederCsv extends Seeder
     public function run(): void
     {
         $csvFilePath = storage_path('app/Itemtypes.csv');
-        
+
         // Open and read the CSV file
-        if (!file_exists($csvFilePath) || !is_readable($csvFilePath)) {
+        if (! file_exists($csvFilePath) || ! is_readable($csvFilePath)) {
             $this->command->error("CSV file not found or unreadable: $csvFilePath");
+
             return;
         }
 
@@ -33,7 +34,7 @@ class ItemTypeSeederCsv extends Seeder
             $unit = trim($record['Unit'] ?? 'each');
 
             // Ensure category is stored once
-            if (!isset($categories[$categoryName])) {
+            if (! isset($categories[$categoryName])) {
                 $categoryId = DB::table('categories')->insertGetId([
                     'name' => $categoryName,
                     'created_at' => now(),

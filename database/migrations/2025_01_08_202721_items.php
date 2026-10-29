@@ -16,7 +16,7 @@ return new class extends Migration
             $table->string('item_number')->unique(); // User-assigned item number
             $table->foreignId('category_id')->constrained('categories')->onDelete('cascade'); // Foreign key to categories table
             $table->enum('counted_by', ['each', 'case']); // Indicates if the item is counted by "Each" or "Case"
-	    $table->decimal('size', 8, 2); // Size as a decimal (e.g., 1.25)
+            $table->decimal('size', 8, 2); // Size as a decimal (e.g., 1.25)
             $table->integer('case_qty')->nullable(); // Quantity in a case
             $table->text('description')->nullable(); // Description
             $table->timestamps(); // Created at and updated at timestamps

@@ -14,7 +14,7 @@ class County extends Model
     protected $fillable = [
         'id', 'county', 'state', 'created_at', 'updated_at',
     ];
-    
+
     /**
      * Get a list of unique state abbreviations.
      *

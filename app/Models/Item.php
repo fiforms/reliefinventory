@@ -1,4 +1,5 @@
 <?php
+
 // This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
@@ -10,42 +11,42 @@ use Illuminate\Database\Eloquent\Model;
 class Item extends Model
 {
     use HasFactory;
-    
+
     /**
      * The table associated with the model.
      *
      * @var string
      */
     protected $table = 'items';
-    
+
     /**
      * The primary key associated with the table.
      *
      * @var string
      */
     protected $primaryKey = 'id';
-    
+
     /**
      * Indicates if the IDs are auto-incrementing.
      *
      * @var bool
      */
     public $incrementing = true;
-    
+
     /**
      * The "type" of the auto-incrementing ID.
      *
      * @var string
      */
     protected $keyType = 'int';
-    
+
     /**
      * Indicates if the model should be timestamped.
      *
      * @var bool
      */
     public $timestamps = true;
-    
+
     /**
      * The attributes that are mass assignable.
      *
@@ -61,7 +62,7 @@ class Item extends Model
         'description',
         'upc',
     ];
-    
+
     /**
      * The attributes that should be cast.
      *
@@ -72,20 +73,19 @@ class Item extends Model
         'case_qty' => 'integer',
         'active' => 'boolean',
     ];
-    
+
     /**
      * Relationships
      */
-    
     public function itemtype()
     {
         return $this->belongsTo(ItemType::class, 'itemtype_id');
     }
-    
+
     public function packagetype()
     {
         return $this->belongsTo(PackageType::class, 'packagetypes_id');
     }
-    
+
     // Add other relationships as necessary
 }

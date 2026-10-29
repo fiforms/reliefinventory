@@ -1,4 +1,4 @@
-<?php 
+<?php
 
 namespace App\Models;
 
@@ -16,7 +16,7 @@ class BannedEmail extends Model
     /**
      * Checks if an email matches a banned pattern.
      *
-     * @param string $email
+     * @param  string  $email
      * @return bool
      */
     public static function isBanned($email)
@@ -29,7 +29,7 @@ class BannedEmail extends Model
     /**
      * Find the pattern that causes an email to be banned
      *
-     * @param string $email
+     * @param  string  $email
      * @return string
      */
     public static function bannedBy($email)
@@ -38,13 +38,12 @@ class BannedEmail extends Model
             return self::matchesPattern($email, $pattern);
         });
     }
-    
-    
+
     /**
      * Helper function to check if an email matches a pattern.
      *
-     * @param string $email
-     * @param string $pattern
+     * @param  string  $email
+     * @param  string  $pattern
      * @return bool
      */
     private static function matchesPattern($email, $pattern)
@@ -55,6 +54,7 @@ class BannedEmail extends Model
 
         if (str_starts_with($pattern, '*@')) {
             $domain = substr($pattern, 2);
+
             return str_ends_with($email, "@{$domain}");
         }
 

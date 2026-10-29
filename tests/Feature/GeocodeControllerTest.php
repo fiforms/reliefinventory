@@ -4,6 +4,7 @@
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\County;
+use App\Models\OfflineModeSetting;
 use Illuminate\Support\Facades\Http;
 
 function fakeGeocodioResult(?string $county, ?string $state, ?string $standardizedStreet = '123 Main St'): void
@@ -80,13 +81,13 @@ test('geocode lookup 503s when no API key is configured', function () {
 
 test('geocode lookup 503s when offline mode is on, even with a valid API key', function () {
     config(['services.geocodio.key' => 'test-key']);
-    App\Models\OfflineModeSetting::current()->update(['enabled' => true]);
+    OfflineModeSetting::current()->update(['enabled' => true]);
     $actor = userWithPermissions('general-access');
 
     $this->actingAs($actor)->postJson('/json/geocode/county', ['address' => '123 Main St'])
         ->assertStatus(503);
 
-    App\Models\OfflineModeSetting::current()->update(['enabled' => false]);
+    OfflineModeSetting::current()->update(['enabled' => false]);
 });
 
 test('geocode lookup requires an address', function () {

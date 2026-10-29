@@ -19,31 +19,31 @@ class ImportBannedEmails extends Command
      * @var string
      */
     protected $signature = 'user:import-banned {filepath}';
-    
+
     protected $description = 'Import a list of disposable email domains into the banned_emails table';
-    
+
     public function handle()
     {
         $filepath = $this->argument('filepath');
-        
-        if (!File::exists($filepath)) {
+
+        if (! File::exists($filepath)) {
             $this->error("File not found: $filepath");
+
             return 1; // Exit with an error status
         }
-        
-        $domains = File::lines($filepath)->map(fn($line) => trim($line))
-        ->filter(fn($line) => !empty($line) && !DB::table('banned_emails')->where('pattern', '*@' . $line)->exists())
-        ->map(fn($line) => ['pattern' => '*@' . $line, 'created_at' => now(), 'updated_at' => now()])
-        ->toArray();
-        
-        if (!empty($domains)) {
+
+        $domains = File::lines($filepath)->map(fn ($line) => trim($line))
+            ->filter(fn ($line) => ! empty($line) && ! DB::table('banned_emails')->where('pattern', '*@'.$line)->exists())
+            ->map(fn ($line) => ['pattern' => '*@'.$line, 'created_at' => now(), 'updated_at' => now()])
+            ->toArray();
+
+        if (! empty($domains)) {
             DB::table('banned_emails')->insert($domains);
-            $this->info(count($domains) . " domains added to the banned list.");
+            $this->info(count($domains).' domains added to the banned list.');
         } else {
-            $this->info("No new domains to import.");
+            $this->info('No new domains to import.');
         }
-        
+
         return 0; // Successful execution
     }
-
 }

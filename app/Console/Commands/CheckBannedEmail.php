@@ -1,12 +1,14 @@
-<?php 
+<?php
+
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\BannedEmail;
+use Illuminate\Console\Command;
 
 class CheckBannedEmail extends Command
 {
     protected $signature = 'user:is-banned {email}';
+
     protected $description = 'Check if an email address is banned';
 
     public function handle()
@@ -14,7 +16,8 @@ class CheckBannedEmail extends Command
         $email = trim($this->argument('email'));
 
         if (empty($email)) {
-            $this->error("Please provide a valid email address.");
+            $this->error('Please provide a valid email address.');
+
             return 1;
         }
 
@@ -22,7 +25,7 @@ class CheckBannedEmail extends Command
             $pattern = BannedEmail::bannedBy($email);
             $this->info("Yes, this email is banned by pattern: {$pattern}");
         } else {
-            $this->info("No, this email is not banned.");
+            $this->info('No, this email is not banned.');
         }
 
         return 0;

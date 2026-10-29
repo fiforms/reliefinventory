@@ -5,10 +5,8 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Hash;
 use App\Models\User;
-use App\Models\PeopleRoles;
+use Illuminate\Console\Command;
 
 class DeactivateUser extends Command
 {
@@ -35,24 +33,26 @@ class DeactivateUser extends Command
     {
         // Get email, either from the command line option or prompt the user
         $email = $this->option('email');
-        if (!$email) {
+        if (! $email) {
             $email = $this->ask('Please enter the user\'s email');
         }
 
         // Find the user by email
         $user = User::where('email', $email)->first();
-        if (!$user) {
+        if (! $user) {
             $this->error('No user found with this email.');
+
             return 1;
         }
-        
+
         try {
             $user->email_verified_at = null;
             $user->password = null;
             $user->save();
-            $this->info('User ' . $user->first_name . ' ' . $user->last_name . ' successfully deactivated');
+            $this->info('User '.$user->first_name.' '.$user->last_name.' successfully deactivated');
         } catch (\Exception $e) {
-            $this->error('Error deactivating user: ' . $e->getMessage());
+            $this->error('Error deactivating user: '.$e->getMessage());
+
             return 1;
         }
 

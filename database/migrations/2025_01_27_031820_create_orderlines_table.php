@@ -17,7 +17,7 @@ return new class extends Migration
             $table->foreignId('itemtype_id')->constrained('itemtypes')->onDelete('restrict');
             $table->foreignId('packagetype_id')->constrained('packagetypes')->onDelete('restrict');
             $table->integer('qty_requested');
-            $table->text('comments')->nullable();  
+            $table->text('comments')->nullable();
             $table->timestamps();
         });
     }

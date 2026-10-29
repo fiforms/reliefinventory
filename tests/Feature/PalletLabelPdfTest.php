@@ -3,7 +3,11 @@
 // Pallet labels render through the weasyprint driver (4 x 6.5 in, one label per page).
 
 use App\Http\Controllers\PalletReportController;
+use App\Models\LabelSetting;
+use App\Models\Location;
 use App\Models\Pallet;
+use App\Models\UseModel;
+use App\Models\Warehouse;
 
 function newPallet(): Pallet
 {
@@ -41,15 +45,15 @@ test('a single pallet label renders as one 4 x 6.5 in weasyprint page', function
 })->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
 
 test('a pallet label shows its location when it has one, on both label sizes', function () {
-    $wh = App\Models\Warehouse::first() ?? App\Models\Warehouse::create(['name' => 'WH']);
-    $use = App\Models\UseModel::first() ?? App\Models\UseModel::create(['use' => 'Storage']);
-    $location = App\Models\Location::forceCreate(['warehouse_id' => $wh->id, 'use_id' => $use->id, 'code' => 'A-12-3', 'status' => 'active']);
+    $wh = Warehouse::first() ?? Warehouse::create(['name' => 'WH']);
+    $use = UseModel::first() ?? UseModel::create(['use' => 'Storage']);
+    $location = Location::forceCreate(['warehouse_id' => $wh->id, 'use_id' => $use->id, 'code' => 'A-12-3', 'status' => 'active']);
     $placed = newPallet();
     $placed->update(['location_id' => $location->id]);
     $unplaced = newPallet();
 
     foreach (['label_large', 'label_small'] as $media) {
-        App\Models\LabelSetting::query()->updateOrCreate(['id' => 1], ['pallet_label_media' => $media]);
+        LabelSetting::query()->updateOrCreate(['id' => 1], ['pallet_label_media' => $media]);
 
         $path = tempnam(sys_get_temp_dir(), 'lbl').'.pdf';
         app(PalletReportController::class)->singleLabelBuilder($placed->id)->save($path);

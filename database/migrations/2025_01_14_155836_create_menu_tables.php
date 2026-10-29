@@ -46,4 +46,3 @@ class CreateMenuTables extends Migration
         Schema::dropIfExists('pages');
     }
 }
-

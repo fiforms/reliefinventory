@@ -1,4 +1,5 @@
 <?php
+
 // Makes a pairing code for a backup client in the test DB and prints it. Args: [grants,comma,separated] (default operator.full_read).
 require dirname(__DIR__, 2).'/print-client/e2e/bootstrap.php';
 use App\Services\Federation\TrustService;

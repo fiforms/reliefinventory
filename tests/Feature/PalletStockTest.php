@@ -1,18 +1,19 @@
 <?php
 
+use App\Models\Category;
 use App\Models\Item;
 use App\Models\ItemLedger;
-use App\Models\Category;
 use App\Models\ItemType;
-use App\Models\OrderLine;
-use App\Models\Person;
-use App\Models\User;
-use Illuminate\Support\Facades\DB;
 use App\Models\Location;
+use App\Models\OrderLine;
 use App\Models\Pallet;
+use App\Models\Person;
 use App\Models\Transaction;
 use App\Models\UseModel;
+use App\Models\User;
 use App\Models\Warehouse;
+use App\Services\PalletStock;
+use Illuminate\Support\Facades\DB;
 
 function stockItem(int $onHand): Item
 {
@@ -250,7 +251,7 @@ test('a sealed pallet takes no additions; unseal, adjust with a reason, and re-s
     expect($contents[$item->id])->toBe(16)->and($contents[$other->id])->toBe(4);
     // it changes how much exists (4 fewer of one, 4 more of the other) without touching the sorting-area pool
     expect(PalletStock_onHand($item->id))->toBe($onHandBefore - 4)->and(PalletStock_onHand($other->id))->toBe(4);
-    $tx = \App\Models\Transaction::where('type', 'adjustment')->first();
+    $tx = Transaction::where('type', 'adjustment')->first();
     expect($tx->adjustment_reason)->toBe('correcting_item_type')->and(ItemLedger::where('orderdonation_id', $tx->id)->count())->toBe(2);
 
     $this->postJson("/json/pallet-stock/{$id}/seal")->assertOk()->assertJsonPath('record.status', 'sealed');
@@ -258,7 +259,7 @@ test('a sealed pallet takes no additions; unseal, adjust with a reason, and re-s
 
 function PalletStock_onHand(int $itemId): int
 {
-    return \App\Services\PalletStock::onHand($itemId);
+    return PalletStock::onHand($itemId);
 }
 
 test('adjusting a pallet needs its own permission beyond moving stock', function () {

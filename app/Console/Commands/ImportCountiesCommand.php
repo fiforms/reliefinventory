@@ -2,9 +2,8 @@
 
 namespace App\Console\Commands;
 
-use Illuminate\Console\Command;
 use App\Models\County;
-use Illuminate\Support\Facades\Storage;
+use Illuminate\Console\Command;
 
 class ImportCountiesCommand extends Command
 {
@@ -29,8 +28,9 @@ class ImportCountiesCommand extends Command
     {
         $filePath = $this->argument('file');
 
-        if (!file_exists(base_path($filePath))) {
+        if (! file_exists(base_path($filePath))) {
             $this->error("File not found: $filePath");
+
             return;
         }
 
@@ -38,7 +38,8 @@ class ImportCountiesCommand extends Command
         $lines = explode("\n", trim($content));
 
         if (count($lines) <= 1) {
-            $this->error("File appears to be empty or incorrectly formatted.");
+            $this->error('File appears to be empty or incorrectly formatted.');
+
             return;
         }
 
@@ -51,17 +52,19 @@ class ImportCountiesCommand extends Command
 
             if (count($columns) !== 7) {
                 $this->warn("Skipping invalid line: $line");
+
                 continue;
             }
-            if (!(int)$columns[1]) {
+            if (! (int) $columns[1]) {
                 $this->warn("Invalid State ID: $columns[1] on line $line");
+
                 continue;
             }
 
-            list($state, $statefp, $countyfp, $countyns, $countyname, $classfp, $funcstat) = $columns;
+            [$state, $statefp, $countyfp, $countyns, $countyname, $classfp, $funcstat] = $columns;
 
             County::updateOrCreate(
-                ['id' => (int)$statefp * 1000 + (int)$countyfp],
+                ['id' => (int) $statefp * 1000 + (int) $countyfp],
                 ['state' => $state, 'county' => $countyname]
             );
 
