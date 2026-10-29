@@ -1,0 +1,8 @@
+# A real certificate from Let's Encrypt. Needs a public DNS name pointing at this server and ports 80 and 443
+# reachable from the internet (compose.yaml maps them to 8080 / 4430 in the container, hence the alternate ports).
+tls {
+	issuer acme {
+		alt_http_port {$RI_HTTP_PORT:8080}
+		alt_tlsalpn_port {$RI_HTTPS_PORT:4430}
+	}
+}

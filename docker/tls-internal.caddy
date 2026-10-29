@@ -1,0 +1,3 @@
+# A certificate from Caddy's own local CA: for LAN servers with no public name, and for trying this out.
+# Browsers show a warning until the CA (in the caddy-data volume, pki/authorities/local/root.crt) is trusted.
+tls internal

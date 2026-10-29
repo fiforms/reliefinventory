@@ -45,6 +45,15 @@ x-settings: &settings
   # RI_ADMIN_FIRST_NAME: Pat
   # RI_ADMIN_LAST_NAME: Smith
 
+  # HTTPS served by this container itself (no reverse proxy needed). Also set APP_URL to https://your.host.name
+  # (no port) and switch the two `ports:` lines under `app` to 80 and 443 (see README.md > HTTPS).
+  #   auto      a real certificate from Let's Encrypt: needs a public DNS name for this server and ports 80 and
+  #             443 reachable from the internet
+  #   internal  a certificate from Caddy's own local CA: for a LAN server with no public name (browsers warn
+  #             until they trust it)
+  # Plain-HTTP requests are then redirected to HTTPS. Leave it off behind your own reverse proxy.
+  # RI_HTTPS: auto
+
   # Behind an HTTPS reverse proxy: its address(es), comma separated, or * if
   # only the proxy can reach this container (see README.md).
   # TRUSTED_PROXIES: "*"
@@ -214,12 +223,17 @@ services:
     command: ["web"]
     ports:
       - "8080:8080"
+      # With RI_HTTPS (above), use these two lines instead of the one above:
+      # - "80:8080"
+      # - "443:4430"
     # The same as above, except that only this container may write the warehouse key files.
     volumes:
       - storage:/var/www/html/storage
       - secrets:/secrets:ro
       - ./backups:/backups
       - warehouse-secrets:/warehouse-secrets
+      # HTTPS certificates (RI_HTTPS): kept across restarts, or every start would ask Let's Encrypt for a new one
+      - caddy-data:/tmp/home/.local/share/caddy
     depends_on:
       db:
         condition: service_healthy
@@ -274,3 +288,5 @@ volumes:
   # Each warehouse's encryption key. Keep it together with db-data and storage:
   # without its key a warehouse's encrypted settings can't be read.
   warehouse-secrets:
+  # HTTPS certificates and the local CA's key (RI_HTTPS). Losing it only means getting new certificates.
+  caddy-data:

@@ -105,6 +105,13 @@ Then make the secret the update helper uses to talk to the app (step 6) and put 
 sudo sed -i "s|^\( *\)#* *RI_UPDATE_SECRET:.*|\1RI_UPDATE_SECRET: $(openssl rand -hex 32)|" compose.yaml
 ```
 
+**Want HTTPS on this server?** Instead of the port-8080 address above, set `APP_URL` to the public name with
+`https://` and no port, uncomment `RI_HTTPS: auto`, and switch the two port lines under `app` (`"80:8080"` and
+`"443:4430"` instead of `"8080:8080"`). Let's Encrypt needs a public DNS name for the server and ports 80 and 443
+open to the internet. For a LAN server with no public name use `RI_HTTPS: internal` (browsers will warn). Details:
+[the Docker README](README.md#https). If you do this, give the updater in step 6 the address
+`http://127.0.0.1:80` as its second argument.
+
 ### 4. Download and start it
 
 ```
