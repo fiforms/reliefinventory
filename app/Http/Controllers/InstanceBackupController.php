@@ -12,6 +12,7 @@ use App\Models\Control\InstanceTrust;
 use App\Models\Control\ProvisioningCommand;
 use App\Services\Federation\InstanceTrustService;
 use App\Services\InstanceBackupService;
+use App\Services\InstanceRecoveryKeys;
 use App\Services\Warehouses\ProvisioningClient;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -33,7 +34,7 @@ class InstanceBackupController extends Controller
     /** The requests this page may make, and the only ones it reports on. */
     private const BACKUP_COMMANDS = ['backup-sched', 'backup-now', 'backup-now-files'];
 
-    public function __construct(private InstanceBackupService $backups) {}
+    public function __construct(private InstanceBackupService $backups, private InstanceRecoveryKeys $recovery) {}
 
     public function index(): JsonResponse
     {
@@ -50,6 +51,7 @@ class InstanceBackupController extends Controller
             'schedule' => InstanceBackupSchedule::current()->toArray(),
             'backups' => $zips,
             'activity' => $activity ? ['command' => $activity->command, 'status' => $activity->status, 'message' => $activity->message, 'finished_at' => $activity->finished_at?->toIso8601String()] : null,
+            'recovery_key' => $this->recovery->payload(),
             'working' => ProvisioningCommand::whereIn('command', self::BACKUP_COMMANDS)->whereIn('status', ['pending', 'running'])->exists(),
             'address' => request()->getSchemeAndHttpHost(),
             'clients' => InstanceTrust::orderByDesc('id')->get()->map(fn (InstanceTrust $t) => [
@@ -85,6 +87,40 @@ class InstanceBackupController extends Controller
 
             return ['message' => "{$trust->name} can no longer make instance backups."];
         });
+    }
+
+    /**
+     * Make the instance's recovery key and return its PRIVATE half, once, in this response (no-store). Only the public half is kept: not in the
+     * database, not in the audit log (fingerprint only), not in a file. If one exists, `replace` must say so, since backups from now on need the new key.
+     */
+    public function recoveryKey(Request $request): JsonResponse
+    {
+        $data = $request->validate(['replace' => 'sometimes|boolean']);
+
+        return $this->confirmed($request, 'instance-recovery-key', function () use ($data) {
+            $this->requireDocker();
+            $pair = $this->recovery->generate(Auth::user()->email, (bool) ($data['replace'] ?? false));
+            Log::notice('Instance recovery key made', ['person' => Auth::id(), 'fingerprint' => $pair['fingerprint']]);
+
+            return [
+                'private_key' => $pair['private'], 'fingerprint' => $pair['fingerprint'],
+                'instance' => config('app.name'), 'address' => request()->getSchemeAndHttpHost(), 'made_at' => now()->toIso8601String(),
+                'recovery_key' => $this->recovery->payload(),
+            ];
+        });
+    }
+
+    /** The administrator says the private key is printed or saved somewhere safe. No password: nothing secret moves and nothing is changed but a flag. */
+    public function confirmRecoveryKey(): JsonResponse
+    {
+        $this->requireDocker();
+        try {
+            $this->recovery->acknowledge(Auth::user()->email);
+        } catch (RuntimeException $e) {
+            return response()->json(['message' => $e->getMessage()], 422);
+        }
+
+        return response()->json(['recovery_key' => $this->recovery->payload()])->header('Cache-Control', 'no-store, private');
     }
 
     public function updateSchedule(Request $request): JsonResponse

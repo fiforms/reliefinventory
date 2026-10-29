@@ -347,6 +347,8 @@ Route::group(['prefix' => 'json/instance', 'middleware' => ['auth', 'instance-ad
     Route::middleware('throttle:20,1')->group(function () {
         Route::put('/backups/schedule', [InstanceBackupController::class, 'updateSchedule']);
         Route::post('/backups', [InstanceBackupController::class, 'store']);
+        Route::post('/backups/recovery-key', [InstanceBackupController::class, 'recoveryKey']);
+        Route::post('/backups/recovery-key/confirm', [InstanceBackupController::class, 'confirmRecoveryKey']);
         Route::post('/backups/clients/code', [InstanceBackupController::class, 'pairingCode']);
         Route::delete('/backups/clients/{id}', [InstanceBackupController::class, 'revokeClient'])->whereNumber('id');
     });

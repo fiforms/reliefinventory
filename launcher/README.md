@@ -153,6 +153,7 @@ install card shows what to run for their distribution (`install_hint`, from `/et
 
 ## Proven on macOS (2026-10-25, Apple-silicon MacBook Pro, macOS 26.6.2, Lima 2.2.1, via the CLI)
 Clean install from nothing in 3½ minutes (no password, no terminal step); the first-run wizard at `localhost:8080`; the
+- **First sign-in after setup:** the new instance's administrator sees a red banner, *Set up your recovery key* (Instance Admin → Full Instance Backups). The key it shows once is what lets an automatic or Launcher-pulled instance backup restore every warehouse's encrypted settings; print it and keep it away from this computer and the backups. (The Launcher itself never sees it.)
 `.local` name and LAN IP from the share link answer; local-only stops LAN access and back, switched while `ri-launcher run`
 was running; back up now, export (path with spaces, read-only, no overwrite), restore (safety backup first; a change made
 after the backup was undone); data kept across stop/start; the VM outlives the launcher process; update; uninstall

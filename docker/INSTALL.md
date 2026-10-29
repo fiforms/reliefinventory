@@ -26,6 +26,11 @@ Docker needs by itself, so you don't install Docker Desktop. On Linux it uses th
 4. A setup page asks for the administrator's name, email address and password, and whether to load **example
    data**. Choose example data if you just want to look around, but not for a real warehouse, because it can't be
    removed later. When you finish you are signed in and ready to go.
+5. **Make your recovery key.** The first page you see has a red banner: *Set up your recovery key*. Follow it (Instance Admin →
+   Full Instance Backups → **Make the recovery key**) and **print the key it shows, or save the file, and keep it somewhere safe, away
+   from this computer and your backups**. It is shown only once. It is what lets an automatic backup bring back every warehouse's
+   encrypted settings after a disaster; without it the backups still restore your data, but the mail passwords and the like would
+   have to be entered again.
 
 Things the launcher window can do: stop and start the system, **Run as a LAN service** (so other computers and phones
 on your network can use it), **Copy shareable link** (to give to those people), update to a new version, and make,

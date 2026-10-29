@@ -49,6 +49,11 @@ return [
         'scope' => env('RI_BACKUP_SCOPE', 'database'),
     ],
 
+    // The instance's recovery PUBLIC key (App\Support\RecoveryKey), for an installer that made the key pair itself and keeps the private half: whole-instance
+    // backups seal every warehouse's key to it. Taken up the first time anything asks (App\Services\InstanceRecoveryKeys), only if the instance has no key yet.
+    // The private key must never be put here. Instance Admin (Full Instance Backups) or `instance:recovery-key generate` make one otherwise.
+    'recovery_public_key' => env('RI_RECOVERY_PUBLIC_KEY'),
+
     // Restore (first-run wizard). The upload is chunked like firmware; a proxy's request-body limit
     // (Caddy's is 64 MB, nginx's default 1 MB) is why chunks are small.
     'upload_chunk_bytes' => (int) env('RI_RESTORE_CHUNK_BYTES', 1_000_000),

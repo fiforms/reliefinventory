@@ -10,6 +10,7 @@ use App\Models\Control\ProvisioningCommand;
 use App\Models\Control\Warehouse;
 use App\Services\BackupService;
 use App\Services\InstanceBackupService;
+use App\Services\InstanceRecoveryKeys;
 use Illuminate\Console\Command;
 use Throwable;
 
@@ -51,6 +52,17 @@ class InstanceStatus extends Command
             $this->line($line);
         } catch (Throwable) {
             $this->line('Provisioner queue: (the control schema has not been migrated)');
+        }
+
+        try {
+            $recovery = app(InstanceRecoveryKeys::class)->payload();
+            $this->line('Recovery key: '.match ($recovery['state']) {
+                'none' => '<fg=red>none — automatic backups cannot restore the warehouses\' encrypted settings; `instance:recovery-key generate`</>',
+                'unconfirmed' => "<fg=yellow>{$recovery['fingerprint']}, but nobody confirmed storing the private half (`instance:recovery-key acknowledge`, or make a new one)</>",
+                default => "{$recovery['fingerprint']} (backups are sealed to it)",
+            });
+        } catch (Throwable) {
+            $this->line('Recovery key: (the control schema has not been migrated)');
         }
 
         $last = collect(glob($backups->dir().'/relief-instance-*.zip') ?: [])->sortByDesc(fn ($f) => filemtime($f))->first();

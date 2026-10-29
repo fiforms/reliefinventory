@@ -6,6 +6,7 @@
 namespace App\Console\Commands;
 
 use App\Models\Control\ProvisioningCommand;
+use App\Services\InstanceRecoveryKeys;
 use App\Services\Warehouses\Provisioner;
 use Illuminate\Console\Command;
 use Illuminate\Database\QueryException;
@@ -37,6 +38,18 @@ class ProvisionerWork extends Command
         }
         foreach ($provisioner->ensureInstanceSchemas($schemas) as $line) {
             $this->info($line);
+        }
+
+        // The one thing a new install must still do. Not secret (no key is ever logged), and the log is where an operator looks first.
+        try {
+            $state = app(InstanceRecoveryKeys::class)->state();
+            if ($state === 'none') {
+                $this->warn('No recovery key yet: automatic instance backups cannot restore the warehouses\' encrypted settings. Sign in as an instance admin (Instance Admin > Full Instance Backups) or run `php artisan instance:recovery-key generate`.');
+            } elseif ($state === 'unconfirmed') {
+                $this->warn('The recovery key was made but nobody confirmed storing it. If it was not printed or saved, make a new one (`instance:recovery-key generate --replace`).');
+            }
+        } catch (Throwable) {
+            // the control schema is not ready yet; ensureInstanceSchemas above normally makes it
         }
 
         // A command this process was in the middle of when it stopped: every step is idempotent, so run it again.
