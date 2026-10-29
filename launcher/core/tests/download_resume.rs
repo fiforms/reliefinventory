@@ -5,7 +5,7 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
 
-use ri_launcher_core::remote::client::{BackupApi, RemoteClient, RemoteError};
+use ri_launcher_core::remote::client::{BackupApi, RemoteClient, RemoteError, ServerKind};
 use ri_launcher_core::remote::identity::Keys;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -90,7 +90,7 @@ async fn serve(data: Vec<u8>, script: Vec<Behaviour>) -> Server {
 fn client(url: &str) -> (tempfile::TempDir, RemoteClient) {
     let d = tempfile::tempdir().unwrap();
     let keys = Arc::new(Keys::load_or_create(d.path()).unwrap());
-    (d, RemoteClient::new(url, keys))
+    (d, RemoteClient::new(url, keys, ServerKind::Warehouse))
 }
 
 fn data() -> Vec<u8> {

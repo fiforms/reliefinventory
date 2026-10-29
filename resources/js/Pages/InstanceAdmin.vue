@@ -263,7 +263,8 @@ async function submitDialog() {
 	try {
 		const { data } = await dialog.value.run(dialog.value.values, dialogPassword.value);
 		notice.value = data.message || 'Done.';
-		if (data.setup_code) result.value = { code: data.setup_code, url: data.setup_url, note: data.message };
+		if (data.code && data.address) pairCode.value = data;
+		else if (data.setup_code) result.value = { code: data.setup_code, url: data.setup_url, note: data.message };
 		else if (data.backup !== undefined) result.value = { removed: data };
 		else if (data.note) notice.value += ` ${data.note}`;
 		dialog.value = null;
@@ -434,6 +435,27 @@ function backUpInstanceNow(files) {
 const sizeOf = (bytes) => (bytes > 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GB` : bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
 const labelNames = { 'scheduled-daily': 'Scheduled (daily)', 'scheduled-weekly': 'Scheduled (weekly)', manual: 'Made by hand', premigrate: 'Before an upgrade' };
 const instWhen = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+
+// Computers (the RI Launcher) paired to the instance so they can take whole-instance backups. A new code is shown once.
+const pairCode = ref(null);   // { code, expires_at, address }
+
+function newBackupClient() {
+	pairCode.value = null;
+	openDialog({
+		title: 'Pair a computer for instance backups', button: 'Make a code',
+		text: 'Makes a one-time code, good for 15 minutes. In the RI Launcher, choose Remote backups, then pair with this address and the code, as an instance backup. That computer can then make and download backups of the WHOLE instance (every warehouse and every person\'s information) until you revoke it here.',
+		fields: [{ key: 'name', label: 'What it is (optional)', type: 'text' }],
+		run: (v, password) => axios.post('/json/instance/backups/clients/code', { name_hint: v.name || null, password }),
+	});
+}
+
+function revokeBackupClient(c) {
+	openDialog({
+		title: `Stop ${c.name}`, button: 'Revoke', danger: true,
+		text: `${c.name} can no longer make or download instance backups. Copies it already holds stay on that computer. It can be paired again with a new code.`,
+		run: (v, password) => axios.delete(`/json/instance/backups/clients/${c.id}`, { data: { password } }),
+	});
+}
 
 onMounted(() => {
 	loadWarehouses();
@@ -758,6 +780,32 @@ onUnmounted(() => {
 							(the upgrade ones go after the usual number of days). These sit on this machine: copy them elsewhere too (the RI Launcher can).
 							The provisioner works on one request at a time, so creating a warehouse waits while a big backup runs.
 						</p>
+					</section>
+
+					<section class="bg-white shadow rounded-lg p-6 space-y-3">
+						<h2 class="text-lg font-semibold">Computers that may take instance backups</h2>
+						<p class="text-sm text-gray-700">
+							The RI Launcher on a computer you pair here can make and download these backups by itself, on a schedule, to keep copies somewhere else. This is
+							separate from the per-warehouse Trust Console: it covers the <strong>whole instance</strong>, so pair only computers you trust with everyone's information.
+						</p>
+						<div v-if="pairCode" class="rounded border-2 border-green-500 bg-green-50 p-4 text-sm space-y-1">
+							<div>Server address: <span class="font-mono font-semibold">{{ pairCode.address }}</span></div>
+							<div>Code: <span class="font-mono text-xl font-bold tracking-widest">{{ pairCode.code }}</span></div>
+							<div class="text-xs text-gray-600">Shown once. Expires {{ instWhen(pairCode.expires_at) }}. In the Launcher: Remote backups → Pair → “Instance backup”.</div>
+						</div>
+						<div v-for="c in instBackups.clients" :key="c.id" class="border rounded p-3 text-sm flex flex-wrap items-center justify-between gap-3">
+							<div>
+								<span class="font-medium">{{ c.name }}</span>
+								<span class="ml-2 rounded px-2 py-0.5 text-xs" :class="c.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'">{{ c.status === 'approved' ? 'Paired' : 'Revoked' }}</span>
+								<div class="text-xs text-gray-500">
+									Paired {{ instWhen(c.approved_at) }}<span v-if="c.last_seen_at"> · last seen {{ instWhen(c.last_seen_at) }}<span v-if="c.last_seen_ip"> from {{ c.last_seen_ip }}</span></span><span v-else> · never connected</span>
+								</div>
+							</div>
+							<button v-if="c.status === 'approved'" @click="revokeBackupClient(c)"
+								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-red-600 hover:bg-red-500">Revoke…</button>
+						</div>
+						<p v-if="!instBackups.clients.length" class="text-gray-400 text-sm">No computer is paired yet.</p>
+						<PrimaryButton type="button" @click="newBackupClient">Pair a computer…</PrimaryButton>
 					</section>
 
 					<section class="bg-white shadow rounded-lg p-6 space-y-3">

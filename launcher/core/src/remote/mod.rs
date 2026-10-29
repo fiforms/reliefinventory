@@ -1,5 +1,6 @@
 //! Backups pulled from a *remote* Relief Inventory server this computer is paired with (a federation `backup_client`
-//! trust with the `operator.full_read` grant), kept in a local folder and made on a schedule.
+//! trust with the `operator.full_read` grant: one warehouse; or an instance trust with `instance.backup`: the whole instance,
+//! see [`client::ServerKind`]), kept in a local folder and made on a schedule.
 //!
 //! This is the other direction from `crate::backups`, which copies backups of the Relief Inventory *running on this
 //! computer*. Nothing here touches Docker or the Linux layer, so it works on any OS and whether or not a local
@@ -26,7 +27,7 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
-use client::{BackupApi, RemoteClient, RemoteError};
+use client::{BackupApi, RemoteClient, RemoteError, ServerKind};
 use config::{RemoteConfig, RemoteServer, Running, ServerState, StateFile};
 use runner::{LocalBackup, Outcome, RunOptions};
 use schedule::{Frequency, Schedule};
@@ -40,6 +41,8 @@ pub struct ServerView {
     pub id: String,
     pub name: String,
     pub url: String,
+    /// One warehouse, or the whole instance.
+    pub kind: ServerKind,
     /// The server's key fingerprint, for comparing with the Trust Console.
     pub fingerprint: String,
     pub paired_at: i64,
@@ -129,6 +132,7 @@ impl RemoteBackups {
                     id: s.id.clone(),
                     name: s.name.clone(),
                     url: s.url.clone(),
+                    kind: s.kind,
                     fingerprint: identity::fingerprint(&s.server_public_key).unwrap_or_default(),
                     paired_at: s.paired_at,
                     schedule: s.schedule,
@@ -159,16 +163,17 @@ impl RemoteBackups {
         RemoteConfig::load(&self.dir).get(id).map(|s| s.backup_dir(&self.dir))
     }
 
-    /// Pair with a server using a code from its Trust Console ("Backup client"). Pairing again (after the server
-    /// un-paired us, say) keeps the settings and the folder.
-    pub async fn pair(&self, address: &str, code: &str, name: Option<&str>) -> Result<Paired, RemoteError> {
+    /// Pair with a server using a code from its Trust Console ("Backup client"), or, for [`ServerKind::Instance`], from Instance Admin
+    /// (Full Instance Backups). Pairing again (after the server un-paired us, say) keeps the settings and the folder. The same address can be
+    /// paired once as a warehouse and once as the instance: they are different servers here, told apart by kind.
+    pub async fn pair(&self, address: &str, code: &str, name: Option<&str>, kind: ServerKind) -> Result<Paired, RemoteError> {
         let url = client::normalize_server_url(address).map_err(RemoteError::Validation)?;
         client::check_transport(&url).map_err(RemoteError::Validation)?;
         if code.trim().is_empty() {
             return Err(RemoteError::Validation("Enter the pairing code.".into()));
         }
         let host = gethostname::gethostname().to_string_lossy().into_owned();
-        let api = RemoteClient::new(&url, self.keys.clone());
+        let api = RemoteClient::new(&url, self.keys.clone(), kind);
         let reply = api.pair(code.trim(), &format!("RI Launcher on {host}")).await?;
         if reply.server.uuid.is_empty() || identity::unb64(&reply.server.public_key).is_none() {
             return Err(RemoteError::Http(201, "the server's answer didn't identify it".into()));
@@ -177,15 +182,21 @@ impl RemoteBackups {
         // What it grants us is the first thing to check: a pairing code made without the backup grant pairs fine and then
         // fails on every call, which is a confusing way to find out.
         let warning = match api.grants().await {
-            Ok(g) if g.iter().any(|p| p == client::GRANT) => None,
-            Ok(_) => Some("Paired, but this server did not allow backups. Ask its administrator to turn on \"Backup and reporting operator\" for this computer in the Trust Console.".to_string()),
+            Ok(g) if g.iter().any(|p| p == kind.grant()) => None,
+            Ok(_) => Some(match kind {
+                ServerKind::Warehouse => "Paired, but this server did not allow backups. Ask its administrator to turn on \"Backup and reporting operator\" for this computer in the Trust Console.".to_string(),
+                ServerKind::Instance => "Paired, but this server did not allow instance backups. Ask an instance administrator to pair this computer again from Instance Admin.".to_string(),
+            }),
             Err(e) => Some(format!("Paired, but could not confirm what the server allows: {e}")),
         };
 
         let _g = self.files.lock().unwrap();
         let mut cfg = RemoteConfig::load(&self.dir);
-        let label = name.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| reply.server.name.clone());
-        let id = match cfg.servers.iter_mut().find(|s| s.server_uuid == reply.server.uuid) {
+        let label = name.map(str::trim).filter(|n| !n.is_empty()).map(str::to_string).unwrap_or_else(|| match kind {
+            ServerKind::Warehouse => reply.server.name.clone(),
+            ServerKind::Instance => format!("{} (whole instance)", reply.server.name),
+        });
+        let id = match cfg.servers.iter_mut().find(|s| s.server_uuid == reply.server.uuid && s.kind == kind) {
             Some(existing) => {
                 existing.url = url;
                 existing.server_public_key = reply.server.public_key.clone();
@@ -202,6 +213,7 @@ impl RemoteBackups {
                     name: label,
                     url,
                     server_uuid: reply.server.uuid.clone(),
+                    kind,
                     server_public_key: reply.server.public_key.clone(),
                     paired_at: chrono::Utc::now().timestamp(),
                     // A paired backup computer is for backing up: daily at 2 a.m. unless changed.
@@ -307,7 +319,7 @@ impl RemoteBackups {
     /// Run one backup now and record what happened.
     pub async fn run_now(self: &Arc<Self>, id: &str) -> Result<Outcome, RemoteError> {
         let server = RemoteConfig::load(&self.dir).get(id).cloned().ok_or_else(|| RemoteError::Local("That server isn't in the list.".into()))?;
-        let api = RemoteClient::new(&server.url, self.keys.clone());
+        let api = RemoteClient::new(&server.url, self.keys.clone(), server.kind);
         self.execute(&server, &api, &RunOptions::default()).await
     }
 
@@ -411,6 +423,7 @@ mod tests {
             name: "Statesville".into(),
             url: "https://ri.example.org".into(),
             server_uuid: "srv".into(),
+            kind: ServerKind::Warehouse,
             server_public_key: identity::b64(&[7u8; 32]),
             paired_at: 1,
             schedule,

@@ -147,3 +147,32 @@ holds `operator.full_read`. It then uses `/api/federation/v1/backups` (session t
 
 The zip never contains `APP_KEY` (see `scripts/BACKUPS.md`), but a database backup does hold password hashes and personal data, which is
 why this grant is rated high risk.
+
+## Instance-level trust: whole-instance backups (`/api/instance/v1`, `instance.backup`)
+
+Everything above is per **warehouse** (its trusts, grants and codes live in that warehouse's schema). One thing belongs to the whole
+instance: a backup of every warehouse and the shared databases (`InstanceBackupService`). A computer that may take those is an
+**instance trust** (`App\Models\Control\InstanceTrust`, control schema), made by an **instance administrator** on Instance Admin
+(Full Instance Backups → *Pair a computer*), and it does not depend on any one warehouse. Its one permission is `instance.backup`
+(`App\Support\InstancePermission`, deliberately not in the warehouse catalogue, so a Trust Console can never grant it).
+
+It is the same protocol: the same Ed25519 keys, the same 10-character code (15 minutes, one use, only its hash stored), the same pairing
+proof (`ri-pair-v1\n<code>\n<public key>\n<uuid>`), the same signed-request canonical string, clock window and one-use nonces
+(`VerifiesSignedRequests`, shared with the warehouse middleware), and the same `RIS`-style sessions (here `RII-…`, from `POST /session`).
+Only the table and the paths differ, and a warehouse trust is nothing here (nor the reverse; a test pins it):
+
+| | |
+|---|---|
+| `POST /api/instance/v1/pair` | body as `federation/v1/pair` but `kind` must be `instance_backup` (no `base_url`); answers `{server, trust_id, permissions: ["instance.backup"]}` |
+| `POST /api/instance/v1/session` | signed → `{session_token, expires_in}` |
+| `GET /api/instance/v1/grants` | `{permissions}` |
+| `GET\|POST /api/instance/v1/backups`, `GET /backups/{id}`, `GET /backups/{id}/download` | the same shapes as the warehouse backups (`Backup` in the OpenAPI file); `scope` is `database` or `full` (every warehouse's files) |
+
+Ids: a request in flight is its small provisioning id; a finished zip is its 14-digit stamp (`YmdHis` of its file name,
+`relief-instance-<stamp>-<database|full>[-label].zip`). Both reach the same file once the request is done, so the id returned when asking
+still downloads. `POST /backups` writes the fixed `backup-now` / `backup-now-files` request for the provisioner (the web container cannot
+make the zip: it needs the database administrator's password) and answers `202` with the request as a `queued` backup; `409` carries the one
+already being made. A zip never holds a warehouse key. Served at the instance's address, through the default warehouse's front door like
+`/api/instance/update`. 401 = unknown, revoked or badly signed (the Launcher un-pairs itself); revoking is immediate (live lookup, session epoch).
+The Launcher pairs with `ri-launcher remote pair <address> <code> --instance` or the *Whole instance* choice in its pair form.
+

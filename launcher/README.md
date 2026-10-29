@@ -70,6 +70,10 @@ Pairs this computer with *another* Relief Inventory server and keeps copies of i
 federation trust system (`rstation/FEDERATION_AUTH.md`): an administrator makes a pairing code in the server's **Trust Console** (kind
 **Backup client (RI Launcher)**, grant "Backup and reporting operator"), you type its address and the code here, and from then on this computer —
 and nothing else — may ask that server to make a backup and download it. Nothing here needs Docker or a local Relief Inventory.
+- **Warehouse or whole instance:** pairing asks which kind the code is for. *One warehouse* (the Trust Console's *Backup client*) backs up that warehouse;
+  *The whole instance* (Instance Admin → Full Instance Backups → *Pair a computer*, `ri-launcher remote pair <address> <code> --instance`) backs up every
+  warehouse and the shared databases (`/api/instance/v1`, `instance.backup`; it never includes warehouse keys). The same address can be both, as two entries
+  with their own schedule and folder; instance copies are named `relief-instance-….zip`.
 - **Schedule** per server: off, hourly, daily or weekly at a local time; what to copy (database, or database + uploaded files); how many copies to keep
   (older ones are deleted after each good backup); and which folder (default `remote-backups/<id>` in the data dir — pick a USB drive if you like).
   A backup runs as soon as a schedule is turned on; a computer that was off at the scheduled time catches up when it starts (once, not once per missed

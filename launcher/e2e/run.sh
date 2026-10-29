@@ -6,7 +6,8 @@
 #
 #   launcher/e2e/run.sh
 #
-# Needs a migrated `test_reliefinventory` database (scripts/TESTING.md), `mariadb-dump`, `unzip`, and a built CLI
+# Needs a migrated `test_reliefinventory` database with its control schema (scripts/TESTING.md; run the Pest suite once so the test
+# warehouse's key exists under storage/framework/testing), `mariadb-dump`, `unzip`, and a built CLI
 # (`cd launcher && cargo build -p ri-launcher-core`). It makes rows in the test DB and removes them on exit;
 # bootstrap.php (shared with the print client's e2e) refuses to run against any other database.
 set -u
@@ -18,12 +19,18 @@ WORK=$(mktemp -d)
 URL="http://127.0.0.1:$PORT"
 
 export DB_DATABASE=test_reliefinventory PHP_CLI_SERVER_WORKERS=4 BROADCAST_CONNECTION=log
+# The control and accounts schemas are named after DB_DATABASE unless .env says otherwise; pin them so a real one is never touched.
+export RI_CONTROL_DATABASE=test_reliefinventory_control RI_ACCOUNTS_DATABASE=test_reliefinventory_accounts RI_RUNTIME=docker
+# The test warehouse's key and files, where phpunit.xml puts them (the Pest suite creates them): never the dev instance's.
+export RI_WAREHOUSE_STORAGE_DIR="$ROOT/storage/framework/testing/warehouses" RI_WAREHOUSE_SECRETS_DIR="$ROOT/storage/framework/testing/warehouse-secrets"
 export RI_BACKUP_DIR="$WORK/server-backups"
 # The app starts `php artisan backup:run` as a detached process, which must see the same disposable database. Pin the
 # environment in a wrapper rather than trusting inheritance through the web server (a miss would point it at real data).
 cat >"$WORK/php-test" <<WRAP
 #!/bin/sh
 export DB_DATABASE=test_reliefinventory BROADCAST_CONNECTION=log RI_BACKUP_DIR="$RI_BACKUP_DIR"
+export RI_CONTROL_DATABASE=test_reliefinventory_control RI_ACCOUNTS_DATABASE=test_reliefinventory_accounts RI_RUNTIME=docker
+export RI_WAREHOUSE_STORAGE_DIR="$RI_WAREHOUSE_STORAGE_DIR" RI_WAREHOUSE_SECRETS_DIR="$RI_WAREHOUSE_SECRETS_DIR"
 exec php "\$@"
 WRAP
 chmod +x "$WORK/php-test"
@@ -33,6 +40,7 @@ pids=()
 cleanup() {
   for p in "${pids[@]}"; do kill "$p" 2>/dev/null; done
   php "$HERE/step_trust.php" cleanup 2>&1 | tail -1
+  php "$HERE/step_instance.php" cleanup 2>&1 | tail -1
   echo "(files kept in $WORK)"
 }
 trap cleanup EXIT
@@ -65,7 +73,7 @@ tail -1 "$WORK/b1.log"
 F1=$(ls "$WORK"/data/remote-backups/"$ID"/relief-backup-*.zip | head -1); [ -f "$F1" ] || fail "no file saved"
 unzip -tq "$F1" >/dev/null || fail "saved file is not a valid zip"
 unzip -l "$F1" | grep -q "database/db.sql" || fail "zip has no database dump"
-SRV=$(ls "$RI_BACKUP_DIR"/relief-backup-*.zip | head -1)
+SRV=$(ls "$RI_BACKUP_DIR"/warehouses/*/relief-backup-*.zip | head -1)   # each warehouse has its own backup folder
 [ "$(sha256sum < "$F1")" = "$(sha256sum < "$SRV")" ] || fail "local copy differs from the server's file"
 [ ! -w "$F1" ] || fail "the copy should be read-only"
 ok "backup downloaded, valid, identical to the server's, read-only"
@@ -98,4 +106,36 @@ grep -q "Its id here is $ID" "$WORK/repair.log" || fail "re-pairing should keep 
 r list | grep -q "keep 1" || fail "settings were lost on re-pairing"
 r backup "$ID" >/dev/null 2>&1 || fail "backup after re-pair"
 ok "re-pairing keeps the server entry and works again"
+# 7. the same computer, paired to the WHOLE instance: a different trust, table and API, the same client
+php "$HERE/step_instance.php" cleanup >/dev/null 2>&1 || fail "the instance step could not run (is the control schema migrated? see scripts/TESTING.md)"
+ICODE=$(php "$HERE/step_instance.php" code) || fail "could not create an instance code"
+out=$(r pair "$URL" "$ICODE" --instance --name "E2E instance" 2>&1) || fail "instance pairing: $out"
+echo "$out" | grep -q "warning" && fail "an instance code should grant instance backups, got: $out"
+IID=$(echo "$out" | sed -n 's/.*Its id here is \([0-9a-f]*\)\..*/\1/p'); [ -n "$IID" ] && [ "$IID" != "$ID" ] || fail "the instance pairing should be its own entry, got: $out"
+r list | grep -q "E2E instance" || fail "the instance server is not listed"
+ok "paired to the instance as a second, separate entry"
+
+# the provisioner is a separate container in real life; here a loop stands in for it
+( while true; do php "$HERE/step_instance.php" provision >/dev/null 2>&1; sleep 1; done ) & pids+=($!)
+r backup "$IID" >"$WORK/i1.log" 2>&1 || fail "instance backup: $(cat "$WORK/i1.log")"
+tail -1 "$WORK/i1.log"
+F2=$(ls "$WORK"/data/remote-backups/"$IID"/relief-instance-*.zip | head -1); [ -f "$F2" ] || fail "no instance file saved"
+unzip -tq "$F2" >/dev/null || fail "saved instance file is not a valid zip"
+unzip -l "$F2" | grep -q "instance/dump.sql" || fail "instance zip has no dump"
+SRV2=$(ls "$RI_BACKUP_DIR"/instance/relief-instance-*.zip | head -1)
+[ "$(sha256sum < "$F2")" = "$(sha256sum < "$SRV2")" ] || fail "local instance copy differs from the server's file"
+ok "instance backup requested, made by the stand-in provisioner, downloaded, identical to the server's"
+php "$HERE/step_instance.php" audit | grep -q instance.backup_requested || fail "no instance.backup_requested audit row"
+php "$HERE/step_instance.php" audit | grep -q instance.backup_downloaded || fail "no instance.backup_downloaded audit row"
+ok "the instance audit log names the request and the download"
+
+# the warehouse pairing (and its folder) was not touched by any of that
+r backup "$ID" >/dev/null 2>&1 || fail "the warehouse pairing stopped working"
+ok "the warehouse pairing still works alongside"
+
+php "$HERE/step_instance.php" revoke >/dev/null
+r backup "$IID" >"$WORK/i2.log" 2>&1 && fail "a revoked instance trust must not get a backup"
+grep -qi "un-paired" "$WORK/i2.log" || fail "wrong message for instance revocation: $(cat "$WORK/i2.log")"
+r backup "$ID" >/dev/null 2>&1 || fail "revoking the instance trust must not affect the warehouse one"
+ok "revoking the instance trust stops only it"
 echo "ALL PASSED"

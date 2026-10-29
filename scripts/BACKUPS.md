@@ -216,6 +216,14 @@ every request and download is in the trust's audit log. Revoking the trust in th
 ("Backups"); the client: `launcher/README.md` ("Remote backups tab"). The zip never holds `APP_KEY`, but it does hold password hashes and
 personal data, which is why the grant is rated high risk — pair only a computer you control.
 
+**The whole instance** (every warehouse and the shared databases) is a separate pairing: an **instance administrator** makes a code on
+**Instance Admin → Full Instance Backups → Pair a computer**, and the launcher pairs with it as *The whole instance* (`ri-launcher remote pair <address>
+<code> --instance`). That is an **instance trust** in the control schema (`instance_trusts`, one permission `instance.backup`), independent of any
+warehouse and of every warehouse's Trust Console; the same computer can hold both kinds, as separate entries with their own schedule and folder. The
+endpoints are `/api/instance/v1/…` (`InstanceBackupApiController`, spec in `rstation/FEDERATION_AUTH.md`), and asking for a backup writes the fixed
+`backup-now` request the provisioner answers. Pairings are listed and revoked on the same Instance Admin tab; every pairing, request and download is
+in `instance_audit_log`. These zips never hold the warehouse keys, so keep those separately (see "Whole-instance backups" above).
+
 ## Restoring
 
 **Onto a brand-new instance — the first-run wizard** (`/install` → "Restore from a backup"). Creating or emptying an instance

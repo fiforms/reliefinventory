@@ -8,7 +8,9 @@ namespace App\Http\Controllers;
 use App\Http\Controllers\Concerns\ConfirmsPassword;
 use App\Models\Control\InstanceAuditLog;
 use App\Models\Control\InstanceBackupSchedule;
+use App\Models\Control\InstanceTrust;
 use App\Models\Control\ProvisioningCommand;
+use App\Services\Federation\InstanceTrustService;
 use App\Services\InstanceBackupService;
 use App\Services\Warehouses\ProvisioningClient;
 use Illuminate\Http\JsonResponse;
@@ -49,7 +51,40 @@ class InstanceBackupController extends Controller
             'backups' => $zips,
             'activity' => $activity ? ['command' => $activity->command, 'status' => $activity->status, 'message' => $activity->message, 'finished_at' => $activity->finished_at?->toIso8601String()] : null,
             'working' => ProvisioningCommand::whereIn('command', self::BACKUP_COMMANDS)->whereIn('status', ['pending', 'running'])->exists(),
+            'address' => request()->getSchemeAndHttpHost(),
+            'clients' => InstanceTrust::orderByDesc('id')->get()->map(fn (InstanceTrust $t) => [
+                'id' => $t->id, 'name' => $t->name, 'status' => $t->status,
+                'approved_at' => $t->approved_at?->toIso8601String(), 'revoked_at' => $t->revoked_at?->toIso8601String(),
+                'last_seen_at' => $t->last_seen_at?->toIso8601String(), 'last_seen_ip' => $t->last_seen_ip,
+            ])->values(),
         ]);
+    }
+
+    /**
+     * A one-time code (15 minutes, shown once, only its hash kept) for a computer to pair as an InstanceTrust that may take whole-instance
+     * backups: the RI Launcher's "Pair" asks for the instance's address and this code.
+     */
+    public function pairingCode(Request $request): JsonResponse
+    {
+        $data = $request->validate(['name_hint' => 'nullable|string|max:100']);
+
+        return $this->confirmed($request, 'instance-trust-code', function () use ($data) {
+            $this->requireDocker();
+            [$code, $row] = InstanceTrustService::createPairingCode($data['name_hint'] ?? null, Auth::user()->email);
+
+            return ['code' => $code, 'expires_at' => $row->expires_at->toIso8601String(), 'address' => request()->getSchemeAndHttpHost()];
+        });
+    }
+
+    /** Stop a paired computer at once (its next request is a 401 and the Launcher asks to be paired again). */
+    public function revokeClient(Request $request, int $id): JsonResponse
+    {
+        return $this->confirmed($request, 'instance-trust-revoke', function () use ($id) {
+            $trust = InstanceTrust::find($id) ?? throw new RuntimeException('That computer is not paired.');
+            InstanceTrustService::revoke($trust, Auth::user()->email);
+
+            return ['message' => "{$trust->name} can no longer make instance backups."];
+        });
     }
 
     public function updateSchedule(Request $request): JsonResponse
