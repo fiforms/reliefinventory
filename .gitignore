@@ -71,3 +71,7 @@ rstation/product/image/debs/
 /launcher/node_modules
 /launcher/ui/dist
 /launcher/src-tauri/gen
+
+# Personal productivity dashboard (not project files)
+/TASKS.md
+/dashboard.html

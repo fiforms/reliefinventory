@@ -20,11 +20,13 @@ use App\Http\Middleware\ResolveWarehouse;
 use App\Http\Middleware\TrackSessionActivity;
 use App\Http\Middleware\TrustAuth;
 use App\Services\Warehouses\WarehouseContext;
+use Illuminate\Auth\AuthenticationException;
 use Illuminate\Contracts\Auth\Middleware\AuthenticatesRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Middleware\AddLinkHeadersForPreloadedAssets;
+use Illuminate\Http\Request;
 use Illuminate\Routing\Exceptions\InvalidSignatureException;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -75,5 +77,31 @@ return Application::configure(basePath: dirname(__DIR__))
             if ($request->routeIs('verification.verify')) {
                 return response()->view('errors.expired-verification-link', [], 403);
             }
+        });
+
+        // A page's /json call after its session timed out would otherwise
+        // get a bare "Unauthenticated." 401 that pages show as an error.
+        // Mark it so resources/js/bootstrap.js can send the browser to the
+        // login page, and remember the page it was on so logging in returns
+        // there. (Other 401s — a wrong PIN, the driver portal — carry no
+        // marker and stay ordinary errors; /api is for devices, not pages.)
+        $exceptions->render(function (AuthenticationException $e, Request $request) {
+            if (! $request->expectsJson() || $request->is('api/*')) {
+                return null;
+            }
+
+            if ($request->hasSession()) {
+                $referer = $request->headers->get('referer');
+                if ($referer && parse_url($referer, PHP_URL_HOST) === $request->getHost()) {
+                    $path = parse_url($referer, PHP_URL_PATH) ?: '/';
+                    $query = parse_url($referer, PHP_URL_QUERY);
+                    redirect()->setIntendedUrl($path.($query ? '?'.$query : ''));
+                }
+                $request->session()->flash('status', 'Your session timed out. Please log in again.');
+            }
+
+            return response()
+                ->json(['message' => 'Your session timed out. Please log in again.'], 401)
+                ->header('X-RI-Login-Required', '1');
         });
     })->create();

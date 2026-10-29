@@ -17,6 +17,7 @@ const confirming = ref('') // 'uninstall' | 'restore' | ''
 const keepData = ref(true)
 const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
 const restoreFile = ref('')
+const understood = ref(false) // the person ticked the pre-install notice (Install stays disabled until they do)
 const mockTab = new URLSearchParams(location.search).get('mock') || ''
 const tab = ref(mockTab.startsWith('image') ? 'image' : mockTab.startsWith('remote') ? 'remote' : 'app') // 'app' | 'backups' | 'remote' | 'image'
 const form = reactive({ hostname: '', port: 8080, timezone: '' })
@@ -62,6 +63,16 @@ onBeforeUnmount(() => clearTimeout(timer))
 
 const state = computed(() => summary.value?.state)
 const lan = computed(() => summary.value?.mode === 'lan')
+const terminalExamples = [
+    { what: 'List every artisan command', cmd: 'artisan list' },
+    { what: 'Make someone an administrator', cmd: 'artisan user:promote --email=you@example.com' },
+    { what: 'Reset someone’s password', cmd: 'artisan user:update-password --email=you@example.com' },
+    { what: 'Open a MariaDB prompt as the database administrator', cmd: 'mysql' },
+    { what: 'Run one SQL statement', cmd: 'mysql -e "show databases"' },
+    { what: 'See what is running', cmd: 'docker compose ps' },
+    { what: 'Follow the web application’s log (Ctrl+C to stop)', cmd: 'docker compose logs -f --tail 100 app' },
+    { what: 'Open a shell inside the web application’s container', cmd: 'docker compose exec app sh' },
+]
 const mac = computed(() => summary.value?.os === 'macos')
 const installing = computed(() => install.value?.running)
 const needsReboot = computed(() => install.value?.needs_reboot && !install.value?.running)
@@ -258,13 +269,33 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     This sets up everything on this computer: a small Linux layer, Docker Engine and Relief Inventory itself. It
                     downloads roughly 1 GB, takes 10–20 minutes, and asks for administrator permission. Windows may need to restart once.
                 </p>
+                <div class="banner bad notice" role="note">
+                    <p><strong>Before you install: what this is for</strong></p>
+                    <p>
+                        This installs a complete copy of Relief Inventory <strong>on this computer</strong>. The software is normally
+                        designed to run on a web server in the cloud. Running it here does <strong>not</strong> provide HTTPS security,
+                        and people outside this local network cannot reach it unless a proxy server is set up.
+                    </p>
+                    <p>
+                        <strong>Never have more than one live instance in use for the same warehouse.</strong> The two copies' data will
+                        diverge, and there is <strong>no way to merge</strong> the changes made in each.
+                    </p>
+                    <p>
+                        If you plan to restore a backup here from another service, first make sure that warehouse (or warehouses) on the
+                        other instance is <strong>DISABLED</strong>, so nobody can keep entering data there.
+                    </p>
+                    <label class="check-row">
+                        <input type="checkbox" v-model="understood" />
+                        I understand, and no other live instance is being used for this warehouse.
+                    </label>
+                </div>
                 <div v-if="blocked" class="banner bad" role="alert">
                     <p class="pre">{{ blocked }}</p>
                     <button type="button" @click="checkAgain" :disabled="!!busy">Check again</button>
                 </div>
                 <p v-if="installError" class="banner bad" role="alert">{{ installError }}</p>
                 <div class="actions">
-                    <button class="primary" @click="doInstall" :disabled="!!busy || !!blocked">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
+                    <button class="primary" @click="doInstall" :disabled="!!busy || !!blocked || !understood">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
                 </div>
             </template>
         </section>
@@ -342,6 +373,32 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
         </section>
 
         <!-- Maintenance -->
+        <!-- Command line -->
+        <section v-if="state !== 'not_installed'" class="card">
+            <div class="who">
+                <div>
+                    <h2>Command line</h2>
+                    <p class="muted small">
+                        For administrators: opens a terminal in the folder with the Docker compose file{{ mac || !linux ? ' inside the Linux layer' : '' }}, where the commands below work. <code>artisan</code> and <code>mysql</code> are shortcuts set up for you; they run inside the right container.
+                        {{ state === 'running' ? '' : 'Start Relief Inventory first.' }}
+                    </p>
+                </div>
+                <div class="btns">
+                    <button @click="api.openTerminal().catch(fail)" :disabled="!!busy || state !== 'running'">Open Terminal</button>
+                </div>
+            </div>
+            <details>
+                <summary>Example commands</summary>
+                <ul class="rows small">
+                    <li v-for="c in terminalExamples" :key="c.cmd">
+                        <span class="grow">{{ c.what }}<br /><code>{{ c.cmd }}</code></span>
+                        <button class="quiet" @click="copy(c.cmd, 'Command')">Copy</button>
+                    </li>
+                </ul>
+                <p class="muted small">Replace <code>you@example.com</code> with the person's login email. <code>app</code> is the web application, <code>db</code> is the MariaDB database; <code>docker compose ps</code> lists them all. Be careful with the database: changes made by hand are not undone by anything but a backup restore.</p>
+            </details>
+        </section>
+
         <section v-if="state !== 'not_installed'" class="card">
             <h2>Maintenance</h2>
             <label v-if="autostart !== null" class="check-row">
@@ -425,6 +482,7 @@ code { font-size: 13px; overflow-wrap: anywhere; }
 .banner.good { background: var(--ok-bg); color: var(--ok-text); }
 .banner.bad { background: var(--bad-bg); color: var(--bad-text); }
 .banner p { margin: 0 0 8px; }
+.banner.notice label.check-row { font-weight: 600; margin: 4px 0 0; }
 .banner > button.quiet { margin-left: 8px; }
 
 form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }

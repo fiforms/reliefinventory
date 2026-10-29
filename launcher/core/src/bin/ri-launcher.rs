@@ -25,7 +25,11 @@ enum Cmd {
     /// Check this computer can run it
     Preflight,
     /// Install everything (needs administrator rights on Windows; may ask for a restart — run it again after)
-    Install,
+    Install {
+        /// Skip the confirmation question (the notice is still printed)
+        #[arg(long)]
+        yes: bool,
+    },
     /// Start Relief Inventory and the LAN proxy, and stay running until Ctrl+C
     Run,
     /// Start in the background of this command only (the proxy ends when this command does — prefer `run`)
@@ -146,8 +150,44 @@ fn data_dir(cli: &Cli) -> PathBuf {
 
 fn backend(dir: &std::path::Path) -> ri_launcher_core::DefaultBackend {
     let exe = std::env::current_exe().unwrap_or_default();
-    let resume = format!("\"{}\" install", exe.display());
+    let resume = format!("\"{}\" install --yes", exe.display());
     ri_launcher_core::default_backend(dir, exe, Some(resume))
+}
+
+const INSTALL_NOTICE: &str = "\
+BEFORE YOU INSTALL: WHAT THIS IS FOR
+
+This installs a complete copy of Relief Inventory on THIS computer. The software
+is normally designed to run on a web server in the cloud. Running it here does NOT
+provide HTTPS security, and people outside this local network cannot reach it
+unless a proxy server is set up.
+
+NEVER have more than one live instance in use for the same warehouse. The two
+copies' data will diverge, and there is NO WAY to merge the changes made in each.
+
+If you plan to restore a backup here from another service, first make sure that
+warehouse (or warehouses) on the other instance is DISABLED, so nobody can keep
+entering data there.
+";
+
+/// Print the pre-install notice and, unless `--yes`, make the person confirm at a terminal.
+fn confirm_install(yes: bool) {
+    println!("{INSTALL_NOTICE}");
+    if yes {
+        return;
+    }
+    if !std::io::IsTerminal::is_terminal(&std::io::stdin()) {
+        eprintln!("error: not a terminal; read the notice above and re-run with --yes to confirm it");
+        std::process::exit(1);
+    }
+    print!("Type yes if you understand and no other live instance is used for this warehouse: ");
+    let _ = std::io::Write::flush(&mut std::io::stdout());
+    let mut line = String::new();
+    let _ = std::io::stdin().read_line(&mut line);
+    if !line.trim().eq_ignore_ascii_case("yes") {
+        eprintln!("Not installed.");
+        std::process::exit(1);
+    }
 }
 
 fn die<T, E: std::fmt::Display>(r: Result<T, E>) -> T {
@@ -167,7 +207,10 @@ async fn main() {
     match cli.command {
         Cmd::Status => println!("{}", serde_json::to_string_pretty(&launcher.summary().await).unwrap()),
         Cmd::Preflight => println!("{:?}", die(launcher.platform().preflight().await)),
-        Cmd::Install => match die(launcher.install().await) {
+        Cmd::Install { yes } => match {
+            confirm_install(yes);
+            die(launcher.install().await)
+        } {
             InstallOutcome::Done => println!("Installed. Run `ri-launcher run` to start it."),
             InstallOutcome::NeedsReboot => println!("Restart the computer, then run `ri-launcher install` again to continue."),
         },
