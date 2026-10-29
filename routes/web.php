@@ -341,6 +341,14 @@ Route::group(['prefix' => 'json/instance', 'middleware' => ['auth', 'instance-ad
     Route::post('/update', [SystemController::class, 'update']);
     Route::put('/offline-mode', [SystemController::class, 'saveOfflineMode']);
 
+    // Full Instance Backups: the schedule, the list, "back up now" (a request to the provisioner) and download. Writes re-ask for the password.
+    Route::get('/backups', [InstanceBackupController::class, 'index']);
+    Route::get('/backups/{name}/download', [InstanceBackupController::class, 'download'])->where('name', '[A-Za-z0-9._-]+');
+    Route::middleware('throttle:20,1')->group(function () {
+        Route::put('/backups/schedule', [InstanceBackupController::class, 'updateSchedule']);
+        Route::post('/backups', [InstanceBackupController::class, 'store']);
+    });
+
     // Warehouse management. Every write re-asks for the signed-in person's password (InstanceWarehouseController::guarded).
     Route::get('/warehouses', [InstanceWarehouseController::class, 'index']);
     Route::middleware('throttle:20,1')->group(function () {

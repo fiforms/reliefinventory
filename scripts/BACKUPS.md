@@ -182,6 +182,29 @@ backup folder can be named. The snapshot is never consumed. The restore replaces
 newer zips are no longer *listed*; they stay on disk and `backup:prune` removes `relief-backup-*.zip` files with no record after `RI_BACKUP_KEEP_DAYS`.
 Snapshots sit on the same machine: they guard against mistakes, not hardware loss — see the Launcher section for off-box copies.
 
+### Whole-instance backups (Docker): schedule, list, back up now
+
+**Instance Admin → Full Instance Backups** (`/setup/instance`, instance administrators; `InstanceBackupController`) is the schedule, the list, *Back up now*
+and download for the one-zip backup of the control + accounts + every warehouse schema (`InstanceBackupService`, MULTI_WAREHOUSE.md §11). Only the
+`provisioner` container holds the database administrator's password, so the web container never makes the zip: it writes a **fixed** request into
+`provisioning_commands` (`backup-now`, `backup-now-files`; the scheduler writes `backup-sched`) — no warehouse, no parameters, no keys — and the provisioner
+decides what to do (`Provisioner::run`). The schedule is the control table `instance_backup_schedule` (one row, **off until turned on**):
+
+| | Made | Kept |
+|---|---|---|
+| daily | first check after `daily_hour`, once a day (database only unless `daily_with_files`) | newest `daily_keep` (7) |
+| weekly | on `weekly_dow`, or the next check once the last is over a week old (off by default; `weekly_with_files`) | newest `weekly_keep` (4) |
+
+The scheduler container runs `instance:backup --scheduled` every hour: it reads the row, and only when something is due asks the provisioner
+(`SnapshotRules`, shared with the warehouse snapshots, decides). The provisioner re-checks, writes `relief-instance-<stamp>-<database|full>-scheduled-daily|weekly.zip`
+into `<backup dir>/instance/`, records the outcome and the last *success* on the row (a failure leaves the backup due, so the next hour tries again), and prunes:
+the newest `daily_keep` scheduled zips (a weekly one is also that day's daily) plus the newest `weekly_keep` weekly ones. Zips made by hand, before an upgrade
+(`premigrate`, aged out after `RI_BACKUP_KEEP_DAYS`) or named by an operator are never pruned by the schedule. **Scheduled and requested zips never hold the
+warehouse keys** (that needs a passphrase typed at the server: `instance:backup --files --with-keys`). The provisioner works on one request at a time, so creating a
+warehouse waits while a big backup runs. The list is read from file names, so it works even when the web container can't read the zips (they are `0600`); the Download
+button appears only for a zip it can read, and deleting one is done at the server. Every change on that page re-asks for the signed-in person's password and is
+written to `instance_audit_log`.
+
 ## Off-site copies pulled by the RI Launcher (federation `backup_client`)
 
 A desktop computer running the RI Launcher can keep its own scheduled copies of this server's backups, without anyone logging in to

@@ -7,6 +7,9 @@
 #           hourly / daily / weekly / monthly tiers and how many of each to keep) decides whether one is due, so most hours make nothing.
 #           Zips go in the warehouse's own folder $RI_BACKUP_DIR/warehouses/<id>/ (default /backups), one warehouse at a time
 #
+#           and the whole-instance backup (Instance Admin > Full Instance Backups: off until an instance admin turns it on) is asked of the
+#           provisioner when its schedule says one is due (instance:backup --scheduled)
+#
 #   RI_BACKUP_ENABLED     true|false (default true): off stops all scheduled snapshots, whatever the warehouses' schedules say
 #   RI_BACKUP_DIR         where backups go (default /backups — mount a volume or host dir)
 #   RI_BACKUP_HOUR / RI_BACKUP_SCOPE / RI_BACKUP_KEEP_DAYS   only the starting values of a warehouse's schedule (set when its schedule is
@@ -29,6 +32,7 @@ while true; do
     # Every warehouse is asked whether a snapshot is due (its own schedule decides), one at a time.
     if [ "${RI_BACKUP_ENABLED:-true}" = true ]; then
         ri-db-backup || true
+        php artisan instance:backup --scheduled --no-interaction || log "the scheduled instance backup failed"
     fi
 
     # sleep to just after the top of the next hour

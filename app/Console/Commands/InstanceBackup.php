@@ -5,6 +5,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Control\InstanceBackupSchedule;
 use App\Services\InstanceBackupService;
 use App\Services\Warehouses\ProvisioningClient;
 use Illuminate\Console\Command;
@@ -15,6 +16,8 @@ use Throwable;
  * The whole-instance backup (MULTI_WAREHOUSE.md §11). Needs the database administrator's password, so it runs in the provisioner
  * container: `docker compose exec provisioner php artisan instance:backup --files --with-keys`. `--via-provisioner` is for the other
  * containers (the web container's pre-upgrade backup): it asks the provisioner to take the fixed `premigrate` backup and waits.
+ * `--scheduled` is for the scheduler container, every hour: when Instance Admin's backup schedule says one is due, it asks the provisioner
+ * for it (`backup-sched`) and waits; otherwise it does nothing.
  */
 class InstanceBackup extends Command
 {
@@ -24,12 +27,16 @@ class InstanceBackup extends Command
         {--files : Include every warehouse\'s uploaded files}
         {--with-keys : Include the warehouse keys, encrypted with a passphrase (asked for, or --passphrase-file)}
         {--passphrase-file= : A file holding the passphrase, for --with-keys without a terminal}
-        {--via-provisioner : Ask the provisioner container to take the pre-upgrade backup (no other options apply)}';
+        {--via-provisioner : Ask the provisioner container to take the pre-upgrade backup (no other options apply)}
+        {--scheduled : Ask the provisioner for the scheduled backup if the schedule says one is due (for the scheduler container; no other options apply)}';
 
     protected $description = 'Back up the whole instance (control + accounts + every warehouse) into one zip; run in the provisioner container';
 
     public function handle(InstanceBackupService $backups): int
     {
+        if ($this->option('scheduled')) {
+            return $this->scheduled();
+        }
         if ($this->option('via-provisioner')) {
             return $this->viaProvisioner();
         }
@@ -94,6 +101,32 @@ class InstanceBackup extends Command
             $done = app(ProvisioningClient::class)->request(null, 'instance-backup', 'upgrade', 3600);
         } catch (QueryException) {
             $this->warn('The control schema is not ready, so the provisioner cannot be asked.');
+
+            return 2;
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+        foreach ($done as $line) {
+            $this->line($line);
+        }
+
+        return self::SUCCESS;
+    }
+
+    /** Needs no administrator password: the schedule is a control-schema row, and the provisioner re-checks it before making anything. */
+    private function scheduled(): int
+    {
+        try {
+            if (InstanceBackupSchedule::current()->due() === []) {
+                $this->line('No instance backup is due.');
+
+                return self::SUCCESS;
+            }
+            $done = app(ProvisioningClient::class)->request(null, 'backup-sched', 'scheduler', 3600);
+        } catch (QueryException) {
+            $this->warn('The control schema is not ready, so the schedule cannot be read.');
 
             return 2;
         } catch (Throwable $e) {

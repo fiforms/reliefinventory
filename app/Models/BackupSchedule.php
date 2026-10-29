@@ -5,6 +5,7 @@
 
 namespace App\Models;
 
+use App\Support\SnapshotRules;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 
@@ -20,6 +21,9 @@ class BackupSchedule extends Model
 
     protected $table = 'backup_schedule';
 
+    // One row, id 1, not auto-incremented.
+    public $incrementing = false;
+
     // Written from the validated settings form only (BackupController::updateSchedule).
     protected $guarded = ['id'];
 
@@ -31,7 +35,14 @@ class BackupSchedule extends Model
 
     public static function current(): self
     {
-        return self::firstOrCreate(['id' => 1]);
+        if ($row = self::find(1)) {
+            return $row;
+        }
+        // `id` is guarded, so firstOrCreate(['id' => 1]) could not set it.
+        $row = (new self)->forceFill(['id' => 1]);
+        $row->save();
+
+        return $row->refresh();
     }
 
     public function enabled(string $tier): bool
@@ -62,30 +73,18 @@ class BackupSchedule extends Model
 
         // The others wait for the quiet hour (not before it), and are made at the first check after it that finds them missing —
         // so a warehouse that was suspended at the hour still gets its backup when it comes back.
-        if ($now->hour >= (int) $this->daily_hour) {
-            if ($this->enabled('daily') && $this->newest('daily')?->lt($now->copy()->startOfDay()) !== false) {
-                $due[] = 'daily';
-            }
-            if ($this->enabled('weekly') && $this->weeklyDue($now)) {
-                $due[] = 'weekly';
-            }
-            if ($this->enabled('monthly') && $this->newest('monthly')?->lt($now->copy()->startOfMonth()) !== false) {
-                $due[] = 'monthly';
-            }
+        $hour = (int) $this->daily_hour;
+        if ($this->enabled('daily') && SnapshotRules::dailyDue($this->newest('daily'), $now, $hour)) {
+            $due[] = 'daily';
+        }
+        if ($this->enabled('weekly') && SnapshotRules::weeklyDue($this->newest('weekly'), $now, $hour, (int) $this->weekly_dow)) {
+            $due[] = 'weekly';
+        }
+        if ($this->enabled('monthly') && SnapshotRules::monthlyDue($this->newest('monthly'), $now, $hour)) {
+            $due[] = 'monthly';
         }
 
         return $due;
-    }
-
-    /** The weekly day, or any later check when the last weekly is more than a week old (missed while off). */
-    private function weeklyDue(Carbon $now): bool
-    {
-        $last = $this->newest('weekly');
-        if ($last === null) {
-            return $now->dayOfWeek === (int) $this->weekly_dow;
-        }
-
-        return $last->lt($now->copy()->startOfDay()) && ($now->dayOfWeek === (int) $this->weekly_dow || $last->lt($now->copy()->subDays(7)->startOfDay()));
     }
 
     /** Whether a zip for these tiers has to include the uploaded files. */
