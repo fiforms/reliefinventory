@@ -42,16 +42,18 @@ pub struct Outcome {
 pub type Report = dyn Fn(&str, &str, Option<f32>) + Send + Sync;
 
 const NAME_PREFIX: &str = "relief-backup-";
+/// A whole-instance backup's file name starts with this instead (a server paired as `ServerKind::Instance`).
+const INSTANCE_PREFIX: &str = "relief-instance-";
 const DOWNLOAD_ATTEMPTS: u32 = 6;
 /// Consecutive failed status checks tolerated while the server works; it keeps going without us.
 const POLL_FAILURES: u32 = 20;
 
-/// The server's file name if it is a plain `relief-backup-….zip`, else one of ours. The name came over the network
-/// and becomes a path on this computer, so nothing but a bare, safe file name is accepted.
+/// The server's file name if it is a plain `relief-backup-….zip` (or `relief-instance-….zip`), else one of ours. The name came over
+/// the network and becomes a path on this computer, so nothing but a bare, safe file name is accepted.
 pub fn local_name(server_name: Option<&str>, id: i64) -> String {
     let ok = |n: &str| {
         n.len() <= 120
-            && n.starts_with(NAME_PREFIX)
+            && (n.starts_with(NAME_PREFIX) || n.starts_with(INSTANCE_PREFIX))
             && n.ends_with(".zip")
             && n.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
             && !n.contains("..")
@@ -63,7 +65,7 @@ pub fn local_name(server_name: Option<&str>, id: i64) -> String {
 }
 
 fn is_backup_name(name: &str) -> bool {
-    name.starts_with(NAME_PREFIX) && name.ends_with(".zip")
+    (name.starts_with(NAME_PREFIX) || name.starts_with(INSTANCE_PREFIX)) && name.ends_with(".zip")
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -520,6 +522,11 @@ pub(crate) mod tests {
             assert_eq!(local_name(Some(bad), 3), "relief-backup-3.zip", "{bad}");
         }
         assert_eq!(local_name(None, 8), "relief-backup-8.zip");
+        // a whole-instance backup keeps its own name (and so its date), and the same safety rules apply to it
+        assert_eq!(local_name(Some("relief-instance-20261029-020000-database-scheduled-daily.zip"), 20261029020000), "relief-instance-20261029-020000-database-scheduled-daily.zip");
+        for bad in ["relief-instance-../x.zip", "relief-instance-a/b.zip", "relief-instance-x.exe", "relief-instances.exe"] {
+            assert_eq!(local_name(Some(bad), 3), "relief-backup-3.zip", "{bad}");
+        }
         assert_eq!(local_name(Some(&format!("relief-backup-{}.zip", "a".repeat(200))), 1), "relief-backup-1.zip");
     }
 
@@ -549,5 +556,23 @@ pub(crate) mod tests {
         let old = make("relief-backup-0.zip", 999_999);
         assert_eq!(prune(dir.path(), 0, &old), 1);
         assert!(old.exists() && newest.exists());
+    }
+
+    #[test]
+    fn whole_instance_copies_are_listed_and_pruned_like_any_other() {
+        let dir = tempfile::tempdir().unwrap();
+        let make = |name: &str, age: u64| {
+            let p = dir.path().join(name);
+            let f = std::fs::File::create(&p).unwrap();
+            f.set_modified(std::time::SystemTime::now() - Duration::from_secs(age)).unwrap();
+            p
+        };
+        let newest = make("relief-instance-20261029-030000-database-scheduled-daily.zip", 10);
+        let older = make("relief-instance-20261028-030000-database-scheduled-daily.zip", 1000);
+        let theirs = make("holiday-photos.zip", 100_000);
+
+        assert_eq!(list_local(dir.path()).len(), 2);
+        assert_eq!(prune(dir.path(), 1, &newest), 1);
+        assert!(newest.exists() && !older.exists() && theirs.exists());
     }
 }

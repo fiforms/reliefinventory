@@ -9,9 +9,10 @@
 
 	  Updates & Mode           Software version / update (Docker: through the host-side updater, see InstanceUpdate;
 	                           systemd: the DEPRECATED in-app updater) and Offline mode.
-	  Full Instance Backups    One zip of every warehouse plus the control and accounts schemas. Command-line only for
-	                           now (it needs the database administrator's password, which only the provisioner container
-	                           holds) — this tab says how.
+	  Full Instance Backups    One zip of every warehouse plus the control and accounts schemas: the schedule (off until turned
+	                           on), the list, Back up now and download (InstanceBackupController). The provisioner container
+	                           makes them, since it alone holds the database administrator's password; this page only writes
+	                           fixed requests for it. Warehouse keys are never in these (only `instance:backup --with-keys`).
 	  Warehouses               The warehouse:* commands as buttons (InstanceWarehouseController): list, create, edit, suspend /
 	                           maintenance / activate / resume, archive, remove, setup codes, hostnames. Every change asks for
 	                           the person's password again. Removal waits 30 days after archiving here (the artisan command
@@ -26,7 +27,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head } from '@inertiajs/vue3';
 import PrimaryButton from '@/Components/PrimaryButton.vue';
 import axios from 'axios';
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue';
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue';
 
 const props = defineProps({
 	breadcrumb: { type: Array },
@@ -262,11 +263,13 @@ async function submitDialog() {
 	try {
 		const { data } = await dialog.value.run(dialog.value.values, dialogPassword.value);
 		notice.value = data.message || 'Done.';
-		if (data.setup_code) result.value = { code: data.setup_code, url: data.setup_url, note: data.message };
+		if (data.code && data.address) pairCode.value = data;
+		else if (data.setup_code) result.value = { code: data.setup_code, url: data.setup_url, note: data.message };
 		else if (data.backup !== undefined) result.value = { removed: data };
 		else if (data.note) notice.value += ` ${data.note}`;
 		dialog.value = null;
 		await loadWarehouses();
+		if (tab.value === 'backups') await loadInstanceBackups();
 	} catch (e) {
 		dialogError.value = e.response?.data?.errors
 			? Object.values(e.response.data.errors).flat().join(' ')
@@ -377,6 +380,83 @@ async function copyCode() {
 	}
 }
 
+// ---- Full Instance Backups (Docker) ----
+const instBackups = ref(null);   // the server's payload: { available, schedule, backups, activity, working }
+const instForm = ref(null);
+const weekdays = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+let instTimer = null;
+
+const instFormOf = (sc) => ({
+	enabled: !!sc.enabled, daily_hour: sc.daily_hour, daily_keep: sc.daily_keep, daily_with_files: !!sc.daily_with_files,
+	weekly_enabled: !!sc.weekly_enabled, weekly_dow: sc.weekly_dow, weekly_keep: sc.weekly_keep, weekly_with_files: !!sc.weekly_with_files,
+});
+
+async function loadInstanceBackups() {
+	try {
+		const { data } = await axios.get('/json/instance/backups');
+		instBackups.value = data;
+		// Filled once (and after a save): the poll must not overwrite what is being typed.
+		if (data.available && !instForm.value) instForm.value = instFormOf(data.schedule);
+	} catch (e) {
+		/* a poll that fails (an update is restarting the site) is not worth showing */
+		if (!instBackups.value) error.value = e.response?.data?.message || 'Could not load the instance backups.';
+	}
+}
+
+watch(tab, (t) => {
+	clearInterval(instTimer);
+	if (t === 'backups') {
+		loadInstanceBackups();
+		instTimer = setInterval(loadInstanceBackups, 4000);
+	}
+});
+
+function saveInstanceSchedule() {
+	openDialog({
+		title: 'Save the full instance backup schedule', button: 'Save schedule',
+		text: instForm.value.enabled
+			? 'The provisioner will make a full instance backup on this schedule and keep the newest few.'
+			: 'Automatic full instance backups will be off. Nothing already made is deleted.',
+		run: (v, password) => axios.put('/json/instance/backups/schedule', { ...instForm.value, password }).then((r) => {
+			instForm.value = instFormOf(r.data.schedule);
+			return r;
+		}),
+	});
+}
+
+function backUpInstanceNow(files) {
+	openDialog({
+		title: files ? 'Back up the whole instance, with every warehouse\'s files' : 'Back up the whole instance (databases only)', button: 'Back up now',
+		text: 'The provisioner makes one consistent backup of every warehouse and the shared databases. It can take a while, and warehouse creation waits until it is done. It will not contain the warehouse keys.',
+		run: (v, password) => axios.post('/json/instance/backups', { files, password }),
+	});
+}
+
+const sizeOf = (bytes) => (bytes > 1073741824 ? `${(bytes / 1073741824).toFixed(2)} GB` : bytes > 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.ceil(bytes / 1024)} KB`);
+const labelNames = { 'scheduled-daily': 'Scheduled (daily)', 'scheduled-weekly': 'Scheduled (weekly)', manual: 'Made by hand', premigrate: 'Before an upgrade' };
+const instWhen = (iso) => (iso ? new Date(iso).toLocaleString() : '');
+
+// Computers (the RI Launcher) paired to the instance so they can take whole-instance backups. A new code is shown once.
+const pairCode = ref(null);   // { code, expires_at, address }
+
+function newBackupClient() {
+	pairCode.value = null;
+	openDialog({
+		title: 'Pair a computer for instance backups', button: 'Make a code',
+		text: 'Makes a one-time code, good for 15 minutes. In the RI Launcher, choose Remote backups, then pair with this address and the code, as an instance backup. That computer can then make and download backups of the WHOLE instance (every warehouse and every person\'s information) until you revoke it here.',
+		fields: [{ key: 'name', label: 'What it is (optional)', type: 'text' }],
+		run: (v, password) => axios.post('/json/instance/backups/clients/code', { name_hint: v.name || null, password }),
+	});
+}
+
+function revokeBackupClient(c) {
+	openDialog({
+		title: `Stop ${c.name}`, button: 'Revoke', danger: true,
+		text: `${c.name} can no longer make or download instance backups. Copies it already holds stay on that computer. It can be paired again with a new code.`,
+		run: (v, password) => axios.delete(`/json/instance/backups/clients/${c.id}`, { data: { password } }),
+	});
+}
+
 onMounted(() => {
 	loadWarehouses();
 	fetchStatus().catch(() => { error.value = 'Could not load system status.'; });
@@ -384,6 +464,7 @@ onMounted(() => {
 onUnmounted(() => {
 	stopPolling();
 	stopDockerPolling();
+	clearInterval(instTimer);
 });
 </script>
 
@@ -641,25 +722,113 @@ onUnmounted(() => {
 			</div>
 
 			<div v-if="tab === 'backups'" class="space-y-6">
-				<section class="bg-white shadow rounded-lg p-6 space-y-4">
+				<section class="bg-white shadow rounded-lg p-6 space-y-3">
 					<h2 class="text-lg font-semibold">Full Instance Backups</h2>
 					<p class="text-sm text-gray-700">
-						A full instance backup is one zip holding the control and accounts databases and <strong>every</strong>
-						warehouse's database, optionally with every warehouse's files and (passphrase-encrypted) warehouse keys. It is
-						also what the automatic backup before an upgrade is. It is for the person who runs the server: to back up or
-						restore a single warehouse, use <a href="/setup/system" class="underline">Warehouse Backups</a>.
+						A full instance backup is one zip holding the control and accounts databases and <strong>every</strong> warehouse's database,
+						optionally with every warehouse's files. It is also what the automatic backup before an upgrade is. It is for the person who runs the
+						server, to move or recover the whole installation: to back up or restore a single warehouse, use
+						<a href="/setup/system" class="underline">Warehouse Backups</a>. <strong>These zips never contain the warehouse keys</strong> (that needs a
+						passphrase typed at the server: <span class="font-mono">instance:backup --files --with-keys</span>), so write each warehouse's key down too.
 					</p>
-					<p class="text-sm text-gray-700">
-						It can't be started from this page yet, because it needs the database administrator's password, which only the
-						<span class="font-mono">provisioner</span> container holds. From the server:
+					<p v-if="instBackups && !instBackups.available" class="rounded bg-amber-100 border border-amber-400 text-amber-900 px-3 py-2 text-sm">
+						This needs the Docker install: the backup is made by its <span class="font-mono">provisioner</span> container. On a standard server install, use
+						Warehouse Backups.
 					</p>
-					<pre class="bg-gray-100 rounded p-3 text-xs overflow-x-auto">docker compose exec provisioner php artisan instance:backup --files --with-keys
-docker compose exec provisioner php artisan restore:instance &lt;zip&gt;   # other containers stopped</pre>
-					<p class="text-xs text-gray-500">
-						Backups are written to the <span class="font-mono">instance</span> folder of the backup directory. Buttons to make,
-						list and download them will come here later.
-					</p>
+					<p v-else-if="!instBackups" class="text-gray-500 text-sm">Loading…</p>
 				</section>
+
+				<template v-if="instBackups?.available && instForm">
+					<section class="bg-white shadow rounded-lg p-6 space-y-4">
+						<h2 class="text-lg font-semibold">Backup now</h2>
+						<div class="flex flex-wrap items-center gap-3">
+							<PrimaryButton :disabled="instBackups.working" @click="backUpInstanceNow(false)">{{ instBackups.working ? 'A backup is being made…' : 'Back up (databases)' }}</PrimaryButton>
+							<PrimaryButton :disabled="instBackups.working" @click="backUpInstanceNow(true)">Back up (databases + every warehouse's files)</PrimaryButton>
+						</div>
+						<p v-if="instBackups.working" class="rounded bg-blue-50 border border-blue-300 text-blue-800 px-3 py-2 text-sm">Working… this page updates by itself.</p>
+						<p v-else-if="instBackups.activity" class="text-sm" :class="instBackups.activity.status === 'failed' ? 'text-red-700' : 'text-gray-600'">
+							Last request: {{ instBackups.activity.status === 'failed' ? 'FAILED — ' : 'done — ' }}{{ instBackups.activity.message }}
+							<span v-if="instBackups.activity.finished_at" class="text-xs text-gray-500">({{ instWhen(instBackups.activity.finished_at) }})</span>
+						</p>
+					</section>
+
+					<section class="bg-white shadow rounded-lg p-6 space-y-4">
+						<h2 class="text-lg font-semibold">Schedule</h2>
+						<form @submit.prevent="saveInstanceSchedule" class="space-y-3 text-sm">
+							<label class="flex items-center gap-2 font-medium"><input type="checkbox" v-model="instForm.enabled" class="rounded border-gray-300" /> Make a full instance backup automatically</label>
+							<div class="border rounded p-3 flex flex-wrap items-center gap-x-6 gap-y-2" :class="instForm.enabled ? '' : 'opacity-60'">
+								<span class="w-28 font-medium">Daily</span>
+								<label class="flex items-center gap-2">After <select v-model.number="instForm.daily_hour" class="rounded-md border-gray-300 text-sm"><option v-for="h in 24" :key="h" :value="h - 1">{{ String(h - 1).padStart(2, '0') }}:00</option></select> server time</label>
+								<label class="flex items-center gap-2">Keep the newest <input type="number" min="1" max="90" v-model.number="instForm.daily_keep" class="w-20 rounded-md border-gray-300 text-sm" /></label>
+								<label class="flex items-center gap-2"><input type="checkbox" v-model="instForm.daily_with_files" class="rounded border-gray-300" /> include every warehouse's files</label>
+							</div>
+							<div class="border rounded p-3 flex flex-wrap items-center gap-x-6 gap-y-2" :class="instForm.enabled ? '' : 'opacity-60'">
+								<label class="flex items-center gap-2 w-28 font-medium"><input type="checkbox" v-model="instForm.weekly_enabled" class="rounded border-gray-300" /> Weekly</label>
+								<label class="flex items-center gap-2">On <select v-model.number="instForm.weekly_dow" class="rounded-md border-gray-300 text-sm"><option v-for="(d, i) in weekdays" :key="d" :value="i">{{ d }}</option></select></label>
+								<label class="flex items-center gap-2">Keep the newest <input type="number" min="1" max="52" v-model.number="instForm.weekly_keep" class="w-20 rounded-md border-gray-300 text-sm" /></label>
+								<label class="flex items-center gap-2"><input type="checkbox" v-model="instForm.weekly_with_files" class="rounded border-gray-300" /> include every warehouse's files</label>
+							</div>
+							<div class="flex flex-wrap items-center gap-4">
+								<PrimaryButton type="submit">Save Schedule…</PrimaryButton>
+								<span v-if="instBackups.schedule.last_run_at" class="text-xs" :class="instBackups.schedule.last_status === 'failed' ? 'text-red-700' : 'text-gray-500'">
+									Last scheduled backup: {{ instWhen(instBackups.schedule.last_run_at) }} — {{ instBackups.schedule.last_status === 'failed' ? `FAILED: ${instBackups.schedule.last_message}` : 'made' }}
+								</span>
+							</div>
+						</form>
+						<p class="text-xs text-gray-500">
+							A weekly backup also counts as that day's daily one. Backups made by hand and the ones taken before an upgrade are not deleted by this schedule
+							(the upgrade ones go after the usual number of days). These sit on this machine: copy them elsewhere too (the RI Launcher can).
+							The provisioner works on one request at a time, so creating a warehouse waits while a big backup runs.
+						</p>
+					</section>
+
+					<section class="bg-white shadow rounded-lg p-6 space-y-3">
+						<h2 class="text-lg font-semibold">Computers that may take instance backups</h2>
+						<p class="text-sm text-gray-700">
+							The RI Launcher on a computer you pair here can make and download these backups by itself, on a schedule, to keep copies somewhere else. This is
+							separate from the per-warehouse Trust Console: it covers the <strong>whole instance</strong>, so pair only computers you trust with everyone's information.
+						</p>
+						<div v-if="pairCode" class="rounded border-2 border-green-500 bg-green-50 p-4 text-sm space-y-1">
+							<div>Server address: <span class="font-mono font-semibold">{{ pairCode.address }}</span></div>
+							<div>Code: <span class="font-mono text-xl font-bold tracking-widest">{{ pairCode.code }}</span></div>
+							<div class="text-xs text-gray-600">Shown once. Expires {{ instWhen(pairCode.expires_at) }}. In the Launcher: Remote backups → Pair → “Instance backup”.</div>
+						</div>
+						<div v-for="c in instBackups.clients" :key="c.id" class="border rounded p-3 text-sm flex flex-wrap items-center justify-between gap-3">
+							<div>
+								<span class="font-medium">{{ c.name }}</span>
+								<span class="ml-2 rounded px-2 py-0.5 text-xs" :class="c.status === 'approved' ? 'bg-green-100 text-green-800' : 'bg-gray-200 text-gray-700'">{{ c.status === 'approved' ? 'Paired' : 'Revoked' }}</span>
+								<div class="text-xs text-gray-500">
+									Paired {{ instWhen(c.approved_at) }}<span v-if="c.last_seen_at"> · last seen {{ instWhen(c.last_seen_at) }}<span v-if="c.last_seen_ip"> from {{ c.last_seen_ip }}</span></span><span v-else> · never connected</span>
+								</div>
+							</div>
+							<button v-if="c.status === 'approved'" @click="revokeBackupClient(c)"
+								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-red-600 hover:bg-red-500">Revoke…</button>
+						</div>
+						<p v-if="!instBackups.clients.length" class="text-gray-400 text-sm">No computer is paired yet.</p>
+						<PrimaryButton type="button" @click="newBackupClient">Pair a computer…</PrimaryButton>
+					</section>
+
+					<section class="bg-white shadow rounded-lg p-6 space-y-3">
+						<h2 class="text-lg font-semibold">Instance backups</h2>
+						<p v-if="!instBackups.backups.length" class="text-gray-400 text-sm">none yet</p>
+						<div v-for="z in instBackups.backups" :key="z.name" class="border rounded p-3 text-sm flex flex-wrap items-center justify-between gap-3">
+							<div class="space-y-1">
+								<div class="font-mono text-xs text-gray-600">{{ z.name }}</div>
+								<div>
+									{{ instWhen(z.made_at) }} — {{ sizeOf(z.size) }}, {{ z.scope === 'full' ? 'databases + files' : 'databases only' }}
+									<span v-if="z.label" class="ml-1 rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-700">{{ labelNames[z.label] || z.label }}</span>
+								</div>
+							</div>
+							<a v-if="z.downloadable" :href="$withWarehouse(`/json/instance/backups/${z.name}/download`)"
+								class="inline-flex items-center px-4 py-2 rounded-md font-semibold text-xs uppercase tracking-widest text-white bg-gray-800 hover:bg-gray-700">Download</a>
+							<span v-else class="text-xs text-gray-500">Not readable here: copy it from the server's backup folder (<span class="font-mono">instance/</span>)</span>
+						</div>
+						<p class="text-xs text-gray-500">
+							To restore one onto a new machine (other containers stopped):
+							<span class="font-mono">docker compose exec provisioner php artisan restore:instance &lt;zip&gt;</span>. Deleting one is done at the server.
+						</p>
+					</section>
+				</template>
 			</div>
 		</div>
 	</AuthenticatedLayout>

@@ -11,6 +11,8 @@ use App\Http\Controllers\DeviceUpdateCheckController;
 use App\Http\Controllers\FederationBackupController;
 use App\Http\Controllers\FederationController;
 use App\Http\Controllers\FeedbackIngestController;
+use App\Http\Controllers\InstanceBackupApiController;
+use App\Http\Controllers\InstanceFederationController;
 use App\Http\Controllers\InstanceUpdateController;
 use Illuminate\Support\Facades\Route;
 
@@ -43,6 +45,21 @@ Route::prefix('devices')->group(function () {
     // Unauthenticated by contract (devices fetch with plain GETs); the
     // per-release random token in the path is the access control.
     Route::get('/artifacts/{token}/{filename}', [DeviceArtifactController::class, 'download']);
+});
+
+// Instance-level trust (App\Models\Control\InstanceTrust): a computer paired to the whole instance by an instance administrator, today only to
+// make and download whole-instance backups (the RI Launcher). The same two bootstrap calls and the same signing as federation/v1 below, against
+// the control schema instead of one warehouse's. Served at the instance's address like the updater endpoints above.
+Route::prefix('instance/v1')->group(function () {
+    Route::post('/pair', [InstanceFederationController::class, 'pair'])->middleware('throttle:10,1');
+    Route::post('/session', [InstanceFederationController::class, 'session'])->middleware(['instance-trust:,signed', 'throttle:60,1']);
+    Route::get('/grants', [InstanceFederationController::class, 'grants'])->middleware(['instance-trust', 'throttle:120,1']);
+    Route::prefix('backups')->middleware('instance-trust:instance.backup')->group(function () {
+        Route::get('/', [InstanceBackupApiController::class, 'index'])->middleware('throttle:fed-backup-read');
+        Route::post('/', [InstanceBackupApiController::class, 'store'])->middleware('throttle:fed-backup-create');
+        Route::get('/{id}', [InstanceBackupApiController::class, 'show'])->whereNumber('id')->middleware('throttle:fed-backup-read');
+        Route::get('/{id}/download', [InstanceBackupApiController::class, 'download'])->whereNumber('id')->middleware('throttle:fed-backup-download');
+    });
 });
 
 // Federation (App\Services\Federation): pairing is unsigned (the code is the credential, plus proof of

@@ -1,10 +1,10 @@
 #!/bin/bash
 # Make a backup zip (manifest + checksums, the same format as every other backup in the app) by running
-# `php artisan backup:create`. Shared by the scheduler's daily backup and the web container's pre-migration backup.
+# `php artisan backup:create`. Shared by the scheduler's hourly snapshot check and the web container's pre-migration backup.
 #
-#   ri-db-backup            the daily backup of EVERY warehouse (warehouse:each backup:scheduled): recorded in the app, so it is listed
-#                           under Updates & Backups, kept in the warehouse's own folder $RI_BACKUP_DIR/warehouses/<id>/, made once a
-#                           day per warehouse, and deleted by `backup:prune` after RI_BACKUP_KEEP_DAYS
+#   ri-db-backup            asks EVERY warehouse for its scheduled snapshot (warehouse:each backup:scheduled): the warehouse's own schedule
+#                           decides whether one is due; it is recorded in the app (listed under Warehouse Backups), kept in the warehouse's
+#                           own folder $RI_BACKUP_DIR/warehouses/<id>/, and deleted by `backup:prune` according to its tiers
 #   ri-db-backup premigrate a label: a whole-instance backup (instance:backup, via the provisioner) in $RI_BACKUP_DIR/instance, or, before the
 #                           control schema exists, written to $RI_BACKUP_DIR as relief-backup-<stamp>-<scope>-<label>.zip
 #                           with no database record (the schema may not be ready for one yet); `backup:prune`
@@ -12,14 +12,13 @@
 #
 #   RI_BACKUP_DIR         where backups go (default /backups — mount a volume or host dir)
 #   RI_BACKUP_SCOPE       database (default) | full (also the uploaded files)
-#   RI_BACKUP_KEEP_DAYS   older backups are deleted (default 14) — a flat retention; the tiered
-#                         daily/monthly/yearly retention of a systemd install is not implemented here yet
+#   RI_BACKUP_KEEP_DAYS   backups made by hand (and pre-migration ones) are deleted after this many days (default 14); scheduled
+#                         snapshots are kept by their tiers instead
 #   RI_DB_DUMP_ARGS       extra mariadb-dump flags (default --skip-ssl; set e.g. --ssl for a TLS database)
 # Exit status 0 only if a complete backup was written.
 set -uo pipefail
 
 BACKUP_DIR="${RI_BACKUP_DIR:-/backups}"
-KEEP_DAYS="${RI_BACKUP_KEEP_DAYS:-14}"
 SCOPE="${RI_BACKUP_SCOPE:-database}"
 LABEL="${1:-}"
 log() { echo "[db-backup] $(date '+%F %T') $*" >&2; }
@@ -28,13 +27,12 @@ mkdir -p "$BACKUP_DIR" 2>/dev/null && [ -w "$BACKUP_DIR" ] || { log "cannot writ
 cd /var/www/html || exit 1
 
 if [ -z "$LABEL" ]; then
-    # The scheduler's daily backup: every active warehouse, in turn (the instance-wide lock makes them wait for each other).
-    if php artisan warehouse:each "backup:scheduled --scope=$SCOPE --no-interaction" --no-interaction; then
-        log "daily backups done"
-        find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
+    # The scheduler's hourly ask: every active warehouse, in turn (the instance-wide lock makes them wait for each other).
+    if php artisan warehouse:each "backup:scheduled --no-interaction" --no-interaction; then
+        log "scheduled backups done"
         exit 0
     fi
-    log "a daily backup FAILED"
+    log "a scheduled backup FAILED"
     exit 1
 fi
 
@@ -53,8 +51,6 @@ args=(--scope="$SCOPE" --dest="$BACKUP_DIR" --name="relief-backup-$(date +%Y%m%d
 # Reached only when the instance backup above could not be asked for (no control schema yet).
 if out="$(php artisan backup:create --warehouse=default --no-interaction "${args[@]}")"; then
     log "backup written: $(printf '%s\n' "$out" | tail -n1) ($(du -h "$(printf '%s\n' "$out" | tail -n1)" | cut -f1))"
-    # Dumps from before backups were zipped (RI image <= 2026-10-20): age them out the old way.
-    find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
 else
     log "backup FAILED"
     exit 1

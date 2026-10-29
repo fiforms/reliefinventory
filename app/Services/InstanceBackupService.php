@@ -6,8 +6,10 @@
 namespace App\Services;
 
 use App\Models\Control\InstanceAuditLog;
+use App\Models\Control\InstanceBackupSchedule;
 use App\Models\Control\Warehouse;
 use App\Services\Warehouses\Provisioner;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\File;
 use PDO;
@@ -70,6 +72,108 @@ class InstanceBackupService
                 @unlink($path);
             }
         }
+    }
+
+    /** The file name a zip written by create() has: stamp, `full` or `database`, an optional label. */
+    private const NAME = '/^relief-instance-(\d{8})-(\d{6})-(full|database)(?:-([A-Za-z0-9._-]+))?\.zip$/';
+
+    /** Whether $name is one of this class's zips (a name from a URL is only ever served if it is). */
+    public static function isBackupName(string $name): bool
+    {
+        return preg_match(self::NAME, $name) === 1;
+    }
+
+    /**
+     * The instance backups in dir(), newest first, read from the file names and the directory alone (no file is opened, so it works for
+     * a web container that can see the folder but not read the zips, which are 0600). `label` is premigrate, scheduled-daily, scheduled-weekly,
+     * manual, or whatever an operator gave on the command line.
+     *
+     * @return list<array{name: string, size: int, made_at: string, scope: string, label: ?string}>
+     */
+    public function listing(): array
+    {
+        $rows = [];
+        foreach (glob($this->dir().'/relief-instance-*.zip') ?: [] as $path) {
+            if (! preg_match(self::NAME, basename($path), $m)) {
+                continue;
+            }
+            $rows[] = [
+                'name' => basename($path), 'size' => (int) @filesize($path), 'scope' => $m[3], 'label' => $m[4] ?? null,
+                'made_at' => Carbon::createFromFormat('Ymd His', "{$m[1]} {$m[2]}")->toIso8601String(),
+            ];
+        }
+        usort($rows, fn ($a, $b) => strcmp($b['made_at'], $a['made_at']) ?: strcmp($b['name'], $a['name']));
+
+        return $rows;
+    }
+
+    /**
+     * The scheduled backup, as the provisioner makes it when asked (`backup-sched`): whatever InstanceBackupSchedule says is due right now (the
+     * request carries no parameters, and an hourly ask that finds nothing due does nothing). A weekly zip is also that day's daily one. No keys
+     * (that needs a passphrase). A failure is recorded on the schedule and thrown, and leaves the backup due so the next hour tries again.
+     *
+     * @return list<string>
+     */
+    public function scheduled(): array
+    {
+        $schedule = InstanceBackupSchedule::current();
+        $due = $schedule->due();
+        if ($due === []) {
+            return ['No instance backup is due.'];
+        }
+
+        try {
+            $result = $this->create($this->dir(), in_array('weekly', $due, true) ? 'scheduled-weekly' : 'scheduled-daily', $schedule->withFiles($due), null);
+        } catch (Throwable $e) {
+            $schedule->forceFill(['last_run_at' => now(), 'last_status' => 'failed', 'last_message' => substr($e->getMessage(), 0, 1000)])->save();
+            InstanceAuditLog::record('instance.backup_failed', null, ['kind' => 'scheduled', 'message' => substr($e->getMessage(), 0, 300)], 'scheduler');
+            throw $e;
+        }
+
+        $schedule->forceFill([
+            'last_daily_at' => now(), 'last_weekly_at' => in_array('weekly', $due, true) ? now() : $schedule->last_weekly_at,
+            'last_run_at' => now(), 'last_status' => 'complete', 'last_message' => basename($result['path']),
+        ])->save();
+        $this->pruneScheduled($schedule);
+        InstanceAuditLog::record('instance.backup_made', null, ['kind' => 'scheduled', 'tiers' => $due, 'file' => basename($result['path'])], 'scheduler');
+
+        return ["scheduled instance backup written: {$result['path']}"];
+    }
+
+    /**
+     * A backup an instance administrator asked for on Instance Admin (`backup-now`, `backup-now-files`: fixed commands, no parameters). Labelled
+     * `manual`, never pruned, no keys. @return list<string>
+     */
+    public function manual(bool $withFiles): array
+    {
+        $result = $this->create($this->dir(), 'manual', $withFiles, null);
+        InstanceAuditLog::record('instance.backup_made', null, ['kind' => 'manual', 'files' => $withFiles, 'file' => basename($result['path'])], 'provisioner');
+
+        return ["instance backup written: {$result['path']}"];
+    }
+
+    /**
+     * Keep the newest keepDaily() scheduled zips (a weekly one is also that day's daily) and the newest keepWeekly() weekly ones; delete the
+     * rest. Only `…-scheduled-daily|weekly.zip` is touched: manual, premigrate and operator-named zips are never pruned here.
+     */
+    public function pruneScheduled(?InstanceBackupSchedule $schedule = null): int
+    {
+        $schedule ??= InstanceBackupSchedule::current();
+        $scheduled = array_values(array_filter($this->listing(), fn ($z) => in_array($z['label'], ['scheduled-daily', 'scheduled-weekly'], true)));   // newest first
+        $weekly = array_values(array_filter($scheduled, fn ($z) => $z['label'] === 'scheduled-weekly'));
+        $keep = array_flip(array_merge(
+            array_column(array_slice($scheduled, 0, $schedule->keepDaily()), 'name'),
+            array_column(array_slice($weekly, 0, $schedule->keepWeekly()), 'name'),
+        ));
+
+        $deleted = 0;
+        foreach ($scheduled as $zip) {
+            if (! isset($keep[$zip['name']]) && @unlink($this->dir().'/'.$zip['name'])) {
+                $deleted++;
+            }
+        }
+
+        return $deleted;
     }
 
     // ---- backup ------------------------------------------------------------------------------------------------

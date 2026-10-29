@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use ri_launcher_core::backups;
 use ri_launcher_core::platform::{InstallOutcome, Platform};
+use ri_launcher_core::remote::client::ServerKind;
 use ri_launcher_core::remote::RemoteBackups;
 use ri_launcher_core::service::Launcher;
 use ri_launcher_core::settings::Mode;
@@ -63,7 +64,7 @@ enum Cmd {
 
 #[derive(Subcommand)]
 enum RemoteCmd {
-    /// Pair with a server using a code from its Trust Console (kind "Backup client")
+    /// Pair with a server using a code from its Trust Console (kind "Backup client"), or with --instance a code from Instance Admin
     Pair {
         /// The server's address, like ri.example.org
         address: String,
@@ -71,6 +72,9 @@ enum RemoteCmd {
         /// A name to show for it (default: the name the server gives itself)
         #[arg(long)]
         name: Option<String>,
+        /// The code is from Instance Admin > Full Instance Backups: back up the WHOLE instance (every warehouse), not one warehouse
+        #[arg(long)]
+        instance: bool,
     },
     /// List paired servers, their schedules and the copies kept here
     List,
@@ -257,8 +261,9 @@ async fn remote_command(dir: &std::path::Path, action: RemoteCmd) {
     use ri_launcher_core::remote::Options;
     let remote = die(RemoteBackups::new(dir));
     match action {
-        RemoteCmd::Pair { address, code, name } => {
-            let paired = die(remote.pair(&address, &code, name.as_deref()).await);
+        RemoteCmd::Pair { address, code, name, instance } => {
+            let kind = if instance { ServerKind::Instance } else { ServerKind::Warehouse };
+            let paired = die(remote.pair(&address, &code, name.as_deref(), kind).await);
             println!("Paired. Its id here is {}.", paired.id);
             if let Some(w) = paired.warning {
                 eprintln!("warning: {w}");

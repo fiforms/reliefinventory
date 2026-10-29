@@ -341,6 +341,16 @@ Route::group(['prefix' => 'json/instance', 'middleware' => ['auth', 'instance-ad
     Route::post('/update', [SystemController::class, 'update']);
     Route::put('/offline-mode', [SystemController::class, 'saveOfflineMode']);
 
+    // Full Instance Backups: the schedule, the list, "back up now" (a request to the provisioner) and download. Writes re-ask for the password.
+    Route::get('/backups', [InstanceBackupController::class, 'index']);
+    Route::get('/backups/{name}/download', [InstanceBackupController::class, 'download'])->where('name', '[A-Za-z0-9._-]+');
+    Route::middleware('throttle:20,1')->group(function () {
+        Route::put('/backups/schedule', [InstanceBackupController::class, 'updateSchedule']);
+        Route::post('/backups', [InstanceBackupController::class, 'store']);
+        Route::post('/backups/clients/code', [InstanceBackupController::class, 'pairingCode']);
+        Route::delete('/backups/clients/{id}', [InstanceBackupController::class, 'revokeClient'])->whereNumber('id');
+    });
+
     // Warehouse management. Every write re-asks for the signed-in person's password (InstanceWarehouseController::guarded).
     Route::get('/warehouses', [InstanceWarehouseController::class, 'index']);
     Route::middleware('throttle:20,1')->group(function () {
@@ -368,7 +378,6 @@ Route::get('/setup/system', function () {
 
     return Inertia::render('SystemAdmin', [
         'breadcrumb' => MenuItem::getBreadcrumb('/setup/system'),
-        'runtime' => config('system.runtime') === 'docker' ? 'docker' : 'systemd',
         'canAdminSystem' => $canAdmin,
         'canManageBackups' => $canBackups,
         'canViewAppKey' => $user->hasPermission('view-app-key'),
@@ -1289,8 +1298,6 @@ Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:admin-sys
     Route::get('/system/status', [SystemController::class, 'status']);
     Route::post('/system/check-updates', [SystemController::class, 'checkUpdates']);
     Route::post('/system/update', [SystemController::class, 'update']);
-    Route::post('/system/backup', [SystemController::class, 'backupNow']);
-    Route::put('/system/backup-settings', [SystemController::class, 'saveBackupSettings']);
     Route::put('/system/offline-mode', [SystemController::class, 'saveOfflineMode']);
 
     Route::get('/testing/status', [TestingToolsController::class, 'status']);
@@ -1310,8 +1317,10 @@ Route::redirect('/setup/backups', '/setup/system')->middleware('auth');
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-backups']], function () {
     Route::get('/backups', [BackupController::class, 'index']);
     Route::post('/backups', [BackupController::class, 'store']);
+    Route::get('/backups/schedule', [BackupController::class, 'schedule']);
+    Route::put('/backups/schedule', [BackupController::class, 'updateSchedule']);
+    Route::post('/backups/{id}/restore', [BackupController::class, 'restoreSnapshot'])->whereNumber('id')->middleware('throttle:5,1');
     Route::get('/backups/{id}/download', [BackupController::class, 'download'])->whereNumber('id');
-    Route::get('/backups/tier/{tier}/{stamp}/download', [BackupController::class, 'downloadTier']);
     Route::delete('/backups/{id}', [BackupController::class, 'destroy']);
 });
 Route::post('/json/backups/app-key', [BackupController::class, 'appKey'])

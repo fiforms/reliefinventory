@@ -38,10 +38,10 @@ return [
     // A queued/running backup whose process is gone is marked failed once it is this many seconds old.
     'stale_after_seconds' => 120,
 
-    // Docker/R Station only: what the `scheduler` container's daily backup does. Set per deployment in
-    // docker/compose.yaml (the scheduler and pre-migration scripts read the same RI_* variables); the app
-    // only reads them to show the admin what is configured, since a container's schedule is not editable
-    // from inside the app. `scope` is what the daily and pre-migration backups include: database | full.
+    // The installation-wide defaults for scheduled snapshots, from the environment (docker/compose.yaml, or a bare-metal .env). Since the
+    // per-warehouse schedule (App\Models\BackupSchedule, Warehouse Backups page) only `enabled` still acts on its own: false stops every
+    // scheduled snapshot on the installation whatever the warehouses chose. `hour` and `scope` only seed a warehouse's schedule row the
+    // first time it is created. `premigrate` and `scope` are also what the pre-upgrade backup uses. (The key is `container` for history.)
     'container' => [
         'enabled' => filter_var(env('RI_BACKUP_ENABLED', true), FILTER_VALIDATE_BOOLEAN),
         'hour' => (int) env('RI_BACKUP_HOUR', 2),

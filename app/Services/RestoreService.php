@@ -264,6 +264,65 @@ class RestoreService
         }
     }
 
+    /** The only names a rollback may be asked to restore: a zip BackupService made, in this warehouse's own backup folder. */
+    public static function isSnapshotName(string $name): bool
+    {
+        return preg_match('/^relief-backup-[A-Za-z0-9._-]+\.zip$/', $name) === 1 && ! str_contains($name, '..');
+    }
+
+    /**
+     * Roll this warehouse back to one of its own snapshots (a zip in its backup folder; stageOwnRestore() has already said who is doing it).
+     * Mark running and start the detached process, like launch().
+     */
+    public function launchSnapshot(string $filename): void
+    {
+        $this->progress($filename, 'Starting', 1);
+        $log = escapeshellarg($this->dir().'/restore.log');
+        $php = escapeshellarg(config('backup.php_binary'));
+        $warehouse = escapeshellarg('--warehouse='.app(WarehouseContext::class)->current()->id);
+        Process::path(base_path())->run("setsid -f {$php} artisan restore:run --snapshot=".escapeshellarg($filename)." {$warehouse} >> {$log} 2>&1 < /dev/null");
+    }
+
+    /**
+     * The detached half of a rollback. A safety copy of the CURRENT data is made first, in the same folder (so an unwanted rollback can itself
+     * be undone from the list, and, if that copy can't be made, nothing is touched), then the snapshot goes through the same engine as every
+     * other own-warehouse restore. The snapshot zip is never deleted. The restore replaces the `backups` table with the snapshot's, so the
+     * safety copy and any newer zips are not listed afterwards; they stay on disk as untracked files until backup:prune ages them out.
+     */
+    public function runSnapshot(string $filename): void
+    {
+        @mkdir($this->dir(), 0750, true);
+        $lock = fopen($this->dir().'/.lock', 'c');
+        if (! flock($lock, LOCK_EX | LOCK_NB)) {
+            fclose($lock);
+
+            return;
+        }
+
+        $id = 'snap-'.bin2hex(random_bytes(4));
+        try {
+            $backups = app(BackupService::class);
+            $path = $backups->dir().'/'.$filename;
+            if (! self::isSnapshotName($filename) || ! is_file($path)) {
+                throw new RuntimeException('That backup file is not in this warehouse\'s backup folder.');
+            }
+            $this->progress($id, 'Saving a safety copy of the current data', 1);
+            $backups->createIn($backups->dir(), 'database', sprintf('relief-backup-%s-database-before-rollback', now()->format('Ymd-His')));
+            $this->perform($id, $path, null, false, false);
+        } catch (Throwable $e) {
+            if (! $e instanceof RuntimeException) {
+                report($e);
+            }
+            Log::error('Rollback failed', ['message' => $e->getMessage()]);
+            $this->writeStatus(['state' => 'failed', 'upload_id' => $id, 'error' => $e instanceof RuntimeException ? $e->getMessage() : 'Unexpected error: '.$e->getMessage()]);
+        } finally {
+            $this->removeTree($this->dir().'/'.$id);
+            $this->clearOwnRestore();
+            flock($lock, LOCK_UN);
+            fclose($lock);
+        }
+    }
+
     /**
      * The command's path: zips already on disk (never deleted). Throws RuntimeException with the reason on failure.
      *

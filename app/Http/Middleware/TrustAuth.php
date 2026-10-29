@@ -5,6 +5,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Middleware\Concerns\VerifiesSignedRequests;
 use App\Models\Trust;
 use App\Services\Federation\InstanceIdentity;
 use App\Services\Federation\RequestSigner;
@@ -12,7 +13,6 @@ use App\Services\Federation\TrustService;
 use Closure;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 
 /**
  * Authenticates a trusted peer: either an Ed25519-signed request (X-RI-Trust / X-RI-Timestamp / X-RI-Nonce /
@@ -25,6 +25,8 @@ use Illuminate\Support\Facades\Cache;
  */
 class TrustAuth
 {
+    use VerifiesSignedRequests;
+
     public function handle(Request $request, Closure $next, string ...$options)
     {
         $signedOnly = in_array('signed', $options, true);
@@ -110,39 +112,10 @@ class TrustAuth
     /** @return Trust|JsonResponse|null */
     private function verifySignature(Request $request)
     {
-        $peer = (string) $request->header('X-RI-Trust');
-        $timestamp = (string) $request->header('X-RI-Timestamp');
-        $nonce = (string) $request->header('X-RI-Nonce');
-        $signature = (string) $request->header('X-RI-Signature');
-        if ($peer === '' || $nonce === '' || $signature === '' || ! ctype_digit($timestamp)) {
-            return null;
-        }
-
-        $skew = abs(time() - (int) $timestamp);
-        if ($skew > (int) config('federation.max_skew_seconds')) {
-            return response()->json(['message' => 'Clock difference too large.'], 400)
-                ->header('X-RI-Server-Time', (string) time());
-        }
-
-        $trust = Trust::where('identity_id', InstanceIdentity::current()->id)->where('peer_uuid', $peer)->first();
-        if (! $trust) {
-            return null;
-        }
-
-        $canonical = RequestSigner::canonical(
-            // The URI as sent, `/w/<id>` prefix included (ResolveWarehouse strips it for routing only): a signature made
-            // for one warehouse's address must not pass at another's.
-            $request->method(), $request->attributes->get('ri.original_uri', $request->getRequestUri()), $request->getHttpHost(), (int) $timestamp, $nonce, $request->getContent(),
+        return $this->verifySignedRequest(
+            $request,
+            fn (string $peer) => Trust::where('identity_id', InstanceIdentity::current()->id)->where('peer_uuid', $peer)->first(),
+            'trust-nonce',
         );
-        if (! RequestSigner::verify($canonical, $signature, $trust->public_key)) {
-            return null;
-        }
-
-        // Only a correctly signed request may use up a nonce, so a stranger can't burn a peer's nonces.
-        if (! Cache::add('trust-nonce:'.$trust->id.':'.hash('sha256', $nonce), 1, (int) config('federation.nonce_ttl_seconds'))) {
-            return null;
-        }
-
-        return $trust;
     }
 }

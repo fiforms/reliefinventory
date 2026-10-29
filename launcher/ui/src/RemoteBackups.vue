@@ -6,7 +6,7 @@ const emit = defineEmits(['note'])
 const servers = ref(null) // null until the first answer
 const loadError = ref('')
 const busy = ref('')
-const pair = reactive({ address: '', code: '', name: '' })
+const pair = reactive({ address: '', code: '', name: '', kind: 'warehouse' })
 const drafts = reactive({}) // server id -> the settings being edited
 const confirmRemove = ref('')
 const deleteFiles = ref(false)
@@ -59,8 +59,8 @@ async function act(label, fn, okText) {
 }
 
 const doPair = () => act('pair', async () => {
-    const r = await api.remotePair(pair.address, pair.code, pair.name)
-    Object.assign(pair, { address: '', code: '', name: '' })
+    const r = await api.remotePair(pair.address, pair.code, pair.name, pair.kind)
+    Object.assign(pair, { address: '', code: '', name: '', kind: 'warehouse' })
     delete drafts[r.id] // re-pairing an existing server picks its settings up again
     return r
 }, (r) => r.warning || 'Paired. A first backup starts shortly, then one runs on the schedule below.')
@@ -136,7 +136,7 @@ const empty = computed(() => servers.value && servers.value.length === 0)
     <section v-for="s in servers" :key="s.id" class="card">
         <div class="who">
             <div>
-                <h2>{{ s.name }}</h2>
+                <h2>{{ s.name }} <span v-if="s.kind === 'instance'" class="pill" title="Backs up every warehouse on that server, not just one">Whole instance</span></h2>
                 <div class="muted small url">{{ s.url }}</div>
             </div>
             <span class="pill" :class="status(s).cls">{{ status(s).text }}</span>
@@ -236,8 +236,12 @@ const empty = computed(() => servers.value && servers.value.length === 0)
     <section v-if="servers" class="card">
         <h2>{{ empty ? 'Pair with a server' : 'Pair with another server' }}</h2>
         <ol v-if="empty" class="small muted steps">
-            <li>On the server, an administrator opens <strong>Setup → Trust Console</strong>, chooses <strong>Backup client (RI Launcher)</strong> under "Pair something new" and creates a code.</li>
-            <li>Type the server's address and that code here. The code works once and expires after 15 minutes.</li>
+            <li>
+                For <strong>one warehouse</strong>: on the server, an administrator opens <strong>Setup → Trust Console</strong>, chooses <strong>Backup client (RI Launcher)</strong>
+                under "Pair something new" and creates a code. For <strong>the whole instance</strong> (every warehouse): an instance administrator opens
+                <strong>Instance Admin → Full Instance Backups</strong> and chooses <strong>Pair a computer</strong>.
+            </li>
+            <li>Type the server's address and that code here, and say which kind it is. The code works once and expires after 15 minutes.</li>
         </ol>
         <form @submit.prevent="doPair">
             <div class="grid2">
@@ -248,6 +252,11 @@ const empty = computed(() => servers.value && servers.value.length === 0)
                     <input v-model="pair.code" placeholder="ABCDE-FGHJK" autocomplete="off" spellcheck="false" required />
                 </label>
             </div>
+            <fieldset class="kind">
+                <legend>The code is for</legend>
+                <label><input type="radio" value="warehouse" v-model="pair.kind" /> One warehouse (from its Trust Console)</label>
+                <label><input type="radio" value="instance" v-model="pair.kind" /> The whole instance, every warehouse (from Instance Admin)</label>
+            </fieldset>
             <label>Name (optional)
                 <input v-model="pair.name" placeholder="The server's own name is used if you leave this empty" autocomplete="off" />
             </label>

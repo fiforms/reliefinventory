@@ -94,8 +94,17 @@ class Provisioner
      */
     public function run(ProvisioningCommand $command): array
     {
-        if ($command->command === 'instance-backup') {
-            return app(InstanceBackupService::class)->premigrate();
+        // The instance-wide requests name no warehouse and carry no parameters: what each one does is fixed here, and what the scheduled one
+        // makes is decided from the schedule row, never from the request.
+        if (in_array($command->command, ProvisioningCommand::INSTANCE_COMMANDS, true)) {
+            $backups = app(InstanceBackupService::class);
+
+            return match ($command->command) {
+                'instance-backup' => $backups->premigrate(),
+                'backup-sched' => $backups->scheduled(),
+                'backup-now' => $backups->manual(false),
+                'backup-now-files' => $backups->manual(true),
+            };
         }
         $warehouse = Warehouse::find($command->warehouse_id)
             ?? throw new RuntimeException("There is no warehouse {$command->warehouse_id}.");

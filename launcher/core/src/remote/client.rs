@@ -1,6 +1,8 @@
 //! HTTP client for the federation API (`rstation/FEDERATION_AUTH.md`, `rstation/federation.openapi.yaml`): pair with a
 //! code, then sign once for a session token and send that until it is about to expire or the server refuses it. The
-//! backup calls are the `operator.full_read` endpoints under `/api/federation/v1/backups`.
+//! backup calls are the `operator.full_read` endpoints under `/api/federation/v1/backups` (one warehouse), or, for a
+//! server paired as [`ServerKind::Instance`], the `instance.backup` endpoints under `/api/instance/v1/backups` (the whole
+//! instance: every warehouse). Both speak the same shapes and the same signing, so everything else here is shared.
 //!
 //! Status codes become [`RemoteError`] variants, so callers decide policy from the variant alone: `Revoked` is a
 //! definite "this computer was un-paired" (stop, ask to pair again), the transient ones are worth retrying later.
@@ -23,10 +25,50 @@ use tokio::sync::Mutex;
 
 use super::identity::{self, Keys};
 
-/// The `kind` a launcher pairs as (`App\Models\Trust::KINDS`).
-pub const KIND: &str = "backup_client";
-/// The grant that lets us make and download backups.
-pub const GRANT: &str = "operator.full_read";
+/// What a paired server's backups are of. A warehouse trust is made in that warehouse's Trust Console; an instance trust by an instance
+/// administrator on Instance Admin (App\Models\Control\InstanceTrust), and covers every warehouse.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ServerKind {
+    /// One warehouse: `backup_client` with the `operator.full_read` grant. What every pairing was before instance backups.
+    #[default]
+    Warehouse,
+    /// The whole instance: `instance_backup` with the `instance.backup` grant.
+    Instance,
+}
+
+impl ServerKind {
+    /// The `kind` sent when pairing (`App\Models\Trust::KINDS`, or `InstanceTrustService::KIND`).
+    pub fn pair_kind(self) -> &'static str {
+        match self {
+            ServerKind::Warehouse => "backup_client",
+            ServerKind::Instance => "instance_backup",
+        }
+    }
+
+    /// The grant that lets us make and download backups.
+    pub fn grant(self) -> &'static str {
+        match self {
+            ServerKind::Warehouse => "operator.full_read",
+            ServerKind::Instance => "instance.backup",
+        }
+    }
+
+    fn api_base(self) -> &'static str {
+        match self {
+            ServerKind::Warehouse => "api/federation/v1",
+            ServerKind::Instance => "api/instance/v1",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<ServerKind> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "warehouse" | "" => Some(ServerKind::Warehouse),
+            "instance" => Some(ServerKind::Instance),
+            _ => None,
+        }
+    }
+}
 
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum RemoteError {
@@ -116,6 +158,7 @@ pub struct RemoteClient {
     /// No overall timeout (a backup can be gigabytes), but a stalled connection still ends.
     stream: Client,
     server_url: String,
+    kind: ServerKind,
     auth: Arc<Auth>,
 }
 
@@ -171,7 +214,7 @@ pub fn check_transport(url: &str) -> Result<(), String> {
 }
 
 impl RemoteClient {
-    pub fn new(server_url: &str, keys: Arc<Keys>) -> Self {
+    pub fn new(server_url: &str, keys: Arc<Keys>, kind: ServerKind) -> Self {
         let agent = concat!("ri-launcher/", env!("CARGO_PKG_VERSION"));
         let http = Client::builder().timeout(Duration::from_secs(30)).user_agent(agent).build().expect("http client");
         let stream = Client::builder()
@@ -181,11 +224,11 @@ impl RemoteClient {
             .build()
             .expect("http client");
         let auth = Arc::new(Auth { keys, session: Mutex::new(None), clock_offset: AtomicI64::new(0) });
-        RemoteClient { http, stream, server_url: server_url.trim_end_matches('/').to_string(), auth }
+        RemoteClient { http, stream, server_url: server_url.trim_end_matches('/').to_string(), kind, auth }
     }
 
     fn api(&self, path: &str) -> String {
-        format!("{}/api/federation/v1/{}", self.server_url, path.trim_start_matches('/'))
+        format!("{}/{}/{}", self.server_url, self.kind.api_base(), path.trim_start_matches('/'))
     }
 
     /// Signature headers for one request: `X-RI-Trust` (our uuid), timestamp, nonce, signature.
@@ -283,7 +326,7 @@ impl RemoteClient {
         let uuid = &self.auth.keys.uuid;
         let body = serde_json::json!({
             "code": code,
-            "kind": KIND,
+            "kind": self.kind.pair_kind(),
             "uuid": uuid,
             "name": clip(name, 255),
             "public_key": public_key,
@@ -450,6 +493,17 @@ mod tests {
         for bad in ["http://ri.example.org", "http://8.8.8.8", "http://203.0.113.7:8080", "http://[2001:db8::1]"] {
             assert!(check_transport(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn a_server_kind_picks_the_api_the_kind_and_the_grant() {
+        assert_eq!(ServerKind::default(), ServerKind::Warehouse);
+        assert_eq!((ServerKind::Warehouse.pair_kind(), ServerKind::Warehouse.grant(), ServerKind::Warehouse.api_base()), ("backup_client", "operator.full_read", "api/federation/v1"));
+        assert_eq!((ServerKind::Instance.pair_kind(), ServerKind::Instance.grant(), ServerKind::Instance.api_base()), ("instance_backup", "instance.backup", "api/instance/v1"));
+        assert_eq!(ServerKind::parse("Instance"), Some(ServerKind::Instance));
+        assert_eq!(ServerKind::parse(""), Some(ServerKind::Warehouse));
+        assert_eq!(ServerKind::parse("nope"), None);
+        assert_eq!(serde_json::to_string(&ServerKind::Instance).unwrap(), "\"instance\"");
     }
 
     #[test]

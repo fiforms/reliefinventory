@@ -10,10 +10,12 @@ return [
     | System administration (updates + backups)
     |--------------------------------------------------------------------------
     |
-    | Paths and systemd unit names used by the System Administration panel.
-    | The units are installed from scripts/systemd/ and triggered through a
+    | The bare-metal software update unit used by the System Administration
+    | panel (deprecated; Docker installs update through the host-side updater).
+    | The unit is installed from scripts/systemd/ and triggered through a
     | narrow sudoers rule (scripts/systemd/reliefinventory-sudoers) — the web
-    | app can start exactly those two units and nothing else.
+    | app can start exactly that unit and nothing else. Backups are not here:
+    | see config/backup.php and scripts/BACKUPS.md.
     |
     */
 
@@ -26,14 +28,12 @@ return [
     // Docker self-update (docker/updater/ri-updater.py on the host): the shared secret the updater presents. Empty = off.
     'update_secret' => env('RI_UPDATE_SECRET'),
 
-    'backup_dir' => env('SYSTEM_BACKUP_DIR', '/var/backups/reliefinventory'),
-
+    // The old bare-metal backup panel's settings file. Nothing reads it any more except the one migration that carries its schedule into
+    // the backup_schedule table (App\Support\LegacyBackupSettings); safe to delete once every install has migrated.
     'settings_file' => env('SYSTEM_BACKUP_SETTINGS_FILE', storage_path('app/backup-settings.conf')),
 
     'update_status_file' => env('SYSTEM_UPDATE_STATUS_FILE', storage_path('app/system-update-status.json')),
 
     'update_unit' => env('SYSTEM_UPDATE_UNIT', 'reliefinventory-update.service'),
-
-    'backup_now_unit' => env('SYSTEM_BACKUP_NOW_UNIT', 'reliefinventory-backup-now.service'),
 
 ];
