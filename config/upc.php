@@ -8,7 +8,7 @@ return [
     'enabled' => env('RI_UPC_LOOKUP', true),
 
     // Open Food Facts asks every client to identify itself: AppName/Version (contact).
-    'user_agent' => env('RI_UPC_USER_AGENT', 'ReliefInventory/1.0 (+'.env('APP_URL', 'https://reliefinventory.fiforms.net').')'),
+    'user_agent' => env('RI_UPC_USER_AGENT', 'ReliefInventory/1.0 (+'.env('APP_URL', 'https://reliefinventory.app').')'),
 
     'timeout' => 3,
 

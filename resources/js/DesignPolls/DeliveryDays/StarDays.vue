@@ -1,4 +1,4 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- Delivery-days option "star": tap a day to accept it; an accepted day shows a ☆ that makes it preferred. -->

@@ -6,7 +6,7 @@
 # reliefinventory-update.service) is deprecated and will be removed — git pull + migrate + npm build from a web request can leave a
 # half-updated system. Run it from a shell if you must; Docker installs use the host-side updater (docker/updater/) instead.
 #
-# This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+# This file is part of the Relief Inventory Project (https://reliefinventory.app)
 # Licensed under the GNU GPL v. 3. See LICENSE.md for details
 #
 # Run as root on the server (app commands are dropped to www-data internally):

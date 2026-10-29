@@ -3,7 +3,7 @@
 # volunteer-sync.sh — hourly check that flips people.volunteer_active for
 # anyone whose scheduled volunteer_window starts or ends today.
 #
-# This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+# This file is part of the Relief Inventory Project (https://reliefinventory.app)
 # Licensed under the GNU GPL v. 3. See LICENSE.md for details
 #
 # Run as root (drops to www-data internally), via

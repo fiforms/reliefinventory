@@ -22,7 +22,7 @@ Some things aren't built yet: the request lifecycle past "Filled" (ready to ship
 upload) and some reports. [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md) keeps the honest list. Stock is pooled by item
 type once sorted, so a shelf item can't be traced back to a specific donor or pallet; this is not recall-style tracing.
 
-More at the project [website](https://reliefinventory.fiforms.net). Release history is in
+More at the project [website](https://reliefinventory.app). Release history is in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick start (Docker)
