@@ -51,7 +51,7 @@ const dockerBusy = computed(() => ['requested', 'checking', 'pulling', 'restarti
 const requestingDocker = ref(false);
 const confirmingDockerUpdate = ref(false);
 const dockerStateText = {
-	requested: 'Waiting for the updater on the server to pick this up…',
+	requested: 'Waiting for the updater service…',
 	checking: 'Looking for a new version…',
 	pulling: 'Downloading the new version…',
 	restarting: 'Installing. The site is offline for a few minutes and this page will recover on its own.',
