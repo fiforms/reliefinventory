@@ -103,16 +103,18 @@ State lives in named volumes:
   this with the same volumes afterwards).
 - `storage` — uploads (donation photos, feedback screenshots), print-queue PDFs, logs, and the generated app key.
 
-The scheduler writes a backup **.zip** daily into `./backups` (next to `compose.yaml`), keeping
-`RI_BACKUP_KEEP_DAYS` days. (The container takes ownership of that directory so it can write there.) It holds the
-database only unless you set `RI_BACKUP_SCOPE: full`, which adds the uploaded files — **otherwise back up the `storage`
+The scheduler asks every warehouse every hour for a backup **.zip**, and each warehouse's own schedule (Warehouse Backups →
+Snapshot Schedule: hourly / daily / weekly / monthly, how many of each to keep) decides whether one is due. They go into
+`./backups` (next to `compose.yaml`), one folder per warehouse. (The container takes ownership of that directory so it can write
+there.) A snapshot holds the database only unless its tier is set to include the uploaded files — **otherwise back up the `storage`
 volume too** if you rely on the uploaded photos, and copy backups off the machine. They are the same zips an admin
 makes on demand from **Updates & Backups** in the app (listed there, downloadable, never containing the application key —
 see `scripts/BACKUPS.md`).
 
-> **Retention is flat here.** Backups are kept `RI_BACKUP_KEEP_DAYS` days and then deleted. The daily / monthly / yearly
-> tiers a standard (systemd) server install keeps are not implemented for containers or the R Station local server yet —
-> copy a backup off the machine if you want to keep it longer.
+> **Retention is per tier.** Each warehouse keeps the newest N snapshots of each tier it enabled (default: one daily, 14 kept);
+> `RI_BACKUP_HOUR`, `RI_BACKUP_SCOPE` and `RI_BACKUP_KEEP_DAYS` only seed that schedule the first time. Backups made by hand are
+> deleted after `RI_BACKUP_KEEP_DAYS`. Snapshots sit on this machine: copy them elsewhere (the RI Launcher can) to survive losing it.
+> An admin can roll a warehouse back to any listed backup from Warehouse Backups.
 
 Each warehouse has its own encryption key, kept in the `warehouse-secrets` volume (never in a backup). Keep that
 volume with `db-data` and `storage`, and write the key down (Setup > Updates & Backups shows it): restoring a database

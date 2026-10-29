@@ -1,12 +1,14 @@
 <?php
 
 use App\Models\Backup;
+use App\Models\BackupSchedule;
 use App\Models\Control\Warehouse;
 use App\Services\BackupService;
 use App\Services\DatabaseTools;
 use App\Services\RestoreService;
 use App\Services\Warehouses\WarehouseContext;
 use App\Services\Warehouses\WarehouseLayout;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
@@ -394,17 +396,170 @@ test('a restore empties the live-state tables, which also covers older backups',
     expect(DB::table('sessions')->count())->toBe(0)->and(DB::table('jobs')->count())->toBe(0);
 });
 
-test('the daily backup is made once a day per warehouse', function () {
-    $this->artisan('backup:scheduled')->assertSuccessful();
-    expect(Backup::count())->toBe(1);
+/** A finished scheduled snapshot, for the schedule and retention tests (no zip: they only look at the rows). */
+function snapshot(string $tiers, $finishedAt, ?string $filename = null): Backup
+{
+    return Backup::create([
+        'status' => 'complete', 'scope' => 'database', 'tiers' => $tiers, 'filename' => $filename,
+        'started_at' => $finishedAt, 'finished_at' => $finishedAt,
+    ]);
+}
 
-    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('already made');
-    expect(Backup::count())->toBe(1);
+test('the daily snapshot waits for its hour, is made once a day, and a missed one is made at the next check', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['daily_enabled' => true, 'daily_hour' => 2, 'hourly_enabled' => false, 'weekly_enabled' => false, 'monthly_enabled' => false]);
 
-    $this->travel(1)->days();
+    expect($schedule->due(Carbon::parse('2026-02-10 01:30')))->toBe([])
+        ->and($schedule->due(Carbon::parse('2026-02-10 02:05')))->toBe(['daily']);
+
+    snapshot('daily', Carbon::parse('2026-02-10 02:06'));
+    expect($schedule->due(Carbon::parse('2026-02-10 09:00')))->toBe([])
+        ->and($schedule->due(Carbon::parse('2026-02-11 01:00')))->toBe([])
+        ->and($schedule->due(Carbon::parse('2026-02-11 14:00')))->toBe(['daily']);   // the warehouse was off at 02:00
+});
+
+test('hourly, weekly and monthly are due on their own rules, and one zip can carry several tiers', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update([
+        'hourly_enabled' => true, 'daily_enabled' => true, 'daily_hour' => 2,
+        'weekly_enabled' => true, 'weekly_dow' => 0, 'monthly_enabled' => true,   // Sunday
+    ]);
+
+    // Sunday 2026-02-08 at 02:10 with nothing ever made: everything is due
+    expect($schedule->due(Carbon::parse('2026-02-08 02:10')))->toBe(['hourly', 'daily', 'weekly', 'monthly']);
+
+    snapshot('hourly,daily,weekly,monthly', Carbon::parse('2026-02-08 02:11'));
+    expect($schedule->due(Carbon::parse('2026-02-08 02:40')))->toBe([])                   // under 50 minutes later
+        ->and($schedule->due(Carbon::parse('2026-02-08 03:05')))->toBe(['hourly'])
+        ->and($schedule->due(Carbon::parse('2026-02-09 02:10')))->toBe(['hourly', 'daily'])   // Monday: no weekly, same month
+        ->and($schedule->due(Carbon::parse('2026-02-15 02:10')))->toBe(['hourly', 'daily', 'weekly'])
+        ->and($schedule->due(Carbon::parse('2026-02-17 02:10')))->toBe(['hourly', 'daily', 'weekly'])   // Tuesday: the 03-15 Sunday was missed, and 03-08's is over a week old
+        ->and($schedule->due(Carbon::parse('2026-03-01 02:10')))->toContain('monthly');
+});
+
+test('a weekly snapshot missed on its day is made at the next check once it is over a week old', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['hourly_enabled' => false, 'daily_enabled' => false, 'monthly_enabled' => false, 'weekly_enabled' => true, 'weekly_dow' => 0, 'daily_hour' => 2]);
+    snapshot('weekly', Carbon::parse('2026-02-01 02:10'));   // a Sunday
+
+    expect($schedule->due(Carbon::parse('2026-02-05 10:00')))->toBe([])                // Thursday, 4 days later
+        ->and($schedule->due(Carbon::parse('2026-02-09 10:00')))->toBe(['weekly']);    // Monday: the Sunday 03-08 was missed
+});
+
+test('a snapshot includes the files when any tier it carries asks for them', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['daily_with_files' => false, 'weekly_with_files' => true]);
+
+    expect($schedule->scopeFor(['hourly', 'daily']))->toBe('database')
+        ->and($schedule->scopeFor(['hourly', 'daily', 'weekly']))->toBe('full')
+        ->and($schedule->withFiles('hourly'))->toBeFalse();
+});
+
+test('backup:scheduled makes one zip for what is due, tags its tiers, and makes nothing when nothing is due', function () {
+    BackupSchedule::current()->update(['daily_enabled' => true, 'daily_hour' => 2, 'hourly_enabled' => true]);
+
+    $this->travelTo(Carbon::parse('2026-02-10 01:00'));
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('hourly');   // hourly is due at any hour
+    $this->travelTo(Carbon::parse('2026-02-10 01:20'));
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('No snapshot is due');
+
+    $this->travelTo(Carbon::parse('2026-02-10 02:10'));
     $this->artisan('backup:scheduled')->assertSuccessful();
-    expect(Backup::count())->toBe(2);
+
+    $latest = Backup::orderByDesc('id')->first();
+    expect(Backup::count())->toBe(2)
+        ->and($latest->tiers)->toBe('hourly,daily')->and($latest->status)->toBe('complete')
+        ->and($latest->expires_at)->toBeNull()                       // kept by its tiers, not by age
+        ->and(is_file($latest->path()))->toBeTrue()
+        ->and(BackupSchedule::current()->last_status)->toBe('complete');
     $this->travelBack();
+});
+
+test('a training warehouse and a running backup both stop a scheduled snapshot', function () {
+    BackupSchedule::current()->update(['daily_enabled' => true, 'daily_hour' => 0]);
+
+    Backup::create(['status' => 'queued', 'scope' => 'database']);   // just queued: its process may not have started yet, so it isn't reaped
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('already running');
+    expect(Backup::count())->toBe(1);
+    Backup::query()->delete();
+
+    trainingWarehouse();
+    $this->artisan('backup:scheduled')->assertSuccessful()->expectsOutputToContain('training');
+    expect(Backup::count())->toBe(0);
+});
+
+test('a snapshot is kept while it is among the newest of any tier it carries; hand-made zips keep their own expiry', function () {
+    BackupSchedule::current()->update(['hourly_keep' => 2, 'daily_keep' => 2, 'weekly_keep' => 1, 'monthly_keep' => 1]);
+
+    $hourly = collect(range(1, 4))->map(fn ($h) => snapshot('hourly', Carbon::parse("2026-02-10 0{$h}:00")));
+    $sundayDaily = snapshot('daily,weekly', Carbon::parse('2026-02-08 02:00'));
+    $daily = collect([9, 10, 11])->map(fn ($d) => snapshot('daily', Carbon::parse("2026-02-{$d} 02:30")));
+    $manual = Backup::create(['status' => 'complete', 'scope' => 'database', 'finished_at' => now()->subDays(40), 'expires_at' => now()->addDay()]);
+
+    app(BackupService::class)->prune();
+
+    $kept = Backup::pluck('id')->all();
+    expect($kept)->toContain($hourly[3]->id, $hourly[2]->id)                  // newest two hourly
+        ->not->toContain($hourly[0]->id, $hourly[1]->id)
+        ->toContain($daily[2]->id, $daily[1]->id)                             // newest two daily
+        ->not->toContain($daily[0]->id)
+        ->toContain($sundayDaily->id)                                         // out of the daily window but the newest weekly
+        ->toContain($manual->id);
+});
+
+test('turning a tier off does not delete the snapshots it made', function () {
+    $schedule = BackupSchedule::current();
+    $schedule->update(['weekly_enabled' => false, 'weekly_keep' => 3]);
+    $weeklies = collect([1, 8, 15])->map(fn ($d) => snapshot('weekly', Carbon::parse('2026-02-'.str_pad($d, 2, '0', STR_PAD_LEFT).' 02:00')));
+
+    app(BackupService::class)->prune();
+
+    expect(Backup::whereIn('id', $weeklies->pluck('id'))->count())->toBe(3);
+});
+
+test('the schedule is read and changed by manage-backups holders, with limits', function () {
+    $admin = userWithPermissions('manage-backups');
+    $valid = [
+        'hourly_enabled' => true, 'hourly_keep' => 12, 'daily_enabled' => true, 'daily_hour' => 3, 'daily_keep' => 10, 'daily_with_files' => false,
+        'weekly_enabled' => true, 'weekly_dow' => 6, 'weekly_keep' => 5, 'weekly_with_files' => true,
+        'monthly_enabled' => false, 'monthly_keep' => 6, 'monthly_with_files' => true,
+    ];
+
+    $this->actingAs(userWithPermissions('general-access'))->getJson('/json/backups/schedule')->assertForbidden();
+    $this->actingAs(userWithPermissions('admin-system'))->putJson('/json/backups/schedule', $valid)->assertForbidden();
+    $this->actingAs($admin)->getJson('/json/backups/schedule')->assertOk()->assertJsonPath('daily_enabled', true);
+
+    $this->actingAs($admin)->putJson('/json/backups/schedule', $valid)->assertOk()->assertJsonPath('weekly_dow', 6);
+    expect(BackupSchedule::current()->weekly_keep)->toBe(5)->and(BackupSchedule::current()->weekly_with_files)->toBeTrue();
+
+    foreach ([['hourly_keep', 0], ['hourly_keep', 500], ['daily_hour', 24], ['weekly_dow', 7], ['monthly_keep', 99]] as [$field, $value]) {
+        $this->actingAs($admin)->putJson('/json/backups/schedule', [$field => $value] + $valid)->assertStatus(422)->assertJsonValidationErrors($field);
+    }
+    $this->actingAs($admin)->putJson('/json/backups/schedule', ['hourly_enabled' => true])->assertStatus(422);
+});
+
+test('rolling back needs admin-system, the password and a real snapshot of this warehouse, and takes a safety copy first', function () {
+    Process::fake();
+    $password = 'correct-horse-battery';
+    $admin = userWithPermissions('manage-backups', 'admin-system');
+    $admin->forceFill(['password' => bcrypt($password)])->save();
+    $snapshot = runBackup('database');
+
+    // manage-backups alone may not roll anything back
+    $this->actingAs(userWithPermissions('manage-backups'))->postJson("/json/backups/{$snapshot->id}/restore", ['password' => 'x'])->assertForbidden();
+    // wrong password, then a file that is not a snapshot, then files only
+    $this->actingAs($admin)->postJson("/json/backups/{$snapshot->id}/restore", ['password' => 'wrong'])->assertStatus(422);
+    $odd = Backup::create(['status' => 'complete', 'scope' => 'database', 'filename' => '../../etc/passwd']);
+    $this->actingAs($admin)->postJson("/json/backups/{$odd->id}/restore", ['password' => $password])->assertNotFound();
+    $filesOnly = Backup::create(['status' => 'complete', 'scope' => 'storage', 'filename' => $snapshot->filename]);
+    $this->actingAs($admin)->postJson("/json/backups/{$filesOnly->id}/restore", ['password' => $password])->assertStatus(422);
+
+    $this->actingAs($admin)->postJson("/json/backups/{$snapshot->id}/restore", ['password' => $password])->assertStatus(202);
+    Process::assertRan(fn ($process) => is_string($process->command) && str_contains($process->command, 'restore:run --snapshot=')
+        && str_contains($process->command, escapeshellarg($snapshot->filename)));
+    expect(RestoreService::isSnapshotName($snapshot->filename))->toBeTrue()
+        ->and(RestoreService::isSnapshotName('../relief-backup-1.zip'))->toBeFalse()
+        ->and(RestoreService::isSnapshotName('notes.zip'))->toBeFalse();
 });
 
 test('the zips of the one warehouse that predates per-warehouse folders move into its own', function () {

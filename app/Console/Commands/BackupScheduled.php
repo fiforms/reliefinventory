@@ -5,44 +5,66 @@
 
 namespace App\Console\Commands;
 
+use App\Models\Backup;
+use App\Models\BackupSchedule;
 use App\Services\BackupService;
+use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schema;
 
 /**
- * This warehouse's daily backup, for the Docker scheduler (`warehouse:each "backup:scheduled"`, hourly after the backup hour): makes the
- * usual recorded backup unless today's has already been made, remembered by a marker file in the warehouse's own backup folder. The
- * scheduler can therefore ask every warehouse every hour without a second dump, and a warehouse that was suspended at the hour still
- * gets one when it comes back. The backup itself waits its turn behind other warehouses' (BackupService::instanceLock()).
+ * This warehouse's rollback snapshots, for the Docker scheduler (`warehouse:each "backup:scheduled"`, every hour): asks the warehouse's
+ * BackupSchedule what is due now and makes ONE recorded zip carrying every tier it satisfies (BackupSchedule::due()). Asking every hour
+ * is safe: nothing due means no dump, and a warehouse that was suspended at its hour still gets its backup when it comes back. A
+ * failed attempt leaves the tier due, so the next hour tries again. The backup itself waits its turn behind other warehouses'
+ * (BackupService::instanceLock()); retention is BackupService::prune(), run at the start of every backup and hourly by the scheduler.
+ * A training warehouse is disposable and never gets snapshots.
  */
 class BackupScheduled extends Command
 {
-    protected $signature = 'backup:scheduled {--scope=database : database or full}';
+    protected $signature = 'backup:scheduled';
 
-    protected $description = 'Make this warehouse\'s daily backup unless today\'s exists.';
+    protected $description = 'Make this warehouse\'s scheduled snapshot, if its schedule says one is due.';
 
     public function handle(BackupService $service): int
     {
-        $dir = $service->dir();
-        $marker = $dir.'/.daily-'.now()->format('Ymd');
-        if (is_file($marker)) {
-            $this->line('Today\'s backup was already made.');
+        if (app(WarehouseContext::class)->current()->is_training) {
+            $this->line('A training warehouse is not backed up on a schedule.');
+
+            return self::SUCCESS;
+        }
+        if (! Schema::hasTable('backup_schedule')) {
+            $this->line('This warehouse has not been migrated to the backup schedule yet.');
 
             return self::SUCCESS;
         }
 
-        $code = Artisan::call('backup:create', ['--scope' => $this->option('scope')], $this->output);
-        if ($code !== self::SUCCESS) {
-            return self::FAILURE;
+        $service->reapInterrupted();
+        if (Backup::whereIn('status', Backup::ACTIVE)->exists()) {
+            $this->line('A backup is already running; it will be asked again next hour.');
+
+            return self::SUCCESS;
         }
 
-        @mkdir($dir, 0750, true);
-        touch($marker);
-        foreach (glob($dir.'/.daily-*') ?: [] as $old) {
-            if ($old !== $marker && filemtime($old) < now()->subDays(2)->getTimestamp()) {
-                @unlink($old);
-            }
+        $schedule = BackupSchedule::current();
+        $due = $schedule->due();
+        if ($due === []) {
+            $this->line('No snapshot is due.');
+
+            return self::SUCCESS;
         }
+
+        $backup = Backup::create(['status' => 'queued', 'scope' => $schedule->scopeFor($due), 'tiers' => implode(',', $due)]);
+        $service->run($backup);
+        $backup->refresh();
+
+        $schedule->forceFill(['last_run_at' => now(), 'last_status' => $backup->status === 'complete' ? 'complete' : 'failed'])->save();
+        if ($backup->status !== 'complete') {
+            $this->error($backup->error ?: 'The scheduled backup failed.');
+
+            return self::FAILURE;
+        }
+        $this->line($backup->path().' ('.implode(', ', $due).')');
 
         return self::SUCCESS;
     }

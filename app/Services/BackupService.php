@@ -6,6 +6,7 @@
 namespace App\Services;
 
 use App\Models\Backup;
+use App\Models\BackupSchedule;
 use App\Services\Warehouses\WarehouseAccounts;
 use App\Services\Warehouses\WarehouseContext;
 use Illuminate\Support\Facades\DB;
@@ -121,7 +122,8 @@ class BackupService
             $backup->update([
                 'status' => 'complete', 'filename' => basename($result['path']), 'size_bytes' => $result['size'],
                 'file_count' => $result['files'], 'progress' => null, 'finished_at' => now(),
-                'expires_at' => now()->addDays((int) config('backup.keep_days')),
+                // A scheduled snapshot is kept by its tiers (pruneTiered()), not by age; a manual one by the flat rule.
+                'expires_at' => $backup->tiers ? null : now()->addDays((int) config('backup.keep_days')),
             ]);
         } catch (Throwable $e) {
             report($e);
@@ -446,7 +448,38 @@ class BackupService
         });
         Backup::where('status', 'failed')->where('finished_at', '<', now()->subDays(7))->delete();
 
-        return $count + $this->pruneUntracked();
+        return $count + $this->pruneTiered() + $this->pruneUntracked();
+    }
+
+    /**
+     * Scheduled snapshots: one is kept while it is among the newest N of ANY tier it carries (N from the schedule, at least 1), so
+     * the Sunday zip that is also the daily one outlives the daily window as the weekly. A tier switched off keeps its newest N too
+     * (turning a tier off must not quietly delete history); they go as newer ones displace them or when an admin deletes them.
+     * Rows made by hand (tiers null) are not touched: they have their own expiry.
+     */
+    private function pruneTiered(): int
+    {
+        // The pre-migration backup of an upgrade runs before this version's tables exist; it must still be made.
+        if (! Schema::hasTable('backup_schedule') || ! Schema::hasColumn('backups', 'tiers')) {
+            return 0;
+        }
+        $schedule = BackupSchedule::current();
+        $keep = [];
+        foreach (BackupSchedule::TIERS as $tier) {
+            $ids = Backup::where('status', 'complete')->where('tiers', 'like', "%{$tier}%")
+                ->orderByDesc('finished_at')->orderByDesc('id')->limit($schedule->keep($tier))->pluck('id');
+            foreach ($ids as $id) {
+                $keep[$id] = true;
+            }
+        }
+
+        $count = 0;
+        Backup::where('status', 'complete')->whereNotNull('tiers')->whereNotIn('id', array_keys($keep))->get()->each(function (Backup $backup) use (&$count) {
+            $this->delete($backup);
+            $count++;
+        });
+
+        return $count;
     }
 
     /**

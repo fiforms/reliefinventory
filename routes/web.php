@@ -1310,6 +1310,9 @@ Route::redirect('/setup/backups', '/setup/system')->middleware('auth');
 Route::group(['prefix' => 'json', 'middleware' => ['auth', 'permission:manage-backups']], function () {
     Route::get('/backups', [BackupController::class, 'index']);
     Route::post('/backups', [BackupController::class, 'store']);
+    Route::get('/backups/schedule', [BackupController::class, 'schedule']);
+    Route::put('/backups/schedule', [BackupController::class, 'updateSchedule']);
+    Route::post('/backups/{id}/restore', [BackupController::class, 'restoreSnapshot'])->whereNumber('id')->middleware('throttle:5,1');
     Route::get('/backups/{id}/download', [BackupController::class, 'download'])->whereNumber('id');
     Route::get('/backups/tier/{tier}/{stamp}/download', [BackupController::class, 'downloadTier']);
     Route::delete('/backups/{id}', [BackupController::class, 'destroy']);

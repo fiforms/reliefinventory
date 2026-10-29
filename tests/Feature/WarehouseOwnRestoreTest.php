@@ -117,6 +117,47 @@ test('an administrator\'s restore replaces the data and files, invites other log
         ->and(is_file($this->tmp.'/out/warehouses/'.$this->warehouse->id.'/restore/own.json'))->toBeFalse();
 });
 
+test('a rollback to a snapshot takes a safety copy first, keeps the snapshot, replaces the data and keeps the restorer Administrator', function () {
+    ownRestoreWarehouse($this);
+    $this->context->switchTo($this->warehouse);
+    $backups = app(BackupService::class);
+    $snapshot = $backups->createIn($backups->dir(), 'database', 'relief-backup-20260101-020000-database-77')['path'];
+
+    Person::create(['first_name' => 'Newer', 'last_name' => 'Person', 'email' => 'newer@example.org', 'approved_at' => now()]);
+    app(RestoreService::class)->stageOwnRestore(['account_id' => $this->ada->account->id, 'first_name' => 'Ada', 'last_name' => 'Admin', 'any_lineage' => false]);
+    app(RestoreService::class)->runSnapshot(basename($snapshot));
+    $this->context->switchTo($this->warehouse);
+
+    $adaId = DB::table('people')->where('email', 'ada@example.org')->value('id');
+    expect(app(RestoreService::class)->status()['state'])->toBe('complete')
+        ->and(DB::table('people')->where('email', 'newer@example.org')->exists())->toBeFalse()   // rolled back
+        ->and(is_file($snapshot))->toBeTrue()                                                    // the snapshot itself is never consumed
+        ->and(glob($backups->dir().'/relief-backup-*-database-before-rollback.zip'))->toHaveCount(1)
+        ->and(DB::table('people_roles')->where('person_id', $adaId)->where('role_id', FirstRunService::ADMINISTRATOR_ROLE_ID)->exists())->toBeTrue()
+        ->and($this->warehouse->fresh()->status)->toBe('active')
+        ->and(is_file($this->tmp.'/out/warehouses/'.$this->warehouse->id.'/restore/own.json'))->toBeFalse();
+
+    // The safety copy holds what was there just before the rollback, so the rollback can itself be undone.
+    $safety = glob($backups->dir().'/relief-backup-*-database-before-rollback.zip')[0];
+    $zip = new ZipArchive;
+    $zip->open($safety);
+    expect($zip->getFromName('database/db.sql'))->toContain('newer@example.org');
+});
+
+test('a rollback only ever reads a zip in this warehouse\'s own folder, and a missing one changes nothing', function () {
+    ownRestoreWarehouse($this);
+    $this->context->switchTo($this->warehouse);
+    Person::create(['first_name' => 'Keep', 'last_name' => 'Me', 'email' => 'keep@example.org', 'approved_at' => now()]);
+    app(RestoreService::class)->stageOwnRestore(['account_id' => $this->ada->account->id, 'first_name' => 'Ada', 'last_name' => 'Admin', 'any_lineage' => false]);
+
+    foreach (['../../outside.zip', 'relief-backup-missing.zip', 'notes.zip'] as $name) {
+        app(RestoreService::class)->runSnapshot($name);
+        expect(app(RestoreService::class)->status()['state'])->toBe('failed');
+    }
+    expect(DB::table('people')->where('email', 'keep@example.org')->exists())->toBeTrue()
+        ->and($this->warehouse->fresh()->status)->toBe('active');
+});
+
 test('a backup of another warehouse is refused for an administrator and accepted for a clone by an instance administrator', function () {
     ownRestoreWarehouse($this);
     $this->context->switchTo($this->warehouse);

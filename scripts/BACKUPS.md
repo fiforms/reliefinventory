@@ -68,7 +68,7 @@ fallback):
 | Software update | `admin-system` | check for / install updates (`update.sh`) | version only; upgrade by pulling an image |
 | Offline mode | `admin-system` | ✔ | ✔ |
 | Create a backup + Backups list | `manage-backups` | ✔ | ✔ |
-| Scheduled backups | `admin-system` | tiers, "Run a Scheduled Backup Now", schedule + retention form | read-only summary of the compose settings, with the flat-retention note |
+| Scheduled backups | `admin-system` | tiers, "Run a Scheduled Backup Now", schedule + retention form | the snapshot schedule (`manage-backups`, below) |
 | Application key | `view-app-key` | ✔ | ✔ |
 
 The systemd-only endpoints (`/json/system/update`, `check-updates`, `backup`, `backup-settings`) answer **409** in a
@@ -150,18 +150,37 @@ visudo -c
 After changing the unit files in the repo, re-copy them and `systemctl daemon-reload` (settings-file changes need nothing).
 `journalctl -u reliefinventory-backup.service` shows scheduled-run history.
 
-## Docker / R Station local server: flat retention
+## Docker / R Station local server: per-warehouse snapshot tiers
 
-The `scheduler` container (`docker/scheduler.sh` → `docker/db-backup.sh` → `backup:create`) makes a daily zip into
-`RI_BACKUP_DIR` (`RI_BACKUP_SCOPE`, default `database`; `RI_BACKUP_HOUR`; `RI_BACKUP_ENABLED`), and the `app` container makes
-a `…-premigrate` zip before applying pending migrations (`RI_PREMIGRATE_BACKUP`; it refuses to migrate if that fails). The
-daily zips are recorded, so they appear in the admin page's Backups list; all are deleted after `RI_BACKUP_KEEP_DAYS`.
+The `scheduler` container (`docker/scheduler.sh` → `docker/db-backup.sh` → `warehouse:each "backup:scheduled"`) asks **every active warehouse
+every hour** for a snapshot, and each warehouse's own schedule decides whether one is due (`App\Models\BackupSchedule::due()`). The schedule is the
+single-row `backup_schedule` table, edited by `manage-backups` holders on **Warehouse Backups → Snapshot Schedule**:
 
-> **Note — tiered retention is not implemented for Docker / R Station.** Retention there is one number of days. The
-> daily / monthly / yearly tiers (and hourly rollback points) of the bare-metal install don't exist in a container yet: an
-> operator who wants a monthly or yearly keepsake has to copy a zip off the machine before it expires. The admin page says so.
-> To bring parity, `BackupService::prune()` would need `update.sh`'s promote/prune-by-tier logic (a promoted zip is a hard
-> link) and `RI_BACKUP_KEEP_*` settings, with the schedule shown read-only as it is now. See TODO.md item 14.
+| Tier | Made | Kept |
+|---|---|---|
+| hourly | any hour with none in the last ~50 minutes (off by default) | newest `hourly_keep` (24) |
+| daily | first check after `daily_hour` each day | newest `daily_keep` (14) |
+| weekly | on `weekly_dow`, or the next check once the last is over a week old (off by default) | newest `weekly_keep` (8) |
+| monthly | first check of the month after `daily_hour` (off by default) | newest `monthly_keep` (12) |
+
+One check makes **one zip**, tagged (`backups.tiers`, e.g. `hourly,daily,weekly`) with every tier it satisfies, so the Sunday zip is also the daily and
+the weekly one. `BackupService::prune()` keeps a tiered zip while it is among the newest N of *any* tier it carries (N ≥ 1), so a weekly outlives the
+daily window; turning a tier off never deletes what it made. Each tier can include the uploaded files (`*_with_files`; not hourly); a zip is `full` if any
+tier it carries asks for files, otherwise database only. A failed attempt leaves its tiers due, so the next hour retries. Training warehouses and
+warehouses mid-restore get none. Hand-made zips and the pre-migration backups keep the flat `RI_BACKUP_KEEP_DAYS` rule.
+
+`RI_BACKUP_ENABLED=false` still stops every scheduled snapshot on the instance. `RI_BACKUP_HOUR`, `RI_BACKUP_SCOPE` and `RI_BACKUP_KEEP_DAYS` now
+only seed a warehouse's schedule row when its table is created (an existing install keeps behaving as before: one daily backup); after that the
+warehouse admin owns them. The `app` container still makes a `…-premigrate` zip before applying pending migrations (`RI_PREMIGRATE_BACKUP`; it
+refuses to migrate if that fails).
+
+**Rolling back** (`Roll back to this` on a row of the Backups list; `admin-system` + password, `BackupController::restoreSnapshot`,
+`RestoreService::runSnapshot`): a detached `restore:run --snapshot=<file>` first saves a database zip of the *current* data in the same folder
+(`…-before-rollback.zip`; if that fails nothing is touched), then restores the snapshot through the same engine as `/setup/restore` (lineage checked,
+accounts relinked untrusted, files replaced when the snapshot has them, the person who ran it stays Administrator). Only a zip in this warehouse's own
+backup folder can be named. The snapshot is never consumed. The restore replaces the `backups` table with the snapshot's, so the safety copy and any
+newer zips are no longer *listed*; they stay on disk and `backup:prune` removes `relief-backup-*.zip` files with no record after `RI_BACKUP_KEEP_DAYS`.
+Snapshots sit on the same machine: they guard against mistakes, not hardware loss — see the Launcher section for off-box copies.
 
 ## Off-site copies pulled by the RI Launcher (federation `backup_client`)
 
