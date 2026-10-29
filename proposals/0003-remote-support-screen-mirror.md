@@ -1,9 +1,37 @@
 # 0003 — Remote support: a read-only mirror of a user's app screen
 
-- **Status:** Under discussion
+- **Status:** Rejected (2026-10-26). See "Why this was rejected" below.
 - **Lane:** Shared (trust, privacy, UX). A small piece of storage (support sessions and their audit) is Daniel's call.
 - **Author:** Mark
 - **Idea:** feedback report #95 on demo (2026-10-25); no ROADMAP.md entry yet
+
+## Why this was rejected
+
+The goals are sound (user-started, visible, read-only, audited, nothing retained), but the feature doesn't justify what it
+adds to the system:
+
+- **It covers only part of what support needs.** It mirrors the app's DOM, so it can't show printer dialogs, camera
+  permission, Wi-Fi, a wedge scanner that isn't typing, or anything about the OS or an R Station's settings. Those cases
+  still need a full remote-support tool, so this would be an addition, not a replacement.
+- **Existing tools already cover the common case.** Sharing a single browser tab in Meet, Zoom or Jitsi gives the same
+  "just the app, not the computer" scope. For an R Station, SSH or Tailscale reaches the device itself, which a DOM
+  mirror can't. The Problem section's claim that a general share exposes the whole computer is true only of
+  whole-screen sharing.
+- **The security surface is real.** The server would store DOM uploaded by one user and serve it to another. Masking
+  covers input fields, but the page text is full of donor and partner names, addresses and phone numbers. Cross-instance
+  option (b) would add a high-risk `support.view` trust permission.
+- **The maintenance cost is ongoing, for two developers and occasional use.** It adds the rrweb dependency and its
+  browser quirks, a table, a new permission (from 0002), a Reverb-plus-polling transport, and a banner in the layout.
+
+**Direction instead:** make the existing in-app feedback report more useful for diagnosis by capturing failures
+automatically, such as the last few failed `/json` requests (URL, status, error message, no bodies), recent JavaScript
+errors, and the page's route and active filters. Most "what does the screen show and why is it broken" questions
+would be answered by that, at a fraction of the cost. That is a change to something already built, so it starts as a
+GitHub Issue labeled `suggestion`, and any new storage is a separate proposal (Daniel's lane). For everything else,
+use a tab share on a call for ordinary users and SSH or Tailscale for R Stations.
+
+Revisit only if support requests repeatedly turn on seeing the user's live screen and the options above prove
+insufficient.
 
 ## Problem
 
