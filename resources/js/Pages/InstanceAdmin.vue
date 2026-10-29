@@ -412,7 +412,7 @@ watch(tab, (t) => {
 		loadInstanceBackups();
 		instTimer = setInterval(loadInstanceBackups, 4000);
 	}
-});
+}, { immediate: true });   // ?tab=backups starts on this tab, so the value never "changes"
 
 function saveInstanceSchedule() {
 	openDialog({
@@ -527,7 +527,7 @@ async function finishRecoveryKey() {
 		recoveryShown.value = null;
 		recoveryStored.value = false;
 		recoveryCopied.value = false;
-		notice.value = 'Recovery key confirmed. Every instance backup from now on is sealed to it.';
+		notice.value = 'Recovery key confirmed. Every instance backup from now on contains the warehouse keys, sealed to it.';
 		await loadInstanceBackups();
 	} catch (e) {
 		error.value = e.response?.data?.message || 'Could not confirm the recovery key.';
@@ -790,35 +790,35 @@ onUnmounted(() => {
 						</div>
 					</div>
 				</section>
+			</div>
 
-				<!-- The password dialog every change goes through -->
-				<div v-if="dialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="closeDialog">
-					<form class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4 max-h-full overflow-y-auto" @submit.prevent="submitDialog">
-						<h2 class="text-lg font-semibold" :class="dialog.danger ? 'text-red-800' : ''">{{ dialog.title }}</h2>
-						<p v-if="dialog.text" class="text-sm text-gray-700">{{ dialog.text }}</p>
-						<div v-for="f in dialog.fields" :key="f.key">
-							<label v-if="f.type === 'checkbox'" class="flex items-center gap-2 text-sm">
-								<input type="checkbox" v-model="dialog.values[f.key]" class="h-4 w-4 rounded border-gray-300" /> {{ f.label }}
-							</label>
-							<label v-else class="block text-sm">
-								<span class="text-gray-700">{{ f.label }}</span>
-								<textarea v-if="f.type === 'textarea'" v-model="dialog.values[f.key]" rows="3" class="mt-1 block w-full rounded border-gray-300 text-sm"></textarea>
-								<input v-else :type="f.type" v-model="dialog.values[f.key]" class="mt-1 block w-full rounded border-gray-300 text-sm" autocomplete="off" />
-							</label>
-						</div>
-						<label class="block text-sm">
-							<span class="text-gray-700 font-medium">Your password, to confirm</span>
-							<input type="password" v-model="dialogPassword" required autocomplete="current-password" class="mt-1 block w-full rounded border-gray-300 text-sm" />
+			<!-- The password dialog every change goes through -->
+			<div v-if="dialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="closeDialog">
+				<form class="bg-white rounded-lg shadow-xl w-full max-w-md p-6 space-y-4 max-h-full overflow-y-auto" @submit.prevent="submitDialog">
+					<h2 class="text-lg font-semibold" :class="dialog.danger ? 'text-red-800' : ''">{{ dialog.title }}</h2>
+					<p v-if="dialog.text" class="text-sm text-gray-700">{{ dialog.text }}</p>
+					<div v-for="f in dialog.fields" :key="f.key">
+						<label v-if="f.type === 'checkbox'" class="flex items-center gap-2 text-sm">
+							<input type="checkbox" v-model="dialog.values[f.key]" class="h-4 w-4 rounded border-gray-300" /> {{ f.label }}
 						</label>
-						<p v-if="dialogError" class="rounded bg-red-100 border border-red-400 text-red-800 px-3 py-2 text-sm">{{ dialogError }}</p>
-						<div class="flex gap-3 justify-end items-center">
-							<button type="button" class="text-sm text-gray-600 underline" :disabled="dialogBusy" @click="closeDialog">Cancel</button>
-							<PrimaryButton :disabled="dialogBusy || !dialogPassword" :class="dialog.danger ? 'bg-red-600 hover:bg-red-500' : ''">
-								{{ dialogBusy ? 'Working…' : dialog.button }}
-							</PrimaryButton>
-						</div>
-					</form>
-				</div>
+						<label v-else class="block text-sm">
+							<span class="text-gray-700">{{ f.label }}</span>
+							<textarea v-if="f.type === 'textarea'" v-model="dialog.values[f.key]" rows="3" class="mt-1 block w-full rounded border-gray-300 text-sm"></textarea>
+							<input v-else :type="f.type" v-model="dialog.values[f.key]" class="mt-1 block w-full rounded border-gray-300 text-sm" autocomplete="off" />
+						</label>
+					</div>
+					<label class="block text-sm">
+						<span class="text-gray-700 font-medium">Your password, to confirm</span>
+						<input type="password" v-model="dialogPassword" required autocomplete="current-password" class="mt-1 block w-full rounded border-gray-300 text-sm" />
+					</label>
+					<p v-if="dialogError" class="rounded bg-red-100 border border-red-400 text-red-800 px-3 py-2 text-sm">{{ dialogError }}</p>
+					<div class="flex gap-3 justify-end items-center">
+						<button type="button" class="text-sm text-gray-600 underline" :disabled="dialogBusy" @click="closeDialog">Cancel</button>
+						<PrimaryButton :disabled="dialogBusy || !dialogPassword" :class="dialog.danger ? 'bg-red-600 hover:bg-red-500' : ''">
+							{{ dialogBusy ? 'Working…' : dialog.button }}
+						</PrimaryButton>
+					</div>
+				</form>
 			</div>
 
 			<div v-if="tab === 'backups'" class="space-y-6">
@@ -829,7 +829,7 @@ onUnmounted(() => {
 						optionally with every warehouse's files. It is also what the automatic backup before an upgrade is. It is for the person who runs the
 						server, to move or recover the whole installation: to back up or restore a single warehouse, use
 						<a href="/setup/system" class="underline">Warehouse Backups</a>. Each zip holds every warehouse's encryption key <strong>sealed to your recovery key</strong> (below),
-						so an automatic backup can be restored, keys and all, with the printout and nothing else.
+						so an automatic backup can be restored, keys and all.
 					</p>
 					<p v-if="instBackups && !instBackups.available" class="rounded bg-amber-100 border border-amber-400 text-amber-900 px-3 py-2 text-sm">
 						This needs the Docker install: the backup is made by its <span class="font-mono">provisioner</span> container. On a standard server install, use
@@ -857,7 +857,7 @@ onUnmounted(() => {
 						</template>
 						<template v-else>
 							<p class="text-sm text-gray-700">
-								Every instance backup is sealed to recovery key <span class="font-mono font-semibold">{{ recoveryState.fingerprint }}</span>
+								Every instance backup contains encrypted copies of the warehouse keys. Those keys are sealed to recovery key <span class="font-mono font-semibold">{{ recoveryState.fingerprint }}</span>
 								<span class="text-gray-500">(made by {{ recoveryState.created_by }}{{ recoveryState.source === 'generated' ? '' : `, ${recoveryState.source}` }})</span>.
 								Keep the printout away from this server and away from your backups.
 							</p>
