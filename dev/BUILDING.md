@@ -1,10 +1,10 @@
 # Building and running from source
 
-Most people should [run the Docker image](README.md#quick-start-docker) instead. This page is for
+Most people should [run the Docker image](../README.md#quick-start-docker) instead. This page is for
 developers, and for anyone installing on a bare server without Docker.
 
 Relief Inventory is a [Laravel](https://laravel.com/) 11 + Inertia.js + Vue 3 application. For an architecture
-tour, see [CLAUDE.md](CLAUDE.md); for known gaps and the roadmap, [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md).
+tour, see [dev/README.md](README.md) and [CLAUDE.md](../CLAUDE.md); for known gaps and the roadmap, [PROJECT_ANALYSIS.md](notes/PROJECT_ANALYSIS.md).
 
 ## Requirements
 
@@ -88,7 +88,7 @@ This starts the web server, queue listener, log viewer and Vite together. `npm r
     vendor/bin/pest
 
 The suite runs against a separate, disposable database — never your real one. See
-[scripts/TESTING.md](scripts/TESTING.md) before changing that configuration or setting up a new machine. PHP
+[scripts/TESTING.md](../scripts/TESTING.md) before changing that configuration or setting up a new machine. PHP
 style is checked with `vendor/bin/pint`.
 
 ## Updating
@@ -102,7 +102,7 @@ After pulling new code you may need some or all of:
 
 ## Running in production
 
-(These steps are still incomplete. See also [scripts/](scripts/) for the update, backup and realtime notes.)
+(These steps are still incomplete. See also [scripts/](../scripts/) for the update, backup and realtime notes.)
 
 **Web server and cache.** You'll need a web server such as Apache or nginx with PHP, and optionally Redis.
 
@@ -154,11 +154,11 @@ To refresh with newer data, download the per-state files linked from
 
 Published images are built by the **Docker image (multi-arch)** GitHub Action (Actions tab, Run workflow), which
 builds both architectures natively and publishes `ghcr.io/fiforms/reliefinventory`. See
-[docker/README.md](docker/README.md) for running it and [scripts/DOCKER_PLAN.md](scripts/DOCKER_PLAN.md) for the
+[docker/README.md](../docker/README.md) for running it and [scripts/DOCKER_PLAN.md](../scripts/DOCKER_PLAN.md) for the
 design.
 
 ## Building the companion apps
 
-- **RI Print** (desktop print server): see [print-client/README.md](print-client/README.md). Built for
+- **RI Print** (desktop print server): see [print-client/README.md](../print-client/README.md). Built for
   Windows, macOS and Linux by the `Print client` GitHub Actions workflows.
-- **R Station** (Raspberry Pi device image): see [rstation/IMPLEMENTATION.md](rstation/IMPLEMENTATION.md).
+- **R Station** (Raspberry Pi device image): see [rstation/IMPLEMENTATION.md](../rstation/IMPLEMENTATION.md).
