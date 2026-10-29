@@ -23,7 +23,7 @@ Bare-metal (systemd) installs are supported as a single warehouse. Their in-app 
 systemd units; documentation lives here.
 
 ## Planning
-[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) (open work only) · [FACILITY_NETWORK.md](FACILITY_NETWORK.md) (unbuilt facility-network design) · [notes/MULTI_WAREHOUSE.md](notes/MULTI_WAREHOUSE.md) (design and rationale; [the notes](notes/MULTI_WAREHOUSE_NOTES.md) are the quick version) · [../CHANGELOG.md](../CHANGELOG.md) (what shipped; currently incomplete)
+[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) (open work only) · [FACILITY_NETWORK.md](FACILITY_NETWORK.md) (unbuilt facility-network design) · [HELP_AND_LOCALIZATION_PLAN.md](HELP_AND_LOCALIZATION_PLAN.md) (single-source help guides, English review, then Spanish) · [notes/MULTI_WAREHOUSE.md](notes/MULTI_WAREHOUSE.md) (design and rationale; [the notes](notes/MULTI_WAREHOUSE_NOTES.md) are the quick version) · [../CHANGELOG.md](../CHANGELOG.md) (what shipped; currently incomplete)
 
 ## Retired docs
 - **`PROJECT_ANALYSIS.md`** (the August 2026 codebase analysis and completion plan) was deleted once most of it was built or fixed.
