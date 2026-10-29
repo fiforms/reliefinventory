@@ -2,7 +2,7 @@
 
 How a client app (the desktop print client, an R Station) or another Relief Inventory instance proves who
 it is. Machine-readable form: `rstation/federation.openapi.yaml`. Server design and the Trust Console are
-described in `CLAUDE.md` ("Federation"); this file is what a **client implementer** needs. It replaces the
+described in `dev/notes/FEDERATION.md`; this file is what a **client implementer** needs. It replaces the
 older bearer-token pairing in `rstation/platform/docs/DEVICE_CONTRACT.md` for this app: **there are no bearer tokens any more**, and a device paired before federation is refused (401) and must pair again.
 
 ## Keys

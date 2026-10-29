@@ -10,15 +10,15 @@ backlog, see `notes/PROJECT_ANALYSIS.md` (especially Part 5, the facility networ
 ## 1. Point of Distribution (PoD)
 
 A PoD at the warehouse's site where the public picks up goods (checkout processed as an order), plus a PoD-only mode that takes in
-already-sorted goods from an upstream warehouse instead of receiving and sorting. Design and open questions: `pod.md`.
+already-sorted goods from an upstream warehouse instead of receiving and sorting. Design and open questions: `POD.md`.
 
 ---
 
 ## 2. Interoperability
 
 Exchange inventory, shipments and requests with other agencies' systems; first step is standardizing ACS item numbers/categories on GS1 GPC codes.
-Design and open questions: `interoperability.md`.
+Design and open questions: `INTEROPERABILITY.md`.
 
 ---
 
-Both ideas depend on a well-defined shipment/transfer message between instances, built on the existing trust layer (`notes/multi-warehouse.md`).
+Both ideas depend on a well-defined shipment/transfer message between instances, built on the existing trust layer (`notes/MULTI_WAREHOUSE_NOTES.md`).

@@ -32,7 +32,7 @@ everyone to adopt this one.
 - **Start with files**: import and export CSV (and later standards such as EDI or GS1 messages) for stock, shipments
   and requests. This is cheap, human-checkable, and works with agencies that have no API.
 - Per-agency adapters that translate to one internal shape, so adding an agency doesn't touch the core.
-- Reuse the existing trust layer and the shipment/transfer message a PoD intake would need (`pod.md`), so interoperability with another instance of this
+- Reuse the existing trust layer and the shipment/transfer message a PoD intake would need (`POD.md`), so interoperability with another instance of this
   system is just the simplest adapter.
 
 ### Open questions

@@ -8,7 +8,7 @@ Design and rationale: `/MULTI_WAREHOUSE.md` (§18 has the phase status and the c
 - Only the `provisioner` container holds the database administrator password (the `admin-secrets` volume). Never read it from app code; go through `ProvisioningClient`.
 - Tests needing a second warehouse use `tests/SecondWarehouse.php`.
 - An instance admin is assumed able to run any command on the box. Never enforce a rule *against* the instance admin in software; enforce isolation *between warehouses*.
-- Don't add anything to a real warehouse's behaviour for training (see `training-warehouse.md`).
+- Don't add anything to a real warehouse's behaviour for training (see `TRAINING_WAREHOUSE.md`).
 
 ## Lifecycle
 - Create: `warehouse:create` (`WarehouseCreator`) leaves it `awaiting_setup`; it answers only `/activate`, where the holder of the one-time setup code (`SetupCodes`: hash only, 7 days, wrong tries counted per warehouse) becomes its Administrator (never an instance admin) → `active` (`WarehouseSetup`). Or they restore a backup into it (`/activate/restore/*`, claim file in the warehouse's restore folder `<backup dir>/warehouses/<id>/restore`).

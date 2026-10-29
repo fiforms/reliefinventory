@@ -56,8 +56,7 @@ Issues identified August 16, 2026
    Paged Media — `@page`, `@page :first`, margin-box running header/page-numbers) instead of
    headless Chrome, giving correct per-page margins, a running header absent on page 1, and
    category headings that repeat on continuation pages. (2026-10-19: every other PDF — labels,
-   sitrep, help guide — followed, and headless Chrome was removed entirely.) See CLAUDE.md's
-   PDF/label generation section for the technical detail.
+   sitrep, help guide — followed, and headless Chrome was removed entirely.) (PDFs: `notes/PRINT_QUEUE.md`.)
 
 3. Important PDF Reports such as the inventory should also be available as a CVS (or XLSX) Spreadsheet Download
 
@@ -154,7 +153,7 @@ Issues identified October 8, 2026
  - Built: per-site printers and a job queue (`/print-queue`), a shared "Print ▾" menu on every
    print point, the device API, printer setup on `/setup/devices`, optional realtime (Reverb), an
    OpenAPI description of the print extension (`rstation/print-extension.openapi.yaml`) and a client
-   spec (`rstation/PRINT_CLIENT_SPEC.md`). See `CLAUDE.md`'s "Print queue" section, `rstation/PRINT_SERVER.md`
+   spec (`rstation/PRINT_CLIENT_SPEC.md`). See `notes/PRINT_QUEUE.md`, `rstation/PRINT_SERVER.md`
    (wire protocol) and `scripts/REVERB.md` (provisioning). The fleet pairing/heartbeat tests now run and
    pass; nothing has been paired with a real device yet, and the Pi product (`rstation/product`) still
    doesn't act on the heartbeat's `kiosk_path`.
@@ -213,7 +212,7 @@ Issues identified October 8, 2026
    test Reverb in the container;
    print a real label from the container (the amd64 image rebuilt at ~1.7 GB, PDF rendering verified in-container; arm64 not rebuilt).
 
-13. First-run setup wizard — built 2026-10-19 (branch `first-run-wizard`), see CLAUDE.md
+13. First-run setup wizard — built 2026-10-19 (branch `first-run-wizard`), see `notes/FIRST_RUN.md`
  - **Open:** a way to remove example data from inside the app (today a clean instance means a fresh database);
    `demo_data_seeded_at` is recorded so the app could show a "contains demo data" banner; `TextInput` doesn't put
    its `id` on the real `<input>` (labels don't link, app-wide); decide whether Docker should print a setup code in
@@ -235,7 +234,7 @@ Issues identified October 8, 2026
    A scheduled `--scope=full` is now just a tier's "include uploaded files" box. The `/json/system/*` update and offline-mode routes
    still duplicate `/json/instance/*`. `setup:reset` exists for starting over after a failed forced restore (typed-phrase, terminal-only).
 
-15. Barcode (UPC) lookup — built 2026-10-21 (branch `upc-lookup`), see CLAUDE.md "Barcode scan → item"
+15. Barcode (UPC) lookup — built 2026-10-21 (branch `upc-lookup`), see `notes/UPC_SCANNING.md`
  - **Scanning interface playbook:** `SCANNING_INTERFACE_NOTES.md` (repo root) records what we learned making Donation Sorting
    scanner-first (audio cues, focus rules, Qty-field hazards, leave-page guards, a checklist). Apply it to Order Filling picking,
    Receiving and Inventory Movement.
@@ -266,7 +265,7 @@ Issues identified October 8, 2026
      ~8 MB compressed) and make `php` a wrapper. Its availability on the current 8.4 image was not confirmed to be absent for good — re-test
      it on the FrankenPHP version in use (1.13.3 at the time of writing).
 
-18. Federation trust system — built 2026-10-26 (branch `federation-trust`), see `CLAUDE.md` "Federation" and `rstation/FEDERATION_AUTH.md`; follow-ups
+18. Federation trust system — built 2026-10-26 (branch `federation-trust`), see `notes/FEDERATION.md` and `rstation/FEDERATION_AUTH.md`; follow-ups
    - **Before shipping:** build the image and try it on a real Pi (pair with a code; boot with the clock far behind and check it recovers).
      The Python was run only against a live server on a dev machine, with the clock faked. Also not run: the Tauri window and the Windows/macOS
      builds of the print client. **The legacy paths were removed 2026-10-26** (feedback shared secret, bearer-token devices, in-place upgrade,

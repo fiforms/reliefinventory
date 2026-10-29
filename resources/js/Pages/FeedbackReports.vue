@@ -38,7 +38,7 @@
 	via /json/feedback-aggregation-settings (FeedbackAggregationSettingsController), stored in
 	feedback_aggregation_settings (FeedbackAggregationSetting), same singleton-row pattern as
 	PinLoginSetting/BannerSetting. Pairing with the central instance is done in the Trust Console (/setup/trust);
-	reports travel signed through that trust (see CLAUDE.md, "Federation"). The old shared-secret fields and
+	reports travel signed through that trust (see dev/notes/FEDERATION.md). The old shared-secret fields and
 	connection codes are gone.
 -->
 

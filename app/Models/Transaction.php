@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * One orderdonations row: an order or a donation (`type`). The status is stored and server-controlled (never a free-form
  * dropdown); `person_id_user` (staff) is set from Auth::id(), never from the client. Order lines lock once filling starts.
- * Lifecycles and filling: dev/notes/orders-and-filling.md.
+ * Lifecycles and filling: dev/notes/ORDERS_AND_FILLING.md.
  */
 class Transaction extends Model
 {

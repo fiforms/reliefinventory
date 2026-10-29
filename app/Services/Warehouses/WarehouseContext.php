@@ -16,7 +16,7 @@ use RuntimeException;
  * A singleton: one per PHP request, job or command.
  *
  * Rules for anything that touches sessions, auth, storage, backups, the queue/scheduler, cookies or emailed links
- * (more in dev/notes/multi-warehouse.md):
+ * (more in dev/notes/MULTI_WAREHOUSE_NOTES.md):
  *  - Everything runs in exactly one warehouse; commands take --warehouse.
  *  - Emailed links use Warehouse::publicUrl(), never the Host header. Long-lived cookies use cookieName().
  *    Broadcast channels use Warehouse::channel().

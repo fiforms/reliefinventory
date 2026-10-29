@@ -24,6 +24,15 @@ function rows(PDO $pdo, string $sql, array $args): array
     return array_map(fn ($r) => array_change_key_case($r, CASE_LOWER), $st->fetchAll());
 }
 
+$files = [];
+foreach (['', 'control/', 'accounts/'] as $dir) {
+    foreach (glob(__DIR__.'/../../database/migrations/'.$dir.'*.php') as $f) {
+        $files[] = $dir.basename($f).':'.sha1_file($f);
+    }
+}
+sort($files);
+$stamp = sha1(implode("\n", $files));
+
 $out = <<<'MD'
 # Database schema reference
 
@@ -78,5 +87,6 @@ foreach ($sections as $title => [$schema, $blurb]) {
     }
 }
 
+$out = preg_replace('/^(# Database schema reference\n)/', "$1\n<!-- migrations-stamp: {$stamp} -->\n", $out, 1);
 file_put_contents(__DIR__.'/../SCHEMA.md', $out);
 echo "Wrote dev/SCHEMA.md\n";

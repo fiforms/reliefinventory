@@ -10,4 +10,4 @@ All gated on `view-reports`. Built the same way: a controller with `index` / `pd
 - **Donor** (`DonorReportController`, `/reports/donors`): per donor, sorted units by disposition, loss % ((outdated + trashed) ÷ all sorted; diverted doesn't count against a donor), loss % of the last three donations, per-donation loss.
   - **Standing** (`people.donor_standing` preferred/normal/watch/decline + note/set_by/set_at; history `donor_standing_log`) is a human decision: `PUT /json/people/{id}/donor-standing`, `manage-donor-standing` (Office/Administrator), decline needs a note, the Unknown Donor can't have one, not mass-assignable. `DonorStanding::suggest()` only suggests, from `config('inventory.donor_standing')` (starting values, meant to be tuned). Receiving warns under the donor for watch/decline; it never blocks.
   - Not built: the donor notification letter; a standing badge on Donation Offers / People.
-- **Training** (`/reports/training`): see `training-warehouse.md`.
+- **Training** (`/reports/training`): see `TRAINING_WAREHOUSE.md`.

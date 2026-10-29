@@ -16,16 +16,21 @@ conventions an agent must always have loaded and points back here.
 | Give an AI agent access | [../scripts/AI_AGENT_ACCESS.md](../scripts/AI_AGENT_ACCESS.md) |
 
 ## Planning
-[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [pod.md](pod.md), interop in [interoperability.md](interoperability.md)) · [TODO.md](TODO.md) · [notes/PROJECT_ANALYSIS.md](notes/PROJECT_ANALYSIS.md) (stale notes; verify before relying on) · [../MULTI_WAREHOUSE.md](../MULTI_WAREHOUSE.md) (design) · [../CHANGELOG.md](../CHANGELOG.md)
+[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) · [notes/PROJECT_ANALYSIS.md](notes/PROJECT_ANALYSIS.md) (stale notes; verify before relying on) · [../MULTI_WAREHOUSE.md](../MULTI_WAREHOUSE.md) (design) · [../CHANGELOG.md](../CHANGELOG.md)
 
 ## Implementation notes (`notes/`)
 Read the one for the area you're changing.
-- [multi-warehouse.md](notes/multi-warehouse.md): context, accounts, backups/restore, self-update
-- [orders-and-filling.md](notes/orders-and-filling.md): status lifecycles, filling, allocation, pick plan
-- [stock-and-locations.md](notes/stock-and-locations.md): pallet stock, Fill Pallet, adjustments, inventory labels
-- [receiving.md](notes/receiving.md): pallets/containers, Receiving wizard, donation offers
-- [upc-scanning.md](notes/upc-scanning.md): barcode → item, cartons, online lookup
-- [reports.md](notes/reports.md): report structure and definitions
-- [training-warehouse.md](notes/training-warehouse.md): class tooling
-- [frontend.md](notes/frontend.md): RIForm, autosave screens, help guides
+- [MULTI_WAREHOUSE_NOTES.md](notes/MULTI_WAREHOUSE_NOTES.md): context, accounts, backups/restore, self-update
+- [ORDERS_AND_FILLING.md](notes/ORDERS_AND_FILLING.md): status lifecycles, filling, allocation, pick plan
+- [STOCK_AND_LOCATIONS.md](notes/STOCK_AND_LOCATIONS.md): pallet stock, Fill Pallet, adjustments, inventory labels
+- [RECEIVING.md](notes/RECEIVING.md): pallets/containers, Receiving wizard, donation offers
+- [UPC_SCANNING.md](notes/UPC_SCANNING.md): barcode → item, cartons, online lookup
+- [FEDERATION.md](notes/FEDERATION.md): identity, pairing, grants, what's built
+- [PRINT_QUEUE.md](notes/PRINT_QUEUE.md): print jobs, print servers, device API
+- [SUB_PROJECTS.md](notes/SUB_PROJECTS.md): RI Launcher, RI Print, R Station
+- [UNTRUSTED_CONTENT.md](notes/UNTRUSTED_CONTENT.md): feedback reports, AI-assisted work
+- [FIRST_RUN.md](notes/FIRST_RUN.md): setup wizard and its latch
+- [REPORTS.md](notes/REPORTS.md): report structure and definitions
+- [TRAINING_WAREHOUSE.md](notes/TRAINING_WAREHOUSE.md): class tooling
+- [FRONTEND.md](notes/FRONTEND.md): RIForm, autosave screens, help guides
 - [SCANNING_INTERFACE_NOTES.md](notes/SCANNING_INTERFACE_NOTES.md): scanner UX rules and checklist

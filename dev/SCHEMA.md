@@ -1,5 +1,7 @@
 # Database schema reference
 
+<!-- migrations-stamp: 54db0afd9c88e97af103d4c153e8a5584f30a42b -->
+
 **Generated — do not edit by hand.** Regenerate with `dev/scripts/schema-doc.sh` after adding or changing a migration, and commit the result
 with it. It migrates throwaway databases (`test_reliefinventory_schemadoc*`) from scratch, so it shows what the migrations produce, not what any
 live database looks like. Columns: `name type` then `?` nullable, `=default`, `PK`, `auto`. `FK` lines show `column → table.column (on delete)`.

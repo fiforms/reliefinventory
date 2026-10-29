@@ -90,7 +90,7 @@ class PinLoginService
      *
      * Takes a plain person id, not a Person/User model instance — Person
      * and User are two separate classes over the same `people` table (see
-     * CLAUDE.md), and the caller here (AuthenticatedSessionController)
+     * app/Models/User.php and Person.php), and the caller here (AuthenticatedSessionController)
      * only ever has a User in hand; the id is all this actually needs.
      */
     public function grantTrust(?TrustedDevice $device, int $personId): void

@@ -45,8 +45,7 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
 
 
 Goal: a multi-arch (linux/amd64 + linux/arm64) image and compose stack that someone else can run in a Docker
-environment, without the manual server provisioning the app otherwise needs (see CLAUDE.md, "PDF / label
-generation" and `scripts/REVERB.md`).
+environment, without the manual server provisioning the app otherwise needs (see `dev/BUILDING.md` and `scripts/REVERB.md`).
 
 **Effort estimate:** roughly 2–4 days to a working multi-arch image and compose file; about another week to make
 it something distributable to other people (entrypoint hardening, docs, CI publishing).
@@ -82,7 +81,7 @@ get much worse that way):
 
    (Original plan, for history: Chromium on arm64 needed Debian's `chromium` package, `LARAVEL_PDF_CHROME_PATH`
    and `LARAVEL_PDF_NO_SANDBOX=true`. None of that applies any more.) The image turns the manual provisioning
-   step in CLAUDE.md into part of the image.
+   step in `dev/BUILDING.md` into part of the image.
 2. **First-run entrypoint.** Wait for the DB; generate `APP_KEY` if missing and persist it; run
    `migrate --force` and the essential seeders; `storage:link`. Provide a documented way to create the first
    admin (existing `php artisan user:create`).

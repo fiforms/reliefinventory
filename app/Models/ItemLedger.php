@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * Append-only ledger and the source of truth for stock (usable additions minus subtractions; only disposition `usable`
  * counts). Never store a running total. Where stock sits comes from App\Services\PalletStock
- * (dev/notes/stock-and-locations.md).
+ * (dev/notes/STOCK_AND_LOCATIONS.md).
  */
 class ItemLedger extends Model
 {
