@@ -5,7 +5,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Right-sized fair-share allocation (PROJECT_ANALYSIS.md Part 5), pulled
+ * Right-sized fair-share allocation (retired PROJECT_ANALYSIS.md Part 5 (dev/README.md, "Retired docs")), pulled
  * forward into the single-warehouse Order Filling build rather than waiting
  * on the multi-facility model: a self-reported need level per order line
  * (decision support only — never changes the proportional-allocation math,

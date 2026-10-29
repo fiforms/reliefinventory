@@ -1,13 +1,13 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Support\Facades\DB;
 
 /**
- * Print Labels (/reports/labels) is deleted (PROJECT_ANALYSIS.md Part 12,
+ * Print Labels (/reports/labels) is deleted (retired PROJECT_ANALYSIS.md Part 12 (dev/README.md, "Retired docs"),
  * permissions-model-rework-2026-09-02 memory) — an old design that printed
  * labels from a standalone catalog-browsing page disconnected from any
  * intake. Labels are attached to when you need them: printed either from

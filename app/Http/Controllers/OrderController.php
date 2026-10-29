@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
@@ -50,7 +50,7 @@ class OrderController extends Controller
         // Self-reported by the partner, entered by staff on their behalf (no
         // partner portal exists yet). Never required — decision-support
         // context for the fair-share allocation review, not a formula
-        // input; see PROJECT_ANALYSIS.md Part 5.
+        // input; see dev/FACILITY_NETWORK.md.
         'need_level' => 'nullable|in:critical,moderate,low',
     ];
 

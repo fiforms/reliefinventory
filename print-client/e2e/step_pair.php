@@ -1,4 +1,5 @@
 <?php
+
 // Creates a site (if none) and a client pairing code (as the Devices page makes) in the test DB; prints the code.
 require __DIR__.'/bootstrap.php';
 use App\Models\KioskLocation;

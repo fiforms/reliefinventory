@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 // Trainee self sign-up at /join: public, only while Training Mode is on, never logs anyone in, and a whole room

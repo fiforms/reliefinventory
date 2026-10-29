@@ -209,7 +209,7 @@ with tests, and **don't break Windows**.
    `backups export`, `stop`, `uninstall` — the same end-to-end path that was proven on Windows, driven without any window.
 5. **LAN check:** from another device, open the shared link in LAN mode; flip to local-only and confirm it stops.
 6. **The window:** `npm run tauri dev`, then CI build + install of the unsigned `.dmg` on a clean Mac account.
-7. **Docs:** update `README.md` (status, layout, Mac how-it-works), the launcher section in the repo-root `CLAUDE.md`, and
+7. **Docs:** update `README.md` (status, layout, Mac how-it-works), the sub-projects note (`dev/notes/SUB_PROJECTS.md`), and
    `docker/README.md` (point Mac users at the launcher).
 
 ## Definition of done
@@ -223,8 +223,7 @@ and the launcher survives quit + reopen (re-adopts the proxy) and starts at logi
 ## Working notes for Mark (and his Claude)
 
 - Branch from `ri-launcher` (PR #63) or from `master` once it merges. The launcher is separate from the Laravel app: it has
-  its own `Cargo.toml`, `package.json` and CI; nothing here touches the PHP side. Root `CLAUDE.md` has a short "RI Launcher"
-  section and the repo's conventions (commit only when asked; manual-only GitHub workflows; document non-obvious things).
+  its own `Cargo.toml`, `package.json` and CI; nothing here touches the PHP side. Root `CLAUDE.md` lists the sub-projects and the repo's conventions (commit only when asked; manual-only GitHub workflows; document non-obvious things).
 - Dev loop: `cd launcher && cargo test` (fast, no VM needed) — keep adding fake-runner tests as the Mac backend grows;
   `cargo run -p ri-launcher-core --bin ri-launcher -- --help` for the CLI; `npm run tauri dev` for the window. The UI also has
   mock modes (`?mock=notinstalled|installing|failed|stopped|local|running`) that need no backend at all.

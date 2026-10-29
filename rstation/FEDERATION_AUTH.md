@@ -2,7 +2,7 @@
 
 How a client app (the desktop print client, an R Station) or another Relief Inventory instance proves who
 it is. Machine-readable form: `rstation/federation.openapi.yaml`. Server design and the Trust Console are
-described in `CLAUDE.md` ("Federation"); this file is what a **client implementer** needs. It replaces the
+described in `dev/notes/FEDERATION.md`; this file is what a **client implementer** needs. It replaces the
 older bearer-token pairing in `rstation/platform/docs/DEVICE_CONTRACT.md` for this app: **there are no bearer tokens any more**, and a device paired before federation is refused (401) and must pair again.
 
 ## Keys
@@ -35,7 +35,7 @@ fresh code and is recorded as a key change. Un-pairing on the client forgets the
 
 ## Warehouses: the server address can carry a path
 
-An instance can host several warehouses (`MULTI_WAREHOUSE.md`). Each is a separate server as far as a client is
+An instance can host several warehouses (`dev/notes/MULTI_WAREHOUSE.md`). Each is a separate server as far as a client is
 concerned — its own identity key, trusts, pairing codes and grants — and is addressed **by URL**: its own hostname,
 or `https://host/w/<id>` on a host shared with other warehouses (`<id>` is 8 letters and digits). A client keeps the
 whole URL it was given as its server address and puts every path after it: `https://host/w/K7Q2X9MD/api/federation/v1/pair`.
@@ -145,7 +145,7 @@ holds `operator.full_read`. It then uses `/api/federation/v1/backups` (session t
 3. `GET /backups/{id}/download` streams the zip and honours `Range`, so an interrupted download resumes. Verify the hash before
    keeping the file, and keep it: the server deletes its copy after `keep_days`.
 
-The zip never contains `APP_KEY` (see `scripts/BACKUPS.md`), but a database backup does hold password hashes and personal data, which is
+The zip never contains `APP_KEY` (see `dev/notes/BACKUPS.md`), but a database backup does hold password hashes and personal data, which is
 why this grant is rated high risk.
 
 ## Instance-level trust: whole-instance backups (`/api/instance/v1`, `instance.backup`)

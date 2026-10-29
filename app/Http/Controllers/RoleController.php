@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
@@ -25,7 +25,7 @@ class RoleController extends Controller
      * columns. No context param returns every role, unchanged.
      *
      * Always eager-loads `permissions` (id, key only) — a role is just a
-     * named preset of permissions (TODO.md item 1 follow-up), so the User
+     * named preset of permissions (User Administration follow-up), so the User
      * Administration page needs to know what each role actually grants in
      * order to show/apply it as a one-tap preset over the flat permission
      * checklist, rather than treating role membership as its own opaque

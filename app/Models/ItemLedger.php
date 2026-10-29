@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Models;
@@ -8,6 +8,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * Append-only ledger and the source of truth for stock (usable additions minus subtractions; only disposition `usable`
+ * counts). Never store a running total. Where stock sits comes from App\Services\PalletStock
+ * (dev/notes/STOCK_AND_LOCATIONS.md).
+ */
 class ItemLedger extends Model
 {
     use HasFactory;

@@ -6,7 +6,7 @@ a Wi-Fi hotspot, switches it on, opens Settings > Local server, presses *Start*,
 everyone on that network can use a full Relief Inventory site from a browser. Nothing leaves the device.
 
 This is the Docker stack from `docker/compose.yaml` (web, queue, scheduler, MariaDB — see
-`scripts/DOCKER_PLAN.md`) with its images baked into the OS image instead of pulled.
+`dev/DOCKER_PLAN.md`) with its images baked into the OS image instead of pulled.
 
 ## Verified on hardware (2026-10-20)
 
@@ -134,8 +134,8 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
   USB" button and an import path into a central site (there is no sync/merge story in the app) are the
   natural next steps. Backups are database-only unless `RI_BACKUP_SCOPE=full` is set in the stack's environment; uploaded
   photos are in `storage/`. **Retention is flat** (`RI_BACKUP_KEEP_DAYS`, 14 by default): the daily/monthly/yearly tiers of the
-  bare-metal install are not implemented for the local server (TODO.md item 14) — a long-running site should copy backups off the card.
+  bare-metal install are not implemented for the local server (`dev/notes/BACKUPS.md`) — a long-running site should copy backups off the card.
 - **Printing from the local server works** (verified, below): the device pairs with its own server and prints through
   its own print server. Home on its own only moves the kiosk's screen; pairing is a separate step.
 - Updates are manual (the button), not automatic; no Reverb (realtime) in this stack.
-- The Updates & Backups page hides its systemd/git-only sections inside the container and shows the compose backup settings read-only (see `scripts/DOCKER_PLAN.md`).
+- The Updates & Backups page hides its systemd/git-only sections inside the container and shows the compose backup settings read-only (see `dev/DOCKER_PLAN.md`).

@@ -1,9 +1,7 @@
 <?php
 
-use Illuminate\Database\Migrations\Migration;
-use Illuminate\Database\Schema\Blueprint;
-use Illuminate\Support\Facades\Schema;
 use App\Models\MenuItem;
+use Illuminate\Database\Migrations\Migration;
 
 return new class extends Migration
 {
@@ -17,7 +15,7 @@ return new class extends Migration
             'link_text' => 'Edit Location Names',
             'link_url' => '/setup/locations',
             'graphic_url' => '/img/edit-statuses-icon.webp',
-            'order' => 33
+            'order' => 33,
         ]);
     }
 

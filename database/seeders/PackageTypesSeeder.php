@@ -1,12 +1,12 @@
 <?php
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Carbon;
 
 class PackageTypesSeeder extends Seeder
 {
@@ -19,49 +19,49 @@ class PackageTypesSeeder extends Seeder
         $pkg = [
             [
                 'singular' => 'Unit',
-                'plural'   => 'Units',
+                'plural' => 'Units',
             ],
             [
                 'singular' => 'Case',
-                'plural'   => 'Cases',
-                
+                'plural' => 'Cases',
+
             ],
             [
                 'singular' => 'Bag',
-                'plural'   => 'Bags',
-                
+                'plural' => 'Bags',
+
             ],
             [
                 'singular' => 'Pallet',
-                'plural'   => 'Pallets',
+                'plural' => 'Pallets',
             ],
             [
                 'singular' => 'Each',
-                'plural'   => 'Each',
+                'plural' => 'Each',
             ],
             [
                 'singular' => 'Gaylord',
-                'plural'   => 'Gaylords',
+                'plural' => 'Gaylords',
             ],
             [
                 'singular' => 'Roll',
-                'plural'   => 'Rolls',
+                'plural' => 'Rolls',
             ],
             [
                 'singular' => 'Gallon',
-                'plural'   => 'Gallons',
+                'plural' => 'Gallons',
             ],
             [
                 'singular' => 'Ton',
-                'plural'   => 'Tons',
+                'plural' => 'Tons',
             ],
             [
                 'singular' => 'Shipping Container',
-                'plural'   => 'Shipping Containers',
+                'plural' => 'Shipping Containers',
             ],
             [
                 'singular' => 'Truckload',
-                'plural'   => 'Truckloads',
+                'plural' => 'Truckloads',
             ],
         ];
         // Insert data into the items table

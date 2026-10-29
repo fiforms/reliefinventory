@@ -1,9 +1,9 @@
 # Docker distribution plan (x64 + arm64)
 
-Status: **built and tested on amd64 (2026-10-19), branch `docker-image`**; arm64 build verified under QEMU
+Status: **built and tested on amd64 (2026-10-19)**; this is a historical plan, see `docker/README.md` for how it works today; arm64 build verified under QEMU
 emulation (see below); not yet run on real arm64 hardware or published. Files: `Dockerfile`, `.dockerignore`,
 `docker/` (compose.yaml, README.md, entrypoint, scheduler, Caddyfile),
-`.github/workflows/docker-amd64.yml` + `docker-arm64.yml` (manual-dispatch, one per architecture; no combined multi-arch manifest yet). User-facing docs: `docker/README.md`.
+`.github/workflows/docker.yml` (manual-dispatch; builds both architectures and pushes a combined multi-arch manifest). User-facing docs: `docker/README.md`; updating an install: its Docker updater section (`instance:update`).
 
 ## What was actually built (differs slightly from the plan below)
 
@@ -11,7 +11,7 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   php-fpm + nginx — one process, no supervisor. Plain HTTP on 8080; TLS is a reverse proxy's job.
 - **PDF rendering: distro `weasyprint` from Debian trixie apt**, identical on both arches — the only PDF engine.
   The image originally also carried distro `chromium`, Node and puppeteer's `node_modules` (for Browsershot, driving
-  the pallet labels, sitrep and help guide, via a `docker/chromium-wrapper.sh` that added `--no-sandbox
+  the pallet labels, sitrep and help guide, via a `docker/chromium-wrapper.sh` (since removed) that added `--no-sandbox
   --disable-dev-shm-usage --disable-gpu`); those documents were verified under WeasyPrint on 2026-10-19 and all of it
   was removed (Chromium ~380 MB + Node ~120 MB; measured total saving ~1.2 GB), along with the `pdf-node`/`node-bin` build stages.
 - **One image, roles by first argument** (`web|queue|scheduler|reverb|artisan`); only `web` migrates, seeds,
@@ -22,9 +22,8 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   DB passwords into a `secrets` volume that `db` (via `MARIADB_*_FILE`) and the app (via `DB_PASSWORD_FILE`) read;
   `secrets` must live and die with `db-data`.
 - **Scheduler container** replaces the systemd timers: hourly `volunteers:sync-active-windows`, and a daily backup zip
-  (`php artisan backup:create`, the same format as every other backup — `scripts/BACKUPS.md`) into `./backups`, kept a flat
-  `RI_BACKUP_KEEP_DAYS` days. **Tiered (daily/monthly/yearly) retention, as the bare-metal install has, is not implemented
-  here or in the R Station local server** — TODO.md item 14.
+  (`php artisan backup:create`, the same format as every other backup — `dev/notes/BACKUPS.md`) into `./backups`. Since this was
+  written, `backup:scheduled` gives every warehouse hourly/daily/weekly/monthly tiers (`dev/notes/BACKUPS.md`).
 - Image was ~2.9 GB uncompressed with Chromium (380 MB) and Node (120 MB); both are now gone: the amd64 image measures ~1.7 GB (rebuilt 2026-10-19; a PDF rendered inside the container). Python/WeasyPrint is 255 MB; the rest is fonts and FrankenPHP.
 
 ## Known gaps
@@ -40,13 +39,11 @@ emulation (see below); not yet run on real arm64 hardware or published. Files: `
   if the backup fails (`RI_PREMIGRATE_BACKUP=false` opts out). Untested in a real container build. Known gap: a
   crash-looping failed migration re-backs-up on every restart (timestamped, pruned by age).
 - Backups are database-only unless `RI_BACKUP_SCOPE=full`; otherwise the `storage` volume (photos, print PDFs) is the operator's to back up.
-- **No tiered retention** (see above): one flat number of days.
 - Print servers/R Stations pointing at a containerised instance untested end to end.
 
 
 Goal: a multi-arch (linux/amd64 + linux/arm64) image and compose stack that someone else can run in a Docker
-environment, without the manual server provisioning the app otherwise needs (see CLAUDE.md, "PDF / label
-generation" and `scripts/REVERB.md`).
+environment, without the manual server provisioning the app otherwise needs (see `dev/BUILDING.md` and `dev/notes/REVERB.md`).
 
 **Effort estimate:** roughly 2–4 days to a working multi-arch image and compose file; about another week to make
 it something distributable to other people (entrypoint hardening, docs, CI publishing).
@@ -82,13 +79,13 @@ get much worse that way):
 
    (Original plan, for history: Chromium on arm64 needed Debian's `chromium` package, `LARAVEL_PDF_CHROME_PATH`
    and `LARAVEL_PDF_NO_SANDBOX=true`. None of that applies any more.) The image turns the manual provisioning
-   step in CLAUDE.md into part of the image.
+   step in `dev/BUILDING.md` into part of the image.
 2. **First-run entrypoint.** Wait for the DB; generate `APP_KEY` if missing and persist it; run
    `migrate --force` and the essential seeders; `storage:link`. Provide a documented way to create the first
    admin (existing `php artisan user:create`).
 3. **Persistence.** Volumes for the MariaDB data dir and `storage/app` (private: donation photos, feedback
    screenshots, print-queue PDFs).
-4. **Scheduled work.** The backup timer (`scripts/BACKUPS.md`) and `volunteers:sync-active-windows`
+4. **Scheduled work.** The backup timer (`dev/notes/BACKUPS.md`) and `volunteers:sync-active-windows`
    (`scripts/volunteer-sync.sh`) are systemd timers with no Docker equivalent. Replace with a scheduler
    sidecar or loop container; document backup guidance for the DB volume.
 5. **Config hygiene.** A documented `.env`-driven compose file: secrets, `APP_URL`, trusted proxies.
@@ -109,7 +106,7 @@ get much worse that way):
 
 ## Suggested order
 
-1. Multi-stage Dockerfile (composer → npm build → runtime on `php:8.4-fpm` with weasyprint) and a
+1. Multi-stage Dockerfile (composer → npm build → runtime on PHP 8.4 (built on FrankenPHP) with weasyprint) and a
    compose file, x64 first.
 2. Entrypoint, plus a PDF smoke test that renders a document through weasyprint.
 3. buildx multi-arch; test on the Pi.

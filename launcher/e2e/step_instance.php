@@ -1,4 +1,5 @@
 <?php
+
 // Instance-level backup trust steps for the e2e, against the disposable test DB. Usage:
 //   step_instance.php code        print a pairing code (Instance Admin's "Pair a computer")
 //   step_instance.php provision   act as the provisioner for ONE waiting request: write a small instance zip and mark it done

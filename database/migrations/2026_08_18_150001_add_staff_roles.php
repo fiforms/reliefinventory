@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use Illuminate\Database\Migrations\Migration;
@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * Adds two new named staff roles for the User Administration page
- * (TODO.md item 1). Deliberately additive — inserts new rows rather than
+ * (the User Administration build). Deliberately additive — inserts new rows rather than
  * repeating the delete-and-reseed pattern the original roles migration
  * used, since this table now carries live production role assignments
  * (see the "User Administration" plan's context section for why Team

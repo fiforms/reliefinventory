@@ -4,9 +4,9 @@
 #
 # DEPRECATED (bare-metal installs only): running this from the web page (System Administration > Install Update, via
 # reliefinventory-update.service) is deprecated and will be removed — git pull + migrate + npm build from a web request can leave a
-# half-updated system. Run it from a shell if you must; Docker installs use the host-side updater (docker/updater/) instead.
+# half-updated system. This script itself is deprecated but stays for now: run it from a shell only; Docker installs use the host-side updater (docker/updater/) instead.
 #
-# This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+# This file is part of the Relief Inventory Project (https://reliefinventory.app)
 # Licensed under the GNU GPL v. 3. See LICENSE.md for details
 #
 # Run as root on the server (app commands are dropped to www-data internally):
@@ -17,7 +17,7 @@
 #   bash scripts/update.sh --seed-permissions  full update + PermissionsSeeder
 #
 # Every backup is one zip (the database, with a manifest of checksums) made by `php artisan backup:create --scope=database` — the same
-# command, format and folder (config backup.dir, RI_BACKUP_DIR) as every other backup in the app (scripts/BACKUPS.md). It never contains
+# command, format and folder (config backup.dir, RI_BACKUP_DIR) as every other backup in the app (dev/notes/BACKUPS.md). It never contains
 # the application key or .env. Uploaded files are NOT in it (an update never touches them): take a "Database + uploaded files" backup
 # from the admin page, or `backup:create --scope=full`, when they need protecting too. The backup a full update takes first is an
 # ordinary recorded backup (listed on Warehouse Backups, deleted after RI_BACKUP_KEEP_DAYS).
@@ -196,7 +196,7 @@ if [ "$BACKUP_ONLY" -eq 1 ]; then
     exit 0
 fi
 
-[ -d "$APP_DIR/.git" ] || { echo "$APP_DIR is not a git checkout — run the conversion in scripts/CONVERT-TO-GIT.md first." >&2; exit 2; }
+[ -d "$APP_DIR/.git" ] || { echo "$APP_DIR is not a git checkout — run the conversion in dev/CONVERT_TO_GIT.md first." >&2; exit 2; }
 
 # -------------------------------------------------------- 2. maintenance mode on
 SECRET="$(openssl rand -hex 16)"
@@ -248,7 +248,7 @@ as_app "$PHP" artisan route:cache
 as_app "$PHP" artisan view:cache
 systemctl restart "$QUEUE_SERVICE"
 # Reverb (realtime) is long-running and holds the old code in memory; bounce it
-# too, but only on boxes that actually run it (see scripts/REVERB.md). Clients
+# too, but only on boxes that actually run it (see dev/notes/REVERB.md). Clients
 # reconnect on their own.
 if systemctl cat "$REVERB_SERVICE.service" >/dev/null 2>&1; then
     systemctl restart "$REVERB_SERVICE"

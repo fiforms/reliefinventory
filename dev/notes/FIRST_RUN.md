@@ -1,0 +1,3 @@
+# First-run setup
+
+`App\Services\FirstRunService` backs the setup wizard and its CLI twins (`admin:bootstrap`, `setup:seed-essentials`, `setup:status`). An instance "needs setup" only while the `setup_state` latch is unset **and** no Administrator exists; the latch is what keeps a working instance from ever being offered to a stranger again. The wizard's single write is essentials + administrator + latch together. Optional demo data (`WarehouseActivitySeeder`) records `setup_state.demo_data_seeded_at`. A warehouse created later is set up through its setup code instead (`MULTI_WAREHOUSE_NOTES.md`), and that administrator is not an instance admin.

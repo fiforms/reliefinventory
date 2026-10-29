@@ -1,5 +1,5 @@
 [Unit]
-Description=Relief Inventory scheduled backup tick (the app decides whether a snapshot is due; see scripts/BACKUPS.md)
+Description=Relief Inventory scheduled backup tick (the app decides whether a snapshot is due; see dev/notes/BACKUPS.md)
 After=network.target mariadb.service
 
 [Service]

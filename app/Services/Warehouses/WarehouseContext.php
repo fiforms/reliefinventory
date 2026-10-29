@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Services\Warehouses;
@@ -14,6 +14,20 @@ use RuntimeException;
  * SwitchTask; nothing else in the app should re-point connections, keys or storage itself.
  *
  * A singleton: one per PHP request, job or command.
+ *
+ * Rules for anything that touches sessions, auth, storage, backups, the queue/scheduler, cookies or emailed links
+ * (more in dev/notes/MULTI_WAREHOUSE_NOTES.md):
+ *  - Everything runs in exactly one warehouse; commands take --warehouse.
+ *  - Emailed links use Warehouse::publicUrl(), never the Host header. Long-lived cookies use cookieName().
+ *    Broadcast channels use Warehouse::channel().
+ *  - Only the `provisioner` container holds the database administrator password: use ProvisioningClient, never read it here.
+ *  - Never write a `memberships` row for someone else's login; use MembershipInvitations.
+ *  - Backup/restore input is untrusted: don't add keyword filters to dumps. Never enforce a rule against the instance
+ *    admin in software (they can run any command); enforce isolation between warehouses.
+ *  - The recovery key's private half is never logged or stored.
+ *  - Training is a warehouse of its own (`is_training`), not a mode: add nothing to a real warehouse's behaviour for a class.
+ *  - The bare-metal web updater (SystemController::update()) is deprecated; don't extend it.
+ *  - Tests needing a second warehouse use tests/SecondWarehouse.php.
  */
 class WarehouseContext
 {

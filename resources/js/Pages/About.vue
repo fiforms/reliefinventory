@@ -1,4 +1,4 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- About.vue
@@ -6,7 +6,7 @@
 	Public "About This Project" page, linked from Welcome.vue's HOSTED_BY
 	credit line (config('app.hosted_link'), typically pointed at this page
 	via a relative /about URL rather than an external domain — see
-	routes/web.php). No auth required, matching Welcome's own guest access.
+	routes/web/public.php). No auth required, matching Welcome's own guest access.
 -->
 
 <script setup>

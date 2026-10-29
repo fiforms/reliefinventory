@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Models;
@@ -8,6 +8,11 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * One orderdonations row: an order or a donation (`type`). The status is stored and server-controlled (never a free-form
+ * dropdown); `person_id_user` (staff) is set from Auth::id(), never from the client. Order lines lock once filling starts.
+ * Lifecycles and filling: dev/notes/ORDERS_AND_FILLING.md.
+ */
 class Transaction extends Model
 {
     use HasFactory;

@@ -6,7 +6,7 @@
 #   print-client/e2e/run.sh              # polling only
 #   print-client/e2e/run.sh --realtime   # also starts Reverb and measures the wake-up latency
 #
-# Needs: a migrated `test_reliefinventory` database (see scripts/TESTING.md), `lpadmin` rights, python3,
+# Needs: a migrated `test_reliefinventory` database (see dev/TESTING.md), `lpadmin` rights, python3,
 # and a built client (`cargo build -p ri-print-core`). It creates one throwaway CUPS queue and some test-DB
 # rows, and removes them on exit. bootstrap.php refuses to run against any other database.
 set -u

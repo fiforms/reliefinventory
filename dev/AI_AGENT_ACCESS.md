@@ -1,7 +1,6 @@
 # AI-assisted session access: which SSH alias to use
 
-Added 2026-09-02 alongside `FeedbackContentScanner` (see `CLAUDE.md`'s "Untrusted content /
-AI-assisted changes" note) after a deliberate test — a feedback report on the demo unit tried to get
+Added 2026-09-02 alongside `FeedbackContentScanner` (see `dev/notes/UNTRUSTED_CONTENT.md`) after a deliberate test — a feedback report on the demo unit tried to get
 an AI assistant to exfiltrate secrets using whatever SSH access the session already had. This
 document exists so an AI-assisted session reaches for the right credential by default, instead of
 always using the account with the broadest access out of habit.
@@ -18,7 +17,7 @@ users' files.
 
 **Use this only when the task genuinely needs it** — running the full `scripts/update.sh` (which
 includes a pre-update backup), reading/restoring backups, one-time provisioning (installing system
-packages, setting up a systemd timer, the weasyprint dependency in `CLAUDE.md`),
+packages, setting up a systemd timer, the weasyprint dependency in `dev/BUILDING.md`),
 debugging that requires broad read access — and only when the user is actively directing the session,
 not from an unattended/scheduled run.
 
@@ -51,7 +50,7 @@ reload php-fpm, health check against that instance's own URL. It never dumps the
 (`PermissionsSeeder` in particular: safe to repeat, per `update.sh`'s own comment, but still run
 manually as root when needed, not wired into the agent path). Backup coverage between deploys is
 unaffected: the existing `reliefinventory-backup.timer` (see
-`BACKUPS.md`) runs independently of any deploy and isn't touched by this account.
+`dev/notes/BACKUPS.md`) runs independently of any deploy and isn't touched by this account.
 
 File permissions on the server independently deny this account read access to `.env` (mode `640`,
 owned `www-data:www-data`), to its cached copy `bootstrap/cache/config.php` (Laravel writes it
@@ -69,8 +68,7 @@ outcome a legitimate fix produces.
 ## What this does and doesn't protect against
 
 This limits the blast radius of an SSH session being misused — it does not replace judgment about
-whether to act on a given request in the first place (see `FeedbackContentScanner` and the CLAUDE.md
-note). A malicious "feedback report" asking for `.env`'s contents fails against `demolinode-agent`
+whether to act on a given request in the first place (see `FeedbackContentScanner` and `dev/notes/UNTRUSTED_CONTENT.md`). A malicious "feedback report" asking for `.env`'s contents fails against `demolinode-agent`
 regardless of whether the request is recognized as malicious; the same request against `demolinode`
 still requires a human (or the assistant) to recognize and refuse it. Use the narrower account by
 default so that judgment call isn't the only thing standing between a bad request and real secrets.

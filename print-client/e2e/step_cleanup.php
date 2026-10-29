@@ -1,4 +1,5 @@
 <?php
+
 // Removes everything the e2e run created (the "E2E box" device, its printers and jobs, stored PDFs).
 require __DIR__.'/bootstrap.php';
 use App\Models\ManagedDevice;

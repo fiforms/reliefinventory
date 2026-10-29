@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\MenuItem;
@@ -14,7 +14,7 @@ use Illuminate\Database\Migrations\Migration;
  * despite a later migration's comment assuming one still existed). Create
  * it fresh if missing, otherwise just repoint an existing one — either
  * way it ends up pointed at the real User Administration page
- * (TODO.md item 1) instead of the ComingSoon placeholder.
+ * (the User Administration build) instead of the ComingSoon placeholder.
  */
 return new class extends Migration
 {

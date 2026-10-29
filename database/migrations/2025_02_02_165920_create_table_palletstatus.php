@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('palletstatus', function (Blueprint $table) {
             $table->foreignId('pallet_id')->constrained('pallets')->onDelete('cascade');
             $table->foreignId('location_id')->constrained('locations')->onDelete('restrict');
-            $table->enum('status',['created','moved','archived']);
+            $table->enum('status', ['created', 'moved', 'archived']);
             $table->id();
             $table->timestamps();
         });

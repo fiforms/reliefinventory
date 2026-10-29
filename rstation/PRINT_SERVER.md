@@ -225,7 +225,7 @@ defines the wire format.
 
 ## Realtime wake-ups (optional, Laravel Reverb)
 
-When the app has realtime on (`scripts/REVERB.md`), the heartbeat response contains
+When the app has realtime on (`dev/notes/REVERB.md`), the heartbeat response contains
 `print_realtime`; otherwise it is `null` and the client just polls.
 
 ```json

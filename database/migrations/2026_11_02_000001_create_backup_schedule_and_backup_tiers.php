@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * Rollback snapshots for a warehouse (scripts/BACKUPS.md): `backups.tiers` says which retention tiers a scheduled zip belongs to
+ * Rollback snapshots for a warehouse (dev/notes/BACKUPS.md): `backups.tiers` says which retention tiers a scheduled zip belongs to
  * (hourly, daily, weekly, monthly; null = made by hand or an older install, which keeps the flat expires_at rule), and the single-row
  * `backup_schedule` is the warehouse admin's choice of what is made when and how many of each are kept. Until now the Docker
  * schedule was the scheduler container's environment only (RI_BACKUP_HOUR, RI_BACKUP_KEEP_DAYS, RI_BACKUP_SCOPE); those

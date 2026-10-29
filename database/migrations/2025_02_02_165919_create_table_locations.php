@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::create('locations', function (Blueprint $table) {
             $table->id();
             $table->text('code')->unique();
-            $table->enum('status',['active','archived']);
+            $table->enum('status', ['active', 'archived']);
             $table->timestamps();
         });
     }

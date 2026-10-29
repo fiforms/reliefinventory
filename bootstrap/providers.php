@@ -1,7 +1,10 @@
 <?php
 
+use App\Providers\AppServiceProvider;
+use Milon\Barcode\BarcodeServiceProvider;
+
 return [
-    App\Providers\AppServiceProvider::class,
-    Milon\Barcode\BarcodeServiceProvider::class,
-    
+    AppServiceProvider::class,
+    BarcodeServiceProvider::class,
+
 ];

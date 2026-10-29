@@ -1,17 +1,10 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Http\Controllers\UnfulfilledRequestsReportController;
-use App\Models\Category;
-use App\Models\County;
-use App\Models\Item;
-use App\Models\ItemType;
-use App\Models\OrderLine;
-use App\Models\Person;
 use App\Models\Transaction;
-use Illuminate\Support\Facades\DB;
 
 test('the report and its exports need view-reports', function () {
     $user = userWithPermissions('general-access');

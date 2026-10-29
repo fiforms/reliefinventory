@@ -5,7 +5,8 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
-return new class extends Migration {
+return new class extends Migration
+{
     /**
      * Run the migrations.
      *
@@ -20,33 +21,33 @@ return new class extends Migration {
             WHERE TABLE_NAME = 'orderdonations'
             AND COLUMN_NAME = 'user_id'
         ");
-        
-        if (!empty($foreignKey)) {
+
+        if (! empty($foreignKey)) {
             $constraintName = $foreignKey[0]->CONSTRAINT_NAME;
             Schema::table('orderdonations', function (Blueprint $table) use ($constraintName) {
                 $table->dropForeign($constraintName);
             });
         }
-            
-            // Step 2: Add the new column person_id_user to link to people table
-            Schema::table('orderdonations', function (Blueprint $table) {
-                $table->unsignedBigInteger('person_id_user')->nullable()->after('user_id');
-            });
-                
-                // Step 3: Populate person_id_user by matching users.name -> people.last_name
-                DB::statement("
+
+        // Step 2: Add the new column person_id_user to link to people table
+        Schema::table('orderdonations', function (Blueprint $table) {
+            $table->unsignedBigInteger('person_id_user')->nullable()->after('user_id');
+        });
+
+        // Step 3: Populate person_id_user by matching users.name -> people.last_name
+        DB::statement('
             UPDATE orderdonations od
             JOIN users u ON od.user_id = u.id
             JOIN people p ON u.email = p.email
             SET od.person_id_user = p.id
-        ");
-                
-                // Step 4: Drop the user_id column
-                Schema::table('orderdonations', function (Blueprint $table) {
-                    $table->dropColumn('user_id');
-                });
+        ');
+
+        // Step 4: Drop the user_id column
+        Schema::table('orderdonations', function (Blueprint $table) {
+            $table->dropColumn('user_id');
+        });
     }
-    
+
     /**
      * Reverse the migrations.
      *
@@ -58,23 +59,23 @@ return new class extends Migration {
         Schema::table('orderdonations', function (Blueprint $table) {
             $table->unsignedBigInteger('user_id')->nullable();
         });
-            
-            // Step 2: Restore user_id values by matching people.last_name back to users.name
-            DB::statement("
+
+        // Step 2: Restore user_id values by matching people.last_name back to users.name
+        DB::statement('
             UPDATE orderdonations od
             JOIN people p ON od.person_id_user = p.id
             JOIN users u ON p.email = u.email
             SET od.user_id = u.id
-        ");
-            
-            // Step 3: Drop the new person_id_user column
-            Schema::table('orderdonations', function (Blueprint $table) {
-                $table->dropColumn('person_id_user');
-            });
-                
-                // Step 4: Restore the foreign key constraint on user_id
-                Schema::table('orderdonations', function (Blueprint $table) {
-                    $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
-                });
+        ');
+
+        // Step 3: Drop the new person_id_user column
+        Schema::table('orderdonations', function (Blueprint $table) {
+            $table->dropColumn('person_id_user');
+        });
+
+        // Step 4: Restore the foreign key constraint on user_id
+        Schema::table('orderdonations', function (Blueprint $table) {
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
+        });
     }
 };

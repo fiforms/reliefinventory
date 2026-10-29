@@ -1,4 +1,4 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- OrderEntry.vue
@@ -161,7 +161,7 @@ export default {
 			const onHand = Number(this.stockHints[this.entry.itemtype_id] ?? 0);
 			return onHand > 0 ? '~' + onHand + ' usable on hand' : 'none on hand';
 		},
-		// Three-state availability (PROJECT_ANALYSIS.md Part 5) drives whether
+		// Three-state availability (dev/FACILITY_NETWORK.md) drives whether
 		// the need-level field shows at all — never on healthy-stock items, so
 		// it stays a real signal rather than a reflexive habit.
 		entryAvailabilityLow() {

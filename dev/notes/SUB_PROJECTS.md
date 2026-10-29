@@ -1,0 +1,9 @@
+# Sub-projects: RI Launcher, RI Print, R Station
+
+Each has its own README and its own build; none is a Cargo/npm workspace member of the Laravel app. The web app talks to them only through the federation/device API (`FEDERATION.md`, `PRINT_QUEUE.md`).
+
+- **`launcher/` RI Launcher** (Rust core + Tauri v2 + Vue). Installs and runs the Docker stack without Docker Desktop (Alpine WSL 2 distro on Windows, Lima VM on macOS, plain Docker on Linux); also the whole-instance backup client (instance trust). Read `launcher/README.md` and `MAC_VERSION.md`. Gotchas: the compose file is regenerated from `settings.json` on every start (the YAML in the Linux layer is never the source of truth; `compose::tests::bundled_template_still_renders` fails if `docker/compose.yaml` changes in a way it can no longer patch); a TCP proxy in the launcher process owns the public port, so the launcher must stay running for LAN access; install needs admin and reports progress via `install-status.json`. `ri-launcher` is a full CLI for testing. Tests: `cd launcher && cargo test` (both backends run against a fake `Runner`).
+- **`print-client/` RI Print** (Rust core + Tauri v2 + Vue). Desktop print server: pairs with a 10-character code, then prints jobs at actual size via the OS (`lp` on macOS/Linux, SumatraPDF on Windows). Behaviour is in `core/` (tested there; the shell is thin); `core` also builds the headless `ri-print` CLI. A disk ledger (`ledger.json`) prevents duplicate prints after a crash. Spec: `rstation/PRINT_CLIENT_SPEC.md`.
+- **`rstation/` R Station**: Raspberry Pi device image: warehouse kiosk, print server (Python daemon in `rstation/product/backend/`, IPP to local CUPS), and Docker host that can run a whole offline site (`LOCAL_SERVER.md`, `IMPLEMENTATION.md`). Not a sync target.
+
+Status claims in those READMEs are dated; verify against the code before repeating them.

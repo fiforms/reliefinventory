@@ -64,7 +64,7 @@ Only worth doing if step 4 passes (or to re-confirm the failure with the stock b
    change, as with the server-URL work. Consider making it a boot-yaml option only if there is a reason to switch it per device.
 2. Drop the `blacklist` quirk and `rstationlp` (and the matching `PRINTERS` entry, the PPD/package wiring, and the `rstationlp`
    scheme allowance in `slide-announcer-printer-setup`). Bump `VERSION`, delete older `rstation-sato-driver_*.deb` from `debs/`.
-3. Update `README.md` and the CLAUDE.md SATO paragraph (it currently says the stock backend is blacklisted).
+3. Update `README.md` and `rstation/sato-driver/README.md` (it currently says the stock backend is blacklisted).
 4. Re-test a real print from the web UI on a Pi (never yet done for this driver).
 
 ## If it doesn't work

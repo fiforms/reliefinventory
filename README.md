@@ -15,14 +15,15 @@ volunteers do most of the work, and the paperwork has to keep up with the trucks
   pallet locations and inventory reports.
 - **Fill requests.** Partner agencies request what they need. Staff fill requests from stock on paper pick sheets
   or by scanning at the shelf, with a suggested fair split when there isn't enough to go around.
-- **Everything else:** role-based permissions, a volunteer and guest sign-in kiosk, a print queue that sends labels
-  and reports to the right printer, reports with CSV and PDF output, and in-app issue reporting.
+- **Ship and deliver.** Move filled requests through shipping and delivery, with a bill of lading.
+- **Everything else:** role-based permissions, several warehouses on one instance, federation between instances,
+  a volunteer and guest sign-in kiosk, a print queue that sends labels and reports to the right printer, reports
+  with CSV and PDF output, and in-app issue reporting.
 
-Some things aren't built yet: the request lifecycle past "Filled" (ready to ship, shipped, bill-of-lading
-upload) and some reports. [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md) keeps the honest list. Stock is pooled by item
-type once sorted, so a shelf item can't be traced back to a specific donor or pallet; this is not recall-style tracing.
+Stock is pooled by item type once sorted, so a shelf item can't be traced back to a specific donor or pallet;
+this is not recall-style tracing.
 
-More at the project [website](https://reliefinventory.fiforms.net). Release history is in
+More at the project [website](https://reliefinventory.app). Release history is in
 [CHANGELOG.md](CHANGELOG.md).
 
 ## Quick start (Docker)
@@ -65,8 +66,8 @@ Two optional pieces extend the web app to the warehouse floor. Downloads are on 
 ## Building from source
 
 Building from source, running a development instance and running the tests are covered in
-[BUILDING.md](BUILDING.md). The architecture, conventions and current state of the code are in
-[CLAUDE.md](CLAUDE.md) and [PROJECT_ANALYSIS.md](PROJECT_ANALYSIS.md).
+[BUILDING.md](dev/BUILDING.md). The architecture and conventions are in
+[dev/README.md](dev/README.md) (doc map) and [CLAUDE.md](CLAUDE.md).
 
 # License
 

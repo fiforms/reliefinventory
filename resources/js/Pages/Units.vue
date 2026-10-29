@@ -1,9 +1,9 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- Units.vue
 
-	TODO.md item 5: admin UI for the "Default Ordering Unit" list
+	Admin UI for the "Default Ordering Unit" list
 	(units table, /json/units — UnitController already existed with no
 	page bound to it). Modeled on CategoryEntry.vue, the simplest existing
 	RIForm CRUD page.

@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace Database\Seeders;
@@ -52,7 +52,7 @@ class PermissionsSeeder extends Seeder
         // issue, not an access-control one — so this stays a standalone,
         // Administrator-only-by-default key rather than folding into
         // manage-people. Expected to be replaced by deactivate/hide as part
-        // of the Partner/Donor rework (PROJECT_ANALYSIS.md Part 12), not
+        // of the Partner/Donor rework (dev/TODO.md, "Permissions and people"), not
         // widened.
         'admin-people' => 'Delete people',
         'manage-orders' => 'View, update, and delete orders/donations',
@@ -123,8 +123,7 @@ class PermissionsSeeder extends Seeder
         // default rather than every front-line role, with per-person
         // grants (e.g. a night security officer with no other role) for
         // anyone else who needs it. Certifying a batch of hours is the
-        // separate FEMA-compliance-critical step (see PROJECT_ANALYSIS.md
-        // ~line 258).
+        // separate FEMA-compliance-critical step (see dev/FACILITY_NETWORK.md).
         'operate-kiosk' => 'Put a device into or out of Sign-in Kiosk mode, and confirm building-safety state (closeout, roll call)',
         'certify-volunteer-hours' => 'Certify volunteer hours for FEMA reporting',
         // Deliberately broad (base volunteer tier, not just Office/Admin)
@@ -175,7 +174,7 @@ class PermissionsSeeder extends Seeder
     ];
 
     /**
-     * Office (TODO.md item 1 — "everything except admin/setup roles"):
+     * Office (User Administration — "everything except admin/setup roles"):
      * same effective bundle as today's Volunteer + Team Leader tiers,
      * just under a name that reflects what it actually grants rather than
      * the legacy role_bitpack-era naming. Deliberately not called "Office
@@ -200,7 +199,7 @@ class PermissionsSeeder extends Seeder
     ];
 
     /**
-     * Sorting and Inventory (TODO.md item 1): warehouse-side work only —
+     * Sorting and Inventory (the User Administration build): warehouse-side work only —
      * receiving, sorting, pallets, the item/location catalog, and donor
      * lookup (manage-people) for intake. No manage-orders (ordering isn't
      * this role's job) and no manage-roles.

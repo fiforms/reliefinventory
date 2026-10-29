@@ -1,9 +1,9 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- VolunteerKiosk.vue
 
-	The facility sign-in kiosk (PROJECT_ANALYSIS.md Part 5). Touch-first,
+	The facility sign-in kiosk (dev/FACILITY_NETWORK.md). Touch-first,
 	not built on RIForm — closer in spirit to DonationSorting.vue's custom
 	session flow than to an admin CRUD form.
 

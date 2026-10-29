@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 return [
@@ -15,7 +15,7 @@ return [
     | The unit is installed from scripts/systemd/ and triggered through a
     | narrow sudoers rule (scripts/systemd/reliefinventory-sudoers) — the web
     | app can start exactly that unit and nothing else. Backups are not here:
-    | see config/backup.php and scripts/BACKUPS.md.
+    | see config/backup.php and dev/notes/BACKUPS.md.
     |
     */
 

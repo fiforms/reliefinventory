@@ -1,13 +1,13 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Console\Commands;
 
+use App\Models\User;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Hash;
-use App\Models\User;
 
 class UpdateUserPasswordCommand extends Command
 {
@@ -34,14 +34,15 @@ class UpdateUserPasswordCommand extends Command
     {
         // Get email, either from the command line option or prompt the user
         $email = $this->option('email');
-        if (!$email) {
+        if (! $email) {
             $email = $this->ask('Please enter the user\'s email');
         }
 
         // Find the user by email
         $user = User::where('email', $email)->first();
-        if (!$user) {
+        if (! $user) {
             $this->error('No user found with this email.');
+
             return 1;
         }
 
@@ -52,6 +53,7 @@ class UpdateUserPasswordCommand extends Command
         // Ensure passwords match
         if ($password !== $passwordConfirmation) {
             $this->error('Passwords do not match.');
+
             return 1;
         }
 
@@ -60,9 +62,10 @@ class UpdateUserPasswordCommand extends Command
             $user->email_verified_at = now();
             $user->password = Hash::make($password);
             $user->save();
-            $this->info('Account verified and password updated successfully for ' . $user->email);
+            $this->info('Account verified and password updated successfully for '.$user->email);
         } catch (\Exception $e) {
-            $this->error('Error updating password: ' . $e->getMessage());
+            $this->error('Error updating password: '.$e->getMessage());
+
             return 1;
         }
 

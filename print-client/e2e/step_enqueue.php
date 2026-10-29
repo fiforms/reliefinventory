@@ -1,4 +1,5 @@
 <?php
+
 // Types + activates the queue the client reported and queues one stored-PDF job through the same
 // broadcast hook the app uses. Args: queue_name. Prints "<job id> <enqueue epoch>".
 require __DIR__.'/bootstrap.php';

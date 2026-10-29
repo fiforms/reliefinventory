@@ -1,13 +1,13 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 use App\Models\MenuItem;
 use Illuminate\Database\Migrations\Migration;
 
 /**
- * TODO.md item 5: "Create a user interface to add and manage default
+ * the Default Ordering Unit work: "Create a user interface to add and manage default
  * ordering units" — the units table and its /json/units API already
  * existed (UnitController) with no page bound to it. Placed right after
  * "Edit Location Names" (order 33) in the same Warehouse Administration

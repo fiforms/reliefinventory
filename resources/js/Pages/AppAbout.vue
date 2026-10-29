@@ -1,9 +1,9 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- AppAbout.vue
 
-	Reached from "About" in the profile menu (AuthenticatedLayout.vue); route /about-this-install in routes/web.php.
+	Reached from "About" in the profile menu (AuthenticatedLayout.vue); route /about-this-install in routes/web/account.php.
 	The version is the release tag (GitVersionService::release()) — null means an unversioned source install.
 -->
 
@@ -68,8 +68,8 @@ defineProps({
 				</p>
 				<p>
 					Project website:
-					<a href="https://reliefinventory.fiforms.net" target="_blank" rel="noopener"
-						class="text-blue-700 underline">reliefinventory.fiforms.net</a>
+					<a href="https://reliefinventory.app" target="_blank" rel="noopener"
+						class="text-blue-700 underline">reliefinventory.app</a>
 				</p>
 			</section>
 		</div>

@@ -1,7 +1,7 @@
 <?php
 
 // MULTI_WAREHOUSE.md §11: a warehouse administrator restoring a backup into their own, set-up warehouse. The engine tests run against a
-// real schema and database user (the provisioning test user of scripts/TESTING.md; they skip without it) because a restore really
+// real schema and database user (the provisioning test user of dev/TESTING.md; they skip without it) because a restore really
 // wipes and reloads the schema. The gate tests use the shared test warehouse.
 
 use App\Models\Accounts\Account;
@@ -30,7 +30,7 @@ function ownRestoreWarehouse($test): void
     try {
         $test->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $test->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $test->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     $test->tmp = sys_get_temp_dir().'/ri-own-restore-'.bin2hex(random_bytes(4));
     mkdir($test->tmp.'/out', 0777, true);

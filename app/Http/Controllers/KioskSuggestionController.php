@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Http\Controllers;
@@ -13,7 +13,7 @@ use Illuminate\Validation\Rule;
  * Index+store for kiosk_suggestions (Agency/Task type-ahead lists), keyed
  * by `kind`. `index` is reachable from both the kiosk itself (kiosk-access,
  * to populate the datalist) and the Kiosk Settings admin page
- * (manage-kiosk, to manage the lists) — see routes/web.php.
+ * (manage-kiosk, to manage the lists) — see routes/web/kiosk.php.
  */
 class KioskSuggestionController extends Controller
 {

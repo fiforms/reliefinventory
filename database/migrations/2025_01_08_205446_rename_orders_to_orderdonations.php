@@ -21,4 +21,3 @@ return new class extends Migration
         Schema::rename('orderdonations', 'orders');
     }
 };
-

@@ -15,7 +15,7 @@ use RuntimeException;
  * The control and accounts schemas for tests (MULTI_WAREHOUSE.md §13, "Test setup"). They are named after
  * the test database actually in use — so `pest --parallel` workers (test_reliefinventory_test_3) each get
  * their own — created if missing, migrated from scratch once per process, and given the default warehouse.
- * Needs the grant in scripts/TESTING.md.
+ * Needs the grant in dev/TESTING.md.
  */
 class InstanceSchemas
 {

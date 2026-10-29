@@ -12,7 +12,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('categories', function (Blueprint $table) {
-            $table->dropColumn('measurement_unit'); 
+            $table->dropColumn('measurement_unit');
         });
     }
 

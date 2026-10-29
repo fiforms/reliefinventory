@@ -1,4 +1,4 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- InstanceAdmin.vue
@@ -13,7 +13,7 @@
 	                           on), the list, Back up now and download (InstanceBackupController). The provisioner container
 	                           makes them, since it alone holds the database administrator's password; this page only writes
 	                           fixed requests for it. Each zip holds the warehouse keys sealed to the instance's recovery key
-	                           (the panel at the top of the tab makes it and shows the private half once; see scripts/BACKUPS.md).
+	                           (the panel at the top of the tab makes it and shows the private half once; see dev/notes/BACKUPS.md).
 	  Warehouses               The warehouse:* commands as buttons (InstanceWarehouseController): list, create, edit, suspend /
 	                           maintenance / activate / resume, archive, remove, setup codes, hostnames. Every change asks for
 	                           the person's password again. Removal waits 30 days after archiving here (the artisan command

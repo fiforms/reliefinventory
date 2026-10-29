@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Services;
@@ -186,7 +186,7 @@ class WarehouseMetrics
      * Capped to the top 20 (like inventorySummary()'s top_categories) —
      * unlike county, a service area's distinct zip count can run well past
      * what's readable on a dashboard card or safe from a PDF page-overflow
-     * (see CLAUDE.md's PDF section on this app's past page-break bugs).
+     * (this app has had page-break bugs before).
      * `zip_count` carries how many distinct zips exist so a caller can show
      * "top 20 of N" rather than silently dropping the rest with no signal.
      */

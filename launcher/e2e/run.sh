@@ -6,7 +6,7 @@
 #
 #   launcher/e2e/run.sh
 #
-# Needs a migrated `test_reliefinventory` database with its control schema (scripts/TESTING.md; run the Pest suite once so the test
+# Needs a migrated `test_reliefinventory` database with its control schema (dev/TESTING.md; run the Pest suite once so the test
 # warehouse's key exists under storage/framework/testing), `mariadb-dump`, `unzip`, and a built CLI
 # (`cd launcher && cargo build -p ri-launcher-core`). It makes rows in the test DB and removes them on exit;
 # bootstrap.php (shared with the print client's e2e) refuses to run against any other database.
@@ -107,7 +107,7 @@ r list | grep -q "keep 1" || fail "settings were lost on re-pairing"
 r backup "$ID" >/dev/null 2>&1 || fail "backup after re-pair"
 ok "re-pairing keeps the server entry and works again"
 # 7. the same computer, paired to the WHOLE instance: a different trust, table and API, the same client
-php "$HERE/step_instance.php" cleanup >/dev/null 2>&1 || fail "the instance step could not run (is the control schema migrated? see scripts/TESTING.md)"
+php "$HERE/step_instance.php" cleanup >/dev/null 2>&1 || fail "the instance step could not run (is the control schema migrated? see dev/TESTING.md)"
 ICODE=$(php "$HERE/step_instance.php" code) || fail "could not create an instance code"
 out=$(r pair "$URL" "$ICODE" --instance --name "E2E instance" 2>&1) || fail "instance pairing: $out"
 echo "$out" | grep -q "warning" && fail "an instance code should grant instance backups, got: $out"

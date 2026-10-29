@@ -1,4 +1,4 @@
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 // Design Votes demos: poll slug => option key => live demo component. The polls' text and option keys are in

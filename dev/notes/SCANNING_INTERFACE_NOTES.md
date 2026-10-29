@@ -85,7 +85,7 @@ works offline, can't 404):
 - `scanDigits` emits `scan` for barcode-shaped Enter; an exact match on a loaded option emits `scanmatch` (a local hit that
   never reaches the server — it still needs the sound and any case-quantity prefill).
 
-## Barcode data (details in CLAUDE.md "Barcode scan → item")
+## Barcode data (details in UPC_SCANNING.md)
 
 - Normalise every code to 14 digits (`Gtin::normalize`) so UPC-A / EAN-13 / GTIN-14 spellings are one key; check the check digit
   before trusting a code (a bad one is a misscan, not "unknown").
@@ -149,4 +149,4 @@ That showed focus never moved mid-scan (our first theory) and that the Qty value
 `resources/js/Pages/DonationSorting.vue` (flow), `resources/js/scanSounds.js`, `resources/js/Components/SearchSelect.vue`
 (`smartOpen`/`debounce`/`scanDigits`/`scanmatch`), `app/Helpers/Gtin.php`, `app/Services/Upc/*`, `app/Http/Controllers/UpcController.php`,
 Setup > Carton Barcodes (`resources/js/Pages/CartonCodes.vue`). Tests: `tests/Feature/UpcLookupTest.php`, `SortingConsolidateTest.php`.
-Open follow-ups are in TODO.md item 15.
+Open follow-ups are in dev/TODO.md, "Receiving, sorting and scanning".

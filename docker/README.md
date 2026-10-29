@@ -109,7 +109,7 @@ Snapshot Schedule: hourly / daily / weekly / monthly, how many of each to keep) 
 there.) A snapshot holds the database only unless its tier is set to include the uploaded files — **otherwise back up the `storage`
 volume too** if you rely on the uploaded photos, and copy backups off the machine. They are the same zips an admin
 makes on demand from **Updates & Backups** in the app (listed there, downloadable, never containing the application key —
-see `scripts/BACKUPS.md`).
+see `dev/notes/BACKUPS.md`).
 
 > **Retention is per tier.** Each warehouse keeps the newest N snapshots of each tier it enabled (default: one daily, 14 kept);
 > `RI_BACKUP_HOUR`, `RI_BACKUP_SCOPE` and `RI_BACKUP_KEEP_DAYS` only seed that schedule the first time. Backups made by hand are
@@ -195,7 +195,7 @@ They talk to the web app over HTTP exactly as they do on a bare-metal install; p
 ## Realtime (optional)
 
 Everything works without it (browsers and print servers poll). To enable Laravel Reverb, set
-`BROADCAST_CONNECTION: reverb` and the `REVERB_*` values in the settings block (see `scripts/REVERB.md` for what
+`BROADCAST_CONNECTION: reverb` and the `REVERB_*` values in the settings block (see `dev/notes/REVERB.md` for what
 each means), start with `docker compose --profile realtime up -d`, and make your reverse proxy forward WebSocket
 traffic to the `reverb` service (host port 8081). **Not yet tested in the container** — verify before relying on it.
 
@@ -206,7 +206,7 @@ setup wizard (or, on an instance that is still empty, **Setup > Testing Tools > 
 `docker compose exec app php artisan simulate:warehouse`). It fills the instance with about a year of fictional
 donations, sorting, requests and shipments (~1,200 requests, ~12,000 inventory movements, about a minute). It refuses to
 run once the instance has any data, and simulated data can't be removed from the app — to start clean, remove the
-volumes (`docker compose down -v`; this deletes everything). See `scripts/SIMULATOR.md`.
+volumes (`docker compose down -v`; this deletes everything). See `dev/notes/SIMULATOR.md`.
 
 The stack also records what is slow. `RI_SLOW_QUERY_MS: 250` in the settings block makes the app log every database
 query slower than that, and every page/endpoint that is slow, runs 60+ queries or sends 1 MB+; MariaDB's own slow log

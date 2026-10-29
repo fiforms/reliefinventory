@@ -1,7 +1,7 @@
 <?php
 
 // MULTI_WAREHOUSE.md §7/§11: a backup restored into a warehouse awaiting its setup code, against a real schema and database user
-// (needs the provisioning test user of scripts/TESTING.md; skips without it). Restoring really wipes and reloads that warehouse's
+// (needs the provisioning test user of dev/TESTING.md; skips without it). Restoring really wipes and reloads that warehouse's
 // schema, which is why it can't use the shared wrapped test warehouse.
 
 use App\Models\Accounts\Account;
@@ -27,7 +27,7 @@ beforeEach(function () {
     try {
         $this->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $this->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $this->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     $this->tmp = sys_get_temp_dir().'/ri-restore-setup-'.bin2hex(random_bytes(4));
     mkdir($this->tmp.'/out', 0777, true);

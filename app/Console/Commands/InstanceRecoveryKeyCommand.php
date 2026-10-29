@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Console\Commands;
@@ -11,7 +11,7 @@ use Illuminate\Console\Command;
 use Throwable;
 
 /**
- * The instance's recovery key from a shell (scripts/BACKUPS.md "Recovery key"): whole-instance backups seal every warehouse's key to its public
+ * The instance's recovery key from a shell (dev/notes/BACKUPS.md "Recovery key"): whole-instance backups seal every warehouse's key to its public
  * half, so an automatic backup can be restored, keys and all, by whoever holds the private half on paper.
  *
  *   status        what the instance has (never anything secret)

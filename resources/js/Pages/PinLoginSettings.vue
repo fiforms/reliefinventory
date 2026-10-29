@@ -1,10 +1,10 @@
-<!-- This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+<!-- This file is part of the Relief Inventory Project (https://reliefinventory.app)
      Licensed under the GNU GPL v. 3. See LICENSE.md for details -->
 
 <!-- PinLoginSettings.vue
 
 	Admin panel for the shared-terminal PIN unlock feature. Two
-	independently-permissioned sections (see routes/web.php's comment on
+	independently-permissioned sections (see routes/web/kiosk.php's comment on
 	why there's no single OR-gated permission for the page): Settings
 	(admin-system — the global on/off/trust-mode config) and Trusted
 	Devices (manage-trusted-devices — which specific devices may use PIN

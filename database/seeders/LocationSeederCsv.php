@@ -2,12 +2,10 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Seeder;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Storage;
-use League\Csv\Reader;
 use App\Models\Location;
 use App\Models\UseModel;
+use Illuminate\Database\Seeder;
+use League\Csv\Reader;
 
 class LocationSeederCsv extends Seeder
 {
@@ -18,8 +16,9 @@ class LocationSeederCsv extends Seeder
     {
         $csvFilePath = storage_path('app/Locations.csv');
 
-        if (!file_exists($csvFilePath)) {
+        if (! file_exists($csvFilePath)) {
             $this->command->error("CSV file not found at: {$csvFilePath}");
+
             return;
         }
 
@@ -33,7 +32,7 @@ class LocationSeederCsv extends Seeder
 
             // Look up use_id from 'uses' table
             $useId = null;
-            if (!empty($row['Lane Use'])) {
+            if (! empty($row['Lane Use'])) {
                 $use = UseModel::where('use', $row['Lane Use'])->first();
                 $useId = $use ? $use->id : null;
             }
@@ -43,13 +42,13 @@ class LocationSeederCsv extends Seeder
                 ['code' => $row['Full_Lane_ID']],
                 [
                     'PullSequence' => $row['PullSequence'],
-                    'Route'        => $row['Route'] ?? null,
-                    'Block'        => $row['Block'] ?? null,
-                    'Aisle'        => $row['Aisle'] ?? null,
-                    'Lane'         => $row['Lane'] ?? null,
-                    'Stack'        => $row['ShortLane_ID'] ?? null,
-                    'use_id'       => $useId,
-                    'status'       => 'active',
+                    'Route' => $row['Route'] ?? null,
+                    'Block' => $row['Block'] ?? null,
+                    'Aisle' => $row['Aisle'] ?? null,
+                    'Lane' => $row['Lane'] ?? null,
+                    'Stack' => $row['ShortLane_ID'] ?? null,
+                    'use_id' => $useId,
+                    'status' => 'active',
                 ]
             );
         }

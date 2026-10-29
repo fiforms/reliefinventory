@@ -1,11 +1,11 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 // Resetting a training warehouse (MULTI_WAREHOUSE.md §12): save a class archive, then rebuild that one warehouse from its seed. The
 // gates run against the shared test warehouse; the rebuild itself runs against a real provisioned training warehouse (it
-// needs the provisioning test user of scripts/TESTING.md and skips without it).
+// needs the provisioning test user of dev/TESTING.md and skips without it).
 
 use App\Http\Controllers\Auth\TrainingLoginController;
 use App\Models\Accounts\Account;
@@ -102,7 +102,7 @@ test('a reset rebuilds that one warehouse from its seed and keeps its people, ce
     try {
         $this->admin = new PDO("mysql:host={$base['host']};port={$base['port']}", 'ri_test_provisioner', 'ri_test_provisioner', [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
     } catch (PDOException) {
-        $this->markTestSkipped('The provisioning test user (scripts/TESTING.md) does not exist here.');
+        $this->markTestSkipped('The provisioning test user (dev/TESTING.md) does not exist here.');
     }
     config(['warehouses.provisioning' => [
         'admin_user' => 'ri_test_provisioner', 'admin_password' => 'ri_test_provisioner', 'admin_password_file' => '/nonexistent',

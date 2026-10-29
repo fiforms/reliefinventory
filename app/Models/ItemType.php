@@ -1,6 +1,6 @@
 <?php
 
-// This file is part of the Relief Inventory Project (https://reliefinventory.fiforms.net)
+// This file is part of the Relief Inventory Project (https://reliefinventory.app)
 // Licensed under the GNU GPL v. 3. See LICENSE.md for details
 
 namespace App\Models;
@@ -68,7 +68,7 @@ class ItemType extends Model
         'source_system',
         'source_ref',
         // Null = use config('inventory.low_stock_threshold'). See
-        // stock-visibility-and-fair-share-allocation (PROJECT_ANALYSIS.md Part 5).
+        // stock-visibility-and-fair-share-allocation (dev/FACILITY_NETWORK.md).
         'low_stock_threshold',
     ];
 
