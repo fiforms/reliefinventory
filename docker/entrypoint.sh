@@ -285,6 +285,10 @@ provisioner)
 queue)
     load_app_key
     wait_for_db
+    # The worker is in no warehouse between jobs, and the default `database` cache store lives in the warehouse's schema,
+    # so the worker's own look at its restart signal would fail (and with several warehouses it never recovers). The file
+    # store needs no schema; it still gets each warehouse's key prefix while a job runs (SwitchCache).
+    export CACHE_STORE=file
     # Recycle hourly so a long-lived worker never serves stale code/config.
     exec php artisan queue:work --tries=1 --sleep=3 --max-time=3600 --no-interaction
     ;;
