@@ -1,6 +1,6 @@
 #!/bin/bash
 # Make a backup zip (manifest + checksums, the same format as every other backup in the app) by running
-# `php artisan backup:create`. Shared by the scheduler's daily backup and the web container's pre-migration backup.
+# `php artisan backup:create`. Shared by the scheduler's hourly snapshot check and the web container's pre-migration backup.
 #
 #   ri-db-backup            asks EVERY warehouse for its scheduled snapshot (warehouse:each backup:scheduled): the warehouse's own schedule
 #                           decides whether one is due; it is recorded in the app (listed under Warehouse Backups), kept in the warehouse's
@@ -19,7 +19,6 @@
 set -uo pipefail
 
 BACKUP_DIR="${RI_BACKUP_DIR:-/backups}"
-KEEP_DAYS="${RI_BACKUP_KEEP_DAYS:-14}"
 SCOPE="${RI_BACKUP_SCOPE:-database}"
 LABEL="${1:-}"
 log() { echo "[db-backup] $(date '+%F %T') $*" >&2; }
@@ -31,7 +30,6 @@ if [ -z "$LABEL" ]; then
     # The scheduler's hourly ask: every active warehouse, in turn (the instance-wide lock makes them wait for each other).
     if php artisan warehouse:each "backup:scheduled --no-interaction" --no-interaction; then
         log "scheduled backups done"
-        find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
         exit 0
     fi
     log "a scheduled backup FAILED"
@@ -53,8 +51,6 @@ args=(--scope="$SCOPE" --dest="$BACKUP_DIR" --name="relief-backup-$(date +%Y%m%d
 # Reached only when the instance backup above could not be asked for (no control schema yet).
 if out="$(php artisan backup:create --warehouse=default --no-interaction "${args[@]}")"; then
     log "backup written: $(printf '%s\n' "$out" | tail -n1) ($(du -h "$(printf '%s\n' "$out" | tail -n1)" | cut -f1))"
-    # Dumps from before backups were zipped (RI image <= 2026-10-20): age them out the old way.
-    find "$BACKUP_DIR" -name 'reliefinventory-*.sql.gz' -mtime +"$KEEP_DAYS" -delete
 else
     log "backup FAILED"
     exit 1

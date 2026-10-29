@@ -346,11 +346,6 @@ class BackupService
         $zip->close();
     }
 
-    private function progress(Backup $backup, string $text): void
-    {
-        $backup->update(['progress' => $text]);
-    }
-
     private function fail(Backup $backup, string $message): void
     {
         $backup->update(['status' => 'failed', 'error' => substr($message, 0, 1000), 'progress' => null, 'finished_at' => now()]);

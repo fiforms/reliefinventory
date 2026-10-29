@@ -219,15 +219,18 @@ Issues identified October 8, 2026
    its `id` on the real `<input>` (labels don't link, app-wide); decide whether Docker should print a setup code in
    the log by default instead of leaving the wizard open to the first visitor.
 
-14. Tiered backup retention for Docker / R Station — the one thing the 2026-10-20 backup unification left uneven
+14. Backup tiers: Docker done, bare-metal duplicate still to retire
  - **Done:** every platform now makes the same zip (`php artisan backup:create`, scope database | full | storage), restores
    through the same pipeline (`backup:restore`, first-run wizard with an optional second files zip), and shows one merged
    Updates & Backups page that hides what the platform can't do. See `scripts/BACKUPS.md`.
- - **Open:** bare metal keeps hourly/daily/monthly/yearly tiers (`update.sh` promotes by hard link and prunes per tier);
-   the Docker scheduler and the R Station local server keep **one flat `RI_BACKUP_KEEP_DAYS`** (default 14). Parity means
-   porting `promote()`/`prune_tier()` into `BackupService::prune()` plus `RI_BACKUP_KEEP_*` settings, and showing the tiers
-   in the container branch of the page. Until then the page and `docker/README.md` tell operators to copy a backup off the
-   machine to keep it longer.
+ - **Done (branch `scheduled-backups`):** the Docker / R Station path now has per-warehouse hourly/daily/weekly/monthly tiers with a
+   schedule form on Warehouse Backups, roll back to a listed snapshot, scheduled whole-instance backups on Instance Admin, and an
+   instance-level trust so the RI Launcher can pull them (`scripts/BACKUPS.md`).
+ - **Open — decide:** bare metal still has its own, older tier system (`update.sh` promote/prune, `backup-settings.conf`, the systemd
+   timer units, the `/json/system/backup*` endpoints, `BackupController::downloadTier` and the systemd branch of `SystemAdmin.vue`).
+   It duplicates the Docker one and MULTI_WAREHOUSE.md marks it for review/removal, but `demo` and `wa26` (above) run those units today:
+   deleting the code stops their scheduled backups at the next `git pull`. Removing it needs those two moved to Docker (or their units
+   disabled on purpose) first. Also the `/json/system/*` update and offline-mode routes duplicate `/json/instance/*`.
  - **Also open:** the bare-metal tiered backups no longer keep a copy of `.env` beside each backup (a zip never holds the
    application key) — decide whether the key's only copy being "write it down from the admin page" is enough. The tiers are now
    **database only** (decided 2026-10-20): uploaded files get no scheduled backup on bare metal — only the admin page's
