@@ -25,7 +25,14 @@ A network of warehouses, resource sites and PoDs within one incident: facility a
 
 ---
 
-## 4. Other ideas (designs not written yet)
+## 4. Localization
+
+Spanish first. Help guides move to one Markdown source (screen and PDF), then an English review, then machine translation with
+human review tracked against the English it came from. Plan: `HELP_AND_LOCALIZATION_PLAN.md`.
+
+---
+
+## 5. Other ideas (designs not written yet)
 
 - **Stock source tagging and equipment tracking:** tag stock by source, an `item_kind` on the catalog, and an `Asset` model for equipment.
 - **Item conversion:** a recount-forced item/unit-of-measure reassignment (internal transfer).
