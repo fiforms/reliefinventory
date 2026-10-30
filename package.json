@@ -12,7 +12,7 @@
         "start:docker": "docker compose -f docker/compose.yaml -f docker/compose.dev.yaml up -d",
         "stop:docker": "docker compose -f docker/compose.yaml -f docker/compose.dev.yaml down",
         "build:print-client": "npm --prefix print-client install && npm --prefix print-client run tauri build",
-        "build:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri build",
+        "build:launcher": "npm --prefix launcher install && npm --prefix launcher run build:app",
         "dev:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri dev",
         "build:offline-bundle": "rstation/build-offline-bundle.sh",
         "publish:rstation-image": "node scripts/publish-rstation-image.mjs",

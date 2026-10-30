@@ -438,8 +438,9 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn app_version(app: AppHandle) -> String {
-    app.package_info().version.to_string()
+fn app_version() -> String {
+    // the release tag, or the commit hash for an untagged build (build.rs); the package version is only a number for installers
+    env!("RI_BUILD_VERSION").to_string()
 }
 
 /// On a Mac the launcher is a menu-bar app while its window is hidden (no Dock icon for a window that

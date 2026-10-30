@@ -6,6 +6,10 @@ name: RI Launcher (Windows)
 on:
   workflow_dispatch:
 
+# The version shown in the window: the release tag when run from a tag, otherwise the commit hash (launcher/src-tauri/build.rs).
+env:
+  RI_BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+
 jobs:
   build:
     runs-on: windows-latest
@@ -29,7 +33,7 @@ jobs:
           cache-dependency-path: launcher/package-lock.json
       - run: npm ci
       - name: Build installers
-        run: npm run tauri build
+        run: npm run build:app
       - uses: actions/upload-artifact@v4
         with:
           name: ri-launcher-windows

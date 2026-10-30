@@ -198,3 +198,7 @@ The window's **Update Relief Inventory** button (Local RI Server > Maintenance) 
 newest image for the chosen channel and restarts only if that image is newer, saying "already running the newest version" otherwise. The
 Backups tab's **Save all to this computer** copies every backup in the Linux layer — the app's own and the whole-instance zips under
 `backups/instance/` — to Documents\Relief Inventory Backups (read-only, skipping ones already copied); **Open saved copies** opens that folder.
+
+**Version shown in the window** (footer): the release tag, or the commit hash for an untagged build. It is `RI_BUILD_VERSION`, set by the
+launcher workflows (the tag name when run from a tag, else the commit sha) or, for a local build, by `git describe` in `src-tauri/build.rs`
+(`-dirty` if the tree has uncommitted changes). The `0.1.0` in `Cargo.toml` is only the installers' number and no longer what the window shows.

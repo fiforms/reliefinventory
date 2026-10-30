@@ -6,6 +6,10 @@ name: RI Launcher (macOS)
 on:
   workflow_dispatch:
 
+# The version shown in the window: the release tag when run from a tag, otherwise the commit hash (launcher/src-tauri/build.rs).
+env:
+  RI_BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+
 jobs:
   build:
     runs-on: macos-latest
@@ -33,7 +37,7 @@ jobs:
       # CI=true (set by Actions) makes Tauri skip the Finder-scripted .dmg window layout, which needs an
       # Automation permission a runner doesn't have.
       - name: Build the .dmg
-        run: npm run tauri build -- --target universal-apple-darwin --bundles dmg
+        run: npm run build:app -- --target universal-apple-darwin --bundles dmg
       - uses: actions/upload-artifact@v4
         with:
           name: ri-launcher-macos
