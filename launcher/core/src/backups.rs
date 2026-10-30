@@ -72,6 +72,16 @@ pub struct BackupMade {
     pub note: Option<String>,
 }
 
+/// What went wrong, in a sentence: a PHP stack trace is no help in a message box.
+fn short_reason(raw: &str) -> String {
+    if raw.contains("option does not exist") {
+        return "this version of the app is too old to take one: use Update Relief Inventory first".into();
+    }
+    let line = raw.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("unknown error");
+    let line: String = line.chars().take(160).collect();
+    if line.len() < raw.trim().len() { format!("{line}…") } else { line }
+}
+
 /// The "Backup now" button: a whole-instance backup if the app can make one (it needs the provisioner, which an older or
 /// partly started stack may not have), otherwise the database backup of the app's own warehouse, saying why.
 pub async fn backup_now<P: Platform>(p: &P) -> Result<BackupMade> {
@@ -79,7 +89,7 @@ pub async fn backup_now<P: Platform>(p: &P) -> Result<BackupMade> {
         Ok(()) => Ok(BackupMade { instance: true, note: None }),
         Err(why) => {
             create_now(p, "database").await?;
-            Ok(BackupMade { instance: false, note: Some(why.to_string()) })
+            Ok(BackupMade { instance: false, note: Some(short_reason(&why.to_string())) })
         }
     }
 }
@@ -275,6 +285,13 @@ mod tests {
         let cmds = p.cmds.lock().unwrap().clone();
         assert_eq!(cmds.len(), 1);
         assert!(cmds[0].contains("exec -T app php artisan instance:backup --requested"));
+    }
+
+    #[test]
+    fn a_stack_trace_becomes_a_sentence() {
+        assert!(short_reason("#9 /var/www/vendor… {main} \"} The \"--requested\" option does not exist.").contains("too old"));
+        assert_eq!(short_reason("disk full"), "disk full");
+        assert!(short_reason(&"x".repeat(500)).ends_with('…'));
     }
 
     #[tokio::test]
