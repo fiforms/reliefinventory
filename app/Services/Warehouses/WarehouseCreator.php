@@ -8,6 +8,7 @@ namespace App\Services\Warehouses;
 use App\Models\Control\InstanceAuditLog;
 use App\Models\Control\Warehouse;
 use App\Services\FirstRunService;
+use App\Support\RandomNumberStart;
 use Database\Seeders\PermissionsSeeder;
 use Illuminate\Support\Facades\Artisan;
 
@@ -68,6 +69,7 @@ class WarehouseCreator
             Artisan::call('migrate', ['--force' => true] + $this->migrateOptions);
             $warehouse->forceFill(['migration_state' => 'migrated'])->save();
             $this->firstRun->ensureEssentialData();
+            RandomNumberStart::apply();
             app(PermissionsSeeder::class)->setContainer(app())->__invoke();
             $this->firstRun->markComplete();
         });

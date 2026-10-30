@@ -8,6 +8,7 @@ namespace App\Console\Commands;
 use App\Models\Accounts\Account;
 use App\Models\User;
 use App\Services\FirstRunService;
+use App\Support\RandomNumberStart;
 use Illuminate\Console\Command;
 use Illuminate\Support\Str;
 
@@ -53,6 +54,7 @@ class BootstrapAdminCommand extends Command
         $password = $generated ? Str::password(20, symbols: false) : $this->option('password');
 
         $firstRun->ensureEssentialData();
+        RandomNumberStart::apply();
         $user = $firstRun->createAdministrator($email, $password, $this->option('firstname'), $this->option('lastname'));
 
         $this->info("Created Administrator $email (user id {$user->id}).");
