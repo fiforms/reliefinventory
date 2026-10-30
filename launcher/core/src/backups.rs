@@ -86,6 +86,30 @@ pub async fn export<P: Platform>(p: &P, backup: &BackupFile, dest_dir: &Path) ->
     Ok(dest)
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExportAll {
+    pub copied: usize,
+    /// Already in the folder from an earlier time (same name and size).
+    pub already_there: usize,
+    pub failed: usize,
+}
+
+/// Copy every backup in the Linux layer (the app's own and the whole-instance ones) into `dest_dir`, read-only, skipping any
+/// that an earlier run already copied. One failing file doesn't stop the rest.
+pub async fn export_all<P: Platform>(p: &P, dest_dir: &Path) -> Result<ExportAll> {
+    let mut out = ExportAll { copied: 0, already_there: 0, failed: 0 };
+    for b in list(p).await? {
+        if std::fs::metadata(dest_dir.join(&b.name)).map(|m| m.len() == b.size).unwrap_or(false) {
+            out.already_there += 1;
+        } else if export(p, &b, dest_dir).await.is_ok() {
+            out.copied += 1;
+        } else {
+            out.failed += 1;
+        }
+    }
+    Ok(out)
+}
+
 /// Restore a backup zip chosen from disk. A fresh database backup is made first and the restore refuses to
 /// run if that fails, so a wrong file can always be undone. The app is unavailable during the restore.
 pub async fn import<P: Platform>(p: &P, file: &Path) -> Result<()> {
@@ -196,6 +220,21 @@ mod tests {
         assert!(export(&p, &bad, out.path()).await.is_err());
         let sneaky = BackupFile { path: "/opt/ri/backups/../../etc/passwd".into(), name: "passwd".into(), size: 0, modified: 0 };
         assert!(export(&p, &sneaky, out.path()).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn export_all_copies_each_backup_once_including_the_instance_ones() {
+        let listing = "/opt/ri/backups/a.zip|8|2\n/opt/ri/backups/instance/relief-instance-1-full.zip|8|1\n";
+        let (p, _d) = fake(listing, false);
+        std::fs::create_dir_all(p.at("/opt/ri/backups/instance")).unwrap();
+        std::fs::write(p.at("/opt/ri/backups/a.zip"), b"PK\x03\x04data").unwrap();
+        std::fs::write(p.at("/opt/ri/backups/instance/relief-instance-1-full.zip"), b"PK\x03\x04data").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let first = export_all(&p, out.path()).await.unwrap();
+        assert_eq!(first, ExportAll { copied: 2, already_there: 0, failed: 0 });
+        let again = export_all(&p, out.path()).await.unwrap();
+        assert_eq!(again, ExportAll { copied: 0, already_there: 2, failed: 0 });
+        assert!(out.path().join("relief-instance-1-full.zip").exists());
     }
 
     #[tokio::test]

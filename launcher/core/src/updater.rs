@@ -157,10 +157,12 @@ pub struct UpdateService<P> {
     health_wait: Duration,
 }
 
-struct Checked {
-    version: Option<String>,
-    running_version: Option<String>,
-    newer: bool,
+/// What a pull found: the pulled image's version (None on edge), the running one's, and whether installing would move forward.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Checked {
+    pub version: Option<String>,
+    pub running_version: Option<String>,
+    pub newer: bool,
 }
 
 impl<P: Platform + 'static> UpdateService<P> {
@@ -220,7 +222,7 @@ impl<P: Platform + 'static> UpdateService<P> {
     }
 
     /// Pull, then say what is there. Nothing restarts.
-    async fn check(&self, channel: Channel) -> Result<Checked> {
+    pub async fn check(&self, channel: Channel) -> Result<Checked> {
         let image = self.image_ref().await?;
         let running_id = self.running_image_id().await;
         let running_version = match &running_id {
@@ -274,17 +276,24 @@ impl<P: Platform + 'static> UpdateService<P> {
         }
         let label = c.version.clone().unwrap_or_else(|| "the newest edge build".into());
         self.say(report("restarting", format!("Installing {label}; the site is offline for a few minutes")), false).await;
-        for sub in ["down", "up -d --remove-orphans"] {
-            if let Err(e) = self.compose(sub).await {
-                self.say(report("failed", format!("docker compose {} failed: {e}", sub.split(' ').next().unwrap_or(sub))), true).await;
-                return;
-            }
-        }
-        if !self.wait_healthy().await {
-            self.say(report("failed", "The new version did not become healthy in time; check `docker compose logs app`."), true).await;
+        if let Err(e) = self.restart_onto_pulled().await {
+            self.say(report("failed", e.to_string()), true).await;
             return;
         }
         self.say(Report { state: "done", message: format!("Updated to {label}."), current: c.version, available: None }, true).await;
+    }
+
+    /// Recreate the stack on the image that was just pulled and wait for it to answer. Never `down -v`.
+    pub async fn restart_onto_pulled(&self) -> Result<()> {
+        for sub in ["down", "up -d --remove-orphans"] {
+            if let Err(e) = self.compose(sub).await {
+                return fail(format!("docker compose {} failed: {e}", sub.split(' ').next().unwrap_or(sub)));
+            }
+        }
+        if !self.wait_healthy().await {
+            return fail("The new version did not become healthy in time; check `docker compose logs app`.");
+        }
+        Ok(())
     }
 
     async fn wait_healthy(&self) -> bool {

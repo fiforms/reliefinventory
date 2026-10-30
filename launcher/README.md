@@ -193,3 +193,8 @@ running, a task in the launcher (`Launcher::serve_update_requests`, started by t
 is newer — on the edge channel, different — `down` then `up -d`, wait for `/up`) and `backup` (`instance:backup --requested`: the
 provisioner's full-instance backup with files). Docker is reached only through `Platform::exec`, so it is the same code on Linux, Lima and WSL.
 Requests are made in the app (`instance:update check|apply|backup`, or Instance Admin).
+
+The window's **Update Relief Inventory** button (Local RI Server > Maintenance) uses the same rules (`Launcher::install_update`): it downloads the
+newest image for the chosen channel and restarts only if that image is newer, saying "already running the newest version" otherwise. The
+Backups tab's **Save all to this computer** copies every backup in the Linux layer — the app's own and the whole-instance zips under
+`backups/instance/` — to Documents\Relief Inventory Backups (read-only, skipping ones already copied); **Open saved copies** opens that folder.

@@ -102,7 +102,14 @@ async function run(label, fn, okText) {
 const doInstall = () => run('install', async () => { await api.startInstall() }) // progress then arrives via the status file
 const doStart = () => run('start', api.start)
 const doStop = () => run('stop', api.stop)
-const doUpdate = () => run('update', api.update, 'Updated. Relief Inventory restarted with the latest version.')
+async function doUpdate() {
+    await run('update', async () => {
+        const r = await api.installUpdate()
+        const v = r.version ? ` ${r.version}` : ''
+        if (r.newer) note('ok', `Updated${v}. Relief Inventory restarted with the newest version.`)
+        else note('ok', `Relief Inventory is already running the newest version${r.running_version ? ` (${r.running_version})` : ''}.`)
+    })
+}
 const doBackup = () => run('backup', () => api.backupCreate('database'), 'Backup created.')
 
 async function doUninstall() {
@@ -148,6 +155,10 @@ async function saveCopy(b) {
         note('ok', `Saved a read-only copy to ${path}`)
     })
 }
+
+const showAll = ref(false)
+const saveAll = () => run('export', async () => note('ok', await api.backupExportAll()))
+const openFolder = () => api.backupOpenFolder().catch(fail)
 
 async function chooseRestore() {
     const f = await api.pickBackupFile().catch(fail)
@@ -199,6 +210,8 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                 <h2>Backups</h2>
                 <div class="btns">
                     <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Back up now</button>
+                    <button class="quiet" @click="saveAll" :disabled="!!busy || state !== 'running'" title="Copy every backup (including whole-instance ones) to your Documents folder">Save all to this computer</button>
+                    <button class="quiet" @click="openFolder" :disabled="!!busy" title="Open the folder that saved copies go to">Open saved copies</button>
                     <button class="quiet" @click="chooseRestore" :disabled="!!busy || state !== 'running'">Restore from file…</button>
                 </div>
             </div>
@@ -212,7 +225,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             </template>
             <p v-else-if="state !== 'running'" class="muted">Start Relief Inventory (on the Local RI Server tab) to see and make backups.</p>
             <ul v-else-if="backups.length" class="rows">
-                <li v-for="b in backups.slice(0, 8)" :key="b.path">
+                <li v-for="b in (showAll ? backups : backups.slice(0, 8))" :key="b.path">
                     <div class="grow">
                         <div class="name small">{{ b.name }}</div>
                         <div class="muted small">{{ when(b.modified) }} · {{ size(b.size) }}</div>
@@ -221,8 +234,9 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                 </li>
             </ul>
             <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Back up now</strong> makes one immediately.</p>
+            <p v-if="state === 'running' && backups.length > 8" class="small"><button class="quiet" @click="showAll = !showAll">{{ showAll ? 'Show fewer' : `Show all ${backups.length} backups` }}</button></p>
             <p v-if="state !== 'not_installed'" class="muted small foot">
-                "Save a copy" puts a read-only file in Documents\Relief Inventory Backups. Keep copies somewhere other than this computer too.
+                "Save a copy" and "Save all to this computer" put read-only files in Documents\Relief Inventory Backups (whole-instance backups included); "Open saved copies" opens that folder. Keep copies somewhere other than this computer too.
                 Restoring replaces everything currently in Relief Inventory.
             </p>
             <div v-if="confirming === 'restore'" class="banner bad" role="alertdialog">

@@ -18,6 +18,7 @@ use ri_launcher_core::remote::{Options as RemoteOptions, Paired, RemoteBackups, 
 use ri_launcher_core::sdimage::{self, ImageInfo};
 use ri_launcher_core::service::{Launcher, Summary};
 use ri_launcher_core::settings::{Channel, Mode, Settings};
+use ri_launcher_core::updater::Checked;
 use ri_launcher_core::status::{self, InstallStatus};
 use ri_launcher_core::DefaultBackend;
 use tauri::menu::{Menu, MenuItem};
@@ -239,6 +240,43 @@ async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String)
     let saved = backups::export(p.as_ref(), b, &dest).await.map_err(err)?;
     let _ = app.opener().reveal_item_in_dir(&saved);
     Ok(saved.to_string_lossy().into_owned())
+}
+
+fn backups_folder(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app.path().document_dir().or_else(|_| app.path().home_dir()).map_err(err)?.join("Relief Inventory Backups"))
+}
+
+/// Copies every backup (including the whole-instance ones) to Documents/Relief Inventory Backups, skipping ones already
+/// there, and shows the folder. Returns "<n> copied, <m> already there".
+#[tauri::command]
+async fn backup_export_all(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let dest = backups_folder(&app)?;
+    std::fs::create_dir_all(&dest).map_err(err)?;
+    let r = backups::export_all(state.launcher.platform().as_ref(), &dest).await.map_err(err)?;
+    let _ = app.opener().open_path(dest.to_string_lossy(), None::<&str>);
+    let mut msg = format!("{} copied, {} already in the folder.", r.copied, r.already_there);
+    if r.failed > 0 {
+        msg.push_str(&format!(" {} could not be copied.", r.failed));
+    }
+    Ok(msg)
+}
+
+/// Opens the folder that "Save a copy" and "Save all" write to.
+#[tauri::command]
+fn backup_open_folder(app: AppHandle) -> Result<(), String> {
+    let dest = backups_folder(&app)?;
+    std::fs::create_dir_all(&dest).map_err(err)?;
+    app.opener().open_path(dest.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_update(state: State<'_, AppState>) -> Result<Checked, String> {
+    state.launcher.check_update().await.map_err(err)
+}
+
+#[tauri::command]
+async fn install_update(state: State<'_, AppState>) -> Result<Checked, String> {
+    state.launcher.install_update().await.map_err(err)
 }
 
 #[tauri::command]
@@ -504,7 +542,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, open_terminal, backups_list, backup_create, backup_export,
-            backup_import, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
+            backup_import, backup_export_all, backup_open_folder, check_update, install_update, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
             image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page, remote_list, remote_pair,
             remote_configure, remote_backup_now, remote_remove, remote_reveal
         ])

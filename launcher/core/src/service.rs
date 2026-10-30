@@ -71,6 +71,30 @@ impl<P: Platform + 'static> Launcher<P> {
         compose::render_for(compose::TEMPLATE, settings, machine, &opts).map_err(|e| PlatformError::Failed(e.to_string()))
     }
 
+    fn update_service(&self) -> Result<updater::UpdateService<P>> {
+        let secret = updater::load_or_create_secret(&self.dir).map_err(io)?;
+        Ok(updater::UpdateService::new(self.platform.clone(), Arc::new(updater::HttpApi::new(secret))))
+    }
+
+    /// Download the newest image for the chosen channel and say whether it is newer than the one running. Nothing restarts.
+    pub async fn check_update(&self) -> Result<updater::Checked> {
+        if self.platform.state().await? != State::Running {
+            return fail("Start Relief Inventory first; updates are checked while it is running.");
+        }
+        self.update_service()?.check(self.settings().channel).await
+    }
+
+    /// Check, and install only if what was downloaded is newer (the rules of `updater`: never backwards). Returns what was found;
+    /// `newer` true means the app was restarted onto it.
+    pub async fn install_update(&self) -> Result<updater::Checked> {
+        let service = self.update_service()?;
+        let found = self.check_update().await?;
+        if found.newer {
+            service.restart_onto_pulled().await?;
+        }
+        Ok(found)
+    }
+
     /// Answer the app's update, check and backup requests for as long as this process lives (see `updater`). It only
     /// acts while the stack is running; the channel is read from the settings every time, so a change applies at once.
     pub async fn serve_update_requests(self: Arc<Self>) {
