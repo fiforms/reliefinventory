@@ -9,6 +9,7 @@ use App\Models\PeopleRoles;
 use App\Models\SetupState;
 use App\Models\User;
 use App\Services\Simulator\SimulationRun;
+use App\Support\RandomNumberStart;
 use Database\Seeders\DatabaseSeeder;
 use Database\Seeders\PermissionsSeeder;
 use Database\Seeders\WarehouseActivitySeeder;
@@ -162,6 +163,9 @@ class FirstRunService
 
             return $this->createAdministrator($admin['email'], $admin['password'], $admin['first_name'], $admin['last_name']);
         });
+
+        // After the transaction: the ALTER TABLEs commit implicitly. Before any demo data, which would use up the empty tables.
+        RandomNumberStart::apply();
 
         $demoFailed = false;
         $simulationStarted = false;
