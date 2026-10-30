@@ -5,24 +5,22 @@
 
 namespace App\Http\Controllers;
 
+use App\Support\HelpGuide;
 use Spatie\LaravelPdf\Facades\Pdf;
 use Spatie\LaravelPdf\PdfBuilder;
 
 /**
- * Printable PDF versions of the in-app Help guides (resources/js/Pages/Help/*.vue).
- * Content is duplicated into a Blade view rather than shared with the Vue
- * page — there's no existing mechanism in this codebase for sharing content
- * between an Inertia page and a Blade/PDF view, so this follows the same
- * duplication already accepted elsewhere (e.g. pallet labels).
+ * Printable PDFs of the in-app Help guides. A guide's text is one Markdown file,
+ * resources/help/en/<slug>.md (App\Support\HelpGuide); the screen page (Pages/Help/Guide.vue) and the PDF
+ * (reports/help/guide.blade.php) both render it, so there is only one copy to edit.
  *
- * Adding a guide: add it to GUIDES, write resources/views/reports/help/<slug>.blade.php
- * (extending reports.help.layout), and build its page on Components/HelpPage.vue —
- * then link it from its page with <HelpLink guide="<slug>"> — the route, print-queue registry
- * entry, Print button and its line on the /help list (with "Print all guides") all follow from GUIDES.
+ * Adding a guide: add it to GUIDES, write resources/help/en/<slug>.md, then link it from its page with
+ * <HelpLink guide="<slug>"> — the page, route, print-queue registry entry, Print button and its line on
+ * the /help list (with "Print all guides") all follow from GUIDES.
  */
 class HelpReportController extends Controller
 {
-    /** slug => PDF title. The slug is also the view name and the URL segment. */
+    /** slug => PDF title. The slug is also the Markdown file name and the URL segment. */
     public const GUIDES = [
         'receiving' => 'Receiving Guide',
         'donation-offers' => 'Donation Offers Guide',
@@ -45,7 +43,7 @@ class HelpReportController extends Controller
     {
         abort_unless(array_key_exists($guide, self::GUIDES), 404);
 
-        return Pdf::view('reports.help.'.$guide)
+        return Pdf::view('reports.help.guide', ['title' => self::GUIDES[$guide], 'guide' => HelpGuide::load($guide)])
             ->driver('weasyprint')
             ->format('letter')
             ->name($guide.'-guide.pdf');
@@ -59,7 +57,7 @@ class HelpReportController extends Controller
     /**
      * Every guide in one PDF, each starting on a new page, in GUIDES order. Each guide's own
      * view is rendered on its own first (renderSections) so its title/content sections can't
-     * collide with the combined view's — the guides themselves stay single-guide views.
+     * collide with the combined view's.
      */
     public function allBuilder(): PdfBuilder
     {
@@ -67,7 +65,8 @@ class HelpReportController extends Controller
         foreach (self::GUIDES as $slug => $title) {
             $guides[] = [
                 'title' => $title,
-                'content' => view('reports.help.'.$slug)->renderSections()['content'],
+                'content' => view('reports.help.guide', ['title' => $title, 'guide' => HelpGuide::load($slug)])
+                    ->renderSections()['content'],
             ];
         }
 

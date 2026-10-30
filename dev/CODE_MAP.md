@@ -97,7 +97,7 @@ Dashboards: `DashboardController`, `Services/WarehouseMetrics.php`, `Pages/Displ
 
 ## Frontend ([notes/FRONTEND.md](notes/FRONTEND.md))
 
-- `resources/js/Pages/` is 1:1 with routes. `Pages/Help/` holds the in-app guides (each also has a Blade PDF copy).
+- `resources/js/Pages/` is 1:1 with routes. The in-app Help guides are Markdown in `resources/help/en/`, shown by `Pages/Help/Guide.vue` and printed from the same source.
 - Shared building blocks in `resources/js/Components/`: `RIForm` / `RISubform` (CRUD lists and forms; read the header comment),
   `SearchSelect`, `PrintMenu`, `QrScanner`, `HelpPage`. Layouts in `resources/js/Layouts/`.
 - Admin/settings page look: the `admin-page-style` skill (`.claude/skills/admin-page-style/`).

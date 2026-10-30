@@ -3,7 +3,7 @@
 
 <!-- HelpPage.vue
 
-	Shared shell for every in-app Help guide (resources/js/Pages/Help/*.vue):
+	Shared shell for every in-app Help guide (resources/js/Pages/Help/Guide.vue):
 	layout, page title, and the "Print these instructions" button, which is
 	always present — the printable PDF comes from /report/help/<guide>
 	(HelpReportController::GUIDES), and the same key queues it to a site

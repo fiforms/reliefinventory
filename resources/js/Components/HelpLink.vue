@@ -4,7 +4,7 @@
 <!-- HelpLink.vue
 
 	The "Help: <guide>" text link a page shows for its Help guide
-	(resources/js/Pages/Help/*.vue), opening it in a new tab so work in
+	(resources/help/en/<slug>.md, shown by Pages/Help/Guide.vue), opening it in a new tab so work in
 	progress on the page isn't lost.
 
 	Usage: <HelpLink guide="receiving">Receiving Guide</HelpLink>

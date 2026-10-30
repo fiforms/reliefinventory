@@ -12,10 +12,8 @@ Generic list/detail form bound to a `/json/...` datasource. **Read its top doc c
 ## Scanner screens
 Read `dev/notes/SCANNING_INTERFACE_NOTES.md` first (wedge-scanner behaviour, audio vocabulary in `scanSounds.js`, focus, Qty fields, `SearchSelect` options, never losing a pending line, new-screen checklist); `DonationSorting.vue` is the reference. Camera scanning is one `ScanButton.vue` per screen: it shows `QrScanner.vue` (`html5-qrcode`), closes on first read and types the code into the scan field like a wedge scanner (`scanInject.js`). Needs HTTPS.
 
-## Help guides (`resources/js/Pages/Help/*.vue`, `Components/HelpPage.vue`)
-Served by one `/help/{guide}` route; `/help` (`Help/Index.vue`, main-menu Help tile) lists every guide with Open/Print and **Print all guides** (`/report/help/all`, document `help-all`, `HelpReportController::allBuilder`). Adding a guide:
-1. Add its slug to `HelpReportController::GUIDES` (the report route, `help-<slug>` print entry and button follow).
-2. Put a `<HelpLink guide="<slug>">` on the page it describes (RIForm pages: `#listactions`; others beside the title). A test fails if a guide is unlinked.
-3. Write `resources/views/reports/help/<slug>.blade.php` extending `reports.help.layout`.
-4. Wrap the Vue page in `<HelpPage guide="<slug>">`.
-The PDF is a hand-kept copy of the Vue page: edit both.
+## Help guides (`resources/help/en/*.md`, `Pages/Help/Guide.vue`, `Components/HelpPage.vue`)
+Each guide is one Markdown file, `resources/help/en/<slug>.md`: the only copy of its text. `App\Support\HelpGuide` renders it (CommonMark, raw HTML stripped) and both the `/help/{guide}` page (`Help/Guide.vue`, one card per section) and its PDF (`reports/help/guide.blade.php`, WeasyPrint) show that HTML. In the source, the first paragraph is the intro line under the title and each `## ` heading starts a section; use plain Markdown (headings, lists, bold, links like `[Sorting](/help/sorting)`). `/help` (`Help/Index.vue`, main-menu Help tile) lists every guide with Open/Print and **Print all guides** (`/report/help/all`, document `help-all`, `HelpReportController::allBuilder`). Adding a guide:
+1. Add its slug to `HelpReportController::GUIDES` (the page, report route, `help-<slug>` print entry and button follow).
+2. Write `resources/help/en/<slug>.md`.
+3. Put a `<HelpLink guide="<slug>">` on the page it describes (RIForm pages: `#listactions`; others beside the title). A test fails if a guide is unlinked.
