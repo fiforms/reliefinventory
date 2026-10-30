@@ -12,6 +12,25 @@ pub enum Mode {
     Local,
 }
 
+/// Which image tag the stack follows. `Latest`: the newest published release. `Edge`: unreleased development
+/// builds, for developers and testers (never for real data).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Channel {
+    #[default]
+    Latest,
+    Edge,
+}
+
+impl Channel {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Channel::Latest => "latest",
+            Channel::Edge => "edge",
+        }
+    }
+}
+
 /// The few things the launcher lets a person change. The compose file is regenerated from these every
 /// time the app starts, so this file (not the YAML inside the Linux layer) is the source of truth.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,11 +42,13 @@ pub struct Settings {
     pub port: u16,
     /// PHP timezone name for the app (None = the app's default, UTC).
     pub timezone: Option<String>,
+    /// Which release channel the app image follows.
+    pub channel: Channel,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Settings { mode: Mode::Lan, hostname: None, port: DEFAULT_PORT, timezone: None }
+        Settings { mode: Mode::Lan, hostname: None, port: DEFAULT_PORT, timezone: None, channel: Channel::Latest }
     }
 }
 
@@ -133,7 +154,7 @@ mod tests {
     fn roundtrip_and_defaults() {
         let d = tempfile::tempdir().unwrap();
         assert_eq!(Settings::load(d.path()), Settings::default());
-        let s = Settings { mode: Mode::Local, hostname: Some("x.local".into()), port: 9000, timezone: None };
+        let s = Settings { mode: Mode::Local, hostname: Some("x.local".into()), port: 9000, timezone: None, channel: Channel::Edge };
         s.save(d.path()).unwrap();
         assert_eq!(Settings::load(d.path()), s);
         std::fs::write(settings_path(d.path()), b"{not json").unwrap();

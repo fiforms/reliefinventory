@@ -4,7 +4,7 @@ use ri_launcher_core::platform::{InstallOutcome, Platform};
 use ri_launcher_core::remote::client::ServerKind;
 use ri_launcher_core::remote::RemoteBackups;
 use ri_launcher_core::service::Launcher;
-use ri_launcher_core::settings::Mode;
+use ri_launcher_core::settings::{Channel, Mode};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -48,6 +48,8 @@ enum Cmd {
     SetHost { name: Option<String> },
     SetPort { port: u16 },
     SetTimezone { zone: Option<String> },
+    /// "latest" follows official releases; "edge" is newer, unreleased software for developers and testers
+    SetChannel { channel: String },
     /// Print the link to send to others on the network
     Link,
     Backups {
@@ -266,6 +268,15 @@ async fn main() {
         Cmd::SetTimezone { zone } => {
             let mut s = launcher.settings();
             s.timezone = zone;
+            die(launcher.apply(s).await);
+        }
+        Cmd::SetChannel { channel } => {
+            let mut s = launcher.settings();
+            s.channel = match channel.as_str() {
+                "latest" => Channel::Latest,
+                "edge" => Channel::Edge,
+                _ => die(Err("channel must be \"latest\" or \"edge\"")),
+            };
             die(launcher.apply(s).await);
         }
         Cmd::Link => println!("{}", die(launcher.shareable_link())),

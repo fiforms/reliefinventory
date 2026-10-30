@@ -46,7 +46,7 @@ not been run (`.github/workflows/launcher-linux.yml`, manual, builds the `.deb` 
   distro) — then the compose file is rewritten and `docker compose up -d`. **Stop:** `compose stop`, then
   `wsl --terminate`.
 - **The compose file is regenerated from `settings.json` on every start** (`compose.rs`): `APP_URL` becomes the address
-  people type, the app's `8080:8080` mapping becomes `18080:8080`, an optional timezone is switched on. Nothing else
+  people type, the app's `8080:8080` mapping becomes `18080:8080`, an optional timezone is switched on, and the app image tag follows the Software channel setting (`latest` = official releases, `edge` = unreleased builds for developers/testers; changing it pulls the new tag and restarts). Nothing else
   is edited, so the YAML inside the Linux layer is never the source of truth.
 - **LAN service vs local only** (`Settings.mode`): the launcher runs a small TCP proxy (`proxy.rs`) that owns the public
   port (default 8080) and forwards to `127.0.0.1:18080`, where WSL forwards the app. LAN = listens on every interface;

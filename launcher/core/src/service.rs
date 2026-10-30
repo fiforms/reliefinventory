@@ -3,7 +3,7 @@ use crate::network::{self, Machine};
 use crate::platform::{fail, InstallOutcome, Platform, PlatformError, Preflight, Result, State, INTERNAL_PORT};
 use crate::status::{self, InstallStatus};
 use crate::proxy;
-use crate::settings::{self, Mode, Settings};
+use crate::settings::{self, Channel, Mode, Settings};
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -21,6 +21,7 @@ pub struct Summary {
     pub default_hostname: String,
     pub port: u16,
     pub timezone: Option<String>,
+    pub channel: Channel,
     /// The address people open on this computer.
     pub url: String,
     /// What to send to others on the network (empty in local-only mode).
@@ -80,6 +81,7 @@ impl<P: Platform + 'static> Launcher<P> {
             default_hostname: m.default_hostname(),
             port: s.port,
             timezone: s.timezone.clone(),
+            channel: s.channel,
             url: network::app_url(&s, &m),
             share_urls: network::share_urls(&s, &m),
             os: std::env::consts::OS,
@@ -188,7 +190,12 @@ impl<P: Platform + 'static> Launcher<P> {
             let m = Machine::detect();
             let compose = self.compose_for(&new, &m)?;
             if compose != self.compose_for(&old, &m)? {
-                self.platform.start(&compose).await?;
+                if new.channel != old.channel {
+                    // a different tag: download it rather than reuse a stale local copy
+                    self.platform.update(&compose).await?;
+                } else {
+                    self.platform.start(&compose).await?;
+                }
             }
             // only move a proxy this process owns; another process's (`ri-launcher run`) notices through
             // `follow_settings`

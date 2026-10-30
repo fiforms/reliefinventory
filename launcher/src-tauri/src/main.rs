@@ -17,7 +17,7 @@ use ri_launcher_core::remote::client::ServerKind;
 use ri_launcher_core::remote::{Options as RemoteOptions, Paired, RemoteBackups, ServerView};
 use ri_launcher_core::sdimage::{self, ImageInfo};
 use ri_launcher_core::service::{Launcher, Summary};
-use ri_launcher_core::settings::{Mode, Settings};
+use ri_launcher_core::settings::{Channel, Mode, Settings};
 use ri_launcher_core::status::{self, InstallStatus};
 use ri_launcher_core::DefaultBackend;
 use tauri::menu::{Menu, MenuItem};
@@ -164,7 +164,7 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
     state.launcher.settings()
 }
 
-/// `mode` is "lan" or "local"; the other fields are applied as given (None clears hostname/timezone).
+/// `mode` is "lan" or "local"; the other fields are applied as given (None clears hostname/timezone); `channel` is "latest" or "edge".
 #[tauri::command]
 async fn apply_settings(
     state: State<'_, AppState>,
@@ -172,6 +172,7 @@ async fn apply_settings(
     hostname: Option<String>,
     port: u16,
     timezone: Option<String>,
+    channel: String,
 ) -> Result<(), String> {
     let norm = |s: Option<String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     let settings = Settings {
@@ -183,6 +184,11 @@ async fn apply_settings(
         hostname: norm(hostname),
         port,
         timezone: norm(timezone),
+        channel: match channel.as_str() {
+            "latest" => Channel::Latest,
+            "edge" => Channel::Edge,
+            _ => return Err("Unknown channel".into()),
+        },
     };
     state.launcher.apply(settings).await.map_err(err)
 }

@@ -138,6 +138,20 @@ def test_actions_refused_when_the_image_lacks_the_bundle(paths):
     assert caught.value.status == 409
 
 
+def test_channel_defaults_to_latest_and_is_saved_for_the_update_script(paths):
+    server = _server(paths)
+    assert run(server.status())["channel"] == "latest"
+
+    server.set_channel("edge")
+
+    assert (paths[1] / "state" / "channel").read_text().strip() == "edge"
+    assert server.channel() == "edge"
+    with pytest.raises(local_server.LocalServerError) as caught:
+        server.set_channel("../etc")
+    assert caught.value.status == 400
+    assert server.channel() == "edge"
+
+
 def test_reset_needs_explicit_confirmation(paths, monkeypatch):
     _install(paths[0])
     calls = []
@@ -520,8 +534,9 @@ case "$1 $2" in
       *.Id*) cat "$S/id"; echo; exit 0 ;;
     esac
     exit 0 ;;
-  "pull "*) [ -e "$S/pull_fail" ] && { echo "denied: no" >&2; exit 1; }; cp "$S/pull_id" "$S/id"; exit 0 ;;
-  "tag "*) echo "$2" > "$S/id"; exit 0 ;;
+  "pull "*) [ -e "$S/pull_fail" ] && { echo "denied: no" >&2; exit 1; }
+    case "$3" in *:edge) cp "$S/pull_id" "$S/edge_id" ;; *) cp "$S/pull_id" "$S/id" ;; esac; exit 0 ;;
+  "tag "*) case "$2" in *:edge) cp "$S/edge_id" "$S/id" ;; *) echo "$2" > "$S/id" ;; esac; exit 0 ;;
   "load -i") touch "$S/loaded"; cp "$S/load_id" "$S/id"; exit 0 ;;
 esac
 exit 0
@@ -570,6 +585,20 @@ def test_update_installs_a_newer_version_and_records_it(upd):
     assert (upd.data / "state" / "app-version").read_text() == "1.1.0"
     log = upd.log.read_text()
     assert "pull ghcr.io/x/app:latest" in log and "up -d --no-build --pull never" in log
+
+
+def test_the_edge_channel_pulls_the_edge_tag_and_installs_an_unversioned_build(upd):
+    (upd.data / "state" / "channel").write_text("edge\n")
+    (upd.state / "pull_id").write_text("sha256:edge")   # edge builds carry no RI_VERSION
+
+    result = _script(upd, "update")
+
+    assert result.returncode == 0, result.stderr
+    assert upd.result()["phase"] == "updated"
+    assert (upd.state / "id").read_text().strip() == "sha256:edge"
+    log = upd.log.read_text()
+    assert "pull ghcr.io/x/app:edge" in log and "tag ghcr.io/x/app:edge ghcr.io/x/app:latest" in log
+    assert "up -d --no-build --pull never" in log
 
 
 def test_update_with_nothing_new_changes_nothing(upd):

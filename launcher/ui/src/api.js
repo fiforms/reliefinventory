@@ -14,7 +14,7 @@ function mockSummary() {
     const k = kind()
     const base = {
         state: 'running', proxy_running: true, mode: 'lan', hostname: null, default_hostname: 'hpwin11.local',
-        port: 8080, timezone: null, url: 'http://hpwin11.local:8080',
+        port: 8080, timezone: null, channel: 'latest', url: 'http://hpwin11.local:8080',
         share_urls: ['http://hpwin11.local:8080', 'http://10.53.105.130:8080'],
         os: new URLSearchParams(location.search).get('os') || 'windows',
     }
@@ -33,7 +33,7 @@ function mockInstall() {
 }
 
 const mock = {
-    settings: () => { const s = mockSummary(); return { mode: s.mode, hostname: s.hostname, port: s.port, timezone: s.timezone } },
+    settings: () => { const s = mockSummary(); return { mode: s.mode, hostname: s.hostname, port: s.port, timezone: s.timezone, channel: s.channel } },
     backups: [
         { path: '/opt/ri/backups/relief-backup-20261025-052845-database-3.zip', name: 'relief-backup-20261025-052845-database-3.zip', size: 42643, modified: now - 600 },
         { path: '/opt/ri/backups/relief-backup-20261025-050004-database-1.zip', name: 'relief-backup-20261025-050004-database-1.zip', size: 41957, modified: now - 5000 },
@@ -58,7 +58,7 @@ export const update = () => (inTauri ? invoke('update') : unavailable('Updating'
 export const uninstall = (keepData) => (inTauri ? invoke('uninstall', { keepData }) : unavailable('Uninstalling'))
 export const getSettings = () => call('get_settings', {}, mock.settings)
 export const applySettings = (s) =>
-    inTauri ? invoke('apply_settings', { mode: s.mode, hostname: s.hostname || null, port: s.port, timezone: s.timezone || null }) : unavailable('Changing settings')
+    inTauri ? invoke('apply_settings', { mode: s.mode, hostname: s.hostname || null, port: s.port, timezone: s.timezone || null, channel: s.channel || 'latest' }) : unavailable('Changing settings')
 export const shareableLink = () => call('shareable_link', {}, () => mockSummary().share_urls[0] || Promise.reject('Turn on "Run as a LAN service" first.'))
 export const openApp = () => call('open_app', {}, () => window.open('http://localhost:8080', '_blank'))
 export const openTerminal = () => (inTauri ? invoke('open_terminal') : unavailable('Opening a terminal'))

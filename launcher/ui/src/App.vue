@@ -20,7 +20,7 @@ const restoreFile = ref('')
 const understood = ref(false) // the person ticked the pre-install notice (Install stays disabled until they do)
 const mockTab = new URLSearchParams(location.search).get('mock') || ''
 const tab = ref(mockTab.startsWith('image') ? 'image' : mockTab.startsWith('remote') ? 'remote' : 'app') // 'app' | 'backups' | 'remote' | 'image'
-const form = reactive({ hostname: '', port: 8080, timezone: '' })
+const form = reactive({ hostname: '', port: 8080, timezone: '', channel: 'latest' })
 let formLoaded = false
 let timer
 
@@ -33,7 +33,7 @@ async function refresh() {
         install.value = await api.getInstallStatus()
         if (!formLoaded) {
             const s = await api.getSettings()
-            Object.assign(form, { hostname: s.hostname || '', port: s.port, timezone: s.timezone || '' })
+            Object.assign(form, { hostname: s.hostname || '', port: s.port, timezone: s.timezone || '', channel: s.channel || 'latest' })
             formLoaded = true
         }
         if (summary.value.state === 'running' && !busy.value) backups.value = await api.backupsList().catch(() => backups.value)
@@ -114,11 +114,11 @@ async function doUninstall() {
 
 async function setMode(e) {
     const mode = e.target.checked ? 'lan' : 'local'
-    await run('settings', () => api.applySettings({ mode, hostname: form.hostname, port: form.port, timezone: form.timezone }))
+    await run('settings', () => api.applySettings({ mode, hostname: form.hostname, port: form.port, timezone: form.timezone, channel: form.channel }))
 }
 
 const saveSettings = () =>
-    run('settings', () => api.applySettings({ mode: summary.value.mode, hostname: form.hostname, port: Number(form.port), timezone: form.timezone }), 'Settings saved.')
+    run('settings', () => api.applySettings({ mode: summary.value.mode, hostname: form.hostname, port: Number(form.port), timezone: form.timezone, channel: form.channel }), 'Settings saved.')
 
 async function resetName() {
     form.hostname = ''
@@ -432,6 +432,13 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                             <input v-model="form.timezone" placeholder="America/New_York" autocomplete="off" spellcheck="false" />
                         </label>
                     </div>
+                    <label>Software channel
+                        <select v-model="form.channel">
+                            <option value="latest">Latest (official releases)</option>
+                            <option value="edge">Edge (newer, for developers and testers)</option>
+                        </select>
+                    </label>
+                    <p class="muted small"><strong>Latest</strong> follows official software releases. <strong>Edge</strong> gives newer, unreleased software for developers and software testers; don't use it with real data. Changing the channel downloads that version and restarts Relief Inventory; going back from Edge to Latest may be refused if Edge already updated the database.</p>
                     <p class="muted small">Port is the number after the colon in the address (default 8080). Timezone is a name like America/New_York; empty uses the app's default (UTC). Changing these restarts Relief Inventory briefly.</p>
                     <div class="actions"><button :disabled="!!busy">Save</button></div>
                 </form>
@@ -489,7 +496,7 @@ form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
 label.switch { flex-direction: row; }
 label.check-row { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; margin: 6px 0; }
-input:not([type=checkbox]) { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 400; }
+input:not([type=checkbox]), select { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 400; }
 input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 button { padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; }

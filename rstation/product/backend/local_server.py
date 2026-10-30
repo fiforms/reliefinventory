@@ -33,6 +33,9 @@ ACTION_UNITS = {
 NEEDED_BYTES = 3_000_000_000
 # Below this the browser, MariaDB and PHP will fight over memory; the page warns, it doesn't forbid.
 RECOMMENDED_RAM_BYTES = 3_000_000_000
+# Release channels the server can follow: "latest" = official releases, "edge" = newer builds for developers/testers.
+# The choice is a file the supervisor script reads (state/channel); see slide-announcer-local-server.
+CHANNELS = ("latest", "edge")
 # Phases whose status file can be trusted without the supervisor unit running.
 SETTLED = {"stopped", "error", "resetting"}
 # An update's phases while it is working (the rest — current, updated, failed — are results).
@@ -188,6 +191,21 @@ class LocalServer:
             return None
         return data if isinstance(data, dict) else None
 
+    def channel(self) -> str:
+        try:
+            value = (self.data / "state" / "channel").read_text().strip()
+        except OSError:
+            value = ""
+        return value if value in CHANNELS else "latest"
+
+    def set_channel(self, channel: str) -> None:
+        """Chooses which image the next update pulls. Nothing changes until someone runs an update."""
+        if channel not in CHANNELS:
+            raise LocalServerError(400, "Unknown channel.")
+        state = self.data / "state"
+        state.mkdir(parents=True, exist_ok=True)
+        (state / "channel").write_text(channel + "\n")
+
     def _installed_version(self) -> str | None:
         """The release the stack runs: what the supervisor recorded (it asks Docker), else what was baked in."""
         try:
@@ -300,6 +318,7 @@ class LocalServer:
             "setup_code": (raw.get("setup_code") or None) if pending else None,
             "app": self._app_manifest(),
             "app_version": self._installed_version(),
+            "channel": self.channel(),
             "update": update,
             "update_busy": update_busy,
             # Docker only runs while the server is started, and an update swaps the image under a live stack.
