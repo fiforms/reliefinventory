@@ -138,12 +138,10 @@ enum ImageCmd {
 #[derive(Subcommand)]
 enum BackupCmd {
     List,
-    /// scope: database (default) or full
+    /// scope: instance (default, the whole instance), or database / full for the app's own warehouse only
     Create { scope: Option<String> },
     /// Copy a backup (by file name) out as a read-only file
     Export { name: String, dest: Option<PathBuf> },
-    /// Restore from a backup zip on disk (takes a safety backup first)
-    Import { file: PathBuf },
 }
 
 fn data_dir(cli: &Cli) -> PathBuf {
@@ -292,14 +290,19 @@ async fn main() {
                         println!("{}\t{} bytes\t{}", b.name, b.size, b.modified);
                     }
                 }
-                BackupCmd::Create { scope } => die(backups::create_now(p.as_ref(), scope.as_deref().unwrap_or("database")).await),
+                BackupCmd::Create { scope: Some(scope) } => die(backups::create_now(p.as_ref(), &scope).await),
+                BackupCmd::Create { scope: None } => {
+                    let made = die(backups::backup_now(p.as_ref()).await);
+                    if let Some(why) = made.note {
+                        eprintln!("A whole-instance backup wasn't possible ({why}); backed up the app's own database instead.");
+                    }
+                }
                 BackupCmd::Export { name, dest } => {
                     let all = die(backups::list(p.as_ref()).await);
                     let Some(b) = all.iter().find(|b| b.name == name) else { die(Err::<(), _>(format!("no backup named {name}"))) ; return };
                     let dest = dest.unwrap_or_else(|| dirs::document_dir().unwrap_or_default().join("Relief Inventory Backups"));
                     println!("{}", die(backups::export(p.as_ref(), b, &dest).await).display());
                 }
-                BackupCmd::Import { file } => die(backups::import(p.as_ref(), &file).await),
             }
         }
     }

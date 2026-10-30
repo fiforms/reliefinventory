@@ -67,9 +67,8 @@ export const shareableLink = () => call('shareable_link', {}, () => mockSummary(
 export const openApp = () => call('open_app', {}, () => window.open('http://localhost:8080', '_blank'))
 export const openTerminal = () => (inTauri ? invoke('open_terminal') : unavailable('Opening a terminal'))
 export const backupsList = () => call('backups_list', {}, () => mock.backups)
-export const backupCreate = (scope) => (inTauri ? invoke('backup_create', { scope }) : unavailable('Backing up'))
+export const backupCreate = () => (inTauri ? invoke('backup_create') : unavailable('Backing up'))
 export const backupExport = (name) => (inTauri ? invoke('backup_export', { name }) : unavailable('Saving a copy'))
-export const backupImport = (path) => (inTauri ? invoke('backup_import', { path }) : unavailable('Restoring'))
 export const restartComputer = () => (inTauri ? invoke('restart_computer') : unavailable('Restarting'))
 export const getAutostart = () => call('get_autostart', {}, true)
 export const setAutostart = (enabled) => call('set_autostart', { enabled }, enabled)
@@ -160,11 +159,6 @@ export const pickFolder = async () => {
 }
 /** Errors raised from the tray menu (e.g. Quit couldn't shut the server down). */
 export const onTrayError = (fn) => (inTauri ? listen('tray-error', (e) => fn(String(e.payload))) : Promise.resolve(() => {}))
-export const pickBackupFile = async () => {
-    if (!inTauri) return null
-    const f = await openDialog({ multiple: false, filters: [{ name: 'Relief Inventory backup', extensions: ['zip'] }] })
-    return typeof f === 'string' ? f : null
-}
 
 /** Copy text; falls back to a hidden textarea where the async clipboard API is unavailable. */
 export async function copyText(text) {

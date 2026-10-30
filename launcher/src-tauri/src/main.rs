@@ -221,8 +221,8 @@ async fn backups_list(state: State<'_, AppState>) -> Result<Vec<BackupFile>, Str
 }
 
 #[tauri::command]
-async fn backup_create(state: State<'_, AppState>, scope: String) -> Result<(), String> {
-    backups::create_now(state.launcher.platform().as_ref(), &scope).await.map_err(err)
+async fn backup_create(state: State<'_, AppState>) -> Result<backups::BackupMade, String> {
+    backups::backup_now(state.launcher.platform().as_ref()).await.map_err(err)
 }
 
 /// Copies one backup to Documents/Relief Inventory Backups as a read-only file and shows it in the file manager.
@@ -277,11 +277,6 @@ async fn check_update(state: State<'_, AppState>) -> Result<Checked, String> {
 #[tauri::command]
 async fn install_update(state: State<'_, AppState>) -> Result<Checked, String> {
     state.launcher.install_update().await.map_err(err)
-}
-
-#[tauri::command]
-async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    backups::import(state.launcher.platform().as_ref(), std::path::Path::new(&path)).await.map_err(err)
 }
 
 // ---- Remote backups: servers this computer is paired with (federation backup trust) ----
@@ -543,7 +538,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, open_terminal, backups_list, backup_create, backup_export,
-            backup_import, backup_export_all, backup_open_folder, check_update, install_update, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
+            backup_export_all, backup_open_folder, check_update, install_update, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
             image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page, remote_list, remote_pair,
             remote_configure, remote_backup_now, remote_remove, remote_reveal
         ])

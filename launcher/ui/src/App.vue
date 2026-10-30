@@ -13,10 +13,9 @@ const autostart = ref(null)
 const version = ref('')
 const busy = ref('') // what is running right now ('' = nothing); disables the buttons that would collide
 const msg = ref(null) // { kind: 'ok' | 'bad', text }
-const confirming = ref('') // 'uninstall' | 'restore' | ''
+const confirming = ref('') // 'uninstall' | ''
 const keepData = ref(true)
 const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
-const restoreFile = ref('')
 const understood = ref(false) // the person ticked the pre-install notice (Continue stays disabled until they do)
 const showNotice = ref(false) // the pre-install notice, shown as a pop-up when Install is clicked
 const mockTab = new URLSearchParams(location.search).get('mock') || ''
@@ -133,7 +132,13 @@ async function doUpdate() {
         else note('ok', `Relief Inventory is already running the newest version${r.running_version ? ` (${r.running_version})` : ''}.`)
     })
 }
-const doBackup = () => run('backup', () => api.backupCreate('database'), 'Backup created.')
+async function doBackup() {
+    await run('backup', async () => {
+        const made = await api.backupCreate()
+        if (made.instance) note('ok', 'Whole-instance backup created. "Save all to this computer" copies it out.')
+        else note('ok', `Backed up the app's own database only; a whole-instance backup wasn't possible (${made.note}).`)
+    })
+}
 
 async function doUninstall() {
     confirming.value = ''
@@ -183,19 +188,6 @@ const showAll = ref(false)
 const saveAll = () => run('export', async () => note('ok', await api.backupExportAll()))
 const openFolder = () => api.backupOpenFolder().catch(fail)
 
-async function chooseRestore() {
-    const f = await api.pickBackupFile().catch(fail)
-    if (f) {
-        restoreFile.value = f
-        confirming.value = 'restore'
-    }
-}
-
-async function doRestore() {
-    confirming.value = ''
-    await run('restore', () => api.backupImport(restoreFile.value), 'Restored from the backup file. A safety backup of what was here before was made first.')
-}
-
 async function toggleAutostart() {
     try { autostart.value = await api.setAutostart(!autostart.value) } catch (e) { fail(e) }
 }
@@ -235,7 +227,6 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Backup now</button>
                     <button class="quiet" @click="saveAll" :disabled="!!busy || state !== 'running'" title="Copy every backup (including whole-instance ones) to your Documents folder">Save all to this computer</button>
                     <button class="quiet" @click="openFolder" :disabled="!!busy" title="Open the folder that saved copies go to">Open saved copies</button>
-                    <button class="quiet" @click="chooseRestore" :disabled="!!busy || state !== 'running'">Restore from file…</button>
                 </div>
             </div>
             <div class="statusline">
@@ -243,7 +234,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                 <span v-if="state !== 'not_installed'" class="pill" :class="state === 'running' ? 'ok' : 'off'">{{ state === 'running' ? 'Running' : 'Stopped' }}</span>
             </div>
             <template v-if="state === 'not_installed'">
-                <p class="muted">Relief Inventory isn't installed on this computer, so there is nothing to back up here. You can still restore a backup after installing it.</p>
+                <p class="muted">Relief Inventory isn't installed on this computer, so there is nothing to back up here.</p>
                 <div class="actions"><button @click="tab = 'app'">Go to Local RI Server</button></div>
             </template>
             <p v-else-if="state !== 'running'" class="muted">Start Relief Inventory (on the Local RI Server tab) to see and make backups.</p>
@@ -260,17 +251,8 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             <p v-if="state === 'running' && backups.length > 8" class="small"><button class="quiet" @click="showAll = !showAll">{{ showAll ? 'Show fewer' : `Show all ${backups.length} backups` }}</button></p>
             <p v-if="state !== 'not_installed'" class="muted small foot">
                 "Save a copy" and "Save all to this computer" put read-only files in Documents\Relief Inventory Backups (whole-instance backups included); "Open saved copies" opens that folder. Keep copies somewhere other than this computer too.
-                Restoring replaces everything currently in Relief Inventory.
             </p>
-            <div v-if="confirming === 'restore'" class="banner bad" role="alertdialog">
-                <p><strong>Replace everything with this backup?</strong><br />{{ restoreFile }}</p>
-                <p class="small">A safety backup of the current data is made first. Relief Inventory is unavailable for a few minutes while it restores.</p>
-                <div class="actions">
-                    <button class="danger" @click="doRestore">Yes, restore</button>
-                    <button @click="confirming = ''">Cancel</button>
-                </div>
-            </div>
-        </section>
+</section>
 
 
         <template v-if="tab === 'app'">
