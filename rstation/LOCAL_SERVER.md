@@ -5,8 +5,7 @@ The scenario: a disaster zone with no Internet. Someone plugs the R Station into
 a Wi-Fi hotspot, switches it on, opens Settings > Local server, presses *Start*, and a few minutes later
 everyone on that network can use a full Relief Inventory site from a browser. Nothing leaves the device.
 
-This is the Docker stack from `docker/compose.yaml` (web, queue, scheduler, MariaDB — see
-`dev/DOCKER_PLAN.md`) with its images baked into the OS image instead of pulled.
+This is the Docker stack from `docker/compose.yaml` (web, queue, scheduler, MariaDB) with its images baked into the OS image instead of pulled.
 
 ## Verified on hardware (2026-10-20)
 
@@ -138,4 +137,4 @@ erase warehouse records. A factory reset does erase `/data`, and with it the dat
 - **Printing from the local server works** (verified, below): the device pairs with its own server and prints through
   its own print server. Home on its own only moves the kiosk's screen; pairing is a separate step.
 - Updates are manual (the button), not automatic; no Reverb (realtime) in this stack.
-- The Updates & Backups page hides its systemd/git-only sections inside the container and shows the compose backup settings read-only (see `dev/DOCKER_PLAN.md`).
+- The Updates & Backups page hides its systemd/git-only sections inside the container and shows the compose backup settings read-only.

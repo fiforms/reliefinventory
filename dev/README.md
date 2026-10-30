@@ -12,10 +12,9 @@ conventions an agent must always have loaded and points back here.
 | Look up a table or column | [SCHEMA.md](SCHEMA.md) (generated) |
 | Change the schema | Add a migration, then run `dev/scripts/schema-doc.sh` and commit `SCHEMA.md` with it |
 | Back up / restore | [notes/BACKUPS.md](notes/BACKUPS.md) |
-| Run or update a Docker install | [../docker/README.md](../docker/README.md), [../docker/INSTALL.md](../docker/INSTALL.md); design history: [DOCKER_PLAN.md](DOCKER_PLAN.md) |
+| Run or update a Docker install | [../docker/README.md](../docker/README.md), [../docker/INSTALL.md](../docker/INSTALL.md) |
 | Simulate load / hardware | [notes/SIMULATOR.md](notes/SIMULATOR.md), [notes/REVERB.md](notes/REVERB.md) |
 | Give an AI agent access | [AI_AGENT_ACCESS.md](AI_AGENT_ACCESS.md) |
-| Convert an old rsync-deployed bare-metal server to git (legacy; only for the deprecated `scripts/update.sh`) | [CONVERT_TO_GIT.md](CONVERT_TO_GIT.md) |
 
 Bare-metal (systemd) installs are supported as a single warehouse. Their in-app web updater is deprecated and slated for removal
 ([TODO.md](TODO.md)); `scripts/update.sh` is deprecated too but stays for now (shell use only). Administrators update by hand as described in
@@ -23,7 +22,7 @@ Bare-metal (systemd) installs are supported as a single warehouse. Their in-app 
 systemd units; documentation lives here.
 
 ## Planning
-[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) (open work only) · [FACILITY_NETWORK.md](FACILITY_NETWORK.md) (unbuilt facility-network design) · [HELP_AND_LOCALIZATION_PLAN.md](HELP_AND_LOCALIZATION_PLAN.md) (single-source help guides, English review, then Spanish) · [notes/MULTI_WAREHOUSE.md](notes/MULTI_WAREHOUSE.md) (design and rationale; [the notes](notes/MULTI_WAREHOUSE_NOTES.md) are the quick version) · [../CHANGELOG.md](../CHANGELOG.md) (what shipped; currently incomplete)
+[ROADMAP.md](ROADMAP.md) (ideas; PoD design in [POD.md](POD.md), interop in [INTEROPERABILITY.md](INTEROPERABILITY.md)) · [TODO.md](TODO.md) (open work only) · [FACILITY_NETWORK.md](FACILITY_NETWORK.md) (unbuilt facility-network design) · [REPORT_ENGINE.md](REPORT_ENGINE.md) (pre-plan: admin-customizable reports and dashboards) · [HELP_AND_LOCALIZATION_PLAN.md](HELP_AND_LOCALIZATION_PLAN.md) (single-source help guides, English review, then Spanish) · [notes/MULTI_WAREHOUSE.md](notes/MULTI_WAREHOUSE.md) (design and rationale; [the notes](notes/MULTI_WAREHOUSE_NOTES.md) are the quick version) · [../CHANGELOG.md](../CHANGELOG.md) (what shipped; currently incomplete)
 
 ## Retired docs
 - **`PROJECT_ANALYSIS.md`** (the August 2026 codebase analysis and completion plan) was deleted once most of it was built or fixed.

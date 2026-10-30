@@ -20,7 +20,7 @@ ideas go in [ROADMAP.md](ROADMAP.md). Don't record dates or build history here. 
   Delete: `SystemController::checkUpdates()` / `update()` / `startUnit()` / `readUpdateStatus()` / `versionInfo()`'s git branch / `requireSystemd()` for update, the
   `/json/system/check-updates` and `/json/system/update` routes, the systemd branch of the Software Update section in `SystemAdmin.vue` (and its polling),
   `scripts/systemd/reliefinventory-update.service`, its line in `reliefinventory-sudoers`, `config/system.php` `update_unit`/`update_status_file`, and the update tests in
-  `SystemAdminTest`. **`scripts/update.sh` and `dev/CONVERT_TO_GIT.md` stay for now**, documented as deprecated (run from a shell only; its `--scheduled` backup mode is
+  `SystemAdminTest`. **`scripts/update.sh` stays for now**, documented as deprecated (run from a shell only; its `--scheduled` backup mode is
   not deprecated). The `/json/system/*` update and offline-mode routes also duplicate `/json/instance/*`.
 - **Delete `/setup/design-votes`** and its supporting features and data structures (controllers, routes, pages, models, tables via a new migration, permissions, menu
   entries, tests); this moved to a different app.

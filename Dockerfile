@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 #
 # Relief Inventory — production image (linux/amd64 + linux/arm64).
-# See docker/README.md for running it and dev/DOCKER_PLAN.md for the design.
+# See docker/README.md for running it.
 #
 #   docker build -t reliefinventory .
 #   docker buildx build --platform linux/amd64,linux/arm64 -t reliefinventory .
