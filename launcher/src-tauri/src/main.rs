@@ -523,6 +523,8 @@ fn main() {
             let remote = RemoteBackups::new(&data_dir()).map_err(|e| format!("could not set up remote backups: {e}"))?;
             // scheduled backups of paired remote servers run for as long as the launcher does (it lives in the tray)
             tauri::async_runtime::spawn(remote.clone().run_forever());
+            // ...and so does the answer to the app's own update, check and backup requests (Updates & Backups page)
+            tauri::async_runtime::spawn(launcher.clone().serve_update_requests());
             app.manage(AppState { launcher: launcher.clone(), remote, image: Arc::default(), image_cancel: Arc::default() });
 
             let open = MenuItem::with_id(app, "open_app", "Open Relief Inventory", true, None::<&str>)?;

@@ -31,13 +31,16 @@ pub struct StackOptions {
     /// default, which another stack on the same Docker (a developer's own checkout) can already own — and then
     /// a plain `docker compose exec` from our folder would act on *their* containers.
     pub project_name: Option<String>,
+    /// Written as `RI_UPDATE_SECRET`, which switches on the app's update/backup requests; the launcher's update
+    /// service (`updater.rs`) answers them with the same value. None leaves the feature off.
+    pub update_secret: Option<String>,
 }
 
 pub fn render_for(template: &str, settings: &Settings, machine: &Machine, opts: &StackOptions) -> Result<String, ComposeError> {
     let bind = if opts.loopback_only { "127.0.0.1:" } else { "" };
     let mut saw_name = false;
     let url = app_url(settings, machine);
-    let (mut saw_url, mut saw_port, mut saw_image) = (false, false, false);
+    let (mut saw_url, mut saw_port, mut saw_image, mut saw_secret) = (false, false, false, false);
     let mut out = String::with_capacity(template.len() + 64);
     for line in template.lines() {
         let trimmed = line.trim_start();
@@ -48,6 +51,9 @@ pub fn render_for(template: &str, settings: &Settings, machine: &Machine, opts: 
         } else if trimmed.starts_with("APP_URL:") {
             out.push_str(&format!("{indent}APP_URL: {url}\n"));
             saw_url = true;
+        } else if let (Some(secret), true) = (&opts.update_secret, trimmed.starts_with("# RI_UPDATE_SECRET:")) {
+            out.push_str(&format!("{indent}RI_UPDATE_SECRET: {secret}\n"));
+            saw_secret = true;
         } else if trimmed.starts_with(APP_IMAGE_PREFIX) {
             out.push_str(&format!("{indent}{APP_IMAGE_PREFIX}{}\n", settings.channel.tag()));
             saw_image = true;
@@ -66,6 +72,9 @@ pub fn render_for(template: &str, settings: &Settings, machine: &Machine, opts: 
     }
     if !saw_port {
         return Err(ComposeError::LineMissing("\"8080:8080\" port"));
+    }
+    if opts.update_secret.is_some() && !saw_secret {
+        return Err(ComposeError::LineMissing("# RI_UPDATE_SECRET"));
     }
     if !saw_image {
         return Err(ComposeError::LineMissing("app image"));
@@ -97,7 +106,7 @@ mod tests {
 
     #[test]
     fn loopback_only_binds_the_internal_port_to_127_0_0_1() {
-        let opts = StackOptions { loopback_only: true, project_name: None };
+        let opts = StackOptions { loopback_only: true, ..StackOptions::default() };
         let out = render_for(TEMPLATE, &Settings::default(), &machine(), &opts).unwrap();
         assert!(out.contains("- \"127.0.0.1:18080:8080\""));
         assert!(out.contains("- \"8081:8080\""));
@@ -106,7 +115,7 @@ mod tests {
 
     #[test]
     fn a_project_name_replaces_the_shipped_one() {
-        let opts = StackOptions { loopback_only: false, project_name: Some("ri-launcher".into()) };
+        let opts = StackOptions { project_name: Some("ri-launcher".into()), ..StackOptions::default() };
         let out = render_for(TEMPLATE, &Settings::default(), &machine(), &opts).unwrap();
         assert!(out.contains("\nname: ri-launcher\n"));
         assert!(!out.contains("name: reliefinventory"));
@@ -132,6 +141,16 @@ mod tests {
         assert!(edge.contains("  image: ghcr.io/fiforms/reliefinventory:edge\n"));
         assert!(!edge.contains("reliefinventory:latest\n"));
         assert!(edge.contains("image: mariadb:11"));
+    }
+
+    #[test]
+    fn the_update_secret_switches_on_the_apps_update_requests() {
+        let off = render(TEMPLATE, &Settings::default(), &machine()).unwrap();
+        assert!(off.contains("# RI_UPDATE_SECRET:"));
+        let opts = StackOptions { update_secret: Some("s3cret".into()), ..StackOptions::default() };
+        let on = render_for(TEMPLATE, &Settings::default(), &machine(), &opts).unwrap();
+        assert!(on.contains("\n  RI_UPDATE_SECRET: s3cret\n"));
+        assert!(!on.contains("# RI_UPDATE_SECRET"));
     }
 
     #[test]

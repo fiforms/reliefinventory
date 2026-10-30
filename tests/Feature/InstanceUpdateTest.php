@@ -141,3 +141,14 @@ test('Instance Admin is for instance administrators only, with its own menu tile
     expect($tiles($instanceAdmin))->toContain('/setup/instance')
         ->and($tiles($plain))->not->toContain('/setup/instance');
 });
+
+test('a backup request reaches the host service and finishes like any other run', function () {
+    expect(InstanceUpdate::request('backup', 'command line'))->not->toBeNull();
+    $this->getJson('/api/instance/update', $this->auth)->assertJsonPath('action', 'backup');
+
+    $this->postJson('/api/instance/update/status', ['state' => 'backing-up', 'message' => 'Backing up'], $this->auth)->assertOk()->assertJsonPath('accepted', true);
+    expect(InstanceUpdate::request('update', 'x'))->toBeNull(); // still a run in progress
+
+    $this->postJson('/api/instance/update/status', ['state' => 'done', 'message' => 'Backup written'], $this->auth)->assertOk();
+    expect(InstanceUpdate::current()->state)->toBe('done');
+});

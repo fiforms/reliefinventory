@@ -9,20 +9,20 @@ use App\Models\Control\InstanceUpdate as UpdateFlag;
 use Illuminate\Console\Command;
 
 /**
- * Ask the host-side updater (docker/updater/ri-updater.py) to check for, or install, a new image. This only sets the flag in the
+ * Ask the host-side updater (docker/updater/ri-updater.py, or the RI Launcher / R Station equivalent) to check for, or install, a new image, or to have a full-instance backup taken. This only sets the flag in the
  * control schema; the updater polls for it, and `instance:update status` shows how it went.
  */
 class InstanceUpdate extends Command
 {
-    protected $signature = 'instance:update {action=status : check, apply or status}';
+    protected $signature = 'instance:update {action=status : check, apply, backup or status}';
 
     protected $description = 'Request a check for (or an install of) a new Docker image from the host-side updater, or show its status.';
 
     public function handle(): int
     {
         $action = $this->argument('action');
-        if (! in_array($action, ['check', 'apply', 'status'], true)) {
-            $this->components->error('The action is check, apply or status.');
+        if (! in_array($action, ['check', 'apply', 'backup', 'status'], true)) {
+            $this->components->error('The action is check, apply, backup or status.');
 
             return self::INVALID;
         }
@@ -33,7 +33,7 @@ class InstanceUpdate extends Command
 
                 return self::FAILURE;
             }
-            if (! UpdateFlag::request($action === 'apply' ? 'update' : 'check', 'command line')) {
+            if (! UpdateFlag::request(['apply' => 'update', 'backup' => 'backup'][$action] ?? 'check', 'command line')) {
                 $this->components->warn('An update is already in progress.');
 
                 return self::FAILURE;

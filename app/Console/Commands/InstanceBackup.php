@@ -28,6 +28,7 @@ class InstanceBackup extends Command
         {--with-keys : Include the warehouse keys, encrypted with a passphrase (asked for, or --passphrase-file)}
         {--passphrase-file= : A file holding the passphrase, for --with-keys without a terminal}
         {--via-provisioner : Ask the provisioner container to take the pre-upgrade backup (no other options apply)}
+        {--requested : Ask the provisioner for a full-instance backup with files, as the Back up now button on Instance Admin does, and wait (for the host service answering a backup request; no other options apply)}
         {--scheduled : Ask the provisioner for the scheduled backup if the schedule says one is due (for the scheduler container; no other options apply)}';
 
     protected $description = 'Back up the whole instance (control + accounts + every warehouse) into one zip; run in the provisioner container';
@@ -39,6 +40,9 @@ class InstanceBackup extends Command
         }
         if ($this->option('via-provisioner')) {
             return $this->viaProvisioner();
+        }
+        if ($this->option('requested')) {
+            return $this->requested();
         }
 
         $passphrase = null;
@@ -103,6 +107,23 @@ class InstanceBackup extends Command
             $this->warn('The control schema is not ready, so the provisioner cannot be asked.');
 
             return 2;
+        } catch (Throwable $e) {
+            $this->error($e->getMessage());
+
+            return self::FAILURE;
+        }
+        foreach ($done as $line) {
+            $this->line($line);
+        }
+
+        return self::SUCCESS;
+    }
+
+    /** The same fixed `backup-now-files` request Instance Admin's Back up now writes; the zip lands in <backup dir>/instance/ like that one. */
+    private function requested(): int
+    {
+        try {
+            $done = app(ProvisioningClient::class)->request(null, 'backup-now-files', 'host updater', 3600);
         } catch (Throwable $e) {
             $this->error($e->getMessage());
 

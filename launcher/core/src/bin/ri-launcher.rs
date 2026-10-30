@@ -204,7 +204,7 @@ async fn main() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     let cli = Cli::parse();
     let dir = data_dir(&cli);
-    let launcher = Launcher::new(Arc::new(backend(&dir)), dir.clone());
+    let launcher = Arc::new(Launcher::new(Arc::new(backend(&dir)), dir.clone()));
 
     match cli.command {
         Cmd::Status => println!("{}", serde_json::to_string_pretty(&launcher.summary().await).unwrap()),
@@ -226,6 +226,8 @@ async fn main() {
             println!("Press Ctrl+C to stop.");
             // scheduled backups from paired remote servers run for as long as the launcher does
             tokio::spawn(die(RemoteBackups::new(&dir)).run_forever());
+            // ...and so does the answer to the app's own update, check and backup requests (Updates & Backups page)
+            tokio::spawn(launcher.clone().serve_update_requests());
             let mut last = launcher.settings();
             loop {
                 tokio::select! {

@@ -316,7 +316,7 @@ impl<R: Runner> Platform for LinuxBackend<R> {
     }
 
     fn stack_options(&self) -> crate::compose::StackOptions {
-        crate::compose::StackOptions { loopback_only: true, project_name: Some(PROJECT.into()) }
+        crate::compose::StackOptions { loopback_only: true, project_name: Some(PROJECT.into()), ..Default::default() }
     }
 }
 

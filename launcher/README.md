@@ -183,3 +183,13 @@ elevates as a *different* admin (the Linux layer is per Windows user, so that wo
 - Offline install bundle (image tarball + rootfs + WSL MSI) beyond "restore from file"; loading an image tarball
   (`docker load`); code signing (installers are unsigned, so SmartScreen/Gatekeeper warn); the launcher's own auto-update;
   keeping the machine awake; download resume; a network-profile warning when the PC is on a "Public" network.
+
+## Update and backup requests from the app
+
+`core/src/updater.rs` is the launcher's version of the Docker web host's `docker/updater/ri-updater.py`. The launcher generates
+`RI_UPDATE_SECRET` once (`update-secret` next to `settings.json`) and writes it into the compose file it renders. While the app is
+running, a task in the launcher (`Launcher::serve_update_requests`, started by the window and by `ri-launcher run`) polls
+`GET /api/instance/update` on the internal port every 30 s and answers `check` (pull and compare), `update` (pull, and only if the image
+is newer — on the edge channel, different — `down` then `up -d`, wait for `/up`) and `backup` (`instance:backup --requested`: the
+provisioner's full-instance backup with files). Docker is reached only through `Platform::exec`, so it is the same code on Linux, Lima and WSL.
+Requests are made in the app (`instance:update check|apply|backup`, or Instance Admin).

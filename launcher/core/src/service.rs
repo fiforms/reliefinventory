@@ -4,6 +4,7 @@ use crate::platform::{fail, InstallOutcome, Platform, PlatformError, Preflight, 
 use crate::status::{self, InstallStatus};
 use crate::proxy;
 use crate::settings::{self, Channel, Mode, Settings};
+use crate::updater;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -64,7 +65,29 @@ impl<P: Platform + 'static> Launcher<P> {
     }
 
     pub fn compose_for(&self, settings: &Settings, machine: &Machine) -> Result<String> {
-        compose::render_for(compose::TEMPLATE, settings, machine, &self.platform.stack_options()).map_err(|e| PlatformError::Failed(e.to_string()))
+        let mut opts = self.platform.stack_options();
+        // the shared secret that lets the update service (`updater.rs`) answer the app's update and backup requests
+        opts.update_secret = Some(updater::load_or_create_secret(&self.dir).map_err(io)?);
+        compose::render_for(compose::TEMPLATE, settings, machine, &opts).map_err(|e| PlatformError::Failed(e.to_string()))
+    }
+
+    /// Answer the app's update, check and backup requests for as long as this process lives (see `updater`). It only
+    /// acts while the stack is running; the channel is read from the settings every time, so a change applies at once.
+    pub async fn serve_update_requests(self: Arc<Self>) {
+        let secret = match updater::load_or_create_secret(&self.dir) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("update service not started: {e}");
+                return;
+            }
+        };
+        let service = updater::UpdateService::new(self.platform.clone(), Arc::new(updater::HttpApi::new(secret)));
+        loop {
+            if self.platform.state().await.ok() == Some(State::Running) {
+                service.poll_once(self.settings().channel).await;
+            }
+            tokio::time::sleep(updater::POLL_EVERY).await;
+        }
     }
 
     async fn proxy_running(&self) -> bool {

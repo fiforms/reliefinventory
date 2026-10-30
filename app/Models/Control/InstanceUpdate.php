@@ -21,13 +21,14 @@ class InstanceUpdate extends Model
 
     protected $table = 'instance_update';
 
-    public const ACTIONS = ['check', 'update'];
+    /** `backup` asks the host service to have the provisioner take a full-instance backup (with files); it never touches the image. */
+    public const ACTIONS = ['check', 'update', 'backup'];
 
     /** What the updater may report. `done` and `failed` end a run. */
-    public const STATES = ['checking', 'pulling', 'restarting', 'done', 'failed'];
+    public const STATES = ['checking', 'pulling', 'restarting', 'backing-up', 'done', 'failed'];
 
     /** A request or run that has not finished. */
-    public const IN_PROGRESS = ['requested', 'checking', 'pulling', 'restarting'];
+    public const IN_PROGRESS = ['requested', 'checking', 'pulling', 'restarting', 'backing-up'];
 
     /** A run that has not changed state for this long is given up on (the updater died, or was never installed) and can be requested again. */
     public const STALE_AFTER_MINUTES = 30;
