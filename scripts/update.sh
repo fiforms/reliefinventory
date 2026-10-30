@@ -198,6 +198,36 @@ fi
 
 [ -d "$APP_DIR/.git" ] || { echo "$APP_DIR is not a git checkout — run the conversion in dev/CONVERT_TO_GIT.md first." >&2; exit 2; }
 
+# ------------------------------------------------------------------ 1b. preflight
+# Checked while the site is still up and nothing has changed: a release that migrates the control and accounts schemas needs them to
+# exist beside the app database, and on bare metal they are created by hand (step 5). Without them the migration fails partway, after
+# the code is replaced and possibly after a column has been added (MariaDB can't roll back DDL).
+as_app git -C "$APP_DIR" fetch origin "$BRANCH"
+if as_app git -C "$APP_DIR" cat-file -e "origin/$BRANCH:database/migrations/control" 2>/dev/null; then
+    DB_NAME="$(env_get DB_DATABASE)"
+    CONTROL_DB="$(env_get RI_CONTROL_DATABASE)"
+    ACCOUNTS_DB="$(env_get RI_ACCOUNTS_DATABASE)"
+    echo "-- Checking the control and accounts schemas"
+    # Credentials go through the environment, never the command line (ps shows argv to every local account).
+    if ! RI_DB_HOST="$(env_get DB_HOST)" RI_DB_PORT="$(env_get DB_PORT)" RI_DB_USER="$(env_get DB_USERNAME)" RI_DB_PASS="$(env_get DB_PASSWORD)" \
+        RI_SCHEMAS="${CONTROL_DB:-${DB_NAME}_control} ${ACCOUNTS_DB:-${DB_NAME}_accounts}" \
+        "$PHP" -r '
+            foreach (explode(" ", getenv("RI_SCHEMAS")) as $schema) {
+                try {
+                    new PDO("mysql:host=".(getenv("RI_DB_HOST") ?: "127.0.0.1").";port=".(getenv("RI_DB_PORT") ?: "3306").";dbname=$schema",
+                        getenv("RI_DB_USER"), getenv("RI_DB_PASS"));
+                } catch (PDOException $e) {
+                    fwrite(STDERR, "!! Cannot open schema $schema: ".$e->getMessage()."\n");
+                    exit(1);
+                }
+            }'; then
+        echo "!! This release needs the control and accounts schemas. Create them as MariaDB root (dev/BUILDING.md), then update again." >&2
+        echo "!! Nothing was changed: the site is still up on the old version." >&2
+        write_status failed "The control and accounts database schemas are missing; nothing was changed (log $LOG_NAME)"
+        exit 2
+    fi
+fi
+
 # -------------------------------------------------------- 2. maintenance mode on
 SECRET="$(openssl rand -hex 16)"
 echo "-- Entering maintenance mode (bypass: /$SECRET)"
@@ -206,7 +236,6 @@ MAINTENANCE_DOWN=1
 
 # ------------------------------------------------------------------ 3. git pull
 OLD_SHA="$(as_app git -C "$APP_DIR" rev-parse HEAD)"
-as_app git -C "$APP_DIR" fetch origin "$BRANCH"
 NEW_SHA="$(as_app git -C "$APP_DIR" rev-parse "origin/$BRANCH")"
 echo "-- Updating $OLD_SHA -> $NEW_SHA"
 as_app git -C "$APP_DIR" reset --hard "origin/$BRANCH"
@@ -231,7 +260,10 @@ as_app npm run build --prefix "$APP_DIR"
 
 # ------------------------------------------------------------------ 5. database
 # Needs the <db>_control and <db>_accounts schemas beside the app database (BUILDING.md, MULTI_WAREHOUSE.md):
-# create them once, by hand, as MariaDB root. Bare metal is single-warehouse and slated for deprecation.
+# create them once, by hand, as MariaDB root (checked in step 1b). Bare metal is single-warehouse and slated for deprecation.
+# The config cache is still the OLD release's until step 6: clear it first, or a connection the new release adds (control,
+# accounts) is "not configured" and the migration fails.
+as_app "$PHP" artisan config:clear
 as_app "$PHP" artisan instance:migrate --force
 if [ "$SEED_PERMISSIONS" -eq 1 ]; then
     echo "-- Seeding permissions (PermissionsSeeder only)"
