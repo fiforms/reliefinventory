@@ -16,7 +16,7 @@
         "dev:launcher": "npm --prefix launcher install && npm --prefix launcher run tauri dev",
         "build:offline-bundle": "rstation/build-offline-bundle.sh",
         "publish:rstation-image": "node scripts/publish-rstation-image.mjs",
-        "build:rstation": "npm run test:rstation && PRODUCT_ROOT=$PWD/rstation/product PRODUCT=rstation rstation/platform/image-builder/build.sh --virt"
+        "build:rstation": "rstation/build-image.sh"
     },
     "devDependencies": {
         "@inertiajs/vue3": "^2.0.3",

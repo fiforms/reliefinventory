@@ -73,12 +73,14 @@ To build locally instead: `npm run build:launcher`, `npm run build:print-client`
 On the arm64-capable build host (setup: `rstation/platform/docs/BUILDING.md`: pi-gen, RAUC signing key, ~10 GB free):
 
 ```bash
-npm run build:offline-bundle -- 1.4.0       # bakes the release's Docker image into the offline-server .deb (needs the step 5 image)
-cd rstation/platform/image-builder && PRODUCT_ROOT=$PWD/../../product PRODUCT=rstation ./build.sh
+npm run build:rstation -- latest            # tests, pulls :latest into the offline-server .deb, then builds the image (needs the step 5 image)
 ```
 
-Output is in `rstation/platform/image-builder/deploy/`: the flashable `.img.xz` (new SD cards) and the signed `.raucb` (over-the-air
-updates for devices already in the field). Test the image on a Pi, or the virt image (`build.sh --virt`) in QEMU, before publishing.
+`latest` is the release you just published in step 5. For a pre-release candidate `:latest` hasn't moved, so use `edge` or build the bundle
+by hand (`npm run build:offline-bundle -- 1.4.0-rc1`) and then `-- cached`.
+
+Output is in `rstation/platform/image-builder/deploy/`: the flashable `.img.xz` (new SD cards), the signed `.raucb` (over-the-air
+updates for devices already in the field) and a `-virt.img.xz` for QEMU. Test the image on a Pi, or the virt image in QEMU, before publishing.
 
 Upload the `.img.xz` and `.raucb` to the CDN: **TODO: write down the CDN, folder and upload method here.** Keep the file names
 unique per build. Then copy the public https URLs of the `.img.xz` and the `.raucb` for step 8.
