@@ -7,6 +7,7 @@ namespace App\Http\Controllers;
 
 use App\Models\MenuItem;
 use App\Services\TrainingMode;
+use App\Support\HelpGuide;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Str;
 use Inertia\Inertia;
@@ -34,11 +35,21 @@ Route::get('/help', function () {
     ]);
 })->middleware(['auth']);
 
+// Every guide is one Markdown file (resources/help/en/<slug>.md, App\Support\HelpGuide), shown by one page.
 Route::get('/help/{guide}', function (string $guide) {
-    return Inertia::render('Help/'.Str::studly($guide), ['breadcrumb' => [
-        ...MenuItem::getBreadcrumb('/help'),
-        ['href' => '/help/'.$guide, 'title' => HelpReportController::GUIDES[$guide]],
-    ]]);
+    $source = HelpGuide::load($guide);
+
+    return Inertia::render('Help/Guide', [
+        'guide' => $guide,
+        // The page heading drops the PDF title's " Guide" ("Receiving Guide" -> "Receiving").
+        'title' => Str::beforeLast(HelpReportController::GUIDES[$guide], ' Guide'),
+        'intro' => $source->intro,
+        'sections' => $source->sections,
+        'breadcrumb' => [
+            ...MenuItem::getBreadcrumb('/help'),
+            ['href' => '/help/'.$guide, 'title' => HelpReportController::GUIDES[$guide]],
+        ],
+    ]);
 })->whereIn('guide', array_keys(HelpReportController::GUIDES))->middleware(['auth']);
 
 // Signs (SignController): ready-made or typed warehouse signs on Letter paper, on the Setup menu.

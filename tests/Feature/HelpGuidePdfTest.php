@@ -5,7 +5,7 @@
 
 use App\Http\Controllers\HelpReportController;
 use App\Models\MenuItem;
-use Illuminate\Support\Str;
+use App\Support\HelpGuide;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
 test('a help guide renders as weasyprint letter pages with its content', function (string $guide, array $expected) {
@@ -22,14 +22,30 @@ test('a help guide renders as weasyprint letter pages with its content', functio
         expect($text)->toContain($phrase);
     }
 })->with([
-    'receiving' => ['receiving', ['Receiving Guide', 'Welcoming the driver', 'Step 1', 'Print Labels']],
+    'receiving' => ['receiving', ['Receiving Guide', 'Log what comes off the truck', 'Welcoming the driver', 'Step 1', 'Print Labels']],
     'sorting' => ['sorting', ['Donation Sorting Guide', 'Working a pallet', 'Pallet Empty', 'Complete Session']],
 ])->skip(fn () => pdfToolsMissing(), 'poppler-utils not installed');
 
-test('every registered guide has a printable view and a Vue page', function (string $guide) {
-    expect(view()->exists('reports.help.'.$guide))->toBeTrue()
-        ->and(file_exists(resource_path('js/Pages/Help/'.Str::studly($guide).'.vue')))->toBeTrue();
+test('every registered guide has a Markdown source with an intro and headed sections', function (string $guide) {
+    expect(file_exists(HelpGuide::path($guide)))->toBeTrue();
+    $source = HelpGuide::load($guide);
+    expect($source->intro)->not->toBe('')
+        ->and($source->sections)->not->toBeEmpty()
+        ->and(collect($source->sections)->filter(fn ($html) => str_starts_with($html, '<h2>')))->not->toBeEmpty();
 })->with(array_keys(HelpReportController::GUIDES));
+
+test('a guide source can carry no raw HTML or unsafe links', function () {
+    $path = HelpGuide::path('probe', 'test');
+    @mkdir(dirname($path), 0777, true);
+    file_put_contents($path, "Intro.\n\n## Heading\n\n<script>alert(1)</script>\n\n[x](javascript:alert(1))\n");
+    try {
+        $html = implode('', HelpGuide::load('probe', 'test')->sections);
+    } finally {
+        unlink($path);
+        @rmdir(dirname($path));
+    }
+    expect($html)->not->toContain('<script')->and($html)->not->toContain('javascript:');
+});
 
 test('every guide is linked from at least one page with a HelpLink', function (string $guide) {
     $linked = false;
@@ -44,9 +60,14 @@ test('every guide is linked from at least one page with a HelpLink', function (s
     expect($linked)->toBeTrue();
 })->with(array_keys(HelpReportController::GUIDES));
 
-test('a guide page renders for a signed-in user', function () {
+test('a guide page renders from its Markdown source for a signed-in user', function () {
     $user = userWithPermissions('general-access', 'manage-receiving');
-    $this->actingAs($user)->get('/help/order-entry')->assertOk();
+    $this->actingAs($user)->get('/help/receiving')->assertOk()->assertInertia(fn ($page) => $page
+        ->component('Help/Guide')
+        ->where('guide', 'receiving')
+        ->where('title', 'Receiving')
+        ->where('intro', fn ($intro) => str_contains($intro, 'Log what comes off the truck'))
+        ->where('sections', fn ($sections) => str_contains(implode('', $sections->all()), '<h2>Welcoming the driver &amp; safety</h2>')));
     $this->actingAs($user)->get('/help/nonexistent')->assertNotFound();
 });
 

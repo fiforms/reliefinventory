@@ -46,6 +46,8 @@ COPY config ./config
 COPY database ./database
 COPY routes ./routes
 COPY resources/views ./resources/views
+# Help guide sources (App\Support\HelpGuide reads them at request time).
+COPY resources/help ./resources/help
 COPY public ./public
 # artisan refuses to boot without these (storage/ is excluded from the build context)
 RUN mkdir -p storage/framework/views storage/framework/cache storage/framework/sessions storage/logs

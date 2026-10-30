@@ -42,6 +42,25 @@
         li {
             margin-bottom: 8px;
         }
+        .section h3 {
+            font-size: 13px;
+            margin: 12px 0 6px 0;
+        }
+        /* Links in a guide point into the app; on paper they read as plain text. */
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+        code {
+            font-family: "DejaVu Sans Mono", monospace;
+            font-size: 12px;
+        }
+        li > p {
+            margin: 0 0 6px 0;
+        }
+        li ul {
+            margin-top: 6px;
+        }
         .intro {
             background: #f3f4f6;
             border-radius: 6px;
