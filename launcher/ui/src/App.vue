@@ -295,16 +295,16 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             <template v-else>
                 <h2>Install Relief Inventory</h2>
                 <p class="muted" v-if="linux">
-                    This uses Docker on this computer. It downloads Relief Inventory (roughly 1 GB) and takes a few minutes. It does not
+                    This uses Docker on this computer. It is a large download and can take several minutes. It does not
                     need administrator permission, but Docker has to be installed and running.
                 </p>
                 <p class="muted" v-else-if="mac">
                     This sets up everything on this Mac: a small Linux virtual machine, Docker Engine and Relief Inventory itself. It
-                    downloads roughly 1 GB and takes 10–20 minutes. It doesn't need an administrator password or a restart.
+                    is a large download and can take several minutes (10–20 is typical). It doesn't need an administrator password or a restart.
                 </p>
                 <p class="muted" v-else>
                     This sets up everything on this computer: a small Linux layer, Docker Engine and Relief Inventory itself. It
-                    downloads roughly 1 GB, takes 10–20 minutes, and asks for administrator permission. Windows may need to restart once.
+                    is a large download, can take several minutes (10–20 is typical), and asks for administrator permission. Windows may need to restart once.
                 </p>
                 <div v-if="showNotice" class="modal-backdrop" @click.self="cancelNotice" @keydown.esc="cancelNotice">
                   <div class="modal banner bad notice" role="alertdialog" aria-modal="true" aria-labelledby="notice-title">

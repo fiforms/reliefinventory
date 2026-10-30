@@ -172,7 +172,7 @@ impl<R: Runner> Platform for LinuxBackend<R> {
         self.write_compose(compose).await?;
         progress(Progress::step(
             "Downloading Relief Inventory",
-            "This downloads roughly 1 GB the first time. Docker shows no percentage, so the bar just keeps moving.",
+            "This is a large download and can take several minutes the first time. Docker shows no percentage, so the bar just keeps moving.",
         ));
         self.compose_ok("downloading Relief Inventory", &["pull"]).await?;
         let marker = self.marker();
