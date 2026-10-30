@@ -58,8 +58,17 @@ onMounted(async () => {
     api.onTrayError(fail)
     version.value = await api.appVersion()
     api.getAutostart().then((v) => (autostart.value = v)).catch(() => {})
-    refresh()
+    await refresh()
+    await pickStartTab()
 })
+
+// Open on Local RI Server, unless it isn't installed on this computer and Remote Backups has servers paired: then that is the tab with something to show.
+// Only at startup, and never over a tab the person already chose (or a ?mock= tab).
+async function pickStartTab() {
+    if (mockTab || tab.value !== 'app' || state.value !== 'not_installed') return
+    const paired = await api.remoteList().catch(() => [])
+    if (paired.length && tab.value === 'app') tab.value = 'remote'
+}
 onBeforeUnmount(() => clearTimeout(timer))
 
 const state = computed(() => summary.value?.state)
@@ -205,8 +214,8 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
         </p>
 
         <nav class="tabs" role="tablist">
-            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote Backups</button>
             <button role="tab" :aria-selected="tab === 'app'" :class="{ on: tab === 'app' }" @click="tab = 'app'">Local RI Server</button>
+            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote Backups</button>
             <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Local Backups</button>
             <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image'}" @click="tab = 'image'">R Station</button>
         </nav>
