@@ -11,6 +11,9 @@ on:
         default: "3.5.2"
         required: true
 
+env:
+  RI_BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+
 jobs:
   build:
     runs-on: windows-latest

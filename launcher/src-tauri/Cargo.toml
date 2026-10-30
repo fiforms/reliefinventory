@@ -1,6 +1,6 @@
 [package]
 name = "ri-launcher-desktop"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "RI Launcher — install and run Relief Inventory on this computer"
 license = "GPL-3.0-or-later"
