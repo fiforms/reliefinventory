@@ -118,7 +118,11 @@ const continueInstall = () => {
     showNotice.value = false
     doInstall()
 }
-const doInstall = () => run('install', async () => { await api.startInstall() }) // progress then arrives via the status file
+// The advanced options (channel, port, timezone) are saved first, because the install reads the saved settings. Progress then arrives via the status file.
+const doInstall = () => run('install', async () => {
+    await api.applySettings({ mode: summary.value.mode, hostname: form.hostname, port: Number(form.port), timezone: form.timezone, channel: form.channel })
+    await api.startInstall()
+})
 const doStart = () => run('start', api.start)
 const doStop = () => run('stop', api.stop)
 async function doUpdate() {
@@ -328,6 +332,27 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     </div>
                   </div>
                 </div>
+                <details>
+                    <summary>Advanced options</summary>
+                    <div class="adv">
+                        <label>Software channel
+                            <select v-model="form.channel">
+                                <option value="latest">Latest (official releases)</option>
+                                <option value="edge">Edge (newer, for developers and testers)</option>
+                            </select>
+                        </label>
+                        <p class="muted small"><strong>Latest</strong> follows official software releases. <strong>Edge</strong> gives newer, unreleased software for developers and software testers; don't use it with real data.</p>
+                        <div class="grid2">
+                            <label>Port
+                                <input v-model.number="form.port" inputmode="numeric" />
+                            </label>
+                            <label>Timezone
+                                <input v-model="form.timezone" placeholder="America/New_York" autocomplete="off" spellcheck="false" />
+                            </label>
+                        </div>
+                        <p class="muted small">Port is the number after the colon in the address (default 8080). Timezone is a name like America/New_York; empty uses the app's default (UTC). These are saved when you install.</p>
+                    </div>
+                </details>
                 <div v-if="blocked" class="banner bad" role="alert">
                     <p class="pre">{{ blocked }}</p>
                     <button type="button" @click="checkAgain" :disabled="!!busy">Check again</button>
@@ -514,6 +539,7 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .btns { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .btns button { white-space: nowrap; }
 .who.stack { flex-direction: column; align-items: stretch; }
+.adv { padding-top: 6px; }
 .btns.grid2 { display: grid; grid-template-columns: 1fr 1fr; justify-content: stretch; }
 .modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
 .modal { max-width: 520px; max-height: 90vh; overflow: auto; margin: 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
