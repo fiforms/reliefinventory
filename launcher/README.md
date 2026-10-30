@@ -96,7 +96,8 @@ and nothing else — may ask that server to make a backup and download it. Nothi
 A second tab downloads the R Station Raspberry Pi image and opens **Raspberry Pi Imager** with it chosen (`rpi-imager <file>`); the
 launcher never writes to a drive itself. **Chain of trust:** the only address built in is `MANIFEST_URL`, the `rstation-image.json` asset
 of the fixed `rstation-image` GitHub release; the manifest holds the image's size, SHA-256 and https URL(s) (Nextcloud), so a new image
-needs no launcher release — publish with `npm run publish:rstation-image -- <url> --name <file>`. The manifest is untrusted until
+needs no launcher release — publish with `npm run publish:rstation-image -- <url> --name <file> [--rauc <bundle-url>]` (the optional `rauc` object
+describes the signed OTA bundle in the same shape; the launcher doesn't read it). The manifest is untrusted until
 `Manifest::parse` passes (safe file name, https only, 64-hex hash, sane size, `schema` ≤ 1; `min_launcher_version` gates old launchers).
 The download resumes a `.part` file with a Range request (hashing the existing bytes first), falls back to a full restart if the server
 ignores Range, stops at the manifest's size, discards on a hash mismatch and writes a `.verified` marker only after a match; old images

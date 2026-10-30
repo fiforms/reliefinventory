@@ -35,6 +35,9 @@ ideas go in [ROADMAP.md](ROADMAP.md). Don't record dates or build history here. 
 - **Verify the Docker self-updater for real:** against a live compose stack (pull, `down`, `up -d`, health wait, the page recovering), installed with
   `docker/updater/install.sh` on a clean Linux host, and in a browser. The suite uses `APP_MAINTENANCE_DRIVER=cache` (`phpunit.xml`), so the real `file`
   driver, including `down --secret`, is exercised by no test. R Station / RI Launcher monitors should speak the same two update calls (`launcher/core/src/compose.rs`).
+- **R Station OS updates from a server:** the release manifest (`rstation-image.json`, `dev/RELEASE.md`) now carries the signed `.raucb` bundle (`rauc`: filename,
+  size, sha256, urls). Let an instance either keep a copy of the bundle and serve it to its R Stations, or hand them the CDN URL, so devices on a site update without
+  reaching the CDN themselves (`rstation/platform/docs/DEVICE_CONTRACT.md`, release types and artifact locations).
 - **Move the image to PHP 8.6** once 8.6.x has had a few releases and `dunglas/frankenphp` publishes a `php8.6-trixie` tag (revisit early 2027). Change together:
   `PHP_IMAGE` and the hard-coded `PHP_VERSION=8.4` in the Dockerfile's runtime `ENV`, and `php-version` in `.github/workflows/ci.yml`. Then run the full Pest suite,
   an extension check (`gd`, `intl`, `opcache`, `sodium`), a PDF render comparison, and re-check the Dockerfile `system` stage purge list. Payoff to test:
