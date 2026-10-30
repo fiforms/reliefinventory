@@ -3,7 +3,7 @@
 // as a config override instead, so the installer's name and metadata carry it (and so does the window, via src-tauri/build.rs).
 //
 //   v1.2.0   (tag)     -> 1.2.0
-//   99a6a45  (commit)  -> <Cargo.toml version>+99a6a45  (semver build metadata; on Windows, where an MSI needs a plain number, just
+//   99a6a45  (commit)  -> <Cargo.toml version>+99a6a45  (semver build metadata, `-dirty` becomes `.dirty`; on Windows, where an MSI needs a plain number, just
 //                         the Cargo.toml version)
 //
 // RI_BUILD_VERSION (the tag name or commit sha, set by the workflows) wins over asking git.
@@ -31,7 +31,7 @@ const ref = buildRef()
 const tag = ref.match(/^v?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$/)
 let version = cargoVersion
 if (tag) version = tag[1]
-else if (ref && process.platform !== 'win32') version = `${cargoVersion}+${ref.replace(/[^0-9A-Za-z-]/g, '-')}`
+else if (ref && process.platform !== 'win32') version = `${cargoVersion}+${ref.replace(/[^0-9A-Za-z]/g, '.')}` // no '-': an .rpm version can't contain one
 
 console.log(`RI Launcher build: shown as ${ref || cargoVersion}, installer version ${version}`)
 const dir = mkdtempSync(join(tmpdir(), 'ri-launcher-'))
