@@ -27,7 +27,7 @@ Blade/PDF view. That was a shortcut, not a requirement. As of 2026-10-29 the cop
 help edit has to be made twice, and translation would make it four times.
 
 The PDF can't be made by printing the Vue page: WeasyPrint doesn't run JavaScript, and headless Chrome was removed on
-2026-10-19 (`DOCKER_PLAN.md`). Bringing Chrome back for this isn't worth its size.
+2026-10-19. Bringing Chrome back for this isn't worth its size.
 
 ### Proposal
 

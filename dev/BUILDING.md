@@ -160,8 +160,7 @@ To refresh with newer data, download the per-state files linked from
 
 Published images are built by the **Docker image (multi-arch)** GitHub Action (Actions tab, Run workflow), which
 builds both architectures natively and publishes `ghcr.io/fiforms/reliefinventory`. See
-[docker/README.md](../docker/README.md) for running it and [DOCKER_PLAN.md](DOCKER_PLAN.md) for the
-design.
+[docker/README.md](../docker/README.md) for running it.
 
 ## Building the companion apps
 

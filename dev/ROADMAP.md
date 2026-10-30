@@ -32,7 +32,15 @@ human review tracked against the English it came from. Plan: `HELP_AND_LOCALIZAT
 
 ---
 
-## 5. Other ideas (designs not written yet)
+## 5. Customizable report engine
+
+Warehouse admins define reports, layouts and live dashboards in the web UI, with no release: permissioned report-data endpoints, jq
+to reshape the data, Mustache/HTML templates rendered by WeasyPrint, Chart.js widgets, and shared per-warehouse branding. The standard
+reports become editable defaults. Pre-plan and open questions: `REPORT_ENGINE.md`.
+
+---
+
+## 6. Other ideas (designs not written yet)
 
 - **Stock source tagging and equipment tracking:** tag stock by source, an `item_kind` on the catalog, and an `Asset` model for equipment.
 - **Item conversion:** a recount-forced item/unit-of-measure reassignment (internal transfer).
