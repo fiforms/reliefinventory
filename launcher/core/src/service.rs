@@ -77,20 +77,23 @@ impl<P: Platform + 'static> Launcher<P> {
     }
 
     /// Download the newest image for the chosen channel and say whether it is newer than the one running. Nothing restarts.
+    /// Works while stopped too: with nothing running, any pulled image of a release version counts as newer.
     pub async fn check_update(&self) -> Result<updater::Checked> {
-        if self.platform.state().await? != State::Running {
-            return fail("Start Relief Inventory first; updates are checked while it is running.");
-        }
         self.update_service()?.check(self.settings().channel).await
     }
 
     /// Check, and install only if what was downloaded is newer (the rules of `updater`: never backwards). Returns what was found;
-    /// `newer` true means the app was restarted onto it.
+    /// `newer` true means the app was restarted onto it, or, if it was stopped (say, because the old version won't start), started on it.
     pub async fn install_update(&self) -> Result<updater::Checked> {
         let service = self.update_service()?;
+        let was_running = self.platform.state().await? == State::Running;
         let found = self.check_update().await?;
         if found.newer {
-            service.restart_onto_pulled().await?;
+            if was_running {
+                service.restart_onto_pulled().await?;
+            } else {
+                self.start().await?;
+            }
         }
         Ok(found)
     }

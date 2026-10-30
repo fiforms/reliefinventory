@@ -128,7 +128,7 @@ async function doUpdate() {
     await run('update', async () => {
         const r = await api.installUpdate()
         const v = r.version ? ` ${r.version}` : ''
-        if (r.newer) note('ok', `Updated${v}. Relief Inventory restarted with the newest version.`)
+        if (r.newer) note('ok', `Updated${v}. Relief Inventory is running the newest version.`)
         else note('ok', `Relief Inventory is already running the newest version${r.running_version ? ` (${r.running_version})` : ''}.`)
     })
 }
@@ -452,7 +452,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                 Start RI Launcher and Relief Inventory when I sign in to this computer
             </label>
             <div class="actions">
-                <button @click="doUpdate" :disabled="!!busy || state !== 'running'" title="Download the newest version and restart">Update Relief Inventory</button>
+                <button @click="doUpdate" :disabled="!!busy" title="Download the newest version and restart (or start it, if it is stopped)">Update Relief Inventory</button>
                 <button class="danger" @click="confirming = 'uninstall'" :disabled="!!busy">Uninstall…</button>
             </div>
             <div v-if="confirming === 'uninstall'" class="banner bad" role="alertdialog">
