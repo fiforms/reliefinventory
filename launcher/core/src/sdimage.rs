@@ -264,7 +264,14 @@ async fn fetch_one(url: &str, m: &Manifest, dest: &Path, cancel: &AtomicBool, pr
                 let _ = file.flush().await;
                 return fail("Download cancelled.");
             }
-            let chunk = chunk.map_err(net)?;
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(e) => {
+                    // A tokio File writes in the background; flush so the bytes already received are on disk for the resume.
+                    let _ = file.flush().await;
+                    return Err(net(e));
+                }
+            };
             done += chunk.len() as u64;
             if done > m.size {
                 drop(file);

@@ -591,7 +591,7 @@ mod tests {
         let (program, argv) = b.lima_argv(&["list"]);
         assert_eq!(program, "/usr/bin/env");
         assert_eq!(argv[0], format!("LIMA_HOME={}", d.path().join("lima-home").display()));
-        assert!(argv[1].ends_with("lima/bin/limactl"));
+        assert!(Path::new(&argv[1]).ends_with("lima/bin/limactl"));
     }
 
     #[tokio::test]
@@ -676,7 +676,9 @@ mod tests {
         assert!(calls.iter().filter(|c| c.contains("limactl shell")).all(|c| c.contains("shell --workdir / ri -- sudo")));
         let yaml = std::fs::read_to_string(d.path().join("ri-instance.yaml")).unwrap();
         assert!(yaml.contains("memory: 2GiB"), "an 8 GB Mac gets a 2 GiB VM");
-        assert!(yaml.contains(&d.path().join("downloads/alpine-aarch64.qcow2").display().to_string()));
+        // Windows CI mixes `\` and `/` in joined paths; compare with one separator.
+        let slashed = |s: &str| s.replace('\\', "/");
+        assert!(slashed(&yaml).contains(&slashed(&d.path().join("downloads/alpine-aarch64.qcow2").display().to_string())));
     }
 
     #[tokio::test]

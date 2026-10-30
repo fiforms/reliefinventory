@@ -411,7 +411,14 @@ impl BackupApi for RemoteClient {
         let (mut done, mut last_report) = (have, have);
         let mut stream = resp.bytes_stream();
         while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| RemoteError::Network(simplify(e)))?;
+            let chunk = match chunk {
+                Ok(c) => c,
+                Err(e) => {
+                    // A tokio File writes in the background; flush so the bytes already received are on disk for the resume.
+                    let _ = file.flush().await;
+                    return Err(RemoteError::Network(simplify(e)));
+                }
+            };
             file.write_all(&chunk).await.map_err(local)?;
             done += chunk.len() as u64;
             if done - last_report >= 1 << 20 {
