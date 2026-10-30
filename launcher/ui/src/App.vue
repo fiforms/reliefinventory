@@ -17,7 +17,8 @@ const confirming = ref('') // 'uninstall' | 'restore' | ''
 const keepData = ref(true)
 const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
 const restoreFile = ref('')
-const understood = ref(false) // the person ticked the pre-install notice (Install stays disabled until they do)
+const understood = ref(false) // the person ticked the pre-install notice (Continue stays disabled until they do)
+const showNotice = ref(false) // the pre-install notice, shown as a pop-up when Install is clicked
 const mockTab = new URLSearchParams(location.search).get('mock') || ''
 const tab = ref(mockTab.startsWith('image') ? 'image' : mockTab.startsWith('remote') ? 'remote' : 'app') // 'app' | 'backups' | 'remote' | 'image'
 const form = reactive({ hostname: '', port: 8080, timezone: '', channel: 'latest' })
@@ -99,6 +100,15 @@ async function run(label, fn, okText) {
     }
 }
 
+const startInstall = () => (understood.value ? doInstall() : (showNotice.value = true))
+const cancelNotice = () => {
+    showNotice.value = false
+    understood.value = false
+}
+const continueInstall = () => {
+    showNotice.value = false
+    doInstall()
+}
 const doInstall = () => run('install', async () => { await api.startInstall() }) // progress then arrives via the status file
 const doStart = () => run('start', api.start)
 const doStop = () => run('stop', api.stop)
@@ -195,10 +205,10 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
         </p>
 
         <nav class="tabs" role="tablist">
+            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote Backups</button>
             <button role="tab" :aria-selected="tab === 'app'" :class="{ on: tab === 'app' }" @click="tab = 'app'">Local RI Server</button>
-            <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Backups</button>
-            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote backups</button>
-            <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image' }" @click="tab = 'image'">R Station SD card</button>
+            <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Local Backups</button>
+            <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image'}" @click="tab = 'image'">R Station</button>
         </nav>
 
         <RStationImage v-if="tab === 'image'" @note="note" />
@@ -206,10 +216,10 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 
         <!-- Backups tab -->
         <section v-if="tab === 'backups'" class="card">
-            <div class="who">
-                <h2>Backups</h2>
-                <div class="btns">
-                    <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Back up now</button>
+            <div class="who stack">
+                <h2>Local Backups</h2>
+                <div class="btns grid2">
+                    <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Backup now</button>
                     <button class="quiet" @click="saveAll" :disabled="!!busy || state !== 'running'" title="Copy every backup (including whole-instance ones) to your Documents folder">Save all to this computer</button>
                     <button class="quiet" @click="openFolder" :disabled="!!busy" title="Open the folder that saved copies go to">Open saved copies</button>
                     <button class="quiet" @click="chooseRestore" :disabled="!!busy || state !== 'running'">Restore from file…</button>
@@ -233,7 +243,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     <button class="quiet" @click="saveCopy(b)" :disabled="!!busy" title="Copy this backup to your Documents folder as a read-only file">Save a copy</button>
                 </li>
             </ul>
-            <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Back up now</strong> makes one immediately.</p>
+            <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Backup now</strong> makes one immediately.</p>
             <p v-if="state === 'running' && backups.length > 8" class="small"><button class="quiet" @click="showAll = !showAll">{{ showAll ? 'Show fewer' : `Show all ${backups.length} backups` }}</button></p>
             <p v-if="state !== 'not_installed'" class="muted small foot">
                 "Save a copy" and "Save all to this computer" put read-only files in Documents\Relief Inventory Backups (whole-instance backups included); "Open saved copies" opens that folder. Keep copies somewhere other than this computer too.
@@ -283,8 +293,9 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     This sets up everything on this computer: a small Linux layer, Docker Engine and Relief Inventory itself. It
                     downloads roughly 1 GB, takes 10–20 minutes, and asks for administrator permission. Windows may need to restart once.
                 </p>
-                <div class="banner bad notice" role="note">
-                    <p><strong>Before you install: what this is for</strong></p>
+                <div v-if="showNotice" class="modal-backdrop" @click.self="cancelNotice" @keydown.esc="cancelNotice">
+                  <div class="modal banner bad notice" role="alertdialog" aria-modal="true" aria-labelledby="notice-title">
+                    <p id="notice-title"><strong>Before you install: what this is for</strong></p>
                     <p>
                         This installs a complete copy of Relief Inventory <strong>on this computer</strong>. The software is normally
                         designed to run on a web server in the cloud. Running it here does <strong>not</strong> provide HTTPS security,
@@ -302,6 +313,11 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                         <input type="checkbox" v-model="understood" />
                         I understand, and no other live instance is being used for this warehouse.
                     </label>
+                    <div class="actions">
+                        <button class="primary" @click="continueInstall" :disabled="!understood || !!busy">Continue</button>
+                        <button @click="cancelNotice">Cancel</button>
+                    </div>
+                  </div>
                 </div>
                 <div v-if="blocked" class="banner bad" role="alert">
                     <p class="pre">{{ blocked }}</p>
@@ -309,7 +325,7 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                 </div>
                 <p v-if="installError" class="banner bad" role="alert">{{ installError }}</p>
                 <div class="actions">
-                    <button class="primary" @click="doInstall" :disabled="!!busy || !!blocked || !understood">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
+                    <button class="primary" @click="startInstall" :disabled="!!busy || !!blocked">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
                 </div>
             </template>
         </section>
@@ -488,6 +504,10 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .grow { flex: 1; min-width: 0; }
 .btns { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .btns button { white-space: nowrap; }
+.who.stack { flex-direction: column; align-items: stretch; }
+.btns.grid2 { display: grid; grid-template-columns: 1fr 1fr; justify-content: stretch; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.modal { max-width: 520px; max-height: 90vh; overflow: auto; margin: 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
 .rows { list-style: none; margin: 8px 0 0; padding: 0; }
 .rows li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
 .rows li:first-child { border-top: 0; }

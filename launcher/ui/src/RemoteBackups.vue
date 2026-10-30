@@ -124,7 +124,7 @@ const empty = computed(() => servers.value && servers.value.length === 0)
 
 <template>
     <section class="card">
-        <h2>Remote backups</h2>
+        <h2>Remote Backups</h2>
         <p class="muted small">
             Keep copies of another Relief Inventory server's backups on this computer, made automatically on a schedule. The server
             has to trust this computer first (a one-time pairing); after that it can only make and hand over backups, nothing else.
@@ -158,7 +158,7 @@ const empty = computed(() => servers.value && servers.value.length === 0)
             <div><dt>Kept here</dt><dd>{{ s.files.length }} {{ s.files.length === 1 ? 'copy' : 'copies' }} · {{ mb(s.total_bytes) }}</dd></div>
         </dl>
         <div class="actions">
-            <button class="primary" @click="backupNow(s)" :disabled="!!busy || !!s.state.running || s.state.needs_pairing">Back up now</button>
+            <button class="primary" @click="backupNow(s)" :disabled="!!busy || !!s.state.running || s.state.needs_pairing">Backup now</button>
             <button @click="reveal(s)" :disabled="!!busy">Show the folder</button>
         </div>
 
@@ -178,7 +178,7 @@ const empty = computed(() => servers.value && servers.value.length === 0)
                 <div class="grid2">
                     <label>Back up
                         <select v-model="drafts[s.id].frequency">
-                            <option value="off">Never (only when I press Back up now)</option>
+                            <option value="off">Never (only when I press Backup now)</option>
                             <option value="hourly">Every hour</option>
                             <option value="daily">Every day</option>
                             <option value="weekly">Every week</option>
@@ -252,11 +252,14 @@ const empty = computed(() => servers.value && servers.value.length === 0)
                     <input v-model="pair.code" placeholder="ABCDE-FGHJK" autocomplete="off" spellcheck="false" required />
                 </label>
             </div>
-            <fieldset class="kind">
-                <legend>The code is for</legend>
-                <label><input type="radio" value="warehouse" v-model="pair.kind" /> One warehouse (from its Trust Console)</label>
-                <label><input type="radio" value="instance" v-model="pair.kind" /> The whole instance, every warehouse (from Instance Admin)</label>
-            </fieldset>
+            <div class="kind" role="group" aria-label="The code is for">
+                <span class="kind-label">The code is for</span>
+                <div class="seg">
+                    <button type="button" :class="{ on: pair.kind === 'warehouse' }" :aria-pressed="pair.kind === 'warehouse'" @click="pair.kind = 'warehouse'">One warehouse</button>
+                    <button type="button" :class="{ on: pair.kind === 'instance' }" :aria-pressed="pair.kind === 'instance'" @click="pair.kind = 'instance'">The whole instance</button>
+                </div>
+                <span class="muted small">{{ pair.kind === 'instance' ? 'Every warehouse, with a code from Instance Admin.' : 'A single warehouse, with a code from its Trust Console.' }}</span>
+            </div>
             <label>Name (optional)
                 <input v-model="pair.name" placeholder="The server's own name is used if you leave this empty" autocomplete="off" />
             </label>
