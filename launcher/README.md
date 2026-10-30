@@ -46,7 +46,7 @@ not been run (`.github/workflows/launcher-linux.yml`, manual, builds the `.deb` 
   distro) — then the compose file is rewritten and `docker compose up -d`. **Stop:** `compose stop`, then
   `wsl --terminate`.
 - **The compose file is regenerated from `settings.json` on every start** (`compose.rs`): `APP_URL` becomes the address
-  people type, the app's `8080:8080` mapping becomes `18080:8080`, an optional timezone is switched on. Nothing else
+  people type, the app's `8080:8080` mapping becomes `18080:8080`, an optional timezone is switched on, and the app image tag follows the Software channel setting (`latest` = official releases, `edge` = unreleased builds for developers/testers; changing it pulls the new tag and restarts). Nothing else
   is edited, so the YAML inside the Linux layer is never the source of truth.
 - **LAN service vs local only** (`Settings.mode`): the launcher runs a small TCP proxy (`proxy.rs`) that owns the public
   port (default 8080) and forwards to `127.0.0.1:18080`, where WSL forwards the app. LAN = listens on every interface;
@@ -96,7 +96,8 @@ and nothing else — may ask that server to make a backup and download it. Nothi
 A second tab downloads the R Station Raspberry Pi image and opens **Raspberry Pi Imager** with it chosen (`rpi-imager <file>`); the
 launcher never writes to a drive itself. **Chain of trust:** the only address built in is `MANIFEST_URL`, the `rstation-image.json` asset
 of the fixed `rstation-image` GitHub release; the manifest holds the image's size, SHA-256 and https URL(s) (Nextcloud), so a new image
-needs no launcher release — publish with `npm run publish:rstation-image -- <url> --name <file>`. The manifest is untrusted until
+needs no launcher release — publish with `npm run publish:rstation-image -- <url> --name <file> [--rauc <bundle-url>]` (the optional `rauc` object
+describes the signed OTA bundle in the same shape; the launcher doesn't read it). The manifest is untrusted until
 `Manifest::parse` passes (safe file name, https only, 64-hex hash, sane size, `schema` ≤ 1; `min_launcher_version` gates old launchers).
 The download resumes a `.part` file with a Range request (hashing the existing bytes first), falls back to a full restart if the server
 ignores Range, stops at the manifest's size, discards on a hash mismatch and writes a `.verified` marker only after a match; old images
@@ -183,3 +184,22 @@ elevates as a *different* admin (the Linux layer is per Windows user, so that wo
 - Offline install bundle (image tarball + rootfs + WSL MSI) beyond "restore from file"; loading an image tarball
   (`docker load`); code signing (installers are unsigned, so SmartScreen/Gatekeeper warn); the launcher's own auto-update;
   keeping the machine awake; download resume; a network-profile warning when the PC is on a "Public" network.
+
+## Update and backup requests from the app
+
+`core/src/updater.rs` is the launcher's version of the Docker web host's `docker/updater/ri-updater.py`. The launcher generates
+`RI_UPDATE_SECRET` once (`update-secret` next to `settings.json`) and writes it into the compose file it renders. While the app is
+running, a task in the launcher (`Launcher::serve_update_requests`, started by the window and by `ri-launcher run`) polls
+`GET /api/instance/update` on the internal port every 30 s and answers `check` (pull and compare), `update` (pull, and only if the image
+is newer — on the edge channel, different — `down` then `up -d`, wait for `/up`) and `backup` (`instance:backup --requested`: the
+provisioner's full-instance backup with files). Docker is reached only through `Platform::exec`, so it is the same code on Linux, Lima and WSL.
+Requests are made in the app (`instance:update check|apply|backup`, or Instance Admin).
+
+The window's **Update Relief Inventory** button (Local RI Server > Maintenance) uses the same rules (`Launcher::install_update`): it downloads the
+newest image for the chosen channel and restarts only if that image is newer, saying "already running the newest version" otherwise. The
+Backups tab's **Save all to this computer** copies every backup in the Linux layer — the app's own and the whole-instance zips under
+`backups/instance/` — to Documents\Relief Inventory Backups (read-only, skipping ones already copied); **Open saved copies** opens that folder.
+
+**Version shown in the window** (footer): the release tag, or the commit hash for an untagged build. It is `RI_BUILD_VERSION`, set by the
+launcher workflows (the tag name when run from a tag, else the commit sha) or, for a local build, by `git describe` in `src-tauri/build.rs`
+(`-dirty` if the tree has uncommitted changes). The `0.1.0` in `Cargo.toml` is only the installers' number and no longer what the window shows.

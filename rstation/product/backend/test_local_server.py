@@ -138,6 +138,20 @@ def test_actions_refused_when_the_image_lacks_the_bundle(paths):
     assert caught.value.status == 409
 
 
+def test_channel_defaults_to_latest_and_is_saved_for_the_update_script(paths):
+    server = _server(paths)
+    assert run(server.status())["channel"] == "latest"
+
+    server.set_channel("edge")
+
+    assert (paths[1] / "state" / "channel").read_text().strip() == "edge"
+    assert server.channel() == "edge"
+    with pytest.raises(local_server.LocalServerError) as caught:
+        server.set_channel("../etc")
+    assert caught.value.status == 400
+    assert server.channel() == "edge"
+
+
 def test_reset_needs_explicit_confirmation(paths, monkeypatch):
     _install(paths[0])
     calls = []
@@ -520,9 +534,14 @@ case "$1 $2" in
       *.Id*) cat "$S/id"; echo; exit 0 ;;
     esac
     exit 0 ;;
-  "pull "*) [ -e "$S/pull_fail" ] && { echo "denied: no" >&2; exit 1; }; cp "$S/pull_id" "$S/id"; exit 0 ;;
-  "tag "*) echo "$2" > "$S/id"; exit 0 ;;
+  "pull "*) [ -e "$S/pull_fail" ] && { echo "denied: no" >&2; exit 1; }
+    case "$3" in *:edge) cp "$S/pull_id" "$S/edge_id" ;; *) cp "$S/pull_id" "$S/id" ;; esac; exit 0 ;;
+  "tag "*) case "$2" in *:edge) cp "$S/edge_id" "$S/id" ;; *) echo "$2" > "$S/id" ;; esac; exit 0 ;;
   "load -i") touch "$S/loaded"; cp "$S/load_id" "$S/id"; exit 0 ;;
+  "compose -p")
+    case "$*" in
+      *instance:backup*) [ -e "$S/backup_fail" ] && { echo "The provisioner is busy." >&2; exit 1; }; echo "instance backup written: /backups/instance/x.zip"; exit 0 ;;
+    esac ;;
 esac
 exit 0
 """
@@ -530,6 +549,7 @@ UPDATE_SYSTEMCTL = """#!/bin/sh
 echo "systemctl $*" >> "$FAKE_LOG"
 case "$1 $2" in
   "is-active --quiet") [ -e "$FAKE_STATE/active" ] ;;
+  "start slide-announcer-local-server-update.service") "$FAKE_SCRIPT" update ;;   # a oneshot unit: blocks until it is done
 esac
 """
 UPDATE_CURL = """#!/bin/sh
@@ -548,6 +568,7 @@ def upd(sandbox):
         f.write_text(body)
         f.chmod(0o755)
     sandbox.env["RI_LOCAL_UPDATE_WAIT_SECONDS"] = "1"
+    sandbox.env["FAKE_SCRIPT"] = str(SCRIPT)
     (state / "loaded").touch()
     (state / "active").touch()
     (state / "id").write_text("sha256:old\n")
@@ -570,6 +591,20 @@ def test_update_installs_a_newer_version_and_records_it(upd):
     assert (upd.data / "state" / "app-version").read_text() == "1.1.0"
     log = upd.log.read_text()
     assert "pull ghcr.io/x/app:latest" in log and "up -d --no-build --pull never" in log
+
+
+def test_the_edge_channel_pulls_the_edge_tag_and_installs_an_unversioned_build(upd):
+    (upd.data / "state" / "channel").write_text("edge\n")
+    (upd.state / "pull_id").write_text("sha256:edge")   # edge builds carry no RI_VERSION
+
+    result = _script(upd, "update")
+
+    assert result.returncode == 0, result.stderr
+    assert upd.result()["phase"] == "updated"
+    assert (upd.state / "id").read_text().strip() == "sha256:edge"
+    log = upd.log.read_text()
+    assert "pull ghcr.io/x/app:edge" in log and "tag ghcr.io/x/app:edge ghcr.io/x/app:latest" in log
+    assert "up -d --no-build --pull never" in log
 
 
 def test_update_with_nothing_new_changes_nothing(upd):
@@ -688,3 +723,121 @@ def test_the_same_baked_version_is_not_reloaded(upd):
     _baked(upd, "1.0.0", image_id="sha256:rebuilt")
 
     assert "docker load" not in _supervise(upd)
+
+
+# --- requests from the app (check / update / backup), answered by `requests` ---------------------------------------
+REQUEST_CURL = """#!/bin/sh
+S="$FAKE_STATE"
+echo "curl $*" >> "$FAKE_LOG"
+prev=""; for a; do [ "$prev" = "-d" ] && body="$a"; prev="$a"; done
+case "$*" in
+  *api/instance/update/status*) [ -e "$S/report_down" ] && exit 22; echo "$body" >> "$S/reports"; exit 0 ;;
+  *api/instance/update*) cat "$S/poll"; exit 0 ;;
+  *127.0.0.1*) [ "$(cat "$S/id")" != "$(cat "$S/broken_id" 2>/dev/null)" ] ;;
+  *) exit 0 ;;
+esac
+"""
+
+
+@pytest.fixture
+def req(upd):
+    f = Path(upd.env["CURL"])
+    f.write_text(REQUEST_CURL)
+    f.chmod(0o755)
+    upd.env["RI_LOCAL_REPORT_RETRY_SECONDS"] = "0"
+    upd.env["RI_LOCAL_REPORT_SLEEP"] = "0"
+    upd.poll = lambda action: (upd.state / "poll").write_text(json.dumps({"action": action, "state": "requested"}))
+    upd.reports = lambda: [json.loads(line) for line in (upd.state / "reports").read_text().splitlines()] if (upd.state / "reports").exists() else []
+    return upd
+
+
+def test_the_secret_is_made_once_and_handed_to_the_stack(req):
+    req.poll(None)
+    assert _script(req, "requests").returncode == 0
+    secret = (req.data / "state" / "update-secret").read_text()
+    assert len(secret) == 48 and oct((req.data / "state" / "update-secret").stat().st_mode & 0o777) == "0o600"
+    _script(req, "requests")
+    assert (req.data / "state" / "update-secret").read_text() == secret
+    assert f"Authorization: Bearer {secret}" in req.log.read_text()
+    assert "RI_UPDATE_SECRET" in (_product_root / "offline" / "compose.yaml").read_text()
+
+
+def test_nothing_waiting_reports_nothing(req):
+    req.poll(None)
+    _script(req, "requests")
+    assert req.reports() == []
+
+
+def test_an_update_request_is_installed_and_reported(req):
+    req.poll("update")
+
+    result = _script(req, "requests")
+
+    assert result.returncode == 0, result.stderr
+    states = [r["state"] for r in req.reports()]
+    assert states == ["pulling", "done"]
+    assert req.reports()[-1]["message"] == "Updated to version 1.1.0." and req.reports()[-1]["current_version"] == "1.1.0"
+    assert "up -d --no-build --pull never" in req.log.read_text()
+
+
+def test_an_update_request_with_nothing_newer_reports_done_without_restarting(req):
+    req.poll("update")
+    (req.state / "pull_id").write_text("sha256:old")
+
+    _script(req, "requests")
+
+    assert [r["state"] for r in req.reports()] == ["pulling", "done"]
+    assert "up -d" not in req.log.read_text()
+
+
+def test_a_failed_update_is_reported_failed(req):
+    req.poll("update")
+    (req.state / "pull_fail").touch()
+
+    _script(req, "requests")
+
+    last = req.reports()[-1]
+    assert last["state"] == "failed" and "download did not finish" in last["message"]
+
+
+def test_a_check_request_pulls_and_reports_what_is_available_but_installs_nothing(req):
+    req.poll("check")
+
+    _script(req, "requests")
+
+    assert [r["state"] for r in req.reports()] == ["checking", "done"]
+    last = req.reports()[-1]
+    assert last["available_version"] == "1.1.0" and last["current_version"] == "1.0.0"
+    assert (req.state / "id").read_text().strip() == "sha256:old"   # the running image is back under the tag
+    assert "up -d" not in req.log.read_text()
+
+
+def test_a_check_with_nothing_newer_says_so(req):
+    req.poll("check")
+    (req.state / "pull_id").write_text("sha256:old")
+
+    _script(req, "requests")
+
+    last = req.reports()[-1]
+    assert last["state"] == "done" and last["available_version"] is None
+
+
+def test_a_backup_request_asks_the_provisioner_for_a_full_backup(req):
+    req.poll("backup")
+
+    _script(req, "requests")
+
+    assert [r["state"] for r in req.reports()] == ["backing-up", "done"]
+    assert req.reports()[-1]["message"] == "instance backup written: /backups/instance/x.zip"
+    log = req.log.read_text()
+    assert "instance:backup --requested" in log and "pull" not in log
+
+
+def test_a_failed_backup_is_reported_failed(req):
+    req.poll("backup")
+    (req.state / "backup_fail").touch()
+
+    _script(req, "requests")
+
+    last = req.reports()[-1]
+    assert last["state"] == "failed" and "provisioner is busy" in last["message"]

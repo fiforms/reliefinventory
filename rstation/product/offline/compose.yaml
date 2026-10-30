@@ -28,6 +28,8 @@ x-app: &app
     QUEUE_CONNECTION: database
     CACHE_STORE: database
     RI_BACKUP_ENABLED: "true"
+    # Lets the app ask this device to check for, install or back up (slide-announcer-local-server `requests`).
+    RI_UPDATE_SECRET: ${RI_UPDATE_SECRET}
     # Every role shares /backups (below), as in docker/compose.yaml: the web container's pre-migration backup (the
     # entrypoint refuses to migrate without one), backups made from Updates & Backups in the app, and the scheduler's nightly dump.
     RI_BACKUP_DIR: /backups

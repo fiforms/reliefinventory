@@ -12,6 +12,10 @@ class Home(BaseModel):
     enabled: bool
 
 
+class Channel(BaseModel):
+    channel: str = Field(max_length=16)
+
+
 class Site(BaseModel):
     url: str = Field(max_length=2048)
     verify: bool = True
@@ -48,6 +52,14 @@ def build_router(server: LocalServer | None = None) -> APIRouter:
     @router.post("/api/local/local-server/update")
     async def update():
         return await act("update")
+
+    @router.post("/api/local/local-server/channel")
+    async def channel(body: Channel):
+        try:
+            server.set_channel(body.channel)
+        except LocalServerError as exc:
+            raise HTTPException(exc.status, str(exc))
+        return await server.status()
 
     @router.post("/api/local/local-server/home")
     async def home(body: Home):

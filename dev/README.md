@@ -9,6 +9,7 @@ conventions an agent must always have loaded and points back here.
 | Find the code for a feature | [CODE_MAP.md](CODE_MAP.md) |
 | Build and run from source; update a bare-metal install by hand | [BUILDING.md](BUILDING.md) |
 | Run tests; the disposable test database | [TESTING.md](TESTING.md) |
+| Cut a release (version, tag, Docker image, desktop apps, R Station image) | [RELEASE.md](RELEASE.md) |
 | Look up a table or column | [SCHEMA.md](SCHEMA.md) (generated) |
 | Change the schema | Add a migration, then run `dev/scripts/schema-doc.sh` and commit `SCHEMA.md` with it |
 | Back up / restore | [notes/BACKUPS.md](notes/BACKUPS.md) |

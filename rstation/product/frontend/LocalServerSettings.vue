@@ -156,6 +156,14 @@ onUnmounted(() => clearInterval(timer))
     <section v-if="info?.available" class="tile panel">
       <div class="panel-title"><h2>{{ t('settings.localServer.updateTitle') }}</h2></div>
       <p class="hint">{{ t('settings.localServer.updateHint') }}</p>
+      <label class="channel">
+        <span>{{ t('settings.localServer.channelLabel') }}</span>
+        <select :value="info.channel" :disabled="working || info.update_busy" @change="act('channel', { channel: $event.target.value })">
+          <option value="latest">{{ t('settings.localServer.channelLatest') }}</option>
+          <option value="edge">{{ t('settings.localServer.channelEdge') }}</option>
+        </select>
+      </label>
+      <p class="hint">{{ t('settings.localServer.channelHint') }}</p>
       <p v-if="update" class="update-state">
         <span class="pill" :class="updatePill">{{ t(`settings.localServer.updatePhase.${update.phase}`) }}</span>
         <span class="hint">{{ update.message }}</span>
@@ -281,6 +289,13 @@ onUnmounted(() => clearInterval(timer))
 }
 .head .hint {
   margin: 0;
+}
+.channel {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.8rem;
+  margin: 0 0 0.6rem;
 }
 .actions {
   display: flex;

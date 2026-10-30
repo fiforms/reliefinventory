@@ -17,7 +17,8 @@ use ri_launcher_core::remote::client::ServerKind;
 use ri_launcher_core::remote::{Options as RemoteOptions, Paired, RemoteBackups, ServerView};
 use ri_launcher_core::sdimage::{self, ImageInfo};
 use ri_launcher_core::service::{Launcher, Summary};
-use ri_launcher_core::settings::{Mode, Settings};
+use ri_launcher_core::settings::{Channel, Mode, Settings};
+use ri_launcher_core::updater::Checked;
 use ri_launcher_core::status::{self, InstallStatus};
 use ri_launcher_core::DefaultBackend;
 use tauri::menu::{Menu, MenuItem};
@@ -164,7 +165,7 @@ fn get_settings(state: State<'_, AppState>) -> Settings {
     state.launcher.settings()
 }
 
-/// `mode` is "lan" or "local"; the other fields are applied as given (None clears hostname/timezone).
+/// `mode` is "lan" or "local"; the other fields are applied as given (None clears hostname/timezone); `channel` is "latest" or "edge".
 #[tauri::command]
 async fn apply_settings(
     state: State<'_, AppState>,
@@ -172,6 +173,7 @@ async fn apply_settings(
     hostname: Option<String>,
     port: u16,
     timezone: Option<String>,
+    channel: String,
 ) -> Result<(), String> {
     let norm = |s: Option<String>| s.map(|v| v.trim().to_string()).filter(|v| !v.is_empty());
     let settings = Settings {
@@ -183,6 +185,11 @@ async fn apply_settings(
         hostname: norm(hostname),
         port,
         timezone: norm(timezone),
+        channel: match channel.as_str() {
+            "latest" => Channel::Latest,
+            "edge" => Channel::Edge,
+            _ => return Err("Unknown channel".into()),
+        },
     };
     state.launcher.apply(settings).await.map_err(err)
 }
@@ -214,8 +221,8 @@ async fn backups_list(state: State<'_, AppState>) -> Result<Vec<BackupFile>, Str
 }
 
 #[tauri::command]
-async fn backup_create(state: State<'_, AppState>, scope: String) -> Result<(), String> {
-    backups::create_now(state.launcher.platform().as_ref(), &scope).await.map_err(err)
+async fn backup_create(state: State<'_, AppState>) -> Result<backups::BackupMade, String> {
+    backups::backup_now(state.launcher.platform().as_ref()).await.map_err(err)
 }
 
 /// Copies one backup to Documents/Relief Inventory Backups as a read-only file and shows it in the file manager.
@@ -235,9 +242,41 @@ async fn backup_export(app: AppHandle, state: State<'_, AppState>, name: String)
     Ok(saved.to_string_lossy().into_owned())
 }
 
+fn backups_folder(app: &AppHandle) -> Result<std::path::PathBuf, String> {
+    Ok(app.path().document_dir().or_else(|_| app.path().home_dir()).map_err(err)?.join("Relief Inventory Backups"))
+}
+
+/// Copies every backup (including the whole-instance ones) to Documents/Relief Inventory Backups, skipping ones already
+/// there, and shows the folder. Returns "<n> copied, <m> already there".
 #[tauri::command]
-async fn backup_import(state: State<'_, AppState>, path: String) -> Result<(), String> {
-    backups::import(state.launcher.platform().as_ref(), std::path::Path::new(&path)).await.map_err(err)
+async fn backup_export_all(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
+    let dest = backups_folder(&app)?;
+    std::fs::create_dir_all(&dest).map_err(err)?;
+    let r = backups::export_all(state.launcher.platform().as_ref(), &dest).await.map_err(err)?;
+    let _ = app.opener().open_path(dest.to_string_lossy(), None::<&str>);
+    let mut msg = format!("{} copied, {} already in the folder.", r.copied, r.already_there);
+    if r.failed > 0 {
+        msg.push_str(&format!(" {} could not be copied.", r.failed));
+    }
+    Ok(msg)
+}
+
+/// Opens the folder that "Save a copy" and "Save all" write to.
+#[tauri::command]
+fn backup_open_folder(app: AppHandle) -> Result<(), String> {
+    let dest = backups_folder(&app)?;
+    std::fs::create_dir_all(&dest).map_err(err)?;
+    app.opener().open_path(dest.to_string_lossy(), None::<&str>).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+async fn check_update(state: State<'_, AppState>) -> Result<Checked, String> {
+    state.launcher.check_update().await.map_err(err)
+}
+
+#[tauri::command]
+async fn install_update(state: State<'_, AppState>) -> Result<Checked, String> {
+    state.launcher.install_update().await.map_err(err)
 }
 
 // ---- Remote backups: servers this computer is paired with (federation backup trust) ----
@@ -394,8 +433,9 @@ fn set_autostart(app: AppHandle, enabled: bool) -> Result<bool, String> {
 }
 
 #[tauri::command]
-fn app_version(app: AppHandle) -> String {
-    app.package_info().version.to_string()
+fn app_version() -> String {
+    // the release tag, or the commit hash for an untagged build (build.rs); the package version is only a number for installers
+    env!("RI_BUILD_VERSION").to_string()
 }
 
 /// On a Mac the launcher is a menu-bar app while its window is hidden (no Dock icon for a window that
@@ -498,7 +538,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             get_summary, get_install_status, start_install, get_preflight, dismiss_install_status, start, stop, update, uninstall,
             get_settings, apply_settings, shareable_link, open_app, open_terminal, backups_list, backup_create, backup_export,
-            backup_import, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
+            backup_export_all, backup_open_folder, check_update, install_update, restart_computer, get_autostart, set_autostart, app_version, image_info, image_download_status,
             image_download_start, image_download_cancel, image_write, image_reveal, open_tool_page, remote_list, remote_pair,
             remote_configure, remote_backup_now, remote_remove, remote_reveal
         ])
@@ -517,6 +557,8 @@ fn main() {
             let remote = RemoteBackups::new(&data_dir()).map_err(|e| format!("could not set up remote backups: {e}"))?;
             // scheduled backups of paired remote servers run for as long as the launcher does (it lives in the tray)
             tauri::async_runtime::spawn(remote.clone().run_forever());
+            // ...and so does the answer to the app's own update, check and backup requests (Updates & Backups page)
+            tauri::async_runtime::spawn(launcher.clone().serve_update_requests());
             app.manage(AppState { launcher: launcher.clone(), remote, image: Arc::default(), image_cancel: Arc::default() });
 
             let open = MenuItem::with_id(app, "open_app", "Open Relief Inventory", true, None::<&str>)?;

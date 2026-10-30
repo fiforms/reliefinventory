@@ -4,7 +4,7 @@ use ri_launcher_core::platform::{InstallOutcome, Platform};
 use ri_launcher_core::remote::client::ServerKind;
 use ri_launcher_core::remote::RemoteBackups;
 use ri_launcher_core::service::Launcher;
-use ri_launcher_core::settings::Mode;
+use ri_launcher_core::settings::{Channel, Mode};
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -48,6 +48,8 @@ enum Cmd {
     SetHost { name: Option<String> },
     SetPort { port: u16 },
     SetTimezone { zone: Option<String> },
+    /// "latest" follows official releases; "edge" is newer, unreleased software for developers and testers
+    SetChannel { channel: String },
     /// Print the link to send to others on the network
     Link,
     Backups {
@@ -136,12 +138,10 @@ enum ImageCmd {
 #[derive(Subcommand)]
 enum BackupCmd {
     List,
-    /// scope: database (default) or full
+    /// scope: instance (default, the whole instance), or database / full for the app's own warehouse only
     Create { scope: Option<String> },
     /// Copy a backup (by file name) out as a read-only file
     Export { name: String, dest: Option<PathBuf> },
-    /// Restore from a backup zip on disk (takes a safety backup first)
-    Import { file: PathBuf },
 }
 
 fn data_dir(cli: &Cli) -> PathBuf {
@@ -202,7 +202,7 @@ async fn main() {
     tracing_subscriber::fmt().with_env_filter(tracing_subscriber::EnvFilter::from_default_env()).init();
     let cli = Cli::parse();
     let dir = data_dir(&cli);
-    let launcher = Launcher::new(Arc::new(backend(&dir)), dir.clone());
+    let launcher = Arc::new(Launcher::new(Arc::new(backend(&dir)), dir.clone()));
 
     match cli.command {
         Cmd::Status => println!("{}", serde_json::to_string_pretty(&launcher.summary().await).unwrap()),
@@ -224,6 +224,8 @@ async fn main() {
             println!("Press Ctrl+C to stop.");
             // scheduled backups from paired remote servers run for as long as the launcher does
             tokio::spawn(die(RemoteBackups::new(&dir)).run_forever());
+            // ...and so does the answer to the app's own update, check and backup requests (Updates & Backups page)
+            tokio::spawn(launcher.clone().serve_update_requests());
             let mut last = launcher.settings();
             loop {
                 tokio::select! {
@@ -268,6 +270,15 @@ async fn main() {
             s.timezone = zone;
             die(launcher.apply(s).await);
         }
+        Cmd::SetChannel { channel } => {
+            let mut s = launcher.settings();
+            s.channel = match channel.as_str() {
+                "latest" => Channel::Latest,
+                "edge" => Channel::Edge,
+                _ => die(Err("channel must be \"latest\" or \"edge\"")),
+            };
+            die(launcher.apply(s).await);
+        }
         Cmd::Link => println!("{}", die(launcher.shareable_link())),
         Cmd::Image { action } => image_command(&dir, action).await,
         Cmd::Remote { action } => remote_command(&dir, action).await,
@@ -279,14 +290,19 @@ async fn main() {
                         println!("{}\t{} bytes\t{}", b.name, b.size, b.modified);
                     }
                 }
-                BackupCmd::Create { scope } => die(backups::create_now(p.as_ref(), scope.as_deref().unwrap_or("database")).await),
+                BackupCmd::Create { scope: Some(scope) } => die(backups::create_now(p.as_ref(), &scope).await),
+                BackupCmd::Create { scope: None } => {
+                    let made = die(backups::backup_now(p.as_ref()).await);
+                    if let Some(why) = made.note {
+                        eprintln!("A whole-instance backup wasn't possible ({why}); backed up the app's own database instead.");
+                    }
+                }
                 BackupCmd::Export { name, dest } => {
                     let all = die(backups::list(p.as_ref()).await);
                     let Some(b) = all.iter().find(|b| b.name == name) else { die(Err::<(), _>(format!("no backup named {name}"))) ; return };
                     let dest = dest.unwrap_or_else(|| dirs::document_dir().unwrap_or_default().join("Relief Inventory Backups"));
                     println!("{}", die(backups::export(p.as_ref(), b, &dest).await).display());
                 }
-                BackupCmd::Import { file } => die(backups::import(p.as_ref(), &file).await),
             }
         }
     }

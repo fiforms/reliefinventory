@@ -19,6 +19,7 @@ pub mod sdimage;
 pub mod service;
 pub mod settings;
 pub mod status;
+pub mod updater;
 pub mod wsl;
 
 use std::path::{Path, PathBuf};

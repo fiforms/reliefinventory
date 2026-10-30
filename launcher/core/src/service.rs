@@ -3,7 +3,8 @@ use crate::network::{self, Machine};
 use crate::platform::{fail, InstallOutcome, Platform, PlatformError, Preflight, Result, State, INTERNAL_PORT};
 use crate::status::{self, InstallStatus};
 use crate::proxy;
-use crate::settings::{self, Mode, Settings};
+use crate::settings::{self, Channel, Mode, Settings};
+use crate::updater;
 use serde::Serialize;
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -21,6 +22,7 @@ pub struct Summary {
     pub default_hostname: String,
     pub port: u16,
     pub timezone: Option<String>,
+    pub channel: Channel,
     /// The address people open on this computer.
     pub url: String,
     /// What to send to others on the network (empty in local-only mode).
@@ -63,7 +65,53 @@ impl<P: Platform + 'static> Launcher<P> {
     }
 
     pub fn compose_for(&self, settings: &Settings, machine: &Machine) -> Result<String> {
-        compose::render_for(compose::TEMPLATE, settings, machine, &self.platform.stack_options()).map_err(|e| PlatformError::Failed(e.to_string()))
+        let mut opts = self.platform.stack_options();
+        // the shared secret that lets the update service (`updater.rs`) answer the app's update and backup requests
+        opts.update_secret = Some(updater::load_or_create_secret(&self.dir).map_err(io)?);
+        compose::render_for(compose::TEMPLATE, settings, machine, &opts).map_err(|e| PlatformError::Failed(e.to_string()))
+    }
+
+    fn update_service(&self) -> Result<updater::UpdateService<P>> {
+        let secret = updater::load_or_create_secret(&self.dir).map_err(io)?;
+        Ok(updater::UpdateService::new(self.platform.clone(), Arc::new(updater::HttpApi::new(secret))))
+    }
+
+    /// Download the newest image for the chosen channel and say whether it is newer than the one running. Nothing restarts.
+    pub async fn check_update(&self) -> Result<updater::Checked> {
+        if self.platform.state().await? != State::Running {
+            return fail("Start Relief Inventory first; updates are checked while it is running.");
+        }
+        self.update_service()?.check(self.settings().channel).await
+    }
+
+    /// Check, and install only if what was downloaded is newer (the rules of `updater`: never backwards). Returns what was found;
+    /// `newer` true means the app was restarted onto it.
+    pub async fn install_update(&self) -> Result<updater::Checked> {
+        let service = self.update_service()?;
+        let found = self.check_update().await?;
+        if found.newer {
+            service.restart_onto_pulled().await?;
+        }
+        Ok(found)
+    }
+
+    /// Answer the app's update, check and backup requests for as long as this process lives (see `updater`). It only
+    /// acts while the stack is running; the channel is read from the settings every time, so a change applies at once.
+    pub async fn serve_update_requests(self: Arc<Self>) {
+        let secret = match updater::load_or_create_secret(&self.dir) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::warn!("update service not started: {e}");
+                return;
+            }
+        };
+        let service = updater::UpdateService::new(self.platform.clone(), Arc::new(updater::HttpApi::new(secret)));
+        loop {
+            if self.platform.state().await.ok() == Some(State::Running) {
+                service.poll_once(self.settings().channel).await;
+            }
+            tokio::time::sleep(updater::POLL_EVERY).await;
+        }
     }
 
     async fn proxy_running(&self) -> bool {
@@ -80,6 +128,7 @@ impl<P: Platform + 'static> Launcher<P> {
             default_hostname: m.default_hostname(),
             port: s.port,
             timezone: s.timezone.clone(),
+            channel: s.channel,
             url: network::app_url(&s, &m),
             share_urls: network::share_urls(&s, &m),
             os: std::env::consts::OS,
@@ -188,7 +237,12 @@ impl<P: Platform + 'static> Launcher<P> {
             let m = Machine::detect();
             let compose = self.compose_for(&new, &m)?;
             if compose != self.compose_for(&old, &m)? {
-                self.platform.start(&compose).await?;
+                if new.channel != old.channel {
+                    // a different tag: download it rather than reuse a stale local copy
+                    self.platform.update(&compose).await?;
+                } else {
+                    self.platform.start(&compose).await?;
+                }
             }
             // only move a proxy this process owns; another process's (`ri-launcher run`) notices through
             // `follow_settings`

@@ -13,14 +13,14 @@ const autostart = ref(null)
 const version = ref('')
 const busy = ref('') // what is running right now ('' = nothing); disables the buttons that would collide
 const msg = ref(null) // { kind: 'ok' | 'bad', text }
-const confirming = ref('') // 'uninstall' | 'restore' | ''
+const confirming = ref('') // 'uninstall' | ''
 const keepData = ref(true)
 const blocked = ref(null) // why this computer can't be installed on yet (plain words), or null
-const restoreFile = ref('')
-const understood = ref(false) // the person ticked the pre-install notice (Install stays disabled until they do)
+const understood = ref(false) // the person ticked the pre-install notice (Continue stays disabled until they do)
+const showNotice = ref(false) // the pre-install notice, shown as a pop-up when Install is clicked
 const mockTab = new URLSearchParams(location.search).get('mock') || ''
 const tab = ref(mockTab.startsWith('image') ? 'image' : mockTab.startsWith('remote') ? 'remote' : 'app') // 'app' | 'backups' | 'remote' | 'image'
-const form = reactive({ hostname: '', port: 8080, timezone: '' })
+const form = reactive({ hostname: '', port: 8080, timezone: '', channel: 'latest' })
 let formLoaded = false
 let timer
 
@@ -33,7 +33,7 @@ async function refresh() {
         install.value = await api.getInstallStatus()
         if (!formLoaded) {
             const s = await api.getSettings()
-            Object.assign(form, { hostname: s.hostname || '', port: s.port, timezone: s.timezone || '' })
+            Object.assign(form, { hostname: s.hostname || '', port: s.port, timezone: s.timezone || '', channel: s.channel || 'latest' })
             formLoaded = true
         }
         if (summary.value.state === 'running' && !busy.value) backups.value = await api.backupsList().catch(() => backups.value)
@@ -57,8 +57,17 @@ onMounted(async () => {
     api.onTrayError(fail)
     version.value = await api.appVersion()
     api.getAutostart().then((v) => (autostart.value = v)).catch(() => {})
-    refresh()
+    await refresh()
+    await pickStartTab()
 })
+
+// Open on Local RI Server, unless it isn't installed on this computer and Remote Backups has servers paired: then that is the tab with something to show.
+// Only at startup, and never over a tab the person already chose (or a ?mock= tab).
+async function pickStartTab() {
+    if (mockTab || tab.value !== 'app' || state.value !== 'not_installed') return
+    const paired = await api.remoteList().catch(() => [])
+    if (paired.length && tab.value === 'app') tab.value = 'remote'
+}
 onBeforeUnmount(() => clearTimeout(timer))
 
 const state = computed(() => summary.value?.state)
@@ -99,11 +108,37 @@ async function run(label, fn, okText) {
     }
 }
 
-const doInstall = () => run('install', async () => { await api.startInstall() }) // progress then arrives via the status file
+const startInstall = () => (understood.value ? doInstall() : (showNotice.value = true))
+const cancelNotice = () => {
+    showNotice.value = false
+    understood.value = false
+}
+const continueInstall = () => {
+    showNotice.value = false
+    doInstall()
+}
+// The advanced options (channel, port, timezone) are saved first, because the install reads the saved settings. Progress then arrives via the status file.
+const doInstall = () => run('install', async () => {
+    await api.applySettings({ mode: summary.value.mode, hostname: form.hostname, port: Number(form.port), timezone: form.timezone, channel: form.channel })
+    await api.startInstall()
+})
 const doStart = () => run('start', api.start)
 const doStop = () => run('stop', api.stop)
-const doUpdate = () => run('update', api.update, 'Updated. Relief Inventory restarted with the latest version.')
-const doBackup = () => run('backup', () => api.backupCreate('database'), 'Backup created.')
+async function doUpdate() {
+    await run('update', async () => {
+        const r = await api.installUpdate()
+        const v = r.version ? ` ${r.version}` : ''
+        if (r.newer) note('ok', `Updated${v}. Relief Inventory restarted with the newest version.`)
+        else note('ok', `Relief Inventory is already running the newest version${r.running_version ? ` (${r.running_version})` : ''}.`)
+    })
+}
+async function doBackup() {
+    await run('backup', async () => {
+        const made = await api.backupCreate()
+        if (made.instance) note('ok', 'Whole-instance backup created. "Save all to this computer" copies it out.')
+        else note('ok', `Backed up the app's own database only; a whole-instance backup wasn't possible (${made.note}).`)
+    })
+}
 
 async function doUninstall() {
     confirming.value = ''
@@ -114,11 +149,11 @@ async function doUninstall() {
 
 async function setMode(e) {
     const mode = e.target.checked ? 'lan' : 'local'
-    await run('settings', () => api.applySettings({ mode, hostname: form.hostname, port: form.port, timezone: form.timezone }))
+    await run('settings', () => api.applySettings({ mode, hostname: form.hostname, port: form.port, timezone: form.timezone, channel: form.channel }))
 }
 
 const saveSettings = () =>
-    run('settings', () => api.applySettings({ mode: summary.value.mode, hostname: form.hostname, port: Number(form.port), timezone: form.timezone }), 'Settings saved.')
+    run('settings', () => api.applySettings({ mode: summary.value.mode, hostname: form.hostname, port: Number(form.port), timezone: form.timezone, channel: form.channel }), 'Settings saved.')
 
 async function resetName() {
     form.hostname = ''
@@ -149,18 +184,9 @@ async function saveCopy(b) {
     })
 }
 
-async function chooseRestore() {
-    const f = await api.pickBackupFile().catch(fail)
-    if (f) {
-        restoreFile.value = f
-        confirming.value = 'restore'
-    }
-}
-
-async function doRestore() {
-    confirming.value = ''
-    await run('restore', () => api.backupImport(restoreFile.value), 'Restored from the backup file. A safety backup of what was here before was made first.')
-}
+const showAll = ref(false)
+const saveAll = () => run('export', async () => note('ok', await api.backupExportAll()))
+const openFolder = () => api.backupOpenFolder().catch(fail)
 
 async function toggleAutostart() {
     try { autostart.value = await api.setAutostart(!autostart.value) } catch (e) { fail(e) }
@@ -185,9 +211,9 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 
         <nav class="tabs" role="tablist">
             <button role="tab" :aria-selected="tab === 'app'" :class="{ on: tab === 'app' }" @click="tab = 'app'">Local RI Server</button>
-            <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Backups</button>
-            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote backups</button>
-            <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image' }" @click="tab = 'image'">R Station SD card</button>
+            <button role="tab" :aria-selected="tab === 'remote'" :class="{ on: tab === 'remote' }" @click="tab = 'remote'">Remote Backups</button>
+            <button role="tab" :aria-selected="tab === 'backups'" :class="{ on: tab === 'backups' }" @click="tab = 'backups'">Local Backups</button>
+            <button role="tab" :aria-selected="tab === 'image'" :class="{ on: tab === 'image'}" @click="tab = 'image'">R Station</button>
         </nav>
 
         <RStationImage v-if="tab === 'image'" @note="note" />
@@ -195,11 +221,12 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
 
         <!-- Backups tab -->
         <section v-if="tab === 'backups'" class="card">
-            <div class="who">
-                <h2>Backups</h2>
-                <div class="btns">
-                    <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Back up now</button>
-                    <button class="quiet" @click="chooseRestore" :disabled="!!busy || state !== 'running'">Restore from file…</button>
+            <div class="who stack">
+                <h2>Local Backups</h2>
+                <div class="btns grid2">
+                    <button class="quiet" @click="doBackup" :disabled="!!busy || state !== 'running'">Backup now</button>
+                    <button class="quiet" @click="saveAll" :disabled="!!busy || state !== 'running'" title="Copy every backup (including whole-instance ones) to your Documents folder">Save all to this computer</button>
+                    <button class="quiet" @click="openFolder" :disabled="!!busy" title="Open the folder that saved copies go to">Open saved copies</button>
                 </div>
             </div>
             <div class="statusline">
@@ -207,12 +234,12 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                 <span v-if="state !== 'not_installed'" class="pill" :class="state === 'running' ? 'ok' : 'off'">{{ state === 'running' ? 'Running' : 'Stopped' }}</span>
             </div>
             <template v-if="state === 'not_installed'">
-                <p class="muted">Relief Inventory isn't installed on this computer, so there is nothing to back up here. You can still restore a backup after installing it.</p>
+                <p class="muted">Relief Inventory isn't installed on this computer, so there is nothing to back up here.</p>
                 <div class="actions"><button @click="tab = 'app'">Go to Local RI Server</button></div>
             </template>
             <p v-else-if="state !== 'running'" class="muted">Start Relief Inventory (on the Local RI Server tab) to see and make backups.</p>
             <ul v-else-if="backups.length" class="rows">
-                <li v-for="b in backups.slice(0, 8)" :key="b.path">
+                <li v-for="b in (showAll ? backups : backups.slice(0, 8))" :key="b.path">
                     <div class="grow">
                         <div class="name small">{{ b.name }}</div>
                         <div class="muted small">{{ when(b.modified) }} · {{ size(b.size) }}</div>
@@ -220,20 +247,12 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                     <button class="quiet" @click="saveCopy(b)" :disabled="!!busy" title="Copy this backup to your Documents folder as a read-only file">Save a copy</button>
                 </li>
             </ul>
-            <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Back up now</strong> makes one immediately.</p>
+            <p v-else class="muted">No backups yet. Relief Inventory makes one every day; <strong>Backup now</strong> makes one immediately.</p>
+            <p v-if="state === 'running' && backups.length > 8" class="small"><button class="quiet" @click="showAll = !showAll">{{ showAll ? 'Show fewer' : `Show all ${backups.length} backups` }}</button></p>
             <p v-if="state !== 'not_installed'" class="muted small foot">
-                "Save a copy" puts a read-only file in Documents\Relief Inventory Backups. Keep copies somewhere other than this computer too.
-                Restoring replaces everything currently in Relief Inventory.
+                "Save a copy" and "Save all to this computer" put read-only files in Documents\Relief Inventory Backups (whole-instance backups included); "Open saved copies" opens that folder. Keep copies somewhere other than this computer too.
             </p>
-            <div v-if="confirming === 'restore'" class="banner bad" role="alertdialog">
-                <p><strong>Replace everything with this backup?</strong><br />{{ restoreFile }}</p>
-                <p class="small">A safety backup of the current data is made first. Relief Inventory is unavailable for a few minutes while it restores.</p>
-                <div class="actions">
-                    <button class="danger" @click="doRestore">Yes, restore</button>
-                    <button @click="confirming = ''">Cancel</button>
-                </div>
-            </div>
-        </section>
+</section>
 
 
         <template v-if="tab === 'app'">
@@ -258,19 +277,20 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
             <template v-else>
                 <h2>Install Relief Inventory</h2>
                 <p class="muted" v-if="linux">
-                    This uses Docker on this computer. It downloads Relief Inventory (roughly 1 GB) and takes a few minutes. It does not
+                    This uses Docker on this computer. It is a large download and can take several minutes. It does not
                     need administrator permission, but Docker has to be installed and running.
                 </p>
                 <p class="muted" v-else-if="mac">
                     This sets up everything on this Mac: a small Linux virtual machine, Docker Engine and Relief Inventory itself. It
-                    downloads roughly 1 GB and takes 10–20 minutes. It doesn't need an administrator password or a restart.
+                    is a large download and can take several minutes (10–20 is typical). It doesn't need an administrator password or a restart.
                 </p>
                 <p class="muted" v-else>
                     This sets up everything on this computer: a small Linux layer, Docker Engine and Relief Inventory itself. It
-                    downloads roughly 1 GB, takes 10–20 minutes, and asks for administrator permission. Windows may need to restart once.
+                    is a large download, can take several minutes (10–20 is typical), and asks for administrator permission. Windows may need to restart once.
                 </p>
-                <div class="banner bad notice" role="note">
-                    <p><strong>Before you install: what this is for</strong></p>
+                <div v-if="showNotice" class="modal-backdrop" @click.self="cancelNotice" @keydown.esc="cancelNotice">
+                  <div class="modal banner bad notice" role="alertdialog" aria-modal="true" aria-labelledby="notice-title">
+                    <p id="notice-title"><strong>Before you install: what this is for</strong></p>
                     <p>
                         This installs a complete copy of Relief Inventory <strong>on this computer</strong>. The software is normally
                         designed to run on a web server in the cloud. Running it here does <strong>not</strong> provide HTTPS security,
@@ -288,14 +308,40 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                         <input type="checkbox" v-model="understood" />
                         I understand, and no other live instance is being used for this warehouse.
                     </label>
+                    <div class="actions">
+                        <button class="primary" @click="continueInstall" :disabled="!understood || !!busy">Continue</button>
+                        <button @click="cancelNotice">Cancel</button>
+                    </div>
+                  </div>
                 </div>
+                <details>
+                    <summary>Advanced options</summary>
+                    <div class="adv">
+                        <label>Software channel
+                            <select v-model="form.channel">
+                                <option value="latest">Latest (official releases)</option>
+                                <option value="edge">Edge (newer, for developers and testers)</option>
+                            </select>
+                        </label>
+                        <p class="muted small"><strong>Latest</strong> follows official software releases. <strong>Edge</strong> gives newer, unreleased software for developers and software testers; don't use it with real data.</p>
+                        <div class="grid2">
+                            <label>Port
+                                <input v-model.number="form.port" inputmode="numeric" />
+                            </label>
+                            <label>Timezone
+                                <input v-model="form.timezone" placeholder="America/New_York" autocomplete="off" spellcheck="false" />
+                            </label>
+                        </div>
+                        <p class="muted small">Port is the number after the colon in the address (default 8080). Timezone is a name like America/New_York; empty uses the app's default (UTC). These are saved when you install.</p>
+                    </div>
+                </details>
                 <div v-if="blocked" class="banner bad" role="alert">
                     <p class="pre">{{ blocked }}</p>
                     <button type="button" @click="checkAgain" :disabled="!!busy">Check again</button>
                 </div>
                 <p v-if="installError" class="banner bad" role="alert">{{ installError }}</p>
                 <div class="actions">
-                    <button class="primary" @click="doInstall" :disabled="!!busy || !!blocked || !understood">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
+                    <button class="primary" @click="startInstall" :disabled="!!busy || !!blocked">{{ installError ? 'Try again' : 'Install Relief Inventory' }}</button>
                 </div>
             </template>
         </section>
@@ -432,6 +478,13 @@ const alternates = computed(() => (summary.value?.share_urls || []).slice(1))
                             <input v-model="form.timezone" placeholder="America/New_York" autocomplete="off" spellcheck="false" />
                         </label>
                     </div>
+                    <label>Software channel
+                        <select v-model="form.channel">
+                            <option value="latest">Latest (official releases)</option>
+                            <option value="edge">Edge (newer, for developers and testers)</option>
+                        </select>
+                    </label>
+                    <p class="muted small"><strong>Latest</strong> follows official software releases. <strong>Edge</strong> gives newer, unreleased software for developers and software testers; don't use it with real data. Changing the channel downloads that version and restarts Relief Inventory; going back from Edge to Latest may be refused if Edge already updated the database.</p>
                     <p class="muted small">Port is the number after the colon in the address (default 8080). Timezone is a name like America/New_York; empty uses the app's default (UTC). Changing these restarts Relief Inventory briefly.</p>
                     <div class="actions"><button :disabled="!!busy">Save</button></div>
                 </form>
@@ -467,6 +520,11 @@ h2 { font-size: 15px; margin: 0 0 10px; }
 .grow { flex: 1; min-width: 0; }
 .btns { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
 .btns button { white-space: nowrap; }
+.who.stack { flex-direction: column; align-items: stretch; }
+.adv { padding-top: 6px; }
+.btns.grid2 { display: grid; grid-template-columns: 1fr 1fr; justify-content: stretch; }
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 10; }
+.modal { max-width: 520px; max-height: 90vh; overflow: auto; margin: 0; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4); }
 .rows { list-style: none; margin: 8px 0 0; padding: 0; }
 .rows li { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
 .rows li:first-child { border-top: 0; }
@@ -489,7 +547,7 @@ form { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
 label { display: flex; flex-direction: column; gap: 4px; font-weight: 600; font-size: 14px; }
 label.switch { flex-direction: row; }
 label.check-row { flex-direction: row; align-items: center; gap: 8px; font-weight: 400; margin: 6px 0; }
-input:not([type=checkbox]) { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 400; }
+input:not([type=checkbox]), select { padding: 9px 11px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); font-weight: 400; }
 input:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
 button { padding: 9px 16px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); cursor: pointer; }

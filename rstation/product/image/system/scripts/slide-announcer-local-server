@@ -10,7 +10,9 @@
 #   enable   start-at-boot flag on, start the supervisor        (…-local-server-enable.service)
 #   disable  flag off, stop the supervisor and so Docker        (…-local-server-disable.service)
 #   reset    erase all server data, keeping the images           (…-local-server-reset.service)
-#   update   pull the newest :latest image and restart onto it  (…-local-server-update.service)
+#   update   pull the newest image of the chosen channel and restart onto it  (…-local-server-update.service)
+#   check    pull the newest image of the chosen channel and say whether it is newer; installs nothing
+#   requests answer one waiting request from the app (see "Requests from the app" below); run by `run` every ~30 s
 #   status   print the status file
 #
 # The Settings > Local server page (backend/local_server.py) only ever starts those units, so the
@@ -28,6 +30,12 @@
 # higher than what is installed there, and an update only installs a pulled image whose version is higher
 # than what is running — so neither path can ever step backwards.
 #
+# Channels: $DATA/state/channel (written by the Settings page) is "latest" (official releases, the default) or "edge"
+# (newer unreleased builds, for developers and testers). The image always runs under the one local tag
+# (RI_APP_IMAGE); an update pulls the channel's tag from the registry and retags it. Edge images carry no release
+# number, so on edge the "newer version only" rule becomes "a different image", and a baked-in build never
+# replaces an installed edge image.
+#
 # RI_LOCAL_* and the binary variables exist for tests only.
 set -uo pipefail
 
@@ -44,6 +52,13 @@ FLAG="$DATA/enabled"
 STATUS="$RUN/status.json"
 UPDATE_STATUS="$DATA/state/update.json"   # last/current update: phase, message, from, to (read by the Settings page)
 UPDATE_LOCK="$RUN/update.lock"
+UPDATE_UNIT=slide-announcer-local-server-update.service
+SELF="$(readlink -f "$0")"
+SECRET_FILE="$DATA/state/update-secret"   # RI_UPDATE_SECRET: what lets this script answer the app's update/backup requests
+REPORT_RETRY_SECONDS="${RI_LOCAL_REPORT_RETRY_SECONDS:-600}"   # the app is down while it restarts: keep trying to say how it went
+REPORT_SLEEP="${RI_LOCAL_REPORT_SLEEP:-5}"
+REQUEST_EVERY_TICKS="${RI_LOCAL_REQUEST_EVERY_TICKS:-6}"       # `run` ticks every 5 s
+CHANNEL_FILE="$DATA/state/channel"
 MIN_UPDATE_FREE_BYTES="${RI_LOCAL_MIN_UPDATE_FREE_BYTES:-1000000000}"
 UPDATE_WAIT_SECONDS="${RI_LOCAL_UPDATE_WAIT_SECONDS:-900}"   # migrations on an SD card can take minutes
 # The uncompressed images (~1.6 GB) plus room for the database to grow; refusing early beats a
@@ -117,6 +132,13 @@ version_gt() {
     [ "$1" != "$2" ] && [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n1)" = "$1" ]
 }
 
+# The release channel to follow: latest unless the Settings page chose edge.
+channel() {
+    local c=latest
+    [ -r "$CHANNEL_FILE" ] && c="$(tr -d ' \n\r\t' < "$CHANNEL_FILE")"
+    [ "$c" = edge ] && echo edge || echo latest
+}
+
 # What is installed, for the Settings page (which has no Docker access). Cleared if it can't be read.
 record_version() {
     local v; v="$(image_version "$RI_APP_IMAGE")"
@@ -139,6 +161,12 @@ load_images() {
     if [ "$present" = 1 ]; then
         installed="$(image_version "$RI_APP_IMAGE")"
         baked="$(baked_version)"
+        if [ "$(channel)" = edge ]; then
+            log "keeping the installed server software: this device follows the edge channel"
+            [ -n "$want" ] && printf '%s' "$want" > "$DATA/state/loaded-image-id"
+            record_version
+            return 0
+        fi
         # Both unknown (a bundle from before versions were stamped): fall through and reload, as before.
         if { [ -n "$installed" ] || [ -n "$baked" ]; } && ! version_gt "$baked" "$installed"; then
             log "keeping the installed server software (${installed:-unknown}); the bundled one (${baked:-unknown}) is not newer"
@@ -177,6 +205,11 @@ export_env() {
         (umask 077; LC_ALL=C tr -dc 'a-hj-km-np-z2-9' < /dev/urandom | head -c 8 > "$DATA/state/setup-code") 2>/dev/null
     fi
     RI_SETUP_CODE="$(cat "$DATA/state/setup-code")"; export RI_SETUP_CODE
+    # The one credential on the app's update endpoints (docker/updater/ + InstanceUpdateSecret): only this device knows it.
+    if [ ! -s "$SECRET_FILE" ]; then
+        (umask 077; LC_ALL=C tr -dc 'a-f0-9' < /dev/urandom | head -c 48 > "$SECRET_FILE") 2>/dev/null
+    fi
+    RI_UPDATE_SECRET="$(cat "$SECRET_FILE")"; export RI_UPDATE_SECRET
 }
 
 app_is_up() { "$CURL" -fsS -o /dev/null --max-time 4 "http://127.0.0.1:$PORT/up" 2>/dev/null; }
@@ -203,8 +236,14 @@ run() {
     export_env
     status starting "Starting the server…"
     compose up -d --no-build --pull never --remove-orphans >"$RUN/compose.log" 2>&1 &
-    local up_pid=$! up_done=0
+    local up_pid=$! up_done=0 tick=0
     while :; do
+        tick=$((tick + 1))
+        # Answer the app's update / check / backup requests. A separate process (it can take minutes, and the loop keeps
+        # the status file current); `requests` takes a lock, so a slow one is never overlapped.
+        if [ $((tick % REQUEST_EVERY_TICKS)) = 0 ] && [ "$up_done" = 1 ] && app_is_up; then
+            "$SELF" requests >>"$RUN/requests.log" 2>&1 &
+        fi
         if [ "$up_done" = 0 ] && ! kill -0 "$up_pid" 2>/dev/null; then
             up_done=1
             wait "$up_pid" || log "docker compose up failed: $(tail -n 3 "$RUN/compose.log" | tr '\n' ' ')"
@@ -243,8 +282,8 @@ wait_for_app() { # wait_for_app SECONDS
     return 1
 }
 
-# Pulls the newest image under the stack's own tag (:latest) and restarts onto it, if — and only if — it is a newer
-# release than the one running. Needs the server started (Docker only runs then). The app container takes its own
+# Pulls the newest image of the chosen channel (latest or edge), tags it as the stack's own image, and restarts onto
+# it, if — and only if — it is a newer release than the one running (on edge: a different build). Needs the server started (Docker only runs then). The app container takes its own
 # database backup before applying migrations and refuses to start if the database is ahead of it (docker/entrypoint.sh).
 update() {
     mkdir -p "$RUN" "$DATA/state"
@@ -265,16 +304,20 @@ update() {
         update_fail "Not enough free space to download an update ($((free / 1000000)) MB free, $((MIN_UPDATE_FREE_BYTES / 1000000)) MB needed)."
     fi
 
+    local chan pull_ref; chan="$(channel)"
+    pull_ref="${RI_APP_IMAGE%:*}:$chan"
     local old_id; old_id="$("$DOCKER" image inspect --format '{{.Id}}' "$RI_APP_IMAGE" 2>/dev/null)"
     # Put the running image back under the tag: an image that is not newer must never stay on it.
     restore_tag() { [ -n "$old_id" ] && "$DOCKER" tag "$old_id" "$RI_APP_IMAGE" >/dev/null 2>&1; }
 
     update_status downloading "Downloading the newest version… this can take several minutes."
-    if ! timeout 3000 "$DOCKER" pull "$RI_APP_IMAGE" >"$RUN/update.log" 2>&1; then
+    if ! timeout 3000 "$DOCKER" pull "$pull_ref" >"$RUN/update.log" 2>&1; then
         restore_tag
         update_fail "The download did not finish: $(tail -n 1 "$RUN/update.log" | cut -c1-160)"
     fi
     local new_id new_version
+    # latest pulls straight onto the stack's tag; edge is pulled under its own tag and then retagged onto it
+    [ "$pull_ref" != "$RI_APP_IMAGE" ] && "$DOCKER" tag "$pull_ref" "$RI_APP_IMAGE" >/dev/null 2>&1
     new_id="$("$DOCKER" image inspect --format '{{.Id}}' "$RI_APP_IMAGE" 2>/dev/null)"
     new_version="$(image_version "$RI_APP_IMAGE")"
     UP_TO="$new_version"
@@ -282,20 +325,27 @@ update() {
         update_status current "This is already the newest version${UP_FROM:+ ($UP_FROM)}."
         exit 0
     fi
-    if [ -z "$new_version" ]; then
+    if [ -z "$new_version" ] && [ "$chan" != edge ]; then
         restore_tag; "$DOCKER" image prune -f >/dev/null 2>&1
         update_fail "The newest image has no version number, so it was not installed."
     fi
-    if ! version_gt "$new_version" "$UP_FROM"; then
+    if [ "$chan" != edge ] && ! version_gt "$new_version" "$UP_FROM"; then
         restore_tag; "$DOCKER" image prune -f >/dev/null 2>&1
         update_status current "This is already the newest version (${UP_FROM:-unknown}); the registry has $new_version."
         exit 0
     fi
 
-    update_status installing "Installing version $new_version…"
+    local label="version $new_version"; [ -n "$new_version" ] || label="the newest edge build"
+    if [ "${1:-}" = check ]; then
+        # Only looking: put the running image back under the tag and say what is out there.
+        restore_tag; "$DOCKER" image prune -f >/dev/null 2>&1
+        update_status available "${new_version:+Version $new_version is available.}${new_version:-A newer edge build is available.}"
+        exit 0
+    fi
+    update_status installing "Installing $label…"
     export_env
     compose up -d --no-build --pull never --remove-orphans >"$RUN/update.log" 2>&1
-    update_status restarting "Starting version $new_version… database updates can take a few minutes."
+    update_status restarting "Starting $label… database updates can take a few minutes."
     if ! wait_for_app "$UPDATE_WAIT_SECONDS"; then
         # Put the previous version back. It will refuse to start if the new one already changed the database (the
         # entrypoint's downgrade check); the backup it took first is under Local server > backups.
@@ -303,14 +353,94 @@ update() {
             compose up -d --no-build --pull never --remove-orphans >"$RUN/update.log" 2>&1
             if wait_for_app 180; then
                 record_version
-                update_fail "Version $new_version did not start, so version ${UP_FROM:-the previous one} was put back. Try again later, or report this."
+                update_fail "The $label did not start, so version ${UP_FROM:-the previous one} was put back. Try again later, or report this."
             fi
         fi
-        update_fail "Version $new_version did not start and the previous version could not be restored. Restart the device; a backup is in the backups list."
+        update_fail "The $label did not start and the previous version could not be restored. Restart the device; a backup is in the backups list."
     fi
     record_version
     "$DOCKER" image prune -f >/dev/null 2>&1   # the replaced version's layers
-    update_status updated "Updated to version $new_version."
+    update_status updated "Updated to $label."
+}
+
+# --- Requests from the app ---------------------------------------------------------------------------------------------
+# The app can't run docker, so an instance administrator's "check", "update" or "backup" (Updates & Backups, or
+# `instance:update` in the app container) only sets a flag. This is the same host-side service as docker/updater/ri-updater.py
+# and the RI Launcher's updater.rs: poll GET /api/instance/update with RI_UPDATE_SECRET, do it, and report to
+# POST /api/instance/update/status. An update goes through the update unit (so it outlives this supervisor being
+# stopped) and follows the same rules as the Settings page's button; a backup asks the provisioner for a full-instance
+# backup with files, as Instance Admin's "Back up now" does (instance:backup --requested).
+app_api() { # app_api METHOD PATH [JSON]
+    local method="$1" path="$2" body="${3:-}"
+    local args=(-fsS --max-time 15 -X "$method" -H "Authorization: Bearer $RI_UPDATE_SECRET" -H "Accept: application/json")
+    [ -n "$body" ] && args+=(-H "Content-Type: application/json" -d "$body")
+    "$CURL" "${args[@]}" "http://127.0.0.1:$PORT$path"
+}
+
+jstr() { if [ -n "$1" ]; then printf '"%s"' "$(json_escape "$1")"; else printf null; fi; }
+
+# app_report STATE "message" [CURRENT] [AVAILABLE] [retry]
+app_report() {
+    local msg="${2:0:900}" body deadline=$SECONDS
+    [ "${5:-}" = retry ] && deadline=$((SECONDS + REPORT_RETRY_SECONDS))
+    body="$(printf '{"state":"%s","message":%s,"current_version":%s,"available_version":%s}' "$1" "$(jstr "$msg")" "$(jstr "${3:-}")" "$(jstr "${4:-}")")"
+    until app_api POST /api/instance/update/status "$body" >/dev/null 2>&1; do
+        [ "$SECONDS" -ge "$deadline" ] && { log "could not report $1 to the app"; return 1; }
+        sleep "$REPORT_SLEEP"
+    done
+}
+
+# One field of the update status file the update script wrote (message is un-escaped again).
+update_field() {
+    local re='\([^"]*\)'
+    [ "$1" = message ] && re='\(.*\)",\"from'
+    sed -n "s/.*\"$1\":\"$re\".*/\1/p" "$UPDATE_STATUS" 2>/dev/null | head -n1 | sed 's/\\"/"/g; s/\\\\/\\/g'
+}
+
+report_update_result() { # after `update` or `check` has finished
+    local phase from to msg
+    phase="$(update_field phase)"; from="$(update_field from)"; to="$(update_field to)"; msg="$(update_field message)"
+    case "$phase" in
+        updated) app_report done "$msg" "$to" "" retry ;;
+        current) app_report done "$msg" "$from" "" retry ;;
+        available) app_report done "$msg" "$from" "$to" retry ;;
+        failed) app_report failed "$msg" "" "" retry ;;
+        *) app_report failed "The ${1:-update} did not finish. Try again." "" "" retry ;;
+    esac
+}
+
+requests() {
+    [ -r "$ROOT/images.env" ] || exit 0
+    mkdir -p "$RUN" "$DATA/state"
+    exec 8>"$RUN/requests.lock"
+    flock -n 8 || exit 0
+    export_env
+    local action
+    action="$(app_api GET /api/instance/update 2>/dev/null | sed -n 's/.*"action": *"\([a-z]*\)".*/\1/p')"
+    case "$action" in
+        check)
+            app_report checking "Looking for a new image"
+            "$SELF" check >/dev/null 2>&1
+            report_update_result check ;;
+        update)
+            app_report pulling "Downloading the new image"
+            # A oneshot unit that fails makes `start` fail too, so the status file (newer than this request) is the answer;
+            # only a unit that never wrote one could not be started at all.
+            "$SYSTEMCTL" start "$UPDATE_UNIT" >/dev/null 2>&1
+            if [ "$UPDATE_STATUS" -nt "$RUN/requests.lock" ]; then
+                report_update_result update
+            else
+                app_report failed "The update could not be started on this device." "" "" retry
+            fi ;;
+        backup)
+            app_report backing-up "Taking a full-instance backup"
+            local out
+            if out="$(compose exec -T app php artisan instance:backup --requested --no-interaction 2>&1)"; then
+                app_report done "$(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -n1)" "" "" retry
+            else
+                app_report failed "The backup did not finish: $(printf '%s\n' "$out" | grep -v '^[[:space:]]*$' | tail -n1)" "" "" retry
+            fi ;;
+    esac
 }
 
 enable() {
@@ -346,6 +476,8 @@ case "${1:-}" in
     disable) disable ;;
     reset) reset ;;
     update) update ;;
+    check) update check ;;
+    requests) requests ;;
     status) cat "$STATUS" 2>/dev/null || echo '{"phase":"stopped"}' ;;
-    *) echo "usage: $0 run|enable|disable|reset|update|status" >&2; exit 2 ;;
+    *) echo "usage: $0 run|enable|disable|reset|update|check|requests|status" >&2; exit 2 ;;
 esac

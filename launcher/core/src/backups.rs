@@ -1,6 +1,6 @@
 //! Backup tools. The app makes its own backups (database zips in `/opt/ri/backups` inside the Linux layer,
 //! see docker/README.md); this module lists them, makes one on demand, copies one out to a normal folder
-//! as a read-only snapshot, and restores one from a file.
+//! as a read-only snapshot.
 use crate::platform::{fail, Platform, Result};
 use crate::layer::REMOTE_DIR;
 use serde::Serialize;
@@ -37,18 +37,61 @@ fn parse_list(stdout: &str) -> Vec<BackupFile> {
     v
 }
 
+/// Listed from inside the app's container, as root: on a Docker host the zips belong to the app's user and the folders are private
+/// to it (`0750`, the zips `0600`), so a `find` from this computer's own user quietly finds nothing. Paths come back as the
+/// container sees them (`/backups/...`) and are mapped to where the rest of this module (and `Platform::pull`) expects them.
 pub async fn list<P: Platform>(p: &P) -> Result<Vec<BackupFile>> {
-    let script = format!("find {REMOTE_DIR}/backups -name '*.zip' -exec stat -c '%n|%s|%Y' {{}} + 2>/dev/null; true");
-    Ok(parse_list(&p.exec(&["sh", "-c", &script]).await?))
+    let find = "find /backups -name '*.zip' -exec stat -c '%n|%s|%Y' {} + 2>/dev/null; true";
+    let script = format!("cd {REMOTE_DIR} && docker compose exec -T -u root app sh -c \"{find}\"");
+    let mut files = parse_list(&p.exec(&["sh", "-c", &script]).await?);
+    for f in &mut files {
+        if let Some(rest) = f.path.strip_prefix("/backups/") {
+            f.path = format!("{REMOTE_DIR}/backups/{rest}");
+        }
+    }
+    Ok(files)
 }
 
-/// `scope`: "database" or "full" (database + uploaded files) — the same two the app's own page offers.
+/// `scope`: "database" or "full" (database + uploaded files) — the same two the app's own page offers — for the app's own (default
+/// warehouse) backup, or "instance": the whole instance, every warehouse and the shared databases with their files, asked of the
+/// provisioner exactly as Instance Admin's "Backup now" does (`instance:backup --requested`, which waits for it).
 pub async fn create_now<P: Platform>(p: &P, scope: &str) -> Result<()> {
-    if scope != "database" && scope != "full" {
-        return fail("scope must be database or full");
-    }
-    p.exec(&["sh", "-c", &app(&format!("php artisan backup:create --scope={scope}"))]).await?;
+    let command = match scope {
+        "database" | "full" => format!("php artisan backup:create --scope={scope}"),
+        "instance" => "php artisan instance:backup --requested --no-interaction".to_string(),
+        _ => return fail("scope must be database, full or instance"),
+    };
+    p.exec(&["sh", "-c", &app(&command)]).await?;
     Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BackupMade {
+    /// True for the whole-instance backup; false when only the app's own database was backed up (see `note`).
+    pub instance: bool,
+    pub note: Option<String>,
+}
+
+/// What went wrong, in a sentence: a PHP stack trace is no help in a message box.
+fn short_reason(raw: &str) -> String {
+    if raw.contains("option does not exist") {
+        return "this version of the app is too old to take one: use Update Relief Inventory first".into();
+    }
+    let line = raw.lines().map(str::trim).find(|l| !l.is_empty()).unwrap_or("unknown error");
+    let line: String = line.chars().take(160).collect();
+    if line.len() < raw.trim().len() { format!("{line}…") } else { line }
+}
+
+/// The "Backup now" button: a whole-instance backup if the app can make one (it needs the provisioner, which an older or
+/// partly started stack may not have), otherwise the database backup of the app's own warehouse, saying why.
+pub async fn backup_now<P: Platform>(p: &P) -> Result<BackupMade> {
+    match create_now(p, "instance").await {
+        Ok(()) => Ok(BackupMade { instance: true, note: None }),
+        Err(why) => {
+            create_now(p, "database").await?;
+            Ok(BackupMade { instance: false, note: Some(short_reason(&why.to_string())) })
+        }
+    }
 }
 
 fn unique(dir: &Path, name: &str) -> PathBuf {
@@ -86,26 +129,28 @@ pub async fn export<P: Platform>(p: &P, backup: &BackupFile, dest_dir: &Path) ->
     Ok(dest)
 }
 
-/// Restore a backup zip chosen from disk. A fresh database backup is made first and the restore refuses to
-/// run if that fails, so a wrong file can always be undone. The app is unavailable during the restore.
-pub async fn import<P: Platform>(p: &P, file: &Path) -> Result<()> {
-    let is_zip = std::fs::read(file)
-        .map(|b| b.starts_with(b"PK\x03\x04"))
-        .map_err(|e| crate::platform::PlatformError::Failed(format!("{}: {e}", file.display())))?;
-    if !is_zip {
-        return fail("That file is not a Relief Inventory backup (it is not a zip file).");
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ExportAll {
+    pub copied: usize,
+    /// Already in the folder from an earlier time (same name and size).
+    pub already_there: usize,
+    pub failed: usize,
+}
+
+/// Copy every backup in the Linux layer (the app's own and the whole-instance ones) into `dest_dir`, read-only, skipping any
+/// that an earlier run already copied. One failing file doesn't stop the rest.
+pub async fn export_all<P: Platform>(p: &P, dest_dir: &Path) -> Result<ExportAll> {
+    let mut out = ExportAll { copied: 0, already_there: 0, failed: 0 };
+    for b in list(p).await? {
+        if std::fs::metadata(dest_dir.join(&b.name)).map(|m| m.len() == b.size).unwrap_or(false) {
+            out.already_there += 1;
+        } else if export(p, &b, dest_dir).await.is_ok() {
+            out.copied += 1;
+        } else {
+            out.failed += 1;
+        }
     }
-    create_now(p, "database").await.map_err(|e| {
-        crate::platform::PlatformError::Failed(format!("Could not take a safety backup first, so nothing was changed: {e}"))
-    })?;
-    let remote = format!("{REMOTE_DIR}/backups/imported.zip");
-    p.push(file, &remote)
-        .await
-        .map_err(|e| crate::platform::PlatformError::Failed(format!("could not copy the file in: {e}")))?;
-    let result = p.exec(&["sh", "-c", &app("php artisan backup:restore /backups/imported.zip --force --no-interaction")]).await;
-    // removed from inside the app's container: on a Linux host the folder belongs to the app's user
-    let _ = p.exec(&["sh", "-c", &app("rm -f /backups/imported.zip")]).await;
-    result.map(|_| ())
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -120,6 +165,7 @@ mod tests {
         cmds: Mutex<Vec<String>>,
         list_output: String,
         fail_backup: bool,
+        fail_on: Mutex<Option<String>>,
     }
 
     #[async_trait]
@@ -148,6 +194,9 @@ mod tests {
         async fn exec(&self, a: &[&str]) -> Result<String> {
             let line = a.join(" ");
             self.cmds.lock().unwrap().push(line.clone());
+            if self.fail_on.lock().unwrap().as_deref().is_some_and(|f| line.contains(f)) {
+                return fail("provisioner unavailable");
+            }
             if line.contains("backup:create") && self.fail_backup {
                 return fail("disk full");
             }
@@ -170,7 +219,7 @@ mod tests {
     fn fake(list_output: &str, fail_backup: bool) -> (Fake, tempfile::TempDir) {
         let d = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(d.path().join("opt/ri/backups")).unwrap();
-        (Fake { root: d.path().to_path_buf(), cmds: Mutex::new(vec![]), list_output: list_output.into(), fail_backup }, d)
+        (Fake { root: d.path().to_path_buf(), cmds: Mutex::new(vec![]), list_output: list_output.into(), fail_backup, fail_on: Mutex::new(None) }, d)
     }
 
     #[test]
@@ -199,29 +248,27 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn import_takes_a_safety_backup_first_then_restores() {
-        let (p, _d) = fake("", false);
-        let f = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(f.path(), b"PK\x03\x04zip").unwrap();
-        import(&p, f.path()).await.unwrap();
-        let cmds = p.cmds.lock().unwrap().clone();
-        let at = |n: &str| cmds.iter().position(|c| c.contains(n)).unwrap();
-        assert!(at("backup:create --scope=database") < at("backup:restore /backups/imported.zip --force --no-interaction"));
-        assert!(cmds.last().unwrap().contains("rm -f /backups/imported.zip"));
+    async fn list_asks_the_container_as_root_and_maps_its_paths() {
+        let (p, _d) = fake("/backups/instance/i.zip|5|9\n/backups/warehouses/W1/w.zip|7|8\n", false);
+        let files = list(&p).await.unwrap();
+        assert_eq!(files.iter().map(|f| f.path.as_str()).collect::<Vec<_>>(), ["/opt/ri/backups/instance/i.zip", "/opt/ri/backups/warehouses/W1/w.zip"]);
+        let cmd = p.cmds.lock().unwrap()[0].clone();
+        assert!(cmd.contains("exec -T -u root app"), "{cmd}");
     }
 
     #[tokio::test]
-    async fn import_stops_when_the_safety_backup_fails_or_the_file_is_not_a_zip() {
-        let (p, _d) = fake("", true);
-        let f = tempfile::NamedTempFile::new().unwrap();
-        std::fs::write(f.path(), b"PK\x03\x04zip").unwrap();
-        let err = import(&p, f.path()).await.unwrap_err().to_string();
-        assert!(err.contains("nothing was changed"));
-        assert!(!p.cmds.lock().unwrap().iter().any(|c| c.contains("backup:restore")));
-        let (p, _d) = fake("", false);
-        std::fs::write(f.path(), b"not a zip").unwrap();
-        assert!(import(&p, f.path()).await.unwrap_err().to_string().contains("not a zip"));
-        assert!(p.cmds.lock().unwrap().is_empty());
+    async fn export_all_copies_each_backup_once_including_the_instance_ones() {
+        let listing = "/opt/ri/backups/a.zip|8|2\n/opt/ri/backups/instance/relief-instance-1-full.zip|8|1\n";
+        let (p, _d) = fake(listing, false);
+        std::fs::create_dir_all(p.at("/opt/ri/backups/instance")).unwrap();
+        std::fs::write(p.at("/opt/ri/backups/a.zip"), b"PK\x03\x04data").unwrap();
+        std::fs::write(p.at("/opt/ri/backups/instance/relief-instance-1-full.zip"), b"PK\x03\x04data").unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let first = export_all(&p, out.path()).await.unwrap();
+        assert_eq!(first, ExportAll { copied: 2, already_there: 0, failed: 0 });
+        let again = export_all(&p, out.path()).await.unwrap();
+        assert_eq!(again, ExportAll { copied: 0, already_there: 2, failed: 0 });
+        assert!(out.path().join("relief-instance-1-full.zip").exists());
     }
 
     #[tokio::test]
@@ -229,5 +276,30 @@ mod tests {
         let (p, _d) = fake("", false);
         assert!(create_now(&p, "storage; rm -rf /").await.is_err());
         create_now(&p, "full").await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn backup_now_takes_the_whole_instance_when_it_can() {
+        let (p, _d) = fake("", false);
+        assert_eq!(backup_now(&p).await.unwrap(), BackupMade { instance: true, note: None });
+        let cmds = p.cmds.lock().unwrap().clone();
+        assert_eq!(cmds.len(), 1);
+        assert!(cmds[0].contains("exec -T app php artisan instance:backup --requested"));
+    }
+
+    #[test]
+    fn a_stack_trace_becomes_a_sentence() {
+        assert!(short_reason("#9 /var/www/vendor… {main} \"} The \"--requested\" option does not exist.").contains("too old"));
+        assert_eq!(short_reason("disk full"), "disk full");
+        assert!(short_reason(&"x".repeat(500)).ends_with('…'));
+    }
+
+    #[tokio::test]
+    async fn backup_now_falls_back_to_the_apps_own_database_and_says_why() {
+        let (p, _d) = fake("", false);
+        *p.fail_on.lock().unwrap() = Some("instance:backup".into());
+        let made = backup_now(&p).await.unwrap();
+        assert!(!made.instance && made.note.as_deref() == Some("provisioner unavailable"));
+        assert!(p.cmds.lock().unwrap().iter().any(|c| c.contains("backup:create --scope=database")));
     }
 }

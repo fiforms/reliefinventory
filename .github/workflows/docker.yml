@@ -31,6 +31,9 @@ permissions:
 
 jobs:
   build:
+    # Only version tags (v1.4.0) are software releases. The fixed `rstation-image` release only holds the SD card image manifest
+    # (scripts/publish-rstation-image.mjs); building from it once pushed an old commit as :latest. `merge` needs this job, so it skips too.
+    if: ${{ github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v') }}
     strategy:
       fail-fast: false
       matrix:

@@ -59,6 +59,19 @@ version into the image as `RI_VERSION`; the device compares those, never digests
   `RI_VERSION` is refused. A new OS image's baked build (`manifest.json` `app_version`, written by `build-offline-bundle.sh`)
   is loaded over what is in `/data/docker` only if it is newer; the decision is remembered per baked image id
   (`state/loaded-image-id`), so a reboot doesn't re-decide. A bundle from before versions were stamped (both unknown) still reloads as before.
+- **Channels.** The page has a "Software channel" choice: `latest` (official releases, default) or `edge` (newer unreleased builds,
+  for developers and testers; never real data). The backend writes it to `state/channel`; the update script then pulls
+  `<repo>:<channel>` and retags it onto the bundle's one local tag. Edge images have no `RI_VERSION`, so on edge the version rules
+  above become "install if the image differs", and a newer baked-in build never replaces an installed edge image. Choosing a channel
+  changes nothing until the next update. Going edge → latest can be refused by the app's downgrade check if edge migrated the database.
+- **Requests from the app.** The same host-side service the Docker web host runs (`docker/updater/ri-updater.py`), for this device: the
+  app can't run docker, so Instance Admin / `instance:update check|apply|backup` only sets a flag in the control schema (`InstanceUpdate`).
+  While the server is up, the supervisor (`run`, every ~30 s) starts `slide-announcer-local-server requests`, which polls
+  `GET /api/instance/update` with `RI_UPDATE_SECRET` and reports to `POST /api/instance/update/status`. The secret is made once into
+  `state/update-secret` (0600) and handed to the stack through the offline `compose.yaml`. `update` goes through the update unit and
+  every rule above; `check` is `update check` (pull, put the running image back under the tag, `update.json` phase `available`);
+  `backup` runs `instance:backup --requested` in the app container, i.e. the provisioner's `backup-now-files` request (full zip with files, keys
+  sealed to the recovery key, in `backups/instance/`). Nothing copies the zip out of `/data`. Tests: `test_local_server.py` ("requests from the app").
 - **Needs the server started** (Docker only runs while the flag exists) and Internet (`https://ghcr.io/v2/` is checked first, with a
   plain "connect to the Internet" message), and ~1 GB free. Nothing else may stop/erase the server while it runs (the backend answers 409).
 - **Data safety.** Updates run `compose up -d`; the app container's entrypoint backs the database up before pending migrations

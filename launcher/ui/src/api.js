@@ -14,7 +14,7 @@ function mockSummary() {
     const k = kind()
     const base = {
         state: 'running', proxy_running: true, mode: 'lan', hostname: null, default_hostname: 'hpwin11.local',
-        port: 8080, timezone: null, url: 'http://hpwin11.local:8080',
+        port: 8080, timezone: null, channel: 'latest', url: 'http://hpwin11.local:8080',
         share_urls: ['http://hpwin11.local:8080', 'http://10.53.105.130:8080'],
         os: new URLSearchParams(location.search).get('os') || 'windows',
     }
@@ -33,7 +33,7 @@ function mockInstall() {
 }
 
 const mock = {
-    settings: () => { const s = mockSummary(); return { mode: s.mode, hostname: s.hostname, port: s.port, timezone: s.timezone } },
+    settings: () => { const s = mockSummary(); return { mode: s.mode, hostname: s.hostname, port: s.port, timezone: s.timezone, channel: s.channel } },
     backups: [
         { path: '/opt/ri/backups/relief-backup-20261025-052845-database-3.zip', name: 'relief-backup-20261025-052845-database-3.zip', size: 42643, modified: now - 600 },
         { path: '/opt/ri/backups/relief-backup-20261025-050004-database-1.zip', name: 'relief-backup-20261025-050004-database-1.zip', size: 41957, modified: now - 5000 },
@@ -54,18 +54,21 @@ export const getPreflight = () =>
 export const dismissInstallStatus = () => call('dismiss_install_status', {}, null)
 export const start = () => (inTauri ? invoke('start') : unavailable('Starting'))
 export const stop = () => (inTauri ? invoke('stop') : unavailable('Stopping'))
+export const checkUpdate = () => (inTauri ? invoke('check_update') : unavailable('Checking for updates'))
+export const installUpdate = () => (inTauri ? invoke('install_update') : unavailable('Updating'))
+export const backupExportAll = () => (inTauri ? invoke('backup_export_all') : unavailable('Saving backups'))
+export const backupOpenFolder = () => (inTauri ? invoke('backup_open_folder') : unavailable('Opening the folder'))
 export const update = () => (inTauri ? invoke('update') : unavailable('Updating'))
 export const uninstall = (keepData) => (inTauri ? invoke('uninstall', { keepData }) : unavailable('Uninstalling'))
 export const getSettings = () => call('get_settings', {}, mock.settings)
 export const applySettings = (s) =>
-    inTauri ? invoke('apply_settings', { mode: s.mode, hostname: s.hostname || null, port: s.port, timezone: s.timezone || null }) : unavailable('Changing settings')
+    inTauri ? invoke('apply_settings', { mode: s.mode, hostname: s.hostname || null, port: s.port, timezone: s.timezone || null, channel: s.channel || 'latest' }) : unavailable('Changing settings')
 export const shareableLink = () => call('shareable_link', {}, () => mockSummary().share_urls[0] || Promise.reject('Turn on "Run as a LAN service" first.'))
 export const openApp = () => call('open_app', {}, () => window.open('http://localhost:8080', '_blank'))
 export const openTerminal = () => (inTauri ? invoke('open_terminal') : unavailable('Opening a terminal'))
 export const backupsList = () => call('backups_list', {}, () => mock.backups)
-export const backupCreate = (scope) => (inTauri ? invoke('backup_create', { scope }) : unavailable('Backing up'))
+export const backupCreate = () => (inTauri ? invoke('backup_create') : unavailable('Backing up'))
 export const backupExport = (name) => (inTauri ? invoke('backup_export', { name }) : unavailable('Saving a copy'))
-export const backupImport = (path) => (inTauri ? invoke('backup_import', { path }) : unavailable('Restoring'))
 export const restartComputer = () => (inTauri ? invoke('restart_computer') : unavailable('Restarting'))
 export const getAutostart = () => call('get_autostart', {}, true)
 export const setAutostart = (enabled) => call('set_autostart', { enabled }, enabled)
@@ -156,11 +159,6 @@ export const pickFolder = async () => {
 }
 /** Errors raised from the tray menu (e.g. Quit couldn't shut the server down). */
 export const onTrayError = (fn) => (inTauri ? listen('tray-error', (e) => fn(String(e.payload))) : Promise.resolve(() => {}))
-export const pickBackupFile = async () => {
-    if (!inTauri) return null
-    const f = await openDialog({ multiple: false, filters: [{ name: 'Relief Inventory backup', extensions: ['zip'] }] })
-    return typeof f === 'string' ? f : null
-}
 
 /** Copy text; falls back to a hidden textarea where the async clipboard API is unavailable. */
 export async function copyText(text) {
