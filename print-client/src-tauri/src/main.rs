@@ -78,8 +78,9 @@ const EXTERNAL_LINKS: &[&str] = &[
 ];
 
 #[tauri::command]
-fn app_version(app: AppHandle) -> String {
-    app.package_info().version.to_string()
+fn app_version() -> String {
+    // the release tag, or the commit hash for an untagged build (build.rs); the package version is only a number for installers
+    env!("RI_BUILD_VERSION").to_string()
 }
 
 #[tauri::command]

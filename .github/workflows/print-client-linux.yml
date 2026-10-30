@@ -4,6 +4,9 @@ name: Print client (Linux)
 on:
   workflow_dispatch:
 
+env:
+  RI_BUILD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || github.sha }}
+
 jobs:
   build:
     runs-on: ubuntu-latest
