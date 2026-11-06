@@ -66,6 +66,7 @@ RI Launcher is a new desktop app (`launcher/`) that installs, runs and updates t
 - 500 when adding a location.
 - PIN login settings error when saving the trust time of day.
 - Trainees can load Sorting's item lookups.
+- PHP 8.5 no longer breaks pages with a deprecation warning from the database config.
 
 ### Removed
 
